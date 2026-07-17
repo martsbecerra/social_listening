@@ -361,6 +361,21 @@
       }
     }
 
+    function formatCostUsd(usd, source) {
+      if (!Number.isFinite(usd)) return '';
+      const formatted = usd.toLocaleString('es-AR', {
+        style: 'currency',
+        currency: 'USD',
+        minimumFractionDigits: 4,
+        maximumFractionDigits: 6,
+      });
+      if (source === 'openrouter') return formatted;
+      if (source === 'estimate_env' || source === 'estimate_anthropic') {
+        return `~${formatted} est.`;
+      }
+      return formatted;
+    }
+
     function formatMetaLine(m) {
       const commentPart = m.muestraParcial
         ? `${m.comentariosAnalizados} comentarios analizados (muestra priorizada de ${m.comentariosUnicos} únicos)`
@@ -371,10 +386,11 @@
 
       const fmt = (n) => (Number.isFinite(n) ? n.toLocaleString('es-AR') : '—');
       const tokenPart = `${fmt(t.totalTokens)} tokens LLM (${fmt(t.inputTokens)} entrada · ${fmt(t.outputTokens)} salida)`;
-      if (m.llmAttempts > 1) {
-        return `${commentPart} · ${tokenPart} · ${m.llmAttempts} intentos LLM`;
-      }
-      return `${commentPart} · ${tokenPart}`;
+      const costPart = formatCostUsd(t.costUsd, t.costSource);
+      const parts = [commentPart, tokenPart];
+      if (costPart) parts.push(`costo LLM ${costPart}`);
+      if (m.llmAttempts > 1) parts.push(`${m.llmAttempts} intentos LLM`);
+      return parts.join(' · ');
     }
 
     async function analyze() {

@@ -120,6 +120,8 @@ app.post('/api/analyze', async (req, res) => {
         analysisMeta.sampleSize < analysisMeta.totalComments
       ),
       tokens: analysisMeta?.tokenUsage ?? null,
+      costUsd: analysisMeta?.tokenUsage?.costUsd ?? null,
+      costSource: analysisMeta?.tokenUsage?.costSource ?? null,
       llmIntentos: analysisMeta?.llmAttempts ?? null,
     });
 
