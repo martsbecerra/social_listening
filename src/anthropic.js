@@ -3,17 +3,23 @@
 // --------------------------------------------------------------------------
 // Orquesta la llamada a Claude:
 //   1) Muestra ordenada de comentarios (commentSample.js)
-//   2) Clasificación + textos cualitativos vía tool use (analysisTool.js)
-//   3) Reporte y CSV armados en Node (reportBuilder.js + sentimentAggregate.js)
+//   2) Structured Outputs: JSON validado por la API (analysisSchema.js)
+//   3) Normalización en validateAnalysis.js
+//   4) Reporte y CSV en reportBuilder.js + sentimentAggregate.js
 // ==========================================================================
 
 const Anthropic = require('@anthropic-ai/sdk');
+const { jsonSchemaOutputFormat } = require('@anthropic-ai/sdk/helpers/json-schema');
 const { CLASSIFICATION_SYSTEM_PROMPT } = require('./prompt');
-const { ANALYSIS_TOOL, ANALYSIS_TOOL_NAME } = require('./analysisTool');
+const { ANALYSIS_JSON_SCHEMA } = require('./analysisSchema');
 const { prepareCommentSample } = require('./commentSample');
+const { validateAndNormalizeAnalysis } = require('./validateAnalysis');
 const { buildWhatsAppReport } = require('./reportBuilder');
 
 const client = new Anthropic();
+
+// Si el parse falla (JSON roto), reintentamos una vez antes de fallar al usuario.
+const STRUCTURED_OUTPUT_MAX_ATTEMPTS = 2;
 
 /**
  * Punto de entrada usado por server.js.
@@ -26,33 +32,15 @@ async function analyzeComments({ url, post, comments }) {
   const { sample, total, isPartial } = prepareCommentSample(comments);
   const userPrompt = buildUserPrompt({ url, post, sample, total, isPartial });
 
-  let message;
+  let parsed;
   try {
-    message = await client.messages.create({
-      model,
-      max_tokens: 8000,
-      system: CLASSIFICATION_SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: userPrompt }],
-      tools: [ANALYSIS_TOOL],
-      // Forzamos el tool para no recibir prosa suelta sin JSON.
-      tool_choice: { type: 'tool', name: ANALYSIS_TOOL_NAME },
-    });
+    parsed = await requestStructuredAnalysis({ model, userPrompt });
   } catch (err) {
+    if (err.userMessage) throw err;
     throw mapAnthropicError(err);
   }
 
-  const toolInput = extractToolInput(message);
-  const classifications = normalizeClassifications(toolInput.classifications, sample.length);
-
-  const qualitative = {
-    posteoSobre: toolInput.posteoSobre,
-    insightApoyo: toolInput.insightApoyo,
-    insightCriticas: toolInput.insightCriticas,
-    insightReclamos: toolInput.insightReclamos,
-    insightMedios: toolInput.insightMedios,
-    posturaAudiencia: toolInput.posturaAudiencia,
-    lecturaEstrategica: toolInput.lecturaEstrategica,
-  };
+  const { qualitative, classifications } = validateAndNormalizeAnalysis(parsed, sample.length);
 
   return buildWhatsAppReport({
     url,
@@ -66,48 +54,39 @@ async function analyzeComments({ url, post, comments }) {
   });
 }
 
-/** Busca el bloque tool_use con el payload estructurado de la respuesta. */
-function extractToolInput(message) {
-  const block = message.content.find(
-    (b) => b.type === 'tool_use' && b.name === ANALYSIS_TOOL_NAME
-  );
-  if (!block || !block.input || typeof block.input !== 'object') {
-    const e = new Error('Claude no devolvió la clasificación estructurada esperada.');
-    e.userMessage =
-      'El servicio de análisis no devolvió un resultado válido. Intentá de nuevo en unos minutos.';
-    throw e;
-  }
-  return block.input;
-}
-
 /**
- * Claude devuelve classifications con index 1-based; acá alineamos a un array
- * paralelo a sample[0..n]. Si falta un índice, neutral (no suma al %).
+ * messages.parse + output_config.format: la respuesta cae en parsed_output.
  */
-function normalizeClassifications(rawList, sampleLength) {
-  const byIndex = new Map();
-  if (Array.isArray(rawList)) {
-    for (const row of rawList) {
-      if (!row || typeof row.index !== 'number') continue;
-      byIndex.set(row.index, {
-        sentiment: row.sentiment || 'neutral',
-        accountType: row.accountType || 'vecino',
-        reclamosGeo: Array.isArray(row.reclamosGeo) ? row.reclamosGeo : [],
-      });
+async function requestStructuredAnalysis({ model, userPrompt }) {
+  const requestParams = {
+    model,
+    max_tokens: 8000,
+    system: CLASSIFICATION_SYSTEM_PROMPT,
+    messages: [{ role: 'user', content: userPrompt }],
+    output_config: {
+      format: jsonSchemaOutputFormat(ANALYSIS_JSON_SCHEMA),
+    },
+  };
+
+  let lastError;
+  for (let attempt = 1; attempt <= STRUCTURED_OUTPUT_MAX_ATTEMPTS; attempt++) {
+    try {
+      const message = await client.messages.parse(requestParams);
+      // parsed_output lo rellena el SDK al parsear el bloque de texto JSON.
+      if (message.parsed_output != null) {
+        return message.parsed_output;
+      }
+      lastError = new Error('parsed_output es null');
+    } catch (err) {
+      lastError = err;
+      console.warn(`Structured output intento ${attempt}/${STRUCTURED_OUTPUT_MAX_ATTEMPTS} falló:`, err.message);
     }
   }
 
-  const out = [];
-  for (let i = 1; i <= sampleLength; i++) {
-    out.push(
-      byIndex.get(i) || {
-        sentiment: 'neutral',
-        accountType: 'vecino',
-        reclamosGeo: [],
-      }
-    );
-  }
-  return out;
+  const e = new Error(`Structured output falló: ${lastError?.message || 'desconocido'}`);
+  e.userMessage =
+    'El servicio de análisis no devolvió un resultado válido. Intentá de nuevo en unos minutos.';
+  throw e;
 }
 
 /** Mensajes amigables para el front (server.js lee err.userMessage). */
@@ -128,7 +107,7 @@ function mapAnthropicError(err) {
   return e;
 }
 
-/** Datos del post + lista numerada de comentarios (debe coincidir con index del tool). */
+/** Datos del post + lista numerada de comentarios (debe coincidir con index del JSON). */
 function buildUserPrompt({ url, post, sample, total, isPartial }) {
   const commentsText = sample
     .map((c, i) => {
@@ -145,7 +124,7 @@ function buildUserPrompt({ url, post, sample, total, isPartial }) {
     ? `\nNOTA: Solo se listan ${sample.length} comentarios (de ${total} extraídos). Clasificá únicamente los numerados abajo.\n`
     : '';
 
-  return `Clasificá cada comentario y completá los textos cualitativos. Usá la herramienta entregar_analisis (no escribas el reporte en texto libre).
+  return `Clasificá cada comentario y completá los campos del JSON de salida (posteoSobre, classifications, insights y textos 7–8). Respondé únicamente con JSON que cumpla el schema; no escribas el reporte de WhatsApp en texto libre.
 
 === DATOS DEL POSTEO ===
 Autor (nombre): ${fmt(post.ownerFullName)}

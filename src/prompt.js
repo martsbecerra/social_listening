@@ -2,8 +2,8 @@
 // prompt.js
 // --------------------------------------------------------------------------
 // System prompt para la fase de clasificación (Claude).
-// Lo separamos del reporte final: acá no se piden % ni KPI; eso vive en
-// sentimentAggregate.js + reportBuilder.js para que sea reproducible.
+// La salida es JSON con schema fijo (Structured Outputs); el reporte WhatsApp
+// se arma en reportBuilder.js.
 // ==========================================================================
 
 const CLASSIFICATION_SYSTEM_PROMPT = `Actuá como experto en análisis de sentimiento, marketing digital político e Instagram Analytics.
@@ -40,6 +40,6 @@ Si no hay ubicación, reclamosGeo debe ser [].
 - insightApoyo / insightCriticas / insightReclamos / insightMedios: exactamente 2 referencias cada uno (@usuario + texto breve + fecha si está disponible; no inventar).
 - posturaAudiencia y lecturaEstrategica: párrafos breves.
 
-Debés clasificar TODOS los comentarios numerados en el mensaje del usuario (mismo index 1-based) y llamar a la herramienta entregar_analisis con el JSON completo.`;
+Debés clasificar TODOS los comentarios numerados en el mensaje del usuario (mismo index 1-based). La respuesta debe ser únicamente un objeto JSON que cumpla el schema de salida configurado (sin markdown ni texto extra).`;
 
 module.exports = { CLASSIFICATION_SYSTEM_PROMPT };
