@@ -51,7 +51,7 @@ const INSIGHT_PAIR_SCHEMA = {
   maxItems: 2,
 };
 
-/** Schema raíz pasado a jsonSchemaOutputFormat() en anthropic.js */
+/** Schema raíz para Structured Outputs (Anthropic y OpenRouter). */
 const ANALYSIS_JSON_SCHEMA = {
   type: 'object',
   additionalProperties: false,

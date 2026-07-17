@@ -12,7 +12,7 @@ const { RECLAMO_TEMATICAS } = require('./classificationConstants');
 // Misma lista que el enum tematica en analysisSchema.js (una sola fuente: classificationConstants).
 const TEMATICAS_LISTADO = RECLAMO_TEMATICAS.join(', ');
 
-// Instrucciones fijas enviadas como system en anthropic.js (no es código ejecutable).
+// Instrucciones fijas enviadas como system en analyzeComments / llm (no es código ejecutable).
 const CLASSIFICATION_SYSTEM_PROMPT = `Actuá como experto en análisis de sentimiento, marketing digital político e Instagram Analytics.
 
 Analizás publicaciones de Instagram de actores políticos, funcionarios, instituciones públicas o cuentas vinculadas a la conversación pública.

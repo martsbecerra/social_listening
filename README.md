@@ -18,8 +18,7 @@ social_listening_app/
 ├── src/
 │   ├── apify.js         # Extrae comentarios y datos del posteo desde Apify.
 │   ├── analyzeComments.js  # Orquestación del análisis (Apify → LLM → reporte).
-│   ├── llm/                # Proveedores: anthropic, openrouter.
-│   ├── anthropic.js        # Re-export de analyzeComments (compatibilidad).
+│   ├── llm/                # Proveedores: anthropicProvider, openrouterProvider.
 │   └── prompt.js        # La metodología de análisis (system prompt de Claude).
 ├── public/
 │   └── index.html       # La página web (formulario + resultado).
