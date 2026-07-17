@@ -5,6 +5,7 @@
 const Anthropic = require('@anthropic-ai/sdk');
 const { jsonSchemaOutputFormat } = require('@anthropic-ai/sdk/helpers/json-schema');
 const { ANALYSIS_JSON_SCHEMA } = require('../analysisSchema');
+const { addTokenUsage, fromAnthropicUsage } = require('./usage');
 
 const client = new Anthropic();
 const STRUCTURED_OUTPUT_MAX_ATTEMPTS = 2;
@@ -23,11 +24,14 @@ async function requestStructuredAnalysis({ system, userPrompt }) {
   };
 
   let lastError;
+  let usage = null;
   for (let attempt = 1; attempt <= STRUCTURED_OUTPUT_MAX_ATTEMPTS; attempt++) {
     try {
       const message = await client.messages.parse(requestParams);
+      const callUsage = fromAnthropicUsage(message.usage);
+      if (callUsage) usage = usage ? addTokenUsage(usage, callUsage) : callUsage;
       if (message.parsed_output != null) {
-        return message.parsed_output;
+        return { parsed: message.parsed_output, usage, attempts: attempt };
       }
       lastError = new Error('parsed_output es null');
     } catch (err) {

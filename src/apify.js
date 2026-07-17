@@ -122,15 +122,42 @@ async function scrapeInstagram(postUrl) {
     resultsLimit: 1,
   };
 
+  const commentsLimitRequested = commentsInput.resultsLimit;
+
   const [commentItems, postItems] = await Promise.all([
     runActorSync(commentsInput),
     runActorSync(postInput),
   ]);
 
+  const rawCommentItems = Array.isArray(commentItems) ? commentItems.length : 0;
   const post = normalizePost(postItems, commentItems, postUrl);
   const comments = normalizeComments(commentItems);
 
-  return { post, comments };
+  const scrapeMeta = {
+    commentsLimitRequested,
+    rawCommentItems,
+    commentsOnPost: post.commentsCount,
+    comentariosTrasNormalizar: comments.length,
+  };
+
+  if (
+    Number.isFinite(commentsLimitRequested) &&
+    rawCommentItems > 0 &&
+    rawCommentItems < commentsLimitRequested
+  ) {
+    const apifyFreeHint =
+      rawCommentItems <= 15
+        ? ' Apify en plan gratuito suele devolver ~15 comentarios (una página); con plan pago podés pedir más (hasta ~50 por post en este actor).'
+        : '';
+    console.warn(
+      `[apify] Apify devolvió ${rawCommentItems} ítems de comentarios, menos que COMMENTS_LIMIT=${commentsLimitRequested}.${apifyFreeHint}` +
+      (post.commentsCount != null && post.commentsCount > rawCommentItems
+        ? ` Instagram reporta ${post.commentsCount} comentarios en el post.`
+        : '')
+    );
+  }
+
+  return { post, comments, scrapeMeta };
 }
 
 /**

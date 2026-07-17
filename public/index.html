@@ -361,6 +361,22 @@
       }
     }
 
+    function formatMetaLine(m) {
+      const commentPart = m.muestraParcial
+        ? `${m.comentariosAnalizados} comentarios analizados (muestra priorizada de ${m.comentariosUnicos} únicos)`
+        : `${m.comentariosAnalizados ?? m.comentariosExtraidos} comentarios analizados`;
+
+      const t = m.tokenUsage;
+      if (!t || !Number.isFinite(t.totalTokens)) return commentPart;
+
+      const fmt = (n) => (Number.isFinite(n) ? n.toLocaleString('es-AR') : '—');
+      const tokenPart = `${fmt(t.totalTokens)} tokens LLM (${fmt(t.inputTokens)} entrada · ${fmt(t.outputTokens)} salida)`;
+      if (m.llmAttempts > 1) {
+        return `${commentPart} · ${tokenPart} · ${m.llmAttempts} intentos LLM`;
+      }
+      return `${commentPart} · ${tokenPart}`;
+    }
+
     async function analyze() {
       const url = urlInput.value.trim();
 
@@ -395,10 +411,7 @@
 
         // Mostramos el reporte.
         reportEl.textContent = data.report;
-        const m = data.meta || {};
-        metaEl.textContent = m.muestraParcial
-          ? `${m.comentariosAnalizados} comentarios analizados (muestra priorizada de ${m.comentariosUnicos} únicos)`
-          : `${m.comentariosAnalizados ?? m.comentariosExtraidos} comentarios analizados`;
+        metaEl.textContent = formatMetaLine(data.meta || {});
         currentCsv = data.csv || '';
         show(resultCard);
       } catch (err) {

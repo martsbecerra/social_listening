@@ -43,11 +43,16 @@ async function analyzeComments({ url, post, comments }) {
   });
 
   let parsed;
+  let tokenUsage = null;
+  let llmAttempts = null;
   try {
-    parsed = await requestStructuredAnalysis({
+    const llmResult = await requestStructuredAnalysis({
       system: CLASSIFICATION_SYSTEM_PROMPT,
       userPrompt,
     });
+    parsed = llmResult.parsed;
+    tokenUsage = llmResult.usage ?? null;
+    llmAttempts = llmResult.attempts ?? null;
   } catch (err) {
     if (err.userMessage) throw err;
     const label = getProviderLabel(provider);
@@ -87,6 +92,8 @@ async function analyzeComments({ url, post, comments }) {
     meta: {
       ...reportResult.meta,
       llmProvider: provider,
+      tokenUsage,
+      llmAttempts,
       accountRegistry: {
         ...registryStats,
         comentariosConTipoRegistrado: registeredCount,

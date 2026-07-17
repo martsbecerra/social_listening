@@ -3,6 +3,7 @@
 // ==========================================================================
 
 const { ANALYSIS_JSON_SCHEMA } = require('../analysisSchema');
+const { addTokenUsage, fromOpenRouterUsage } = require('./usage');
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const STRUCTURED_OUTPUT_MAX_ATTEMPTS = 2;
@@ -47,6 +48,7 @@ async function requestStructuredAnalysis({ system, userPrompt }) {
   };
 
   let lastError;
+  let usage = null;
   for (let attempt = 1; attempt <= STRUCTURED_OUTPUT_MAX_ATTEMPTS; attempt++) {
     try {
       const res = await fetch(OPENROUTER_URL, {
@@ -61,9 +63,12 @@ async function requestStructuredAnalysis({ system, userPrompt }) {
         throw mapOpenRouterHttpError(res.status, data);
       }
 
+      const callUsage = fromOpenRouterUsage(data.usage);
+      if (callUsage) usage = usage ? addTokenUsage(usage, callUsage) : callUsage;
+
       const parsed = parseMessageContent(data);
       if (parsed != null) {
-        return parsed;
+        return { parsed, usage, attempts: attempt };
       }
       lastError = new Error('contenido vacío o JSON inválido');
     } catch (err) {
