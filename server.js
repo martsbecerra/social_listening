@@ -15,7 +15,8 @@ const express = require('express');
 const path = require('path');
 
 const { scrapeInstagram } = require('./src/apify');
-const { analyzeComments } = require('./src/anthropic');
+const { analyzeComments } = require('./src/analyzeComments');
+const { getLlmProvider, requiredLlmEnvKeys, getProviderLabel } = require('./src/llm/providerConfig');
 
 const app = express();
 
@@ -31,7 +32,9 @@ app.use(express.static(path.join(__dirname, 'public')));
 function checkEnv() {
   const faltantes = [];
   if (!process.env.APIFY_API_TOKEN) faltantes.push('APIFY_API_TOKEN');
-  if (!process.env.ANTHROPIC_API_KEY) faltantes.push('ANTHROPIC_API_KEY');
+  for (const key of requiredLlmEnvKeys()) {
+    if (!process.env[key]) faltantes.push(key);
+  }
   if (faltantes.length > 0) {
     console.warn(
       `\n⚠️  ATENCIÓN: faltan estas variables en el archivo .env: ${faltantes.join(', ')}` +
@@ -79,7 +82,7 @@ app.post('/api/analyze', async (req, res) => {
       });
     }
 
-    // 4) Analizamos con Claude (devuelve el reporte de texto y el CSV de reclamos).
+    // 4) Analizamos con el LLM configurado (devuelve reporte + CSV de reclamos).
     const { report, csv, meta: analysisMeta } = await analyzeComments({ url, post, comments });
 
     // 5) Devolvemos el reporte y el CSV al navegador.
@@ -109,5 +112,7 @@ app.post('/api/analyze', async (req, res) => {
 const PORT = process.env.PORT || 3000;
 checkEnv();
 app.listen(PORT, () => {
-  console.log(`\n✅ Servidor listo en http://localhost:${PORT}\n`);
+  const provider = getLlmProvider();
+  console.log(`\n✅ Servidor listo en http://localhost:${PORT}`);
+  console.log(`   Proveedor LLM: ${getProviderLabel(provider)} (${provider})\n`);
 });

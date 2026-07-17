@@ -1,7 +1,7 @@
 // ==========================================================================
 // analysisSchema.js
 // --------------------------------------------------------------------------
-// JSON Schema de la respuesta de Claude (Structured Outputs / output_config).
+// JSON Schema de la respuesta del LLM (Structured Outputs).
 // Debe estar alineado con prompt.js y validateAnalysis.js.
 // ==========================================================================
 
