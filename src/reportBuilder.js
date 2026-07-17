@@ -3,7 +3,7 @@
 // --------------------------------------------------------------------------
 // Arma el texto final para WhatsApp y el CSV de reclamos.
 // Combina métricas calculadas en sentimentAggregate.js con los textos
-// cualitativos que devolvió Claude vía tool use.
+// cualitativos que devolvió Claude (structured output).
 // ==========================================================================
 
 const {
@@ -12,6 +12,7 @@ const {
   formatCountWithDots,
   formatViewsShort,
 } = require('./sentimentAggregate');
+const { PARTIAL_SAMPLE_DISCLOSURE } = require('./commentSample');
 
 // Encabezado fijo exigido por la metodología (descarga en el front).
 const CSV_HEADER =
@@ -84,7 +85,7 @@ function buildWhatsAppReport({
 
   let posteoSobre = qualitative.posteoSobre || 'N/D';
   if (isPartial) {
-    posteoSobre += ' Análisis realizado sobre muestra parcial provista.';
+    posteoSobre += ` ${PARTIAL_SAMPLE_DISCLOSURE}`;
   }
 
   const apoyo = formatReferenceLines(qualitative.insightApoyo);

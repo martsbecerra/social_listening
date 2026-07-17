@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="es">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -15,7 +16,11 @@
       --border: #334155;
       --error: #f87171;
     }
-    * { box-sizing: border-box; }
+
+    * {
+      box-sizing: border-box;
+    }
+
     body {
       margin: 0;
       font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
@@ -28,9 +33,24 @@
       align-items: center;
       padding: 40px 16px;
     }
-    .container { width: 100%; max-width: 720px; }
-    h1 { font-size: 1.5rem; margin-bottom: 4px; text-align: center; }
-    p.sub { color: var(--muted); margin-top: 0; text-align: center; }
+
+    .container {
+      width: 100%;
+      max-width: 720px;
+    }
+
+    h1 {
+      font-size: 1.5rem;
+      margin-bottom: 4px;
+      text-align: center;
+    }
+
+    p.sub {
+      color: var(--muted);
+      margin-top: 0;
+      text-align: center;
+    }
+
     .card {
       background: var(--card);
       border: 1px solid var(--border);
@@ -38,7 +58,13 @@
       padding: 20px;
       margin-top: 16px;
     }
-    label { display: block; font-weight: 600; margin-bottom: 8px; }
+
+    label {
+      display: block;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
     input[type="text"] {
       width: 100%;
       padding: 12px 14px;
@@ -48,7 +74,11 @@
       color: var(--text);
       font-size: 1rem;
     }
-    input[type="text"]:focus { outline: 2px solid var(--accent); }
+
+    input[type="text"]:focus {
+      outline: 2px solid var(--accent);
+    }
+
     button {
       margin-top: 12px;
       width: 100%;
@@ -62,20 +92,30 @@
       cursor: pointer;
       transition: background 0.15s ease;
     }
-    button:hover:not(:disabled) { background: var(--accent-hover); }
-    button:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    button:hover:not(:disabled) {
+      background: var(--accent-hover);
+    }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
 
     /* --- Estado de carga (spinner + texto + barra de progreso) --- */
     .status {
       margin-top: 16px;
       color: var(--muted);
     }
+
     .status-text {
       transition: opacity 0.25s ease;
     }
+
     .spinner {
       display: inline-block;
-      width: 16px; height: 16px;
+      width: 16px;
+      height: 16px;
       border: 2px solid var(--muted);
       border-top-color: var(--accent);
       border-radius: 50%;
@@ -83,7 +123,12 @@
       vertical-align: middle;
       margin-right: 8px;
     }
-    @keyframes spin { to { transform: rotate(360deg); } }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
 
     .progress-track {
       margin-top: 10px;
@@ -94,6 +139,7 @@
       border-radius: 999px;
       overflow: hidden;
     }
+
     .progress-fill {
       position: relative;
       height: 100%;
@@ -103,6 +149,7 @@
       transition: width 0.35s ease;
       overflow: hidden;
     }
+
     /* Brillo animado que recorre la barra, para que se vea "viva" */
     .progress-fill::after {
       content: '';
@@ -111,9 +158,15 @@
       background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
       animation: shimmer 1.3s infinite;
     }
+
     @keyframes shimmer {
-      from { transform: translateX(-100%); }
-      to { transform: translateX(100%); }
+      from {
+        transform: translateX(-100%);
+      }
+
+      to {
+        transform: translateX(100%);
+      }
     }
 
     .error {
@@ -124,6 +177,7 @@
       border-radius: 8px;
       padding: 12px 14px;
     }
+
     .result-header {
       display: flex;
       flex-wrap: wrap;
@@ -132,26 +186,45 @@
       margin-bottom: 12px;
       gap: 8px;
     }
-    .result-header span { color: var(--muted); font-size: 0.85rem; }
-    .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+    .result-header span {
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
     .btn-small {
       width: auto;
       margin: 0;
       padding: 6px 12px;
       font-size: 0.85rem;
     }
-    .btn-copy { background: #334155; }
-    .btn-copy:hover:not(:disabled) { background: #475569; }
+
+    .btn-copy {
+      background: #334155;
+    }
+
+    .btn-copy:hover:not(:disabled) {
+      background: #475569;
+    }
+
     .btn-clear {
       background: transparent;
       border: 1px solid var(--border);
       color: var(--muted);
     }
+
     .btn-clear:hover:not(:disabled) {
       border-color: var(--error);
       color: var(--error);
       background: rgba(248, 113, 113, 0.08);
     }
+
     pre.report {
       white-space: pre-wrap;
       word-wrap: break-word;
@@ -160,9 +233,13 @@
       line-height: 1.5;
       margin: 0;
     }
-    .hidden { display: none; }
+
+    .hidden {
+      display: none;
+    }
   </style>
 </head>
+
 <body>
   <div class="container">
     <h1>🔍 Análisis de sentimiento en Instagram</h1>
@@ -170,12 +247,7 @@
 
     <div class="card">
       <label for="url">Link de la publicación</label>
-      <input
-        type="text"
-        id="url"
-        placeholder="https://www.instagram.com/p/XXXXXXXX/"
-        autocomplete="off"
-      />
+      <input type="text" id="url" placeholder="https://www.instagram.com/p/XXXXXXXX/" autocomplete="off" />
       <button id="analyzeBtn">Analizar publicación</button>
 
       <!-- Mensaje de estado / carga -->
@@ -323,7 +395,10 @@
 
         // Mostramos el reporte.
         reportEl.textContent = data.report;
-        metaEl.textContent = `${data.meta.comentariosAnalizados} comentarios analizados`;
+        const m = data.meta || {};
+        metaEl.textContent = m.muestraParcial
+          ? `${m.comentariosAnalizados} comentarios analizados (muestra priorizada de ${m.comentariosUnicos} únicos)`
+          : `${m.comentariosAnalizados ?? m.comentariosExtraidos} comentarios analizados`;
         currentCsv = data.csv || '';
         show(resultCard);
       } catch (err) {
@@ -386,4 +461,5 @@
     csvBtn.addEventListener('click', downloadCsv);
   </script>
 </body>
+
 </html>

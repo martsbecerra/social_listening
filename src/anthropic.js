@@ -2,7 +2,7 @@
 // anthropic.js
 // --------------------------------------------------------------------------
 // Orquesta la llamada a Claude:
-//   1) Muestra ordenada de comentarios (commentSample.js)
+//   1) Muestra estable: dedupe + orden por verificado/likes/fecha (commentSample.js)
 //   2) Structured Outputs: JSON validado por la API (analysisSchema.js)
 //   3) Normalización + heurísticas (validateAnalysis.js, classificationHeuristics.js)
 //   4) Reporte y CSV en reportBuilder.js + sentimentAggregate.js
@@ -25,7 +25,7 @@ const STRUCTURED_OUTPUT_MAX_ATTEMPTS = 2;
  * Punto de entrada usado por server.js.
  *
  * @param {{url: string, post: object, comments: Array}} params
- * @returns {Promise<{report: string, csv: string}>}
+ * @returns {Promise<{report: string, csv: string, meta: object}>}
  */
 async function analyzeComments({ url, post, comments }) {
   const model = process.env.CLAUDE_MODEL || 'claude-sonnet-5';
@@ -125,7 +125,7 @@ function buildUserPrompt({ url, post, sample, total, isPartial }) {
   const fmt = (n) => (n === null || n === undefined ? 'N/D' : n);
 
   const notaMuestra = isPartial
-    ? `\nNOTA: Solo se listan ${sample.length} comentarios (de ${total} extraídos). Clasificá únicamente los numerados abajo.\n`
+    ? `\nNOTA: Solo se listan ${sample.length} comentarios (de ${total} únicos tras deduplicar). La muestra prioriza cuentas verificadas y comentarios con más likes. Clasificá únicamente los numerados abajo.\n`
     : '';
 
   return `Clasificá cada comentario siguiendo las REGLAS DE DESEMPATE del system prompt. Completá los campos del JSON de salida (posteoSobre, classifications, insights y textos 7–8). Respondé únicamente con JSON que cumpla el schema; no escribas el reporte de WhatsApp en texto libre.

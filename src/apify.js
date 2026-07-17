@@ -160,6 +160,7 @@ function normalizePost(postItems, commentItems, postUrl) {
 
 /**
  * Deja cada comentario en un formato limpio con solo los campos que necesitamos.
+ * El orden del array no se garantiza; commentSample.js lo normaliza antes del análisis.
  */
 function normalizeComments(commentItems) {
   if (!Array.isArray(commentItems)) return [];
@@ -168,6 +169,8 @@ function normalizeComments(commentItems) {
     // Nos quedamos solo con items que realmente tengan texto de comentario.
     .filter((c) => c && typeof c.text === 'string' && c.text.trim().length > 0)
     .map((c) => ({
+      // id opcional de Apify: desempate estable en commentSample.js si hay empates.
+      apifyId: c.id ?? c.commentId ?? c.pk ?? null,
       username: c.ownerUsername || (c.owner && c.owner.username) || 'desconocido',
       isVerified: Boolean(
         c.ownerIsVerified ?? (c.owner && c.owner.is_verified) ?? false

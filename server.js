@@ -80,13 +80,19 @@ app.post('/api/analyze', async (req, res) => {
     }
 
     // 4) Analizamos con Claude (devuelve el reporte de texto y el CSV de reclamos).
-    const { report, csv } = await analyzeComments({ url, post, comments });
+    const { report, csv, meta: analysisMeta } = await analyzeComments({ url, post, comments });
 
     // 5) Devolvemos el reporte y el CSV al navegador.
     return res.json({
       report,
       csv,
-      meta: { comentariosAnalizados: comments.length },
+      meta: {
+        // Extraídos por Apify vs enviados a Claude (muestra estable en commentSample.js).
+        comentariosExtraidos: comments.length,
+        comentariosAnalizados: analysisMeta?.sampleSize ?? comments.length,
+        comentariosUnicos: analysisMeta?.totalComments ?? comments.length,
+        muestraParcial: Boolean(analysisMeta?.sampleSize < analysisMeta?.totalComments),
+      },
     });
   } catch (err) {
     console.error('Error en /api/analyze:', err);
