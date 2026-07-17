@@ -4,6 +4,9 @@ node_modules/
 # Variables de entorno con secretos (¡nunca subir!)
 .env
 
+# Registro aprendido de tipos de cuenta por @usuario (ver data/account-types.example.json)
+data/account-types.json
+
 # Logs
 *.log
 npm-debug.log*

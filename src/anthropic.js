@@ -2,10 +2,11 @@
 // anthropic.js
 // --------------------------------------------------------------------------
 // Orquesta la llamada a Claude:
-//   1) Muestra estable: dedupe + orden por verificado/likes/fecha (commentSample.js)
-//   2) Structured Outputs: JSON validado por la API (analysisSchema.js)
-//   3) Normalización + heurísticas (validateAnalysis.js, classificationHeuristics.js)
-//   4) Reporte y CSV en reportBuilder.js + sentimentAggregate.js
+//   1) Muestra estable (commentSample.js)
+//   2) Todos los comentarios al LLM; accountType fijo si hay registro (opción B)
+//   3) Structured Outputs (analysisSchema.js)
+//   4) Normalización + heurísticas + override de accountType (accountRegistry.js)
+//   5) Reporte (reportBuilder.js + sentimentAggregate.js)
 // ==========================================================================
 
 const Anthropic = require('@anthropic-ai/sdk');
@@ -15,22 +16,37 @@ const { ANALYSIS_JSON_SCHEMA } = require('./analysisSchema');
 const { prepareCommentSample } = require('./commentSample');
 const { validateAndNormalizeAnalysis } = require('./validateAnalysis');
 const { buildWhatsAppReport } = require('./reportBuilder');
+const {
+  loadAccountRegistry,
+  saveAccountRegistry,
+  countRegisteredInSample,
+  formatKnownAccountTypesPromptBlock,
+  applyRegistryAccountTypes,
+  recordAccountTypesFromRun,
+} = require('./accountRegistry');
 
 const client = new Anthropic();
 
-// Si el parse falla (JSON roto), reintentamos una vez antes de fallar al usuario.
 const STRUCTURED_OUTPUT_MAX_ATTEMPTS = 2;
 
 /**
- * Punto de entrada usado por server.js.
- *
  * @param {{url: string, post: object, comments: Array}} params
  * @returns {Promise<{report: string, csv: string, meta: object}>}
  */
 async function analyzeComments({ url, post, comments }) {
   const model = process.env.CLAUDE_MODEL || 'claude-sonnet-5';
+  const registry = await loadAccountRegistry();
   const { sample, total, isPartial } = prepareCommentSample(comments);
-  const userPrompt = buildUserPrompt({ url, post, sample, total, isPartial });
+  const registeredCount = countRegisteredInSample(sample, registry);
+
+  const userPrompt = buildUserPrompt({
+    url,
+    post,
+    sample,
+    total,
+    isPartial,
+    registry,
+  });
 
   let parsed;
   try {
@@ -40,13 +56,22 @@ async function analyzeComments({ url, post, comments }) {
     throw mapAnthropicError(err);
   }
 
-  const { qualitative, classifications } = validateAndNormalizeAnalysis(
+  let { qualitative, classifications } = validateAndNormalizeAnalysis(
     parsed,
     sample.length,
     sample
   );
 
-  return buildWhatsAppReport({
+  classifications = applyRegistryAccountTypes(sample, classifications, registry);
+
+  const registryStats = recordAccountTypesFromRun(sample, classifications, registry);
+  try {
+    await saveAccountRegistry(registry);
+  } catch (err) {
+    console.warn('No se pudo guardar account-types.json:', err.message);
+  }
+
+  const reportResult = buildWhatsAppReport({
     url,
     post,
     sample,
@@ -56,11 +81,20 @@ async function analyzeComments({ url, post, comments }) {
     classifications,
     qualitative,
   });
+
+  return {
+    ...reportResult,
+    meta: {
+      ...reportResult.meta,
+      accountRegistry: {
+        ...registryStats,
+        comentariosConTipoRegistrado: registeredCount,
+        comentariosTipoInferidoPorLLM: sample.length - registeredCount,
+      },
+    },
+  };
 }
 
-/**
- * messages.parse + output_config.format: la respuesta cae en parsed_output.
- */
 async function requestStructuredAnalysis({ model, userPrompt }) {
   const requestParams = {
     model,
@@ -76,7 +110,6 @@ async function requestStructuredAnalysis({ model, userPrompt }) {
   for (let attempt = 1; attempt <= STRUCTURED_OUTPUT_MAX_ATTEMPTS; attempt++) {
     try {
       const message = await client.messages.parse(requestParams);
-      // parsed_output lo rellena el SDK al parsear el bloque de texto JSON.
       if (message.parsed_output != null) {
         return message.parsed_output;
       }
@@ -93,7 +126,6 @@ async function requestStructuredAnalysis({ model, userPrompt }) {
   throw e;
 }
 
-/** Mensajes amigables para el front (server.js lee err.userMessage). */
 function mapAnthropicError(err) {
   console.error('Error llamando a Claude:', err);
   const e = new Error(`Claude falló: ${err.message}`);
@@ -111,8 +143,8 @@ function mapAnthropicError(err) {
   return e;
 }
 
-/** Datos del post + lista numerada de comentarios (debe coincidir con index del JSON). */
-function buildUserPrompt({ url, post, sample, total, isPartial }) {
+/** Todos los comentarios de la muestra van al LLM (índices 1..n). */
+function buildUserPrompt({ url, post, sample, total, isPartial, registry }) {
   const commentsText = sample
     .map((c, i) => {
       const verified = c.isVerified ? ' [VERIFICADA]' : '';
@@ -125,10 +157,12 @@ function buildUserPrompt({ url, post, sample, total, isPartial }) {
   const fmt = (n) => (n === null || n === undefined ? 'N/D' : n);
 
   const notaMuestra = isPartial
-    ? `\nNOTA: Solo se listan ${sample.length} comentarios (de ${total} únicos tras deduplicar). La muestra prioriza cuentas verificadas y comentarios con más likes. Clasificá únicamente los numerados abajo.\n`
+    ? `\nNOTA: Solo se listan ${sample.length} comentarios (de ${total} únicos tras deduplicar). La muestra prioriza cuentas verificadas y comentarios con más likes.\n`
     : '';
 
-  return `Clasificá cada comentario siguiendo las REGLAS DE DESEMPATE del system prompt. Completá los campos del JSON de salida (posteoSobre, classifications, insights y textos 7–8). Respondé únicamente con JSON que cumpla el schema; no escribas el reporte de WhatsApp en texto libre.
+  const knownBlock = formatKnownAccountTypesPromptBlock(sample, registry);
+
+  return `Clasificá cada comentario siguiendo las REGLAS DE DESEMPATE del system prompt. Completá posteoSobre, classifications (un ítem por cada comentario numerado), insights y textos 7–8. Respondé únicamente con JSON según el schema.
 
 === DATOS DEL POSTEO ===
 Autor (nombre): ${fmt(post.ownerFullName)}
@@ -138,7 +172,7 @@ Likes del posteo: ${fmt(post.likesCount)}
 Cantidad de comentarios (total del posteo): ${fmt(post.commentsCount)}
 Reproducciones de video (si aplica): ${fmt(post.videoPlayCount)}
 Texto / caption del posteo: ${post.caption ? post.caption : 'N/D'}
-${notaMuestra}
+${notaMuestra}${knownBlock}
 === COMENTARIOS (${sample.length}) ===
 ${commentsText}
 

@@ -63,4 +63,9 @@ function applyClassificationHeuristics(sample, classifications) {
   });
 }
 
-module.exports = { applyClassificationHeuristics, isEmojiOrSymbolOnly, isMentionsOnly };
+module.exports = {
+  applyClassificationHeuristics,
+  isEmojiOrSymbolOnly,
+  isMentionsOnly,
+  looksLikeSpamOrSorteo,
+};

@@ -34,6 +34,8 @@ METODOLOGÍA DE CLASIFICACIÓN
 - vecino: audiencia orgánica, usuario general sin rol público claro.
 - ruido: bot/spam (coherente con sentiment ruido).
 Si no podés inferir el rol público con confianza razonable, usá vecino.
+Si el mensaje del usuario incluye "CUENTAS CON TIPO REGISTRADO", usá exactamente el accountType indicado para esos ítems, pero igual analizá sentiment y reclamosGeo leyendo el texto del comentario.
+Debés devolver classifications para todos los comentarios numerados (mismo index 1-based).
 
 3. Reclamos geolocalizables (reclamosGeo)
 Solo si el comentario menciona ubicación concreta o aproximada (calle, esquina, barrio, etc.).
