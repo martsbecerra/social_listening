@@ -4,7 +4,7 @@
 // Orquesta la llamada a Claude:
 //   1) Muestra ordenada de comentarios (commentSample.js)
 //   2) Structured Outputs: JSON validado por la API (analysisSchema.js)
-//   3) Normalización en validateAnalysis.js
+//   3) Normalización + heurísticas (validateAnalysis.js, classificationHeuristics.js)
 //   4) Reporte y CSV en reportBuilder.js + sentimentAggregate.js
 // ==========================================================================
 
@@ -40,7 +40,11 @@ async function analyzeComments({ url, post, comments }) {
     throw mapAnthropicError(err);
   }
 
-  const { qualitative, classifications } = validateAndNormalizeAnalysis(parsed, sample.length);
+  const { qualitative, classifications } = validateAndNormalizeAnalysis(
+    parsed,
+    sample.length,
+    sample
+  );
 
   return buildWhatsAppReport({
     url,
@@ -124,7 +128,7 @@ function buildUserPrompt({ url, post, sample, total, isPartial }) {
     ? `\nNOTA: Solo se listan ${sample.length} comentarios (de ${total} extraídos). Clasificá únicamente los numerados abajo.\n`
     : '';
 
-  return `Clasificá cada comentario y completá los campos del JSON de salida (posteoSobre, classifications, insights y textos 7–8). Respondé únicamente con JSON que cumpla el schema; no escribas el reporte de WhatsApp en texto libre.
+  return `Clasificá cada comentario siguiendo las REGLAS DE DESEMPATE del system prompt. Completá los campos del JSON de salida (posteoSobre, classifications, insights y textos 7–8). Respondé únicamente con JSON que cumpla el schema; no escribas el reporte de WhatsApp en texto libre.
 
 === DATOS DEL POSTEO ===
 Autor (nombre): ${fmt(post.ownerFullName)}

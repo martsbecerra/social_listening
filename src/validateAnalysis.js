@@ -6,10 +6,12 @@
 // filas de CSV incompletas y comentarios que el modelo omitió por index.
 // ==========================================================================
 
-const { SENTIMENTS, ACCOUNT_TYPES } = require('./analysisSchema');
+const { SENTIMENTS, ACCOUNT_TYPES, RECLAMO_TEMATICAS } = require('./analysisSchema');
+const { applyClassificationHeuristics } = require('./classificationHeuristics');
 
 const SENTIMENT_SET = new Set(SENTIMENTS);
 const ACCOUNT_SET = new Set(ACCOUNT_TYPES);
+const TEMATICA_SET = new Set(RECLAMO_TEMATICAS);
 
 /** Si el valor no está en el enum acordado, usamos fallback (no rompe el agregado). */
 function pickEnum(value, allowed, fallback) {
@@ -17,7 +19,7 @@ function pickEnum(value, allowed, fallback) {
   return fallback;
 }
 
-/** Descarta entradas sin dirección detectada; completa campos vacíos con N/D. */
+/** Descarta entradas sin dirección detectada; temática forzada a lista cerrada. */
 function sanitizeReclamosGeo(raw) {
   if (!Array.isArray(raw)) return [];
   const out = [];
@@ -26,13 +28,14 @@ function sanitizeReclamosGeo(raw) {
     const direccionDetectada =
       typeof r.direccionDetectada === 'string' ? r.direccionDetectada.trim() : '';
     if (!direccionDetectada) continue;
+    const tematicaRaw = typeof r.tematica === 'string' ? r.tematica.trim() : '';
     out.push({
       direccionDetectada,
       direccionNormalizada:
         typeof r.direccionNormalizada === 'string' && r.direccionNormalizada.trim()
           ? r.direccionNormalizada.trim()
           : 'N/D',
-      tematica: typeof r.tematica === 'string' && r.tematica.trim() ? r.tematica.trim() : 'N/D',
+      tematica: pickEnum(tematicaRaw, TEMATICA_SET, 'otro'),
     });
   }
   return out;
@@ -80,9 +83,10 @@ function normalizeInsightPair(raw) {
  *
  * @param {unknown} parsed Salida de message.parsed_output
  * @param {number} sampleLength Cantidad de comentarios en la muestra
+ * @param {Array<{ text: string }>} [sample] Comentarios en orden (heurísticas punto 4)
  * @returns {{ qualitative: object, classifications: Array }}
  */
-function validateAndNormalizeAnalysis(parsed, sampleLength) {
+function validateAndNormalizeAnalysis(parsed, sampleLength, sample = []) {
   if (!parsed || typeof parsed !== 'object') {
     const e = new Error('Structured output vacío o inválido.');
     e.userMessage =
@@ -104,7 +108,11 @@ function validateAndNormalizeAnalysis(parsed, sampleLength) {
       typeof p.lecturaEstrategica === 'string' ? p.lecturaEstrategica.trim() : 'N/D',
   };
 
-  const classifications = normalizeClassifications(p.classifications, sampleLength);
+  let classifications = normalizeClassifications(p.classifications, sampleLength);
+  // Heurísticas solo si tenemos el texto original alineado por índice con classifications.
+  if (Array.isArray(sample) && sample.length === classifications.length) {
+    classifications = applyClassificationHeuristics(sample, classifications);
+  }
 
   return { qualitative, classifications };
 }

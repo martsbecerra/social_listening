@@ -2,9 +2,10 @@
 // analysisSchema.js
 // --------------------------------------------------------------------------
 // JSON Schema de la respuesta de Claude (Structured Outputs / output_config).
-// Reemplaza el tool "entregar_analisis": la API valida el JSON y Node lo
-// normaliza de nuevo en validateAnalysis.js por si acaso.
+// Debe estar alineado con prompt.js y validateAnalysis.js.
 // ==========================================================================
+
+const { RECLAMO_TEMATICAS } = require('./classificationConstants');
 
 // Valores permitidos; deben coincidir con validateAnalysis.js y el system prompt.
 const SENTIMENTS = ['positivo', 'negativo', 'neutral', 'ruido'];
@@ -17,7 +18,11 @@ const RECLAMO_GEO_SCHEMA = {
   properties: {
     direccionDetectada: { type: 'string' },
     direccionNormalizada: { type: 'string' },
-    tematica: { type: 'string' },
+    tematica: {
+      type: 'string',
+      enum: RECLAMO_TEMATICAS,
+      description: 'Temática del reclamo; debe ser un valor de la lista cerrada.',
+    },
   },
   required: ['direccionDetectada', 'direccionNormalizada', 'tematica'],
 };
@@ -84,4 +89,5 @@ module.exports = {
   ANALYSIS_JSON_SCHEMA,
   SENTIMENTS,
   ACCOUNT_TYPES,
+  RECLAMO_TEMATICAS,
 };
