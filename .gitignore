@@ -4,6 +4,9 @@ node_modules/
 # Variables de entorno con secretos (¡nunca subir!)
 .env
 
+# Base de datos del monitoreo automático (datos reales, no se versiona)
+data/
+
 # Logs
 *.log
 npm-debug.log*

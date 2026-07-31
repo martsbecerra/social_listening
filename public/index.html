@@ -3,387 +3,174 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Análisis de sentimiento — Instagram</title>
-  <style>
-    :root {
-      --bg: #0f172a;
-      --card: #1e293b;
-      --accent: #6366f1;
-      --accent-hover: #4f46e5;
-      --text: #e2e8f0;
-      --muted: #94a3b8;
-      --border: #334155;
-      --error: #f87171;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      min-height: 100vh;
-      /* Centra el contenido horizontal y verticalmente en la pantalla. */
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      padding: 40px 16px;
-    }
-    .container { width: 100%; max-width: 720px; }
-    h1 { font-size: 1.5rem; margin-bottom: 4px; text-align: center; }
-    p.sub { color: var(--muted); margin-top: 0; text-align: center; }
-    .card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 20px;
-      margin-top: 16px;
-    }
-    label { display: block; font-weight: 600; margin-bottom: 8px; }
-    input[type="text"] {
-      width: 100%;
-      padding: 12px 14px;
-      border-radius: 8px;
-      border: 1px solid var(--border);
-      background: #0b1220;
-      color: var(--text);
-      font-size: 1rem;
-    }
-    input[type="text"]:focus { outline: 2px solid var(--accent); }
-    button {
-      margin-top: 12px;
-      width: 100%;
-      padding: 12px 16px;
-      border: none;
-      border-radius: 8px;
-      background: var(--accent);
-      color: white;
-      font-size: 1rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: background 0.15s ease;
-    }
-    button:hover:not(:disabled) { background: var(--accent-hover); }
-    button:disabled { opacity: 0.6; cursor: not-allowed; }
-
-    /* --- Estado de carga (spinner + texto + barra de progreso) --- */
-    .status {
-      margin-top: 16px;
-      color: var(--muted);
-    }
-    .status-text {
-      transition: opacity 0.25s ease;
-    }
-    .spinner {
-      display: inline-block;
-      width: 16px; height: 16px;
-      border: 2px solid var(--muted);
-      border-top-color: var(--accent);
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-      vertical-align: middle;
-      margin-right: 8px;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
-
-    .progress-track {
-      margin-top: 10px;
-      width: 100%;
-      height: 8px;
-      background: #0b1220;
-      border: 1px solid var(--border);
-      border-radius: 999px;
-      overflow: hidden;
-    }
-    .progress-fill {
-      position: relative;
-      height: 100%;
-      width: 0%;
-      background: linear-gradient(90deg, var(--accent), #a78bfa);
-      border-radius: 999px;
-      transition: width 0.35s ease;
-      overflow: hidden;
-    }
-    /* Brillo animado que recorre la barra, para que se vea "viva" */
-    .progress-fill::after {
-      content: '';
-      position: absolute;
-      inset: 0;
-      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
-      animation: shimmer 1.3s infinite;
-    }
-    @keyframes shimmer {
-      from { transform: translateX(-100%); }
-      to { transform: translateX(100%); }
-    }
-
-    .error {
-      margin-top: 16px;
-      color: var(--error);
-      background: rgba(248, 113, 113, 0.1);
-      border: 1px solid var(--error);
-      border-radius: 8px;
-      padding: 12px 14px;
-    }
-    .result-header {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 12px;
-      gap: 8px;
-    }
-    .result-header span { color: var(--muted); font-size: 0.85rem; }
-    .actions { display: flex; flex-wrap: wrap; gap: 8px; }
-    .btn-small {
-      width: auto;
-      margin: 0;
-      padding: 6px 12px;
-      font-size: 0.85rem;
-    }
-    .btn-copy { background: #334155; }
-    .btn-copy:hover:not(:disabled) { background: #475569; }
-    .btn-clear {
-      background: transparent;
-      border: 1px solid var(--border);
-      color: var(--muted);
-    }
-    .btn-clear:hover:not(:disabled) {
-      border-color: var(--error);
-      color: var(--error);
-      background: rgba(248, 113, 113, 0.08);
-    }
-    pre.report {
-      white-space: pre-wrap;
-      word-wrap: break-word;
-      font-family: system-ui, sans-serif;
-      font-size: 0.95rem;
-      line-height: 1.5;
-      margin: 0;
-    }
-    .hidden { display: none; }
-  </style>
+  <title>Social Listening App</title>
+  <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body>
-  <div class="container">
-    <h1>🔍 Análisis de sentimiento en Instagram</h1>
-    <p class="sub">Pegá el link de una publicación y obtené un reporte ejecutivo listo para WhatsApp.</p>
-
-    <div class="card">
-      <label for="url">Link de la publicación</label>
-      <input
-        type="text"
-        id="url"
-        placeholder="https://www.instagram.com/p/XXXXXXXX/"
-        autocomplete="off"
-      />
-      <button id="analyzeBtn">Analizar publicación</button>
-
-      <!-- Mensaje de estado / carga -->
-      <div id="status" class="status hidden">
-        <div>
-          <span class="spinner"></span>
-          <span id="statusText" class="status-text">Extrayendo comentarios de Instagram…</span>
-        </div>
-        <div class="progress-track">
-          <div id="progressFill" class="progress-fill"></div>
-        </div>
-      </div>
-
-      <!-- Mensaje de error -->
-      <div id="error" class="error hidden"></div>
+  <header class="topbar">
+    <div class="topbar-brand">
+      <img src="logo.png" alt="Social Listening App" />
     </div>
+  </header>
 
-    <!-- Resultado -->
-    <div id="resultCard" class="card hidden">
-      <div class="result-header">
-        <span id="meta"></span>
-        <div class="actions">
-          <button id="clearBtn" class="btn-small btn-clear">Limpiar</button>
-          <button id="csvBtn" class="btn-small btn-copy">Descargar CSV</button>
-          <button id="copyBtn" class="btn-small btn-copy">Copiar</button>
+  <nav class="tabs">
+    <div class="tabs-group">
+      <button class="tab-btn active" data-tab="analysis">Análisis de publicación</button>
+      <button class="tab-btn" data-tab="monitoring">Monitoreo en vivo</button>
+    </div>
+    <!-- Solo visual: sin lógica de autenticación todavía. -->
+    <div class="topbar-user">
+      <button class="user-btn" data-dropdown="userDropdown">👤 ▾</button>
+      <div id="userDropdown" class="user-dropdown hidden">
+        <span>Nombre de usuario</span>
+        <button disabled>Cerrar sesión</button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ===================== Solapa: Análisis de publicación ===================== -->
+  <section id="tab-analysis" class="tab-panel">
+    <div class="container">
+      <h1>🔍 Análisis de sentimiento en Instagram</h1>
+      <p class="sub">Pegá el link de una publicación y obtené un reporte ejecutivo listo para WhatsApp.</p>
+
+      <div class="card">
+        <label for="url">Link de la publicación</label>
+        <input
+          type="text"
+          id="url"
+          placeholder="https://www.instagram.com/p/XXXXXXXX/"
+          autocomplete="off"
+        />
+        <button id="analyzeBtn">Analizar publicación</button>
+
+        <!-- Mensaje de estado / carga -->
+        <div id="status" class="status hidden">
+          <div>
+            <span class="spinner"></span>
+            <span id="statusText" class="status-text">Extrayendo comentarios de Instagram…</span>
+          </div>
+          <div class="progress-track">
+            <div id="progressFill" class="progress-fill"></div>
+          </div>
+        </div>
+
+        <!-- Mensaje de error -->
+        <div id="error" class="error hidden"></div>
+      </div>
+
+      <!-- Resultado -->
+      <div id="resultCard" class="card hidden">
+        <div class="result-header">
+          <span id="meta"></span>
+          <div class="actions">
+            <button id="clearBtn" class="btn-small btn-clear">Limpiar</button>
+            <button id="csvBtn" class="btn-small btn-copy">Descargar CSV</button>
+            <button id="copyBtn" class="btn-small btn-copy">Copiar</button>
+          </div>
+        </div>
+        <pre id="report" class="report"></pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== Solapa: Monitoreo en vivo ===================== -->
+  <section id="tab-monitoring" class="tab-panel hidden">
+    <div class="container-wide">
+      <h1>📡 Monitoreo en vivo</h1>
+      <p class="sub">Detección automática de menciones cada 4 horas, con alerta por email.</p>
+
+      <div class="card config-lists">
+        <div>
+          <label for="newAccount">Cuentas trackeadas</label>
+          <div class="config-add-row">
+            <input type="text" id="newAccount" placeholder="usuario (sin @)" autocomplete="off" />
+            <button id="addAccountBtn">Agregar</button>
+          </div>
+          <p id="accountError" class="error hidden" style="margin-top:8px;"></p>
+          <ul id="accountList" class="tag-list"></ul>
+        </div>
+        <div>
+          <label for="newKeyword">Palabras clave / hashtags</label>
+          <div class="config-add-row">
+            <input type="text" id="newKeyword" placeholder="Jorge Macri o #JorgeMacri" autocomplete="off" />
+            <button id="addKeywordBtn">Agregar</button>
+          </div>
+          <p id="keywordError" class="error hidden" style="margin-top:8px;"></p>
+          <ul id="keywordListPreview" class="tag-list">
+            <button id="viewAllKeywordsBtn" class="btn-small btn-copy view-all-btn hidden"></button>
+          </ul>
         </div>
       </div>
-      <pre id="report" class="report"></pre>
+
+      <div class="card monitoring-toolbar">
+        <button id="runNowBtn">Actualizar ahora</button>
+      </div>
+
+      <div id="monitoringStatusCard" class="card hidden">
+        <div class="status">
+          <div>
+            <span class="spinner"></span>
+            <span id="monitoringStatusText" class="status-text">Buscando posteos nuevos…</span>
+          </div>
+          <div class="progress-track">
+            <div id="monitoringProgressFill" class="progress-fill"></div>
+          </div>
+        </div>
+      </div>
+
+      <p id="monitoringResult" class="muted hidden" style="text-align:center;"></p>
+
+      <div class="card">
+        <table class="monitoring-table">
+          <thead>
+            <tr>
+              <th>Cuenta</th>
+              <th>Título</th>
+              <th>Sentimiento</th>
+              <th>Detectado</th>
+              <th>Link</th>
+              <th>Notificado</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="monitoringRows">
+            <tr><td colspan="7" class="muted">Cargando…</td></tr>
+          </tbody>
+        </table>
+        <div class="pagination">
+          <button id="prevPageBtn" class="btn-small btn-copy">← Anteriores</button>
+          <span id="pageInfo" class="muted"></span>
+          <button id="nextPageBtn" class="btn-small btn-copy">Siguientes →</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Popup de confirmación para borrar un registro de la tabla -->
+  <div id="deleteModal" class="modal-overlay hidden">
+    <div class="modal-box">
+      <p>¿Seguro que querés borrar este registro?</p>
+      <div class="modal-actions">
+        <button id="deleteCancelBtn" class="btn-clear">Cancelar</button>
+        <button id="deleteConfirmBtn">Sí, borrar</button>
+      </div>
     </div>
   </div>
 
-  <script>
-    const urlInput = document.getElementById('url');
-    const analyzeBtn = document.getElementById('analyzeBtn');
-    const statusEl = document.getElementById('status');
-    const statusTextEl = document.getElementById('statusText');
-    const progressFillEl = document.getElementById('progressFill');
-    const errorEl = document.getElementById('error');
-    const resultCard = document.getElementById('resultCard');
-    const reportEl = document.getElementById('report');
-    const metaEl = document.getElementById('meta');
-    const copyBtn = document.getElementById('copyBtn');
-    const clearBtn = document.getElementById('clearBtn');
-    const csvBtn = document.getElementById('csvBtn');
+  <!-- Popup con el listado completo de palabras clave / hashtags -->
+  <div id="keywordsModal" class="modal-overlay hidden">
+    <div class="modal-box modal-box-wide">
+      <div class="modal-header">
+        <p>Palabras clave / hashtags</p>
+        <button id="keywordsModalCloseBtn" class="btn-small btn-clear">Cerrar</button>
+      </div>
+      <ul id="keywordListFull" class="tag-list"></ul>
+    </div>
+  </div>
 
-    // Guarda el CSV de reclamos de la última respuesta, para poder
-    // descargarlo cuando el usuario haga clic en "Descargar CSV".
-    let currentCsv = '';
-
-    function show(el) { el.classList.remove('hidden'); }
-    function hide(el) { el.classList.add('hidden'); }
-
-    // --------------------------------------------------------------------
-    // Barra de progreso "simulada": el backend no nos avisa en tiempo real
-    // cómo va el proceso (es una sola llamada que responde al final), así
-    // que animamos una barra que avanza rápido al principio y se va
-    // frenando a medida que se acerca al 92% — nunca llega sola al 100%,
-    // eso lo hacemos recién cuando la respuesta realmente vuelve. Así el
-    // usuario siempre ve movimiento mientras espera.
-    // --------------------------------------------------------------------
-    const LOADING_MESSAGES = [
-      'Extrayendo comentarios de Instagram…',
-      'Recopilando datos del posteo…',
-      'Analizando el sentimiento con IA…',
-      'Clasificando comentarios positivos y negativos…',
-      'Armando el reporte ejecutivo…',
-    ];
-
-    let progressTimer = null;
-    let messageTimer = null;
-
-    function startLoading() {
-      let pct = 0;
-      progressFillEl.style.width = '0%';
-
-      progressTimer = setInterval(() => {
-        const restante = 92 - pct;
-        pct += Math.max(0.3, restante * 0.04);
-        if (pct > 92) pct = 92;
-        progressFillEl.style.width = pct + '%';
-      }, 200);
-
-      let msgIndex = 0;
-      statusTextEl.textContent = LOADING_MESSAGES[0];
-      messageTimer = setInterval(() => {
-        msgIndex = (msgIndex + 1) % LOADING_MESSAGES.length;
-        statusTextEl.style.opacity = 0;
-        setTimeout(() => {
-          statusTextEl.textContent = LOADING_MESSAGES[msgIndex];
-          statusTextEl.style.opacity = 1;
-        }, 250);
-      }, 3500);
-
-      show(statusEl);
-    }
-
-    function stopLoading(exito) {
-      clearInterval(progressTimer);
-      clearInterval(messageTimer);
-
-      if (exito) {
-        // Completamos la barra al 100% como remate visual antes de ocultarla.
-        progressFillEl.style.width = '100%';
-        setTimeout(() => {
-          hide(statusEl);
-          progressFillEl.style.width = '0%';
-        }, 350);
-      } else {
-        hide(statusEl);
-        progressFillEl.style.width = '0%';
-      }
-    }
-
-    async function analyze() {
-      const url = urlInput.value.trim();
-
-      // Reiniciamos la interfaz.
-      hide(errorEl);
-      hide(resultCard);
-
-      if (!url) {
-        errorEl.textContent = 'Pegá primero el link de la publicación.';
-        show(errorEl);
-        return;
-      }
-
-      analyzeBtn.disabled = true;
-      startLoading();
-
-      try {
-        const resp = await fetch('/api/analyze', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url }),
-        });
-
-        const data = await resp.json();
-
-        if (!resp.ok) {
-          // El backend nos manda un mensaje de error claro en data.error.
-          throw new Error(data.error || 'Ocurrió un error inesperado.');
-        }
-
-        stopLoading(true);
-
-        // Mostramos el reporte.
-        reportEl.textContent = data.report;
-        metaEl.textContent = `${data.meta.comentariosAnalizados} comentarios analizados`;
-        currentCsv = data.csv || '';
-        show(resultCard);
-      } catch (err) {
-        stopLoading(false);
-        errorEl.textContent = err.message;
-        show(errorEl);
-      } finally {
-        analyzeBtn.disabled = false;
-      }
-    }
-
-    // Copiar el reporte al portapapeles (útil para pegar en WhatsApp).
-    async function copyReport() {
-      try {
-        await navigator.clipboard.writeText(reportEl.textContent);
-        copyBtn.textContent = '¡Copiado!';
-        setTimeout(() => { copyBtn.textContent = 'Copiar'; }, 1500);
-      } catch {
-        copyBtn.textContent = 'No se pudo copiar';
-      }
-    }
-
-    // Descarga el CSV de reclamos (dirección + temática) como archivo .csv.
-    function downloadCsv() {
-      if (!currentCsv) return;
-
-      // El "﻿" (BOM) al principio hace que Excel en Windows abra los
-      // acentos y la "ñ" correctamente en vez de mostrar caracteres raros.
-      const blob = new Blob(['﻿' + currentCsv], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-
-      const fecha = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `reclamos-vecinos-${fecha}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    }
-
-    // Limpia todo y deja la app lista para un nuevo análisis.
-    function clearAll() {
-      urlInput.value = '';
-      hide(resultCard);
-      hide(errorEl);
-      reportEl.textContent = '';
-      metaEl.textContent = '';
-      currentCsv = '';
-      urlInput.focus();
-    }
-
-    analyzeBtn.addEventListener('click', analyze);
-    // Permite enviar con Enter desde el input.
-    urlInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') analyze();
-    });
-    copyBtn.addEventListener('click', copyReport);
-    clearBtn.addEventListener('click', clearAll);
-    csvBtn.addEventListener('click', downloadCsv);
-  </script>
+  <script src="js/main.js"></script>
+  <script src="js/analysis.js"></script>
+  <script src="js/monitoring.js"></script>
 </body>
 </html>
