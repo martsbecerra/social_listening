@@ -120,6 +120,17 @@ app.delete('/api/monitoring/posts/:id', (req, res) => {
   res.json({ ok: true });
 });
 
+// Corrige a mano el sentimiento de un registro (por si Haiku se equivocó).
+const VALID_SENTIMENTS = ['positivo', 'neutral', 'negativo'];
+app.patch('/api/monitoring/posts/:id', (req, res) => {
+  const { sentiment } = req.body || {};
+  if (!VALID_SENTIMENTS.includes(sentiment)) {
+    return res.status(400).json({ error: 'Sentimiento inválido.' });
+  }
+  db.updateSentiment(req.params.id, sentiment);
+  res.json({ ok: true });
+});
+
 app.post('/api/monitoring/accounts', async (req, res) => {
   try {
     res.json(await monitor.addAccount(req.body && req.body.account));

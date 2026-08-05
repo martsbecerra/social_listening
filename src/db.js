@@ -63,6 +63,7 @@ const listPostsPageStmt = db.prepare('SELECT * FROM detected_posts ORDER BY dete
 const listUnnotifiedStmt = db.prepare('SELECT * FROM detected_posts WHERE notified = 0 ORDER BY detected_at ASC');
 const listUnclassifiedStmt = db.prepare('SELECT id, caption FROM detected_posts WHERE title IS NULL ORDER BY detected_at ASC');
 const updateClassificationStmt = db.prepare('UPDATE detected_posts SET title = ?, sentiment = ? WHERE id = ?');
+const updateSentimentStmt = db.prepare('UPDATE detected_posts SET sentiment = ? WHERE id = ?');
 const deletePostStmt = db.prepare('DELETE FROM detected_posts WHERE id = ?');
 
 function isKnownPost(id) {
@@ -114,6 +115,14 @@ function updateClassification(id, { title, sentiment }) {
 }
 
 /**
+ * Corrección manual del sentimiento de un registro (por si Haiku se
+ * equivocó). No toca el título ni ningún otro campo.
+ */
+function updateSentiment(id, sentiment) {
+  updateSentimentStmt.run(sentiment, id);
+}
+
+/**
  * Borra un registro puntual de la tabla (ej. un posteo que no sirve, o un
  * "posteo" basura guardado por un bug). No hay deshacer.
  */
@@ -148,5 +157,6 @@ module.exports = {
   listUnnotified,
   listUnclassified,
   updateClassification,
+  updateSentiment,
   deletePost,
 };

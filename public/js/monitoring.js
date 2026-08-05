@@ -162,10 +162,19 @@ function openKeywordsModal() { keywordsModal.classList.remove('hidden'); }
 function closeKeywordsModal() { keywordsModal.classList.add('hidden'); }
 
 const SENTIMENT_LABELS = { positivo: 'Positivo', neutral: 'Neutral', negativo: 'Negativo' };
+const SENTIMENT_OPTIONS = ['positivo', 'neutral', 'negativo'];
+
+function sentimentSelectHtml(id, sentiment) {
+  const options = SENTIMENT_OPTIONS.map((value) => {
+    const selected = value === sentiment ? ' selected' : '';
+    return `<option value="${value}"${selected}>${SENTIMENT_LABELS[value]}</option>`;
+  }).join('');
+  return `<select class="sentiment-select sentiment-${sentiment}" data-id="${id}">${options}</select>`;
+}
 
 function renderPostsTable(posts, total) {
   if (!posts || posts.length === 0) {
-    monitoringRowsEl.innerHTML = '<tr><td colspan="7" class="muted">Todavía no se detectó ningún posteo.</td></tr>';
+    monitoringRowsEl.innerHTML = '<tr><td colspan="6" class="muted">Todavía no se detectó ningún posteo.</td></tr>';
   } else {
     monitoringRowsEl.innerHTML = posts.map((p) => {
       const detectado = new Date(p.detected_at).toLocaleString('es-AR');
@@ -173,15 +182,18 @@ function renderPostsTable(posts, total) {
         ? '<span class="badge badge-yes">Sí</span>'
         : '<span class="badge badge-no">No</span>';
       const sentiment = p.sentiment || 'neutral';
-      const sentimentBadge = `<span class="badge badge-${sentiment}">${SENTIMENT_LABELS[sentiment] || 'Neutral'}</span>`;
       const title = p.title || '(sin clasificar)';
+      const accountCell = p.account && p.account !== 'N/D'
+        ? `<a href="https://www.instagram.com/${p.account}/" target="_blank" rel="noopener">@${p.account}</a>`
+        : 'N/D';
       return `
         <tr>
-          <td>@${p.account || 'N/D'}</td>
-          <td class="title-cell" title="${title.replace(/"/g, '&quot;')}">${title}</td>
-          <td>${sentimentBadge}</td>
+          <td>${accountCell}</td>
+          <td class="title-cell" title="${title.replace(/"/g, '&quot;')}">
+            <a href="${p.url}" target="_blank" rel="noopener">${title}</a>
+          </td>
+          <td>${sentimentSelectHtml(p.id, sentiment)}</td>
           <td>${detectado}</td>
-          <td><a href="${p.url}" target="_blank" rel="noopener">Ver posteo</a></td>
           <td>${notifiedBadge}</td>
           <td><button class="delete-row-btn" data-id="${p.id}" title="Borrar">✕</button></td>
         </tr>
@@ -194,9 +206,31 @@ function renderPostsTable(posts, total) {
   prevPageBtn.disabled = currentPage <= 1;
   nextPageBtn.disabled = currentPage >= totalPages;
 
+  monitoringRowsEl.querySelectorAll('.sentiment-select').forEach((select) => {
+    select.addEventListener('change', () => updateSentiment(select.dataset.id, select.value, select));
+  });
+
   monitoringRowsEl.querySelectorAll('.delete-row-btn').forEach((btn) => {
     btn.addEventListener('click', () => openDeleteModal(btn.dataset.id));
   });
+}
+
+async function updateSentiment(id, sentiment, selectEl) {
+  // Cambiamos la clase al toque para que el color de la pastilla se
+  // actualice ya mismo, sin esperar la respuesta del servidor.
+  SENTIMENT_OPTIONS.forEach((value) => selectEl.classList.remove(`sentiment-${value}`));
+  selectEl.classList.add(`sentiment-${sentiment}`);
+
+  try {
+    const resp = await fetch(`/api/monitoring/posts/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sentiment }),
+    });
+    if (!resp.ok) throw new Error('No se pudo guardar el cambio.');
+  } catch (err) {
+    console.error('Error actualizando el sentimiento:', err);
+  }
 }
 
 function openDeleteModal(id) {
@@ -227,7 +261,7 @@ async function loadPosts() {
     const data = await resp.json();
     renderPostsTable(data.posts, data.total);
   } catch (err) {
-    monitoringRowsEl.innerHTML = '<tr><td colspan="7" class="muted">No se pudo cargar la tabla. Reiniciá el servidor (para que tome el código nuevo) y recargá la página.</td></tr>';
+    monitoringRowsEl.innerHTML = '<tr><td colspan="6" class="muted">No se pudo cargar la tabla. Reiniciá el servidor (para que tome el código nuevo) y recargá la página.</td></tr>';
     console.error('Error cargando posteos detectados:', err);
   }
 }
