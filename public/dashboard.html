@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Social Listening App</title>
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <header class="topbar dashboard-topbar">
+    <div class="topbar-brand">
+      <img src="logo.png" alt="Social Listening App" />
+    </div>
+    <!-- Solo visual: sin lógica de autenticación todavía. -->
+    <div class="topbar-user">
+      <button class="user-btn" data-dropdown="userDropdown">👤 ▾</button>
+      <div id="userDropdown" class="user-dropdown hidden">
+        <span>Nombre de usuario</span>
+        <button disabled>Cerrar sesión</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="dashboard-main">
+    <div class="platform-grid">
+      <div class="platform-card is-disabled">
+        <img src="icons/x.svg" alt="X" class="platform-icon" />
+        <span class="platform-name">X</span>
+        <span class="card-tooltip">X</span>
+      </div>
+
+      <a href="instagram.html" class="platform-card">
+        <img src="icons/instagram.svg" alt="Instagram" class="platform-icon" />
+        <span class="platform-name">Instagram</span>
+        <span class="card-tooltip">Instagram</span>
+      </a>
+
+      <div class="platform-card is-disabled">
+        <img src="icons/facebook.svg" alt="Facebook" class="platform-icon" />
+        <span class="platform-name">Facebook</span>
+        <span class="card-tooltip">Facebook</span>
+      </div>
+
+      <div class="platform-card is-disabled">
+        <img src="icons/tiktok.svg" alt="TikTok" class="platform-icon" />
+        <span class="platform-name">TikTok</span>
+        <span class="card-tooltip">TikTok</span>
+      </div>
+    </div>
+  </main>
+
+  <script src="js/main.js"></script>
+</body>
+</html>

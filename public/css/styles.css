@@ -34,7 +34,13 @@ body {
   border-bottom: 1px solid var(--border);
 }
 .topbar-brand { display: flex; align-items: center; }
-.topbar-brand img { height: 100px; width: auto; display: block; }
+.topbar-brand img { height: 90px; width: auto; display: block; }
+a.topbar-brand { text-decoration: none; cursor: pointer; }
+
+/* Header del dashboard: logo a la izquierda, usuario a la derecha (acá no
+   hay una barra de tabs debajo que aloje el login, como en instagram.html). */
+.dashboard-topbar { justify-content: space-between; }
+.dashboard-topbar .topbar-brand img { height: 90px; }
 
 .topbar-user { position: relative; }
 .user-btn {
@@ -128,7 +134,7 @@ p.sub { color: var(--muted); margin-top: 0; text-align: center; }
   margin-top: 16px;
 }
 label { display: block; font-weight: 600; margin-bottom: 8px; }
-input[type="text"] {
+input[type="text"], input[type="password"] {
   width: 100%;
   padding: 12px 14px;
   border-radius: 8px;
@@ -137,7 +143,7 @@ input[type="text"] {
   color: var(--text);
   font-size: 1rem;
 }
-input[type="text"]:focus { outline: 2px solid var(--accent-2); }
+input[type="text"]:focus, input[type="password"]:focus { outline: 2px solid var(--accent-2); }
 button {
   margin-top: 12px;
   width: 100%;
@@ -403,3 +409,95 @@ table.monitoring-table td.title-cell {
 }
 .modal-header p { margin: 0; font-weight: 600; }
 .modal-header button { width: auto; margin: 0; }
+
+/* ------------------------------------------------------------------ */
+/* Login (solo visual: sin autenticación real todavía)                  */
+/* ------------------------------------------------------------------ */
+.login-page {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 64px 16px 40px;
+  gap: 24px;
+}
+.login-logo { height: 120px; width: auto; }
+.login-card { width: 100%; max-width: 380px; margin-top: 0; }
+.login-card label { margin-top: 4px; }
+.login-card label:first-of-type { margin-top: 0; }
+.login-submit {
+  display: block;
+  margin-top: 20px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #ffffff;
+  font-size: 1rem;
+  font-weight: 600;
+  text-align: center;
+  text-decoration: none;
+  transition: background 0.15s ease;
+}
+.login-submit:hover { background: var(--accent-hover); }
+
+/* ------------------------------------------------------------------ */
+/* Dashboard (grilla de redes sociales)                                  */
+/* ------------------------------------------------------------------ */
+.dashboard-main {
+  flex: 1;
+  padding: 48px 16px;
+}
+.platform-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 200px));
+  gap: 20px;
+  width: 100%;
+  max-width: 960px;
+  margin: 0 auto;
+  justify-content: center;
+}
+.platform-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 200px;
+  height: 160px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  text-decoration: none;
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.platform-card:hover {
+  border-color: var(--accent-2);
+  background: #24344d;
+}
+.platform-card.is-disabled { cursor: default; }
+/* Los íconos son <img src="...svg">, no SVG inline: el color de CSS no les
+   llega directo. Este filtro "invierte" la imagen entera a blanco/negro,
+   forzándolos a blanco sin tener que tocar los archivos ni pegarlos inline. */
+.platform-icon { height: 45px; width: 45px; object-fit: contain; filter: brightness(0) invert(1); }
+.platform-name { font-weight: 600; font-size: 1rem; }
+.card-tooltip {
+  position: absolute;
+  bottom: -34px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--header-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 0.78rem;
+  color: var(--muted);
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+.platform-card:hover .card-tooltip { opacity: 1; }
