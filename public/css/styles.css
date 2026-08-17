@@ -118,12 +118,19 @@ a.topbar-brand { text-decoration: none; cursor: pointer; }
   flex-direction: column;
   align-items: center;
 }
+/* El desplegable nativo de "Filas por página" lo abre el navegador según
+   cuánto espacio vea libre debajo — si el footer de la tabla queda pegado
+   al final de la página, lo abre hacia arriba y tapa las últimas filas. Le
+   damos aire de sobra debajo para que el navegador prefiera abrirlo hacia
+   abajo. (No es controlable por z-index: el popup de un <select> nativo lo
+   pinta el navegador en una capa aparte, no el DOM/CSS de la página.) */
+#tab-monitoring.tab-panel { padding-bottom: 260px; }
 
 /* ------------------------------------------------------------------ */
 /* Layout general / tarjetas (compartido entre las dos solapas)        */
 /* ------------------------------------------------------------------ */
 .container { width: 100%; max-width: 720px; }
-.container-wide { width: 100%; max-width: 960px; }
+.container-wide { width: 100%; max-width: 1280px; }
 h1 { font-size: 1.5rem; margin-bottom: 4px; text-align: center; }
 p.sub { color: var(--muted); margin-top: 0; text-align: center; }
 .card {
@@ -295,20 +302,10 @@ pre.report {
 }
 .tag-list button.remove-tag:hover { color: var(--error); background: rgba(248, 113, 113, 0.1); }
 
-table.monitoring-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.9rem;
-}
-table.monitoring-table th,
-table.monitoring-table td {
-  text-align: left;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--border);
-}
-table.monitoring-table th { color: var(--muted); font-weight: 600; }
-table.monitoring-table a { color: var(--text); text-decoration: none; }
-table.monitoring-table a:hover { color: #ffffff; text-decoration: underline; }
+.monitoring-table-card { padding: 0; overflow: hidden; }
+#monitoringResultsCount { padding: 0 12px 12px; }
+#monitoringTable a { color: var(--text); text-decoration: none; }
+#monitoringTable a:hover { color: #ffffff; text-decoration: underline; }
 .badge {
   display: inline-block;
   padding: 2px 10px;
@@ -321,13 +318,6 @@ table.monitoring-table a:hover { color: #ffffff; text-decoration: underline; }
 .badge-positivo { background: rgba(34, 197, 94, 0.15); color: var(--success); }
 .badge-neutral { background: rgba(234, 179, 8, 0.15); color: #eab308; }
 .badge-negativo { background: rgba(248, 113, 113, 0.15); color: var(--error); }
-
-table.monitoring-table td.title-cell {
-  max-width: 320px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
 .sentiment-select {
   width: auto;
@@ -349,15 +339,6 @@ table.monitoring-table td.title-cell {
 .sentiment-select.sentiment-neutral { background-color: rgba(234, 179, 8, 0.15); color: #eab308; }
 .sentiment-select.sentiment-negativo { background-color: rgba(248, 113, 113, 0.15); color: var(--error); }
 .sentiment-select option { background: var(--card); color: var(--text); }
-
-.pagination {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-  margin-top: 16px;
-}
-.pagination button { width: auto; margin: 0; }
 
 .delete-row-btn {
   width: auto;
@@ -501,3 +482,127 @@ table.monitoring-table td.title-cell {
   transition: opacity 0.15s ease;
 }
 .platform-card:hover .card-tooltip { opacity: 1; }
+
+/* ------------------------------------------------------------------ */
+/* Tabulator (tabla de "Monitoreo en vivo") — sobrescribe el tema claro  */
+/* que trae por defecto para que quede acorde a la paleta oscura.       */
+/* ------------------------------------------------------------------ */
+.tabulator {
+  background: var(--card);
+  border: none;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.9rem;
+}
+.tabulator .tabulator-header {
+  background: var(--header-bg);
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+}
+.tabulator .tabulator-header .tabulator-col {
+  background: var(--header-bg);
+  border-right: 1px solid var(--border);
+}
+.tabulator .tabulator-header .tabulator-col-title { color: var(--muted); font-weight: 600; }
+.tabulator .tabulator-header .tabulator-col-sorter .tabulator-arrow { border-bottom-color: var(--muted); }
+/* Hover sutil en el encabezado, igual criterio que en las filas: apenas un
+   tono más claro que el fondo del header, sin tocar el color del título ni
+   de la flechita de orden. El ":hover" propio de Tabulator gana con la
+   misma especificidad por venir de su hoja de estilos, así que hace falta
+   "!important" para pisarlo de forma confiable. Cubre también el caso de
+   hacer foco en el input de filtro (dispara el mismo estado visual, porque
+   al clickearlo el mouse sigue posado sobre el encabezado). */
+.tabulator .tabulator-header .tabulator-col.tabulator-sortable:hover,
+.tabulator .tabulator-header .tabulator-col.tabulator-sortable:focus-within {
+  background: #17233a !important;
+}
+.tabulator .tabulator-header .tabulator-header-filter input,
+.tabulator .tabulator-header .tabulator-header-filter select {
+  width: 100%;
+  padding: 4px 6px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: #0b1220;
+  color: var(--text);
+  font-size: 0.8rem;
+}
+.tabulator .tabulator-header .tabulator-header-filter select option { background: var(--card); color: var(--text); }
+.tabulator-row {
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+}
+.tabulator-row.tabulator-row-even { background: #1a2740; }
+/* Hover sutil: apenas un tono más claro que el fondo de la fila, sin tocar
+   el color del texto ni de los badges/pastillas. Tabulator trae su propio
+   hover (bastante más fuerte) con selectores más específicos que un simple
+   ".tabulator-row:hover", así que hay que igualar esa especificidad para
+   poder pisarlo. */
+.tabulator-row.tabulator-selectable:hover,
+.tabulator-row:hover {
+  background: #212d46;
+}
+.tabulator-row.tabulator-row-even.tabulator-selectable:hover,
+.tabulator-row.tabulator-row-even:hover {
+  background: #1e2a44;
+}
+.tabulator-row.tabulator-selected,
+.tabulator-row.tabulator-selectable.tabulator-selected:hover {
+  background: #212d46;
+}
+.tabulator-row .tabulator-cell {
+  border-right: 1px solid var(--border);
+  padding: 10px 12px;
+}
+.tabulator-row .tabulator-cell.title-cell {
+  /* Sin max-width fijo: que ocupe todo el ancho que Tabulator le asigne a
+     la columna (ahora más grande, para que se vea mejor la previsualización
+     del posteo). El ellipsis solo entra si igual no alcanza. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tabulator .tabulator-footer {
+  background: var(--header-bg);
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  position: relative;
+  z-index: 1;
+}
+/* El paginador (selector de tamaño + First/Prev/números/Next/Last) trae su
+   propio layout con el label "Filas por página" flotado aparte del resto de
+   los controles — se lo neutraliza para armar una sola fila centrada. */
+.tabulator .tabulator-footer .tabulator-paginator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  width: 100%;
+  float: none;
+}
+.tabulator .tabulator-footer .tabulator-paginator label {
+  float: none;
+  margin: 0;
+  color: var(--muted);
+}
+.tabulator .tabulator-footer .tabulator-page {
+  /* La regla global "button { width: 100%; margin-top: 12px; }" del resto
+     de la app se les pega si no se pisan estas dos propiedades acá. */
+  width: auto;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  margin: 0 2px;
+}
+.tabulator .tabulator-footer .tabulator-page:hover:not(:disabled) { background: #24344d; }
+.tabulator .tabulator-footer .tabulator-page.active { background: var(--accent); border-color: var(--accent); color: #ffffff; }
+.tabulator .tabulator-footer .tabulator-page-size {
+  background: #0b1220;
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+}
+.tabulator .tabulator-placeholder { color: var(--muted); }
+.tabulator .tabulator-loader { background: var(--card); color: var(--muted); }

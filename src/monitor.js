@@ -42,12 +42,30 @@ function normalizeAccount(entry) {
   return typeof entry === 'string' ? entry : entry.username;
 }
 
+/**
+ * config/monitoring.json guarda las keywords agrupadas por categoría
+ * (nombre_y_cargo, apodos_observados, etc.) y los hashtags aparte, sin el
+ * "#" — eso es solo para que el archivo se pueda leer y mantener a mano.
+ * Acá se aplana todo de vuelta a la única lista de strings que espera el
+ * resto del código (evaluateRelevance, runMonitoringCycle siguen sin saber
+ * que existen categorías; a un hashtag "JorgeMacri" se le vuelve a poner el
+ * "#" adelante para que el filter(k => k.startsWith('#')) que ya existía lo
+ * siga reconociendo igual que antes). Ver config/README.md.
+ */
 function loadConfig() {
   const raw = fs.readFileSync(CONFIG_PATH, 'utf8');
   const parsed = JSON.parse(raw);
+  const ig = parsed.instagram || {};
+  const keywordGroups = ig.keywords || {};
+
+  const flatKeywords = [
+    ...Object.values(keywordGroups).flat(),
+    ...(Array.isArray(ig.hashtags) ? ig.hashtags.map((h) => `#${h}`) : []),
+  ];
+
   return {
-    accounts: (Array.isArray(parsed.accounts) ? parsed.accounts : []).map(normalizeAccount),
-    keywords: Array.isArray(parsed.keywords) ? parsed.keywords : [],
+    accounts: (Array.isArray(ig.accounts) ? ig.accounts : []).map(normalizeAccount),
+    keywords: flatKeywords,
   };
 }
 

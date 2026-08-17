@@ -105,7 +105,9 @@ app.post('/api/analyze', async (req, res) => {
 // --------------------------------------------------------------------------
 app.get('/api/monitoring/posts', (req, res) => {
   const page = Math.max(1, Number(req.query.page) || 1);
-  const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 20));
+  // El límite subió de 100 a 5000: la tabla ahora pagina/filtra/ordena del
+  // lado del cliente (Tabulator), así que el frontend pide todo de una vez.
+  const pageSize = Math.min(5000, Math.max(1, Number(req.query.pageSize) || 20));
   const { posts, total } = db.listDetectedPosts({ page, pageSize });
   res.json({ posts, total, page, pageSize });
 });

@@ -4,6 +4,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Instagram — Social Listening App</title>
+  <!-- Tabulator: tabla de "Monitoreo en vivo" (orden/filtro/paginación del
+       lado del cliente). Por CDN a propósito, sin build step ni dependencia
+       nueva en package.json. -->
+  <link href="https://unpkg.com/tabulator-tables@6.3.0/dist/css/tabulator.min.css" rel="stylesheet" />
   <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body>
@@ -121,27 +125,11 @@
 
       <p id="monitoringResult" class="muted hidden" style="text-align:center;"></p>
 
-      <div class="card">
-        <table class="monitoring-table">
-          <thead>
-            <tr>
-              <th>Cuenta</th>
-              <th>Título</th>
-              <th>Sentimiento</th>
-              <th>Detectado</th>
-              <th>Notificado</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody id="monitoringRows">
-            <tr><td colspan="6" class="muted">Cargando…</td></tr>
-          </tbody>
-        </table>
-        <div class="pagination">
-          <button id="prevPageBtn" class="btn-small btn-copy">← Anteriores</button>
-          <span id="pageInfo" class="muted"></span>
-          <button id="nextPageBtn" class="btn-small btn-copy">Siguientes →</button>
-        </div>
+      <p id="monitoringLoadError" class="error hidden"></p>
+
+      <div class="card monitoring-table-card">
+        <div id="monitoringTable"></div>
+        <p id="monitoringResultsCount" class="muted" style="text-align:center; margin-top:8px;"></p>
       </div>
     </div>
   </section>
@@ -170,6 +158,7 @@
 
   <script src="js/main.js"></script>
   <script src="js/analysis.js"></script>
+  <script src="https://unpkg.com/tabulator-tables@6.3.0/dist/js/tabulator.min.js"></script>
   <script src="js/monitoring.js"></script>
 </body>
 </html>
