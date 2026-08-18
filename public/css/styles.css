@@ -11,10 +11,17 @@
   --success: #22c55e;
   --error: #f87171;
 }
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+}
 body {
   margin: 0;
-  font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  font-family:
+    system-ui,
+    -apple-system,
+    Segoe UI,
+    Roboto,
+    sans-serif;
   background: var(--bg);
   color: var(--text);
   min-height: 100vh;
@@ -33,16 +40,32 @@ body {
   background: var(--header-bg);
   border-bottom: 1px solid var(--border);
 }
-.topbar-brand { display: flex; align-items: center; }
-.topbar-brand img { height: 90px; width: auto; display: block; }
-a.topbar-brand { text-decoration: none; cursor: pointer; }
+.topbar-brand {
+  display: flex;
+  align-items: center;
+}
+.topbar-brand img {
+  height: 90px;
+  width: auto;
+  display: block;
+}
+a.topbar-brand {
+  text-decoration: none;
+  cursor: pointer;
+}
 
 /* Header del dashboard: logo a la izquierda, usuario a la derecha (acá no
    hay una barra de tabs debajo que aloje el login, como en instagram.html). */
-.dashboard-topbar { justify-content: space-between; }
-.dashboard-topbar .topbar-brand img { height: 90px; }
+.dashboard-topbar {
+  justify-content: space-between;
+}
+.dashboard-topbar .topbar-brand img {
+  height: 90px;
+}
 
-.topbar-user { position: relative; }
+.topbar-user {
+  position: relative;
+}
 .user-btn {
   width: auto;
   margin: 0;
@@ -54,7 +77,9 @@ a.topbar-brand { text-decoration: none; cursor: pointer; }
   font-size: 0.9rem;
   cursor: pointer;
 }
-.user-btn:hover { border-color: var(--accent-2); }
+.user-btn:hover {
+  border-color: var(--accent-2);
+}
 .user-dropdown {
   position: absolute;
   right: 0;
@@ -70,7 +95,10 @@ a.topbar-brand { text-decoration: none; cursor: pointer; }
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
   z-index: 10;
 }
-.user-dropdown span { color: var(--muted); font-size: 0.85rem; }
+.user-dropdown span {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
 .user-dropdown button {
   width: auto;
   margin: 0;
@@ -92,7 +120,10 @@ a.topbar-brand { text-decoration: none; cursor: pointer; }
   background: var(--header-bg);
   border-bottom: 1px solid var(--border);
 }
-.tabs-group { display: flex; gap: 4px; }
+.tabs-group {
+  display: flex;
+  gap: 4px;
+}
 .tab-btn {
   width: auto;
   margin: 0;
@@ -106,7 +137,10 @@ a.topbar-brand { text-decoration: none; cursor: pointer; }
   border-radius: 0;
   cursor: pointer;
 }
-.tab-btn:hover:not(:disabled) { background: transparent; color: var(--text); }
+.tab-btn:hover:not(:disabled) {
+  background: transparent;
+  color: var(--text);
+}
 .tab-btn.active {
   color: var(--text);
   border-bottom-color: var(--accent-2);
@@ -124,15 +158,31 @@ a.topbar-brand { text-decoration: none; cursor: pointer; }
    damos aire de sobra debajo para que el navegador prefiera abrirlo hacia
    abajo. (No es controlable por z-index: el popup de un <select> nativo lo
    pinta el navegador en una capa aparte, no el DOM/CSS de la página.) */
-#tab-monitoring.tab-panel { padding-bottom: 260px; }
+#tab-monitoring.tab-panel {
+  padding-bottom: 260px;
+}
 
 /* ------------------------------------------------------------------ */
 /* Layout general / tarjetas (compartido entre las dos solapas)        */
 /* ------------------------------------------------------------------ */
-.container { width: 100%; max-width: 720px; }
-.container-wide { width: 100%; max-width: 1280px; }
-h1 { font-size: 1.5rem; margin-bottom: 4px; text-align: center; }
-p.sub { color: var(--muted); margin-top: 0; text-align: center; }
+.container {
+  width: 100%;
+  max-width: 720px;
+}
+.container-wide {
+  width: 100%;
+  max-width: 1280px;
+}
+h1 {
+  font-size: 1.5rem;
+  margin-bottom: 4px;
+  text-align: center;
+}
+p.sub {
+  color: var(--muted);
+  margin-top: 0;
+  text-align: center;
+}
 .card {
   background: var(--card);
   border: 1px solid var(--border);
@@ -140,8 +190,13 @@ p.sub { color: var(--muted); margin-top: 0; text-align: center; }
   padding: 20px;
   margin-top: 16px;
 }
-label { display: block; font-weight: 600; margin-bottom: 8px; }
-input[type="text"], input[type="password"] {
+label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+input[type="text"],
+input[type="password"] {
   width: 100%;
   padding: 12px 14px;
   border-radius: 8px;
@@ -150,7 +205,10 @@ input[type="text"], input[type="password"] {
   color: var(--text);
   font-size: 1rem;
 }
-input[type="text"]:focus, input[type="password"]:focus { outline: 2px solid var(--accent-2); }
+input[type="text"]:focus,
+input[type="password"]:focus {
+  outline: 2px solid var(--accent-2);
+}
 button {
   margin-top: 12px;
   width: 100%;
@@ -164,17 +222,28 @@ button {
   cursor: pointer;
   transition: background 0.15s ease;
 }
-button:hover:not(:disabled) { background: var(--accent-hover); }
-button:disabled { opacity: 0.6; cursor: not-allowed; }
+button:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
 
 /* ------------------------------------------------------------------ */
 /* Estado de carga (spinner + texto + barra de progreso)                */
 /* ------------------------------------------------------------------ */
-.status { margin-top: 16px; color: var(--muted); }
-.status-text { transition: opacity 0.25s ease; }
+.status {
+  margin-top: 16px;
+  color: var(--muted);
+}
+.status-text {
+  transition: opacity 0.25s ease;
+}
 .spinner {
   display: inline-block;
-  width: 16px; height: 16px;
+  width: 16px;
+  height: 16px;
   border: 2px solid var(--muted);
   border-top-color: var(--accent-2);
   border-radius: 50%;
@@ -182,7 +251,11 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
   vertical-align: middle;
   margin-right: 8px;
 }
-@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 
 .progress-track {
   margin-top: 10px;
@@ -203,15 +276,24 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
   overflow: hidden;
 }
 .progress-fill::after {
-  content: '';
+  content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.4),
+    transparent
+  );
   animation: shimmer 1.3s infinite;
 }
 @keyframes shimmer {
-  from { transform: translateX(-100%); }
-  to { transform: translateX(100%); }
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
 }
 
 .error {
@@ -230,24 +312,48 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
   margin-bottom: 12px;
   gap: 8px;
 }
-.result-header span { color: var(--muted); font-size: 0.85rem; }
-.actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.btn-small { width: auto; margin: 0; padding: 6px 12px; font-size: 0.85rem; }
-.btn-copy { background: #334155; }
-.btn-copy:hover:not(:disabled) { background: #475569; }
-.btn-whatsapp { background: #25D366; }
-.btn-whatsapp:hover:not(:disabled) { background: #1ebe57; }
+.result-header span {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.btn-small {
+  width: auto;
+  margin: 0;
+  padding: 6px 12px;
+  font-size: 0.85rem;
+}
+.btn-copy {
+  background: #334155;
+}
+.btn-copy:hover:not(:disabled) {
+  background: #475569;
+}
+.btn-whatsapp {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #25d366;
+  padding: 6px 10px;
+}
+.btn-whatsapp:hover:not(:disabled) {
+  background: #1ebe57;
+}
 .btn-whatsapp-icon {
   display: block;
-  width: 16px;
-  height: 16px;
-  filter: brightness(0) invert(1);
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
 }
 .wa-toast {
   margin: 0 0 12px;
   color: var(--text);
   background: rgba(37, 211, 102, 0.1);
-  border: 1px solid #25D366;
+  border: 1px solid #25d366;
   border-radius: 8px;
   padding: 12px 14px;
   font-size: 0.85rem;
@@ -271,7 +377,9 @@ pre.report {
   line-height: 1.5;
   margin: 0;
 }
-.hidden { display: none; }
+.hidden {
+  display: none;
+}
 
 /* ------------------------------------------------------------------ */
 /* Monitoreo en vivo                                                    */
@@ -283,8 +391,14 @@ pre.report {
   gap: 12px;
   flex-wrap: wrap;
 }
-.monitoring-toolbar button { width: auto; margin: 0; }
-.muted { color: var(--muted); font-size: 0.85rem; }
+.monitoring-toolbar button {
+  width: auto;
+  margin: 0;
+}
+.muted {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
 
 .config-lists {
   display: grid;
@@ -292,13 +406,34 @@ pre.report {
   gap: 16px;
 }
 @media (max-width: 720px) {
-  .config-lists { grid-template-columns: 1fr; }
+  .config-lists {
+    grid-template-columns: 1fr;
+  }
 }
-.config-add-row { display: flex; gap: 8px; }
-.config-add-row input { margin: 0; }
-.config-add-row button { width: auto; margin: 0; padding: 12px 16px; }
-.tag-list { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.tag-list .view-all-btn { margin-left: auto; }
+.config-add-row {
+  display: flex;
+  gap: 8px;
+}
+.config-add-row input {
+  margin: 0;
+}
+.config-add-row button {
+  width: auto;
+  margin: 0;
+  padding: 12px 16px;
+}
+.tag-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.tag-list .view-all-btn {
+  margin-left: auto;
+}
 .tag-list li {
   display: flex;
   align-items: center;
@@ -318,12 +453,26 @@ pre.report {
   font-size: 0.9rem;
   border-radius: 999px;
 }
-.tag-list button.remove-tag:hover { color: var(--error); background: rgba(248, 113, 113, 0.1); }
+.tag-list button.remove-tag:hover {
+  color: var(--error);
+  background: rgba(248, 113, 113, 0.1);
+}
 
-.monitoring-table-card { padding: 0; overflow: hidden; }
-#monitoringResultsCount { padding: 0 12px 12px; }
-#monitoringTable a { color: var(--text); text-decoration: none; }
-#monitoringTable a:hover { color: #ffffff; text-decoration: underline; }
+.monitoring-table-card {
+  padding: 0;
+  overflow: hidden;
+}
+#monitoringResultsCount {
+  padding: 0 12px 12px;
+}
+#monitoringTable a {
+  color: var(--text);
+  text-decoration: none;
+}
+#monitoringTable a:hover {
+  color: #ffffff;
+  text-decoration: underline;
+}
 .badge {
   display: inline-block;
   padding: 2px 10px;
@@ -331,11 +480,26 @@ pre.report {
   font-size: 0.78rem;
   font-weight: 600;
 }
-.badge-yes { background: rgba(34, 197, 94, 0.15); color: var(--success); }
-.badge-no { background: rgba(148, 163, 184, 0.15); color: var(--muted); }
-.badge-positivo { background: rgba(34, 197, 94, 0.15); color: var(--success); }
-.badge-neutral { background: rgba(234, 179, 8, 0.15); color: #eab308; }
-.badge-negativo { background: rgba(248, 113, 113, 0.15); color: var(--error); }
+.badge-yes {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--success);
+}
+.badge-no {
+  background: rgba(148, 163, 184, 0.15);
+  color: var(--muted);
+}
+.badge-positivo {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--success);
+}
+.badge-neutral {
+  background: rgba(234, 179, 8, 0.15);
+  color: #eab308;
+}
+.badge-negativo {
+  background: rgba(248, 113, 113, 0.15);
+  color: var(--error);
+}
 
 .sentiment-select {
   width: auto;
@@ -353,10 +517,22 @@ pre.report {
   background-size: 8px 5px;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath fill='%2394a3b8' d='M1 1l5 5 5-5'/%3E%3C/svg%3E");
 }
-.sentiment-select.sentiment-positivo { background-color: rgba(34, 197, 94, 0.15); color: var(--success); }
-.sentiment-select.sentiment-neutral { background-color: rgba(234, 179, 8, 0.15); color: #eab308; }
-.sentiment-select.sentiment-negativo { background-color: rgba(248, 113, 113, 0.15); color: var(--error); }
-.sentiment-select option { background: var(--card); color: var(--text); }
+.sentiment-select.sentiment-positivo {
+  background-color: rgba(34, 197, 94, 0.15);
+  color: var(--success);
+}
+.sentiment-select.sentiment-neutral {
+  background-color: rgba(234, 179, 8, 0.15);
+  color: #eab308;
+}
+.sentiment-select.sentiment-negativo {
+  background-color: rgba(248, 113, 113, 0.15);
+  color: var(--error);
+}
+.sentiment-select option {
+  background: var(--card);
+  color: var(--text);
+}
 
 .delete-row-btn {
   width: auto;
@@ -368,7 +544,11 @@ pre.report {
   border-radius: 6px;
   font-size: 0.85rem;
 }
-.delete-row-btn:hover { border-color: var(--error); color: var(--error); background: rgba(248, 113, 113, 0.08); }
+.delete-row-btn:hover {
+  border-color: var(--error);
+  color: var(--error);
+  background: rgba(248, 113, 113, 0.08);
+}
 
 /* ------------------------------------------------------------------ */
 /* Modales (confirmar borrado / ver todas las keywords)                 */
@@ -386,7 +566,9 @@ pre.report {
 /* Especificidad más alta que ".hidden" solo, para que gane sin importar el
    orden en la hoja de estilos (acá "display:flex" y "display:none" compiten
    con la misma especificidad si no se hace esto). */
-.modal-overlay.hidden { display: none; }
+.modal-overlay.hidden {
+  display: none;
+}
 .modal-box {
   background: var(--card);
   border: 1px solid var(--border);
@@ -395,19 +577,40 @@ pre.report {
   width: 100%;
   max-width: 380px;
 }
-.modal-box-wide { max-width: 640px; max-height: 80vh; overflow-y: auto; }
-.modal-box p { margin: 0 0 16px; }
-.modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
-.modal-actions button { width: auto; margin: 0; }
-.modal-actions .btn-clear { background: transparent; }
+.modal-box-wide {
+  max-width: 640px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+.modal-box p {
+  margin: 0 0 16px;
+}
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.modal-actions button {
+  width: auto;
+  margin: 0;
+}
+.modal-actions .btn-clear {
+  background: transparent;
+}
 .modal-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 12px;
 }
-.modal-header p { margin: 0; font-weight: 600; }
-.modal-header button { width: auto; margin: 0; }
+.modal-header p {
+  margin: 0;
+  font-weight: 600;
+}
+.modal-header button {
+  width: auto;
+  margin: 0;
+}
 
 /* ------------------------------------------------------------------ */
 /* Login (solo visual: sin autenticación real todavía)                  */
@@ -421,10 +624,21 @@ pre.report {
   padding: 64px 16px 40px;
   gap: 24px;
 }
-.login-logo { height: 120px; width: auto; }
-.login-card { width: 100%; max-width: 380px; margin-top: 0; }
-.login-card label { margin-top: 4px; }
-.login-card label:first-of-type { margin-top: 0; }
+.login-logo {
+  height: 120px;
+  width: auto;
+}
+.login-card {
+  width: 100%;
+  max-width: 380px;
+  margin-top: 0;
+}
+.login-card label {
+  margin-top: 4px;
+}
+.login-card label:first-of-type {
+  margin-top: 0;
+}
 .login-submit {
   display: block;
   margin-top: 20px;
@@ -438,7 +652,9 @@ pre.report {
   text-decoration: none;
   transition: background 0.15s ease;
 }
-.login-submit:hover { background: var(--accent-hover); }
+.login-submit:hover {
+  background: var(--accent-hover);
+}
 
 /* ------------------------------------------------------------------ */
 /* Dashboard (grilla de redes sociales)                                  */
@@ -471,18 +687,30 @@ pre.report {
   text-decoration: none;
   color: var(--text);
   cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
 }
 .platform-card:hover {
   border-color: var(--accent-2);
   background: #24344d;
 }
-.platform-card.is-disabled { cursor: default; }
+.platform-card.is-disabled {
+  cursor: default;
+}
 /* Los íconos son <img src="...svg">, no SVG inline: el color de CSS no les
    llega directo. Este filtro "invierte" la imagen entera a blanco/negro,
    forzándolos a blanco sin tener que tocar los archivos ni pegarlos inline. */
-.platform-icon { height: 45px; width: 45px; object-fit: contain; filter: brightness(0) invert(1); }
-.platform-name { font-weight: 600; font-size: 1rem; }
+.platform-icon {
+  height: 45px;
+  width: 45px;
+  object-fit: contain;
+  filter: brightness(0) invert(1);
+}
+.platform-name {
+  font-weight: 600;
+  font-size: 1rem;
+}
 .card-tooltip {
   position: absolute;
   bottom: -34px;
@@ -499,7 +727,9 @@ pre.report {
   pointer-events: none;
   transition: opacity 0.15s ease;
 }
-.platform-card:hover .card-tooltip { opacity: 1; }
+.platform-card:hover .card-tooltip {
+  opacity: 1;
+}
 
 /* ------------------------------------------------------------------ */
 /* Tabulator (tabla de "Monitoreo en vivo") — sobrescribe el tema claro  */
@@ -521,8 +751,13 @@ pre.report {
   background: var(--header-bg);
   border-right: 1px solid var(--border);
 }
-.tabulator .tabulator-header .tabulator-col-title { color: var(--muted); font-weight: 600; }
-.tabulator .tabulator-header .tabulator-col-sorter .tabulator-arrow { border-bottom-color: var(--muted); }
+.tabulator .tabulator-header .tabulator-col-title {
+  color: var(--muted);
+  font-weight: 600;
+}
+.tabulator .tabulator-header .tabulator-col-sorter .tabulator-arrow {
+  border-bottom-color: var(--muted);
+}
 /* Hover sutil en el encabezado, igual criterio que en las filas: apenas un
    tono más claro que el fondo del header, sin tocar el color del título ni
    de la flechita de orden. El ":hover" propio de Tabulator gana con la
@@ -544,13 +779,18 @@ pre.report {
   color: var(--text);
   font-size: 0.8rem;
 }
-.tabulator .tabulator-header .tabulator-header-filter select option { background: var(--card); color: var(--text); }
+.tabulator .tabulator-header .tabulator-header-filter select option {
+  background: var(--card);
+  color: var(--text);
+}
 .tabulator-row {
   background: var(--card);
   border-bottom: 1px solid var(--border);
   color: var(--text);
 }
-.tabulator-row.tabulator-row-even { background: #1a2740; }
+.tabulator-row.tabulator-row-even {
+  background: #1a2740;
+}
 /* Hover sutil: apenas un tono más claro que el fondo de la fila, sin tocar
    el color del texto ni de los badges/pastillas. Tabulator trae su propio
    hover (bastante más fuerte) con selectores más específicos que un simple
@@ -614,13 +854,24 @@ pre.report {
   border-radius: 6px;
   margin: 0 2px;
 }
-.tabulator .tabulator-footer .tabulator-page:hover:not(:disabled) { background: #24344d; }
-.tabulator .tabulator-footer .tabulator-page.active { background: var(--accent); border-color: var(--accent); color: #ffffff; }
+.tabulator .tabulator-footer .tabulator-page:hover:not(:disabled) {
+  background: #24344d;
+}
+.tabulator .tabulator-footer .tabulator-page.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+}
 .tabulator .tabulator-footer .tabulator-page-size {
   background: #0b1220;
   border: 1px solid var(--border);
   color: var(--text);
   border-radius: 6px;
 }
-.tabulator .tabulator-placeholder { color: var(--muted); }
-.tabulator .tabulator-loader { background: var(--card); color: var(--muted); }
+.tabulator .tabulator-placeholder {
+  color: var(--muted);
+}
+.tabulator .tabulator-loader {
+  background: var(--card);
+  color: var(--muted);
+}

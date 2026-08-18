@@ -190,14 +190,27 @@ function hideWaToast() {
   hide(waToast);
 }
 
-// Comparte el reporte por WhatsApp. Copy-fail: solo toast, no abrir wa.me.
+// Abre WhatsApp Desktop/móvil con el esquema nativo. api.whatsapp.com/send
+// sin teléfono muestra "Enlace incorrecto"; wa.me rompe los emojis al redirigir.
+function openWhatsAppApp(encodedText) {
+  const url = encodedText
+    ? 'whatsapp://send?text=' + encodedText
+    : 'whatsapp://';
+  const a = document.createElement('a');
+  a.href = url;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+// Comparte el reporte por WhatsApp. Copy-fail: solo toast, no abrir el chat.
 async function shareWhatsApp() {
   const text = reportEl.textContent;
   if (!text || !text.trim()) return;
 
   const enc = encodeURIComponent(text);
   if (enc.length <= WA_ENCODED_CAP) {
-    window.open('https://wa.me/?text=' + enc, '_blank', 'noopener,noreferrer');
+    openWhatsAppApp(enc);
     return;
   }
 
@@ -208,7 +221,7 @@ async function shareWhatsApp() {
     return;
   }
 
-  window.open('https://wa.me/', '_blank', 'noopener,noreferrer');
+  openWhatsAppApp('');
   showWaToast(WA_TOAST_TOO_LONG);
 }
 
