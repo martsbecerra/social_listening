@@ -8,8 +8,17 @@ const resultCard = document.getElementById('resultCard');
 const reportEl = document.getElementById('report');
 const metaEl = document.getElementById('meta');
 const copyBtn = document.getElementById('copyBtn');
+const waShareBtn = document.getElementById('waShareBtn');
+const waToast = document.getElementById('waToast');
 const clearBtn = document.getElementById('clearBtn');
 const csvBtn = document.getElementById('csvBtn');
+
+const WA_ENCODED_CAP = 4000;
+const WA_TOAST_MS = 4000;
+const WA_TOAST_TOO_LONG = 'El reporte es muy largo para mandarlo directo. Lo copié al portapapeles: pegalo en el chat.';
+const WA_TOAST_COPY_FAIL = 'No pude copiar el reporte. Usá Copiar y pegalo en WhatsApp.';
+
+let waToastTimer = null;
 
 // Guarda el CSV de reclamos de la última respuesta, para poder
 // descargarlo cuando el usuario haga clic en "Descargar CSV".
@@ -168,6 +177,41 @@ async function copyReport() {
   }
 }
 
+function showWaToast(mensaje) {
+  waToast.textContent = mensaje;
+  show(waToast);
+  clearTimeout(waToastTimer);
+  waToastTimer = setTimeout(() => hide(waToast), WA_TOAST_MS);
+}
+
+function hideWaToast() {
+  clearTimeout(waToastTimer);
+  waToastTimer = null;
+  hide(waToast);
+}
+
+// Comparte el reporte por WhatsApp. Copy-fail: solo toast, no abrir wa.me.
+async function shareWhatsApp() {
+  const text = reportEl.textContent;
+  if (!text || !text.trim()) return;
+
+  const enc = encodeURIComponent(text);
+  if (enc.length <= WA_ENCODED_CAP) {
+    window.open('https://wa.me/?text=' + enc, '_blank', 'noopener,noreferrer');
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    showWaToast(WA_TOAST_COPY_FAIL);
+    return;
+  }
+
+  window.open('https://wa.me/', '_blank', 'noopener,noreferrer');
+  showWaToast(WA_TOAST_TOO_LONG);
+}
+
 // Descarga el CSV de reclamos (dirección + temática) como archivo .csv.
 function downloadCsv() {
   if (!currentCsv) return;
@@ -192,6 +236,7 @@ function clearAll() {
   urlInput.value = '';
   hide(resultCard);
   hide(errorEl);
+  hideWaToast();
   reportEl.textContent = '';
   metaEl.textContent = '';
   currentCsv = '';
@@ -204,5 +249,6 @@ urlInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') analyze();
 });
 copyBtn.addEventListener('click', copyReport);
+waShareBtn.addEventListener('click', shareWhatsApp);
 clearBtn.addEventListener('click', clearAll);
 csvBtn.addEventListener('click', downloadCsv);

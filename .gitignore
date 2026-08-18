@@ -15,3 +15,6 @@ npm-debug.log*
 # Sistema operativo
 .DS_Store
 Thumbs.db
+
+# Agent / SDD infrastructure (skill registry)
+.atl/

@@ -235,6 +235,24 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 .btn-small { width: auto; margin: 0; padding: 6px 12px; font-size: 0.85rem; }
 .btn-copy { background: #334155; }
 .btn-copy:hover:not(:disabled) { background: #475569; }
+.btn-whatsapp { background: #25D366; }
+.btn-whatsapp:hover:not(:disabled) { background: #1ebe57; }
+.btn-whatsapp-icon {
+  display: block;
+  width: 16px;
+  height: 16px;
+  filter: brightness(0) invert(1);
+}
+.wa-toast {
+  margin: 0 0 12px;
+  color: var(--text);
+  background: rgba(37, 211, 102, 0.1);
+  border: 1px solid #25D366;
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
 .btn-clear {
   background: transparent;
   border: 1px solid var(--border);
