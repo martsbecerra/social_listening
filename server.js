@@ -18,6 +18,9 @@ const { scrapeInstagram } = require('./src/apify');
 const { analyzeComments } = require('./src/analyzeComments');
 const { resolveMaxCommentsLimit } = require('./src/commentSample');
 const { getLlmProvider, requiredLlmEnvKeys, getProviderLabel } = require('./src/llm/providerConfig');
+const db = require('./src/db');
+const monitor = require('./src/monitor');
+const { startScheduler, runCycleAndNotify } = require('./src/scheduler');
 
 const app = express();
 
@@ -156,10 +159,92 @@ app.post('/api/analyze', async (req, res) => {
 });
 
 // --------------------------------------------------------------------------
+// Monitoreo automático: config, tabla de posteos detectados, disparo manual.
+// --------------------------------------------------------------------------
+app.get('/api/monitoring/posts', (req, res) => {
+  const page = Math.max(1, Number(req.query.page) || 1);
+  // El límite subió de 100 a 5000: la tabla ahora pagina/filtra/ordena del
+  // lado del cliente (Tabulator), así que el frontend pide todo de una vez.
+  const pageSize = Math.min(5000, Math.max(1, Number(req.query.pageSize) || 20));
+  const { posts, total } = db.listDetectedPosts({ page, pageSize });
+  res.json({ posts, total, page, pageSize });
+});
+
+app.get('/api/monitoring/config', (req, res) => {
+  res.json(monitor.loadConfig());
+});
+
+// Borra un registro puntual de la tabla (ej. algo que no sirve o quedó mal).
+app.delete('/api/monitoring/posts/:id', (req, res) => {
+  db.deletePost(req.params.id);
+  res.json({ ok: true });
+});
+
+// Corrige a mano el sentimiento de un registro (por si Haiku se equivocó).
+const VALID_SENTIMENTS = ['positivo', 'neutral', 'negativo'];
+app.patch('/api/monitoring/posts/:id', (req, res) => {
+  const { sentiment } = req.body || {};
+  if (!VALID_SENTIMENTS.includes(sentiment)) {
+    return res.status(400).json({ error: 'Sentimiento inválido.' });
+  }
+  db.updateSentiment(req.params.id, sentiment);
+  res.json({ ok: true });
+});
+
+app.post('/api/monitoring/accounts', async (req, res) => {
+  try {
+    res.json(await monitor.addAccount(req.body && req.body.account));
+  } catch (err) {
+    res.status(400).json({ error: err.userMessage || err.message });
+  }
+});
+
+app.delete('/api/monitoring/accounts/:account', (req, res) => {
+  res.json(monitor.removeAccount(req.params.account));
+});
+
+app.post('/api/monitoring/keywords', async (req, res) => {
+  try {
+    res.json(await monitor.addKeyword(req.body && req.body.keyword));
+  } catch (err) {
+    res.status(400).json({ error: err.userMessage || err.message });
+  }
+});
+
+app.delete('/api/monitoring/keywords/:keyword', (req, res) => {
+  res.json(monitor.removeKeyword(req.params.keyword));
+});
+
+// Dispara un ciclo de monitoreo a mano, sin esperar los 4hs del cron
+// (útil para probar o para una demo).
+app.post('/api/monitoring/run-now', async (req, res) => {
+  try {
+    const result = await runCycleAndNotify();
+    res.json(result);
+  } catch (err) {
+    console.error('Error en /api/monitoring/run-now:', err);
+    res.status(502).json({ error: err.userMessage || 'Falló el ciclo de monitoreo. Revisá la consola del servidor.' });
+  }
+});
+
+// Genera título + sentimiento para posteos guardados que todavía no lo
+// tienen (posteos de antes de esta funcionalidad, o que fallaron al clasificar).
+app.post('/api/monitoring/backfill-classification', async (req, res) => {
+  try {
+    const result = await monitor.backfillClassification();
+    res.json(result);
+  } catch (err) {
+    console.error('Error en /api/monitoring/backfill-classification:', err);
+    res.status(502).json({ error: err.userMessage || 'Falló la clasificación. Revisá la consola del servidor.' });
+  }
+});
+
+// --------------------------------------------------------------------------
 // Arrancamos el servidor.
 // --------------------------------------------------------------------------
 const PORT = process.env.PORT || 3000;
 checkEnv();
+startScheduler();
 app.listen(PORT, () => {
   const provider = getLlmProvider();
   console.log(`\n✅ Servidor listo en http://localhost:${PORT}`);

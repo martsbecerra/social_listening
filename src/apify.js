@@ -208,4 +208,4 @@ function normalizeComments(commentItems) {
     }));
 }
 
-module.exports = { scrapeInstagram };
+module.exports = { scrapeInstagram, runActorSync, mapApifyError };
