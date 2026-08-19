@@ -23,6 +23,7 @@
     <div class="tabs-group">
       <button class="tab-btn active" data-tab="analysis">Análisis de publicación</button>
       <button class="tab-btn" data-tab="monitoring">Monitoreo en vivo</button>
+      <button class="tab-btn" data-tab="claims-map">Mapa de reclamos</button>
     </div>
     <!-- Solo visual: sin lógica de autenticación todavía. -->
     <div class="topbar-user">
@@ -134,6 +135,18 @@
       <div class="card monitoring-table-card">
         <div id="monitoringTable"></div>
         <p id="monitoringResultsCount" class="muted" style="text-align:center; margin-top:8px;"></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== Solapa: Mapa de reclamos ===================== -->
+  <section id="tab-claims-map" class="tab-panel hidden">
+    <div class="container-wide">
+      <h1>📍Mapa de reclamos</h1>
+      <p class="sub">Geolocalización automática de reclamos cada 4 horas.</p>
+
+      <div class="card">
+        <p class="muted" style="text-align:center; margin:0;">Todavía no hay reclamos geolocalizados.</p>
       </div>
     </div>
   </section>
