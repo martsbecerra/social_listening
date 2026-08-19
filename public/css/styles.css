@@ -349,16 +349,6 @@ button:disabled {
   height: 18px;
   flex-shrink: 0;
 }
-.wa-toast {
-  margin: 0 0 12px;
-  color: var(--text);
-  background: rgba(37, 211, 102, 0.1);
-  border: 1px solid #25d366;
-  border-radius: 8px;
-  padding: 12px 14px;
-  font-size: 0.85rem;
-  line-height: 1.4;
-}
 .btn-clear {
   background: transparent;
   border: 1px solid var(--border);
