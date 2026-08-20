@@ -9,6 +9,7 @@
        lado del cliente). Por CDN a propósito, sin build step ni dependencia
        nueva en package.json. -->
   <link href="https://unpkg.com/tabulator-tables@6.3.0/dist/css/tabulator.min.css" rel="stylesheet" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="css/styles.css" />
 </head>
 
@@ -145,8 +146,20 @@
       <h1>📍Mapa de reclamos</h1>
       <p class="sub">Geolocalización automática de reclamos cada 4 horas.</p>
 
-      <div class="card">
-        <p class="muted" style="text-align:center; margin:0;">Todavía no hay reclamos geolocalizados.</p>
+      <div class="card claims-chips-card">
+        <h2 class="claims-filter-title">Temáticas</h2>
+        <div class="claims-chips-toolbar">
+          <button type="button" id="claimsSelectAllBtn" class="btn-small btn-copy claims-select-btn">Todas</button>
+          <button type="button" id="claimsSelectNoneBtn" class="btn-small btn-copy claims-select-btn">Ninguna</button>
+          <div id="claimsMapChips" class="claims-chips"></div>
+        </div>
+      </div>
+
+      <p id="claimsMapError" class="error hidden"></p>
+
+      <div class="card claims-map-card">
+        <div id="claims-map"></div>
+        <p id="claimsMapEmpty" class="muted claims-map-empty hidden">Todavía no hay reclamos geolocalizados.</p>
       </div>
     </div>
   </section>
@@ -177,6 +190,8 @@
   <script src="js/analysis.js"></script>
   <script src="https://unpkg.com/tabulator-tables@6.3.0/dist/js/tabulator.min.js"></script>
   <script src="js/monitoring.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="js/claimsMap.js"></script>
 </body>
 
 </html>

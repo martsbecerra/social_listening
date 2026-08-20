@@ -3,9 +3,8 @@
 // --------------------------------------------------------------------------
 // JSON Schema de la respuesta del LLM (Structured Outputs).
 // Debe estar alineado con prompt.js y validateAnalysis.js.
+// tematica es string libre (max 40); la normalización vive en tematica.js.
 // ==========================================================================
-
-const { RECLAMO_TEMATICAS } = require('./classificationConstants');
 
 // Valores permitidos; deben coincidir con validateAnalysis.js y el system prompt.
 const SENTIMENTS = ['positivo', 'negativo', 'neutral', 'ruido'];
@@ -20,8 +19,9 @@ const RECLAMO_GEO_SCHEMA = {
     direccionNormalizada: { type: 'string' },
     tematica: {
       type: 'string',
-      enum: RECLAMO_TEMATICAS,
-      description: 'Temática del reclamo; debe ser un valor de la lista cerrada.',
+      maxLength: 40,
+      description:
+        'Etiqueta corta (2 a 4 palabras) del tipo de reclamo. No es un enum: el backend la normaliza.',
     },
   },
   required: ['direccionDetectada', 'direccionNormalizada', 'tematica'],
@@ -89,5 +89,4 @@ module.exports = {
   ANALYSIS_JSON_SCHEMA,
   SENTIMENTS,
   ACCOUNT_TYPES,
-  RECLAMO_TEMATICAS,
 };

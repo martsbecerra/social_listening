@@ -7,6 +7,10 @@ document.querySelectorAll('.tab-btn').forEach((btn) => {
 
     btn.classList.add('active');
     document.getElementById(`tab-${btn.dataset.tab}`).classList.remove('hidden');
+
+    if (btn.dataset.tab === 'claims-map' && typeof window.refreshClaimsMap === 'function') {
+      window.refreshClaimsMap();
+    }
   });
 });
 

@@ -7,11 +7,6 @@
 // casos obvios además se refuerzan en classificationHeuristics.js.
 // ==========================================================================
 
-const { RECLAMO_TEMATICAS } = require('./classificationConstants');
-
-// Misma lista que el enum tematica en analysisSchema.js (una sola fuente: classificationConstants).
-const TEMATICAS_LISTADO = RECLAMO_TEMATICAS.join(', ');
-
 // Instrucciones fijas enviadas como system en analyzeComments / llm (no es código ejecutable).
 const CLASSIFICATION_SYSTEM_PROMPT = `Actuá como experto en análisis de sentimiento, marketing digital político e Instagram Analytics.
 
@@ -41,7 +36,7 @@ Debés devolver classifications para todos los comentarios numerados (mismo inde
 Solo si el comentario menciona ubicación concreta o aproximada (calle, esquina, barrio, etc.).
 - direccionDetectada: cita textual o casi textual del usuario.
 - direccionNormalizada: formato apto para mapa; "N/D" si no hay datos suficientes.
-- tematica: elegí EXACTAMENTE una de esta lista cerrada: ${TEMATICAS_LISTADO}. Usá "otro" solo si el reclamo tiene ubicación pero no encaja en ninguna categoría anterior.
+- tematica: frase corta de 2 a 4 palabras en minúsculas que nombre el tipo de reclamo (ej. bache, alumbrado, poda de árboles, plaza abandonada). No uses oraciones ni puntuación. Reutilizá la misma etiqueta si el tema es el mismo. Usá "otro" solo si el reclamo tiene ubicación pero no se puede nombrar.
 Un comentario puede tener varias entradas si menciona varias ubicaciones.
 Si no hay ubicación, reclamosGeo debe ser [].
 

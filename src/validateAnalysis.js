@@ -6,12 +6,12 @@
 // filas de CSV incompletas y comentarios que el modelo omitió por index.
 // ==========================================================================
 
-const { SENTIMENTS, ACCOUNT_TYPES, RECLAMO_TEMATICAS } = require('./analysisSchema');
+const { SENTIMENTS, ACCOUNT_TYPES } = require('./analysisSchema');
 const { applyClassificationHeuristics } = require('./classificationHeuristics');
+const { normalizeTematica } = require('./tematica');
 
 const SENTIMENT_SET = new Set(SENTIMENTS);
 const ACCOUNT_SET = new Set(ACCOUNT_TYPES);
-const TEMATICA_SET = new Set(RECLAMO_TEMATICAS);
 
 /** Si el valor no está en el enum acordado, usamos fallback (no rompe el agregado). */
 function pickEnum(value, allowed, fallback) {
@@ -19,7 +19,7 @@ function pickEnum(value, allowed, fallback) {
   return fallback;
 }
 
-/** Descarta entradas sin dirección detectada; temática forzada a lista cerrada. */
+/** Descarta entradas sin dirección detectada; temática libre normalizada. */
 function sanitizeReclamosGeo(raw) {
   if (!Array.isArray(raw)) return [];
   const out = [];
@@ -28,14 +28,13 @@ function sanitizeReclamosGeo(raw) {
     const direccionDetectada =
       typeof r.direccionDetectada === 'string' ? r.direccionDetectada.trim() : '';
     if (!direccionDetectada) continue;
-    const tematicaRaw = typeof r.tematica === 'string' ? r.tematica.trim() : '';
     out.push({
       direccionDetectada,
       direccionNormalizada:
         typeof r.direccionNormalizada === 'string' && r.direccionNormalizada.trim()
           ? r.direccionNormalizada.trim()
           : 'N/D',
-      tematica: pickEnum(tematicaRaw, TEMATICA_SET, 'otro'),
+      tematica: normalizeTematica(r.tematica),
     });
   }
   return out;
