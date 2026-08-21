@@ -16,6 +16,7 @@
 const fs = require('fs');
 const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
+const { normalizeTematica } = require('./tematica');
 
 const DATA_DIR = path.join(__dirname, '..', 'data');
 const DB_PATH = path.join(DATA_DIR, 'monitoring.db');
@@ -65,6 +66,89 @@ const listUnclassifiedStmt = db.prepare('SELECT id, caption FROM detected_posts 
 const updateClassificationStmt = db.prepare('UPDATE detected_posts SET title = ?, sentiment = ? WHERE id = ?');
 const updateSentimentStmt = db.prepare('UPDATE detected_posts SET sentiment = ? WHERE id = ?');
 const deletePostStmt = db.prepare('DELETE FROM detected_posts WHERE id = ?');
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS reclamos (
+    id TEXT PRIMARY KEY,
+    source TEXT NOT NULL,
+    username TEXT,
+    comment_text TEXT NOT NULL,
+    post_url TEXT,
+    comment_url TEXT,
+    tematica TEXT NOT NULL,
+    direccion_detectada TEXT,
+    direccion_normalizada TEXT,
+    lat REAL,
+    lng REAL,
+    geocode_status TEXT,
+    posted_at TEXT,
+    imported_at TEXT NOT NULL
+  )
+`);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS geocode_cache (
+    query_key TEXT PRIMARY KEY,
+    lat REAL,
+    lng REAL,
+    display_name TEXT,
+    status TEXT NOT NULL,
+    fetched_at TEXT NOT NULL
+  )
+`);
+
+const upsertReclamoStmt = db.prepare(`
+  INSERT INTO reclamos (
+    id, source, username, comment_text, post_url, comment_url, tematica,
+    direccion_detectada, direccion_normalizada, lat, lng, geocode_status,
+    posted_at, imported_at
+  ) VALUES (
+    @id, @source, @username, @commentText, @postUrl, @commentUrl, @tematica,
+    @direccionDetectada, @direccionNormalizada, @lat, @lng, @geocodeStatus,
+    @postedAt, @importedAt
+  )
+  ON CONFLICT(id) DO UPDATE SET
+    source = excluded.source,
+    username = excluded.username,
+    comment_text = excluded.comment_text,
+    post_url = excluded.post_url,
+    comment_url = excluded.comment_url,
+    tematica = excluded.tematica,
+    direccion_detectada = excluded.direccion_detectada,
+    direccion_normalizada = excluded.direccion_normalizada,
+    lat = excluded.lat,
+    lng = excluded.lng,
+    geocode_status = excluded.geocode_status,
+    posted_at = excluded.posted_at,
+    imported_at = excluded.imported_at
+`);
+const listReclamosStmt = db.prepare('SELECT * FROM reclamos ORDER BY imported_at ASC');
+const listPendingGeocodeStmt = db.prepare(`
+  SELECT DISTINCT direccion_normalizada AS direccionNormalizada
+  FROM reclamos
+  WHERE geocode_status = 'pending'
+    AND direccion_normalizada IS NOT NULL
+    AND TRIM(direccion_normalizada) != ''
+`);
+const applyGeocodeStmt = db.prepare(`
+  UPDATE reclamos
+  SET lat = ?, lng = ?, geocode_status = ?
+  WHERE direccion_normalizada = ?
+`);
+const getGeocodeCacheStmt = db.prepare('SELECT * FROM geocode_cache WHERE query_key = ?');
+const setGeocodeCacheStmt = db.prepare(`
+  INSERT INTO geocode_cache (query_key, lat, lng, display_name, status, fetched_at)
+  VALUES (@queryKey, @lat, @lng, @displayName, @status, @fetchedAt)
+  ON CONFLICT(query_key) DO UPDATE SET
+    lat = excluded.lat,
+    lng = excluded.lng,
+    display_name = excluded.display_name,
+    status = excluded.status,
+    fetched_at = excluded.fetched_at
+`);
+const countReclamosStmt = db.prepare('SELECT COUNT(*) AS total FROM reclamos');
+const deleteReclamosBySourceStmt = db.prepare('DELETE FROM reclamos WHERE source = ?');
+const updateReclamoTematicaStmt = db.prepare('UPDATE reclamos SET tematica = ? WHERE id = ?');
 
 function isKnownPost(id) {
   return Boolean(isKnownPostStmt.get(id));
@@ -149,6 +233,96 @@ function listUnnotified() {
   }));
 }
 
+function mapReclamoRow(row) {
+  return {
+    id: row.id,
+    source: row.source,
+    username: row.username,
+    commentText: row.comment_text,
+    postUrl: row.post_url,
+    commentUrl: row.comment_url,
+    tematica: row.tematica,
+    direccionDetectada: row.direccion_detectada,
+    direccionNormalizada: row.direccion_normalizada,
+    lat: row.lat,
+    lng: row.lng,
+    geocodeStatus: row.geocode_status,
+    postedAt: row.posted_at,
+    importedAt: row.imported_at,
+  };
+}
+
+function upsertReclamo(reclamo) {
+  upsertReclamoStmt.run({
+    id: reclamo.id,
+    source: reclamo.source,
+    username: reclamo.username || null,
+    commentText: reclamo.commentText,
+    postUrl: reclamo.postUrl || null,
+    commentUrl: reclamo.commentUrl || null,
+    tematica: normalizeTematica(reclamo.tematica),
+    direccionDetectada: reclamo.direccionDetectada || null,
+    direccionNormalizada: reclamo.direccionNormalizada || null,
+    lat: reclamo.lat ?? null,
+    lng: reclamo.lng ?? null,
+    geocodeStatus: reclamo.geocodeStatus || 'no_address',
+    postedAt: reclamo.postedAt || null,
+    importedAt: reclamo.importedAt || new Date().toISOString(),
+  });
+}
+
+function listReclamos() {
+  return listReclamosStmt.all().map(mapReclamoRow);
+}
+
+function listPendingGeocode() {
+  return listPendingGeocodeStmt
+    .all()
+    .map((row) => row.direccionNormalizada)
+    .filter(Boolean);
+}
+
+function applyGeocodeToReclamos(direccionNormalizada, { lat, lng, status }) {
+  applyGeocodeStmt.run(lat ?? null, lng ?? null, status, direccionNormalizada);
+}
+
+function getGeocodeCache(queryKey) {
+  const row = getGeocodeCacheStmt.get(queryKey);
+  if (!row) return null;
+  return {
+    queryKey: row.query_key,
+    lat: row.lat,
+    lng: row.lng,
+    displayName: row.display_name,
+    status: row.status,
+    fetchedAt: row.fetched_at,
+  };
+}
+
+function setGeocodeCache(entry) {
+  setGeocodeCacheStmt.run({
+    queryKey: entry.queryKey,
+    lat: entry.lat ?? null,
+    lng: entry.lng ?? null,
+    displayName: entry.displayName || null,
+    status: entry.status,
+    fetchedAt: entry.fetchedAt || new Date().toISOString(),
+  });
+}
+
+function countReclamos() {
+  return countReclamosStmt.get().total;
+}
+
+function deleteReclamosBySource(source) {
+  const result = deleteReclamosBySourceStmt.run(source);
+  return result.changes;
+}
+
+function updateReclamoTematica(id, tematica) {
+  updateReclamoTematicaStmt.run(normalizeTematica(tematica), id);
+}
+
 module.exports = {
   isKnownPost,
   saveDetectedPost,
@@ -159,4 +333,13 @@ module.exports = {
   updateClassification,
   updateSentiment,
   deletePost,
+  upsertReclamo,
+  listReclamos,
+  listPendingGeocode,
+  applyGeocodeToReclamos,
+  getGeocodeCache,
+  setGeocodeCache,
+  countReclamos,
+  deleteReclamosBySource,
+  updateReclamoTematica,
 };

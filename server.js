@@ -21,6 +21,7 @@ const { getLlmProvider, requiredLlmEnvKeys, getProviderLabel } = require('./src/
 const db = require('./src/db');
 const monitor = require('./src/monitor');
 const { startScheduler, runCycleAndNotify } = require('./src/scheduler');
+const { collectTematicas } = require('./src/tematica');
 
 const app = express();
 
@@ -239,13 +240,32 @@ app.post('/api/monitoring/backfill-classification', async (req, res) => {
   }
 });
 
+app.get('/api/reclamos', (req, res) => {
+  const reclamos = db.listReclamos().map((row) => ({
+    id: row.id,
+    username: row.username,
+    commentText: row.commentText,
+    postUrl: row.postUrl,
+    tematica: row.tematica,
+    direccionDetectada: row.direccionDetectada,
+    direccionNormalizada: row.direccionNormalizada,
+    lat: row.lat,
+    lng: row.lng,
+    postedAt: row.postedAt,
+  }));
+  const mapped = reclamos.filter(
+    (row) => row.lat != null && row.lng != null && row.direccionNormalizada
+  );
+  res.json({ tematicas: collectTematicas(mapped), reclamos });
+});
+
 // --------------------------------------------------------------------------
 // Arrancamos el servidor.
 // --------------------------------------------------------------------------
 const PORT = process.env.PORT || 3000;
 checkEnv();
 startScheduler();
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   const provider = getLlmProvider();
   console.log(`\n✅ Servidor listo en http://localhost:${PORT}`);
   console.log(`   Proveedor LLM: ${getProviderLabel(provider)} (${provider})`);
@@ -253,3 +273,22 @@ app.listen(PORT, () => {
     `   Límites: COMMENTS_LIMIT (Apify)=${process.env.COMMENTS_LIMIT || 100}, COMMENTS_ANALYSIS_LIMIT (LLM)=${resolveMaxCommentsLimit()}\n`
   );
 });
+
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(
+      `\n❌ El puerto ${PORT} ya está en uso.` +
+      `\n   Liberálo con: npm run stop\n`
+    );
+    process.exit(1);
+  }
+  throw err;
+});
+
+function shutdown(signal) {
+  console.log(`\n${signal} recibido. Cerrando servidor...`);
+  server.close(() => process.exit(0));
+}
+
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));

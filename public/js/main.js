@@ -7,12 +7,15 @@ document.querySelectorAll('.tab-btn').forEach((btn) => {
 
     btn.classList.add('active');
     document.getElementById(`tab-${btn.dataset.tab}`).classList.remove('hidden');
+
+    if (btn.dataset.tab === 'claims-map' && typeof window.refreshClaimsMap === 'function') {
+      window.refreshClaimsMap();
+    }
   });
 });
 
 // Dropdown de usuario: solo visual, sin autenticación real todavía.
-// Hay una instancia por solapa (Análisis / Monitoreo), cada una con su botón
-// y su dropdown propios.
+// El dropdown vive en la barra de tabs (Análisis / Monitoreo / Mapa de reclamos).
 document.querySelectorAll('.user-btn').forEach((btn) => {
   const dropdown = document.getElementById(btn.dataset.dropdown);
   if (!dropdown) return;
