@@ -122,15 +122,42 @@ async function scrapeInstagram(postUrl) {
     resultsLimit: 1,
   };
 
+  const commentsLimitRequested = commentsInput.resultsLimit;
+
   const [commentItems, postItems] = await Promise.all([
     runActorSync(commentsInput),
     runActorSync(postInput),
   ]);
 
+  const rawCommentItems = Array.isArray(commentItems) ? commentItems.length : 0;
   const post = normalizePost(postItems, commentItems, postUrl);
   const comments = normalizeComments(commentItems);
 
-  return { post, comments };
+  const scrapeMeta = {
+    commentsLimitRequested,
+    rawCommentItems,
+    commentsOnPost: post.commentsCount,
+    comentariosTrasNormalizar: comments.length,
+  };
+
+  if (
+    Number.isFinite(commentsLimitRequested) &&
+    rawCommentItems > 0 &&
+    rawCommentItems < commentsLimitRequested
+  ) {
+    const apifyFreeHint =
+      rawCommentItems <= 15
+        ? ' Apify en plan gratuito suele devolver ~15 comentarios (una página); con plan pago podés pedir más (hasta ~50 por post en este actor).'
+        : '';
+    console.warn(
+      `[apify] Apify devolvió ${rawCommentItems} ítems de comentarios, menos que COMMENTS_LIMIT=${commentsLimitRequested}.${apifyFreeHint}` +
+      (post.commentsCount != null && post.commentsCount > rawCommentItems
+        ? ` Instagram reporta ${post.commentsCount} comentarios en el post.`
+        : '')
+    );
+  }
+
+  return { post, comments, scrapeMeta };
 }
 
 /**
@@ -160,6 +187,7 @@ function normalizePost(postItems, commentItems, postUrl) {
 
 /**
  * Deja cada comentario en un formato limpio con solo los campos que necesitamos.
+ * El orden del array no se garantiza; commentSample.js lo normaliza antes del análisis.
  */
 function normalizeComments(commentItems) {
   if (!Array.isArray(commentItems)) return [];
@@ -168,6 +196,8 @@ function normalizeComments(commentItems) {
     // Nos quedamos solo con items que realmente tengan texto de comentario.
     .filter((c) => c && typeof c.text === 'string' && c.text.trim().length > 0)
     .map((c) => ({
+      // id opcional de Apify: desempate estable en commentSample.js si hay empates.
+      apifyId: c.id ?? c.commentId ?? c.pk ?? null,
       username: c.ownerUsername || (c.owner && c.owner.username) || 'desconocido',
       isVerified: Boolean(
         c.ownerIsVerified ?? (c.owner && c.owner.is_verified) ?? false

@@ -8,8 +8,11 @@ const resultCard = document.getElementById('resultCard');
 const reportEl = document.getElementById('report');
 const metaEl = document.getElementById('meta');
 const copyBtn = document.getElementById('copyBtn');
+const waShareBtn = document.getElementById('waShareBtn');
 const clearBtn = document.getElementById('clearBtn');
 const csvBtn = document.getElementById('csvBtn');
+
+const WA_TEXT_CAP = 4000;
 
 // Guarda el CSV de reclamos de la última respuesta, para poder
 // descargarlo cuando el usuario haga clic en "Descargar CSV".
@@ -79,6 +82,38 @@ function stopLoading(exito) {
   }
 }
 
+function formatCostUsd(usd, source) {
+  if (!Number.isFinite(usd)) return '';
+  const formatted = usd.toLocaleString('es-AR', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 4,
+    maximumFractionDigits: 6,
+  });
+  if (source === 'openrouter') return formatted;
+  if (source === 'estimate_env' || source === 'estimate_anthropic') {
+    return `~${formatted} est.`;
+  }
+  return formatted;
+}
+
+function formatMetaLine(m) {
+  const commentPart = m.muestraParcial
+    ? `${m.comentariosAnalizados} comentarios analizados (muestra priorizada de ${m.comentariosUnicos} únicos)`
+    : `${m.comentariosAnalizados ?? m.comentariosExtraidos} comentarios analizados`;
+
+  const t = m.tokenUsage;
+  if (!t || !Number.isFinite(t.totalTokens)) return commentPart;
+
+  const fmt = (n) => (Number.isFinite(n) ? n.toLocaleString('es-AR') : '—');
+  const tokenPart = `${fmt(t.totalTokens)} tokens LLM (${fmt(t.inputTokens)} entrada · ${fmt(t.outputTokens)} salida)`;
+  const costPart = formatCostUsd(t.costUsd, t.costSource);
+  const parts = [commentPart, tokenPart];
+  if (costPart) parts.push(`costo LLM ${costPart}`);
+  if (m.llmAttempts > 1) parts.push(`${m.llmAttempts} intentos LLM`);
+  return parts.join(' · ');
+}
+
 async function analyze() {
   const url = urlInput.value.trim();
 
@@ -113,7 +148,7 @@ async function analyze() {
 
     // Mostramos el reporte.
     reportEl.textContent = data.report;
-    metaEl.textContent = `${data.meta.comentariosAnalizados} comentarios analizados`;
+    metaEl.textContent = formatMetaLine(data.meta || {});
     currentCsv = data.csv || '';
     show(resultCard);
   } catch (err) {
@@ -134,6 +169,29 @@ async function copyReport() {
   } catch {
     copyBtn.textContent = 'No se pudo copiar';
   }
+}
+
+// Abre WhatsApp Desktop/móvil con el esquema nativo. api.whatsapp.com/send
+// sin teléfono muestra "Enlace incorrecto"; wa.me rompe los emojis al redirigir.
+function openWhatsAppApp(encodedText) {
+  const a = document.createElement('a');
+  a.href = 'whatsapp://send?text=' + encodedText;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+function truncateWaText(text) {
+  if (text.length <= WA_TEXT_CAP) return text;
+  let cut = WA_TEXT_CAP;
+  if (/[\uD800-\uDBFF]$/.test(text.slice(0, cut))) cut -= 1;
+  return text.slice(0, cut);
+}
+
+function shareWhatsApp() {
+  const text = reportEl.textContent;
+  if (!text || !text.trim()) return;
+  openWhatsAppApp(encodeURIComponent(truncateWaText(text)));
 }
 
 // Descarga el CSV de reclamos (dirección + temática) como archivo .csv.
@@ -172,5 +230,6 @@ urlInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') analyze();
 });
 copyBtn.addEventListener('click', copyReport);
+waShareBtn.addEventListener('click', shareWhatsApp);
 clearBtn.addEventListener('click', clearAll);
 csvBtn.addEventListener('click', downloadCsv);

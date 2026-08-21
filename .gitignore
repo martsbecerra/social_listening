@@ -4,7 +4,8 @@ node_modules/
 # Variables de entorno con secretos (¡nunca subir!)
 .env
 
-# Base de datos del monitoreo automático (datos reales, no se versiona)
+# Datos locales: SQLite del monitoreo, registro de account-types, etc.
+# (ver data/account-types.example.json si hace falta una plantilla)
 data/
 
 # Logs
@@ -14,3 +15,6 @@ npm-debug.log*
 # Sistema operativo
 .DS_Store
 Thumbs.db
+
+# Agent / SDD infrastructure (skill registry)
+.atl/

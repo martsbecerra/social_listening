@@ -3,10 +3,10 @@
 App web que:
 
 1. Recibe el link de una publicación de Instagram, extrae los comentarios y
-   los datos del posteo con **Apify**, y los analiza con **Claude
-   (Anthropic)** siguiendo una metodología de análisis político, mostrando un
-   **reporte ejecutivo** listo para copiar y pegar en WhatsApp (solapa
-   "Análisis de publicación").
+   los datos del posteo con **Apify**, y los analiza con un **LLM** (Anthropic
+   Claude u **OpenRouter**) siguiendo una metodología de análisis político,
+   mostrando un **reporte ejecutivo** listo para WhatsApp (solapa "Análisis de
+   publicación").
 2. Monitorea automáticamente, cada 4 horas, si aparece algún posteo nuevo de
    las cuentas trackeadas o que mencione las palabras clave/hashtags
    configurados, y avisa por email (solapa "Monitoreo en vivo").
@@ -20,8 +20,9 @@ social_listening_app/
 ├── server.js                 # Servidor web (Express). Punto de entrada.
 ├── src/
 │   ├── apify.js              # Extrae comentarios y datos del posteo desde Apify.
-│   ├── anthropic.js          # Arma el prompt y llama a Claude para el análisis.
-│   ├── prompt.js             # La metodología de análisis (system prompt de Claude).
+│   ├── analyzeComments.js    # Orquestación del análisis (Apify → LLM → reporte).
+│   ├── llm/                  # Proveedores: anthropicProvider, openrouterProvider.
+│   ├── prompt.js             # La metodología de análisis (system prompt).
 │   ├── db.js                 # Base SQLite de posteos detectados (monitoreo).
 │   ├── monitor.js            # Detección de posteos nuevos + config de cuentas/keywords.
 │   ├── classifier.js         # Título + sentimiento de cada posteo (Claude Haiku).
@@ -35,8 +36,10 @@ social_listening_app/
 ├── data/
 │   └── monitoring.db         # Base SQLite (se crea sola, no se versiona).
 ├── public/
-│   ├── index.html            # Estructura: header, tabs, formulario, tabla.
-│   ├── css/styles.css        # Todos los estilos (paleta oscura corporativa).
+│   ├── index.html            # Login de fachada (sin auth real todavía).
+│   ├── dashboard.html        # Selector de red social.
+│   ├── instagram.html        # App Instagram: análisis + monitoreo (tabs).
+│   ├── css/styles.css        # Estilos (paleta oscura corporativa).
 │   └── js/
 │       ├── main.js           # Tabs + dropdown de usuario (solo visual).
 │       ├── analysis.js       # Lógica de "Análisis de publicación".
@@ -54,13 +57,13 @@ social_listening_app/
   `apify/instagram-scraper` (modo `comments` y modo `posts`) usando el
   endpoint **sincrónico** `run-sync-get-dataset-items`. También expone
   `runActorSync` para que `src/monitor.js` lo reuse.
-- **`src/anthropic.js`**: arma el mensaje con los datos + comentarios y se lo
-  manda a Claude junto con la metodología; devuelve el reporte en texto.
+- **`src/analyzeComments.js`**: muestra estable, prompt, llamada al proveedor LLM,
+  validación y armado del reporte WhatsApp + CSV.
 - **`src/prompt.js`**: contiene la metodología completa de análisis (el
   "system prompt"). Separado para que sea fácil de ajustar.
-- **`public/index.html` + `public/css/styles.css` + `public/js/*.js`**: la
-  interfaz, separada en estructura/estilo/comportamiento en vez de un solo
-  archivo gigante.
+- **`public/index.html` + `dashboard.html` + `instagram.html` + `css/` + `js/`**: la
+  interfaz (login → dashboard → app Instagram con tabs), separada en
+  estructura/estilo/comportamiento.
 
 ### Monitoreo automático — archivos nuevos explicados
 
@@ -207,8 +210,9 @@ Copy-Item .env.example .env
 
 Abrí `.env` y pegá:
 
-- `APIFY_API_TOKEN` → desde https://console.apify.com/account/integrations
-- `ANTHROPIC_API_KEY` → desde https://console.anthropic.com/settings/keys
+- `APIFY_API_TOKEN` → https://console.apify.com/account/integrations
+- **Anthropic (default):** `LLM_PROVIDER=anthropic`, `ANTHROPIC_API_KEY` → https://console.anthropic.com/settings/keys
+- **OpenRouter:** `LLM_PROVIDER=openrouter`, `OPENROUTER_API_KEY` → https://openrouter.ai/settings/keys y `OPENROUTER_MODEL` (p. ej. `openai/gpt-4.1`)
 - `SMTP_USER` / `SMTP_PASS` → tu Gmail y una
   ["contraseña de aplicación"](https://myaccount.google.com/apppasswords)
   (necesarias solo para las alertas del monitoreo)
@@ -222,8 +226,8 @@ npm start
 
 Vas a ver: `✅ Servidor listo en http://localhost:3000`
 
-Abrí esa dirección en el navegador, pegá el link de una publicación y hacé clic
-en **Analizar publicación**.
+Abrí esa dirección en el navegador (login de fachada → dashboard → Instagram),
+pegá el link de una publicación y hacé clic en **Analizar publicación**.
 
 ---
 
@@ -248,16 +252,18 @@ comentarios totales, reproducciones, autor). Corren **en paralelo**, así que ca
 no suma tiempo. Además, en la corrida de comentarios activamos `addParentData`
 como respaldo por si la de `posts` no trajera datos.
 
-### ¿Qué modelo de Claude usa?
+### ¿Qué modelo usa el análisis?
 
-Por defecto **`claude-sonnet-5`** (variable `CLAUDE_MODEL` en `.env`).
+Depende de `LLM_PROVIDER` en `.env` (default **`anthropic`**).
 
-- Pediste el más económico (**Haiku**), pero para análisis político con matices
-  (ironía, sarcasmo, ponderación por tipo de cuenta) **recomiendo Sonnet 5**: es
-  bastante más fino y sigue siendo económico ($3/$15 por millón de tokens; con
-  precio introductorio $2/$10 hasta 2026-08-31).
-- Si querés priorizar costo, poné `CLAUDE_MODEL=claude-haiku-4-5`.
-- Si querés máxima calidad, poné `CLAUDE_MODEL=claude-opus-4-8`.
+**Anthropic:** por defecto **`claude-sonnet-5`** (`CLAUDE_MODEL`).
+
+- Si querés priorizar costo: `CLAUDE_MODEL=claude-haiku-4-5`.
+- Si querés máxima calidad: `CLAUDE_MODEL=claude-opus-4-8`.
+
+**OpenRouter:** default **`openai/gpt-4.1`** (`OPENROUTER_MODEL`). Elegí un modelo que soporte `json_schema` (GPT-4.1, Gemini 2.5 Pro, etc.).
+
+Al arrancar, el servidor imprime qué proveedor está activo.
 
 El costo por análisis es bajo: son unos pocos miles de tokens de entrada
 (comentarios) y ~2-3 mil de salida (el reporte).
@@ -269,10 +275,10 @@ El costo por análisis es bajo: son unos pocos miles de tokens de entrada
 La app muestra mensajes claros cuando:
 
 - El link no es una publicación válida de Instagram.
-- Falta o es inválida alguna clave (Apify o Anthropic).
+- Falta o es inválida alguna clave (Apify o el proveedor LLM activo).
 - Apify falla, se demora demasiado o alcanzó su límite de uso.
 - La publicación no tiene comentarios extraíbles.
-- Claude falla o alcanzó su límite de uso.
+- El LLM falla o alcanzó su límite de uso.
 
 ---
 
