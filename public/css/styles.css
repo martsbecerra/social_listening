@@ -603,7 +603,7 @@ pre.report {
 }
 
 /* ------------------------------------------------------------------ */
-/* Login (solo visual: sin autenticación real todavía)                  */
+/* Login (magic link)                                                    */
 /* ------------------------------------------------------------------ */
 .login-page {
   flex: 1;
@@ -629,21 +629,45 @@ pre.report {
 .login-card label:first-of-type {
   margin-top: 0;
 }
+.login-verify-copy {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 0.95rem;
+  line-height: 1.4;
+}
 .login-submit {
   display: block;
+  width: 100%;
   margin-top: 20px;
   padding: 12px 16px;
+  border: none;
   border-radius: 8px;
   background: var(--accent);
   color: #ffffff;
   font-size: 1rem;
   font-weight: 600;
+  font-family: inherit;
   text-align: center;
   text-decoration: none;
+  cursor: pointer;
   transition: background 0.15s ease;
 }
-.login-submit:hover {
+.login-submit:hover:not(:disabled) {
   background: var(--accent-hover);
+}
+.login-submit:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+.login-status {
+  margin: 12px 0 0;
+  min-height: 1.2em;
+  font-size: 0.9rem;
+  color: var(--muted);
+  line-height: 1.4;
+}
+.login-status.is-error {
+  color: var(--error);
 }
 
 /* ------------------------------------------------------------------ */

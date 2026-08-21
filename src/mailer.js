@@ -62,4 +62,30 @@ async function sendAlertEmail(post) {
   });
 }
 
-module.exports = { sendAlertEmail };
+/**
+ * Mail del magic link de login. El URL se arma con APP_BASE_URL, nunca
+ * con el header Host.
+ */
+async function sendMagicLinkEmail({ email, rawToken }) {
+  const base = (process.env.APP_BASE_URL || '').replace(/\/$/, '');
+  if (!base) {
+    throw new Error('APP_BASE_URL no está configurado en el .env');
+  }
+
+  const verifyUrl = `${base}/login-verify.html?token=${encodeURIComponent(rawToken)}`;
+
+  await getTransporter().sendMail({
+    from: process.env.SMTP_FROM || process.env.SMTP_USER,
+    to: email,
+    subject: 'Tu link para entrar — Social Listening',
+    text: [
+      'Hacé clic en este link para entrar. Vence en 15 minutos y se usa una sola vez.',
+      '',
+      verifyUrl,
+      '',
+      'Si no pediste entrar, ignorá este mail.',
+    ].join('\n'),
+  });
+}
+
+module.exports = { sendAlertEmail, sendMagicLinkEmail };

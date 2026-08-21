@@ -1,22 +1,23 @@
 <!DOCTYPE html>
 <html lang="es">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Social Listening App</title>
   <link rel="stylesheet" href="css/styles.css" />
 </head>
+
 <body>
   <header class="topbar dashboard-topbar">
     <div class="topbar-brand">
       <img src="logo.png" alt="Social Listening App" />
     </div>
-    <!-- Solo visual: sin lógica de autenticación todavía. -->
     <div class="topbar-user">
-      <button class="user-btn" data-dropdown="userDropdown">👤 ▾</button>
+      <button class="user-btn" data-dropdown="userDropdown" type="button">👤 ▾</button>
       <div id="userDropdown" class="user-dropdown hidden">
-        <span>Nombre de usuario</span>
-        <button disabled>Cerrar sesión</button>
+        <span class="user-email"></span>
+        <button type="button" class="logout-btn">Cerrar sesión</button>
       </div>
     </div>
   </header>
@@ -51,4 +52,5 @@
 
   <script src="js/main.js"></script>
 </body>
+
 </html>

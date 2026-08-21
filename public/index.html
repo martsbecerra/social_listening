@@ -1,26 +1,27 @@
 <!DOCTYPE html>
 <html lang="es">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Iniciar sesión — Social Listening App</title>
   <link rel="stylesheet" href="css/styles.css" />
 </head>
+
 <body>
   <div class="login-page">
     <img src="logo.png" alt="Social Listening App" class="login-logo" />
 
-    <div class="card login-card">
-      <!-- Solo visual: todavía no hay autenticación real. Cualquier valor
-           (o ninguno) y "Iniciar sesión" te lleva directo al dashboard. -->
+    <form class="card login-card" id="loginForm" novalidate>
       <label for="loginEmail">Email</label>
-      <input type="text" id="loginEmail" placeholder="nombre@buenosaires.gob.ar" autocomplete="off" />
+      <input type="email" id="loginEmail" name="email" placeholder="nombre@buenosaires.gob.ar" autocomplete="username"
+        required />
 
-      <label for="loginPassword">Contraseña</label>
-      <input type="password" id="loginPassword" placeholder="••••••••" autocomplete="off" />
-
-      <a href="dashboard.html" class="login-submit">Iniciar sesión</a>
-    </div>
+      <button type="submit" class="login-submit" id="loginSubmit">Enviarme el link</button>
+      <p id="loginStatus" class="login-status" role="status"></p>
+    </form>
   </div>
+  <script src="js/login.js"></script>
 </body>
+
 </html>

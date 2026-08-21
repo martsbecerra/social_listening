@@ -22,8 +22,23 @@ const db = require('./src/db');
 const monitor = require('./src/monitor');
 const { startScheduler, runCycleAndNotify } = require('./src/scheduler');
 const { collectTematicas } = require('./src/tematica');
+const { normalizeEmail, isEmailAllowed } = require('./src/auth/allowlist');
+const { issueMagicLink, redeemMagicLink } = require('./src/auth/magicLink');
+const { sendMagicLinkEmail } = require('./src/mailer');
+const {
+  setSessionCookie,
+  clearSessionCookie,
+  isAuthConfigured,
+} = require('./src/auth/session');
+const { isMagicLinkRateLimited } = require('./src/auth/rateLimit');
+const { createAuthGate } = require('./src/auth/gate');
 
 const app = express();
+
+const MAGIC_LINK_GENERIC = {
+  ok: true,
+  message: 'Si el email está autorizado, te mandamos un link. Revisá tu casilla.',
+};
 
 /** Log de alto nivel por tarea del pipeline (no por comentario). */
 function logTask(phase, detail = {}) {
@@ -31,10 +46,19 @@ function logTask(phase, detail = {}) {
   console.log(`[analyze] ${phase}${payload}`);
 }
 
-// Permite leer el cuerpo (body) de las peticiones en formato JSON.
-app.use(express.json());
+if (
+  process.env.TRUST_PROXY === '1' ||
+  process.env.TRUST_PROXY === 'true' ||
+  (process.env.APP_BASE_URL || '').startsWith('https://')
+) {
+  app.set('trust proxy', 1);
+}
 
-// Sirve los archivos estáticos (la web) desde la carpeta "public".
+app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
+
+// El gate va ANTES de los estáticos: si no, dashboard.html se sirve sin cookie.
+app.use(createAuthGate());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // --------------------------------------------------------------------------
@@ -46,6 +70,8 @@ function checkEnv() {
   for (const key of requiredLlmEnvKeys()) {
     if (!process.env[key]) faltantes.push(key);
   }
+  if (!process.env.SESSION_SECRET) faltantes.push('SESSION_SECRET');
+  if (!process.env.APP_BASE_URL) faltantes.push('APP_BASE_URL');
   if (faltantes.length > 0) {
     console.warn(
       `\n⚠️  ATENCIÓN: faltan estas variables en el archivo .env: ${faltantes.join(', ')}` +
@@ -68,6 +94,66 @@ function isValidInstagramPostUrl(url) {
     return false;
   }
 }
+
+// --------------------------------------------------------------------------
+// Auth: allowlist + magic link + sesión.
+// --------------------------------------------------------------------------
+app.post('/api/auth/magic-link', async (req, res) => {
+  const email = normalizeEmail(req.body && req.body.email);
+  const ip = req.ip || req.socket.remoteAddress || 'unknown';
+
+  if (isMagicLinkRateLimited({ ip, email })) {
+    return res.status(429).json({ error: 'Demasiados intentos. Probá en unos minutos.' });
+  }
+
+  if (!isAuthConfigured()) {
+    console.error('Auth mal configurado: faltan SESSION_SECRET o APP_BASE_URL');
+    return res.status(503).json({
+      error: 'El login no está configurado. Revisá SESSION_SECRET y APP_BASE_URL.',
+    });
+  }
+
+  if (!email || !isEmailAllowed(email)) {
+    return res.json(MAGIC_LINK_GENERIC);
+  }
+
+  try {
+    const { rawToken } = issueMagicLink(email);
+    await sendMagicLinkEmail({ email, rawToken });
+  } catch (err) {
+    console.error('Error enviando magic link:', err.message);
+  }
+
+  return res.json(MAGIC_LINK_GENERIC);
+});
+
+app.post('/api/auth/verify', (req, res) => {
+  const token = (req.body && req.body.token) || '';
+  const result = redeemMagicLink(token);
+  if (!result.ok) {
+    return res
+      .status(400)
+      .type('html')
+      .send(
+        '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Link inválido</title></head><body>' +
+        '<p>El link expiró o ya fue usado. <a href="/">Pedí uno nuevo</a>.</p></body></html>'
+      );
+  }
+  setSessionCookie(res, result.email);
+  return res.redirect(302, '/dashboard.html');
+});
+
+app.get('/api/auth/me', (req, res) => {
+  if (!req.auth) {
+    return res.status(401).json({ error: 'Tenés que iniciar sesión.' });
+  }
+  return res.json({ email: req.auth.email });
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  clearSessionCookie(res);
+  return res.status(204).end();
+});
 
 // --------------------------------------------------------------------------
 // Endpoint principal: recibe el link y devuelve el reporte.

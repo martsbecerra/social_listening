@@ -26,12 +26,11 @@
       <button class="tab-btn" data-tab="monitoring">Monitoreo en vivo</button>
       <button class="tab-btn" data-tab="claims-map">Mapa de reclamos</button>
     </div>
-    <!-- Solo visual: sin lógica de autenticación todavía. -->
     <div class="topbar-user">
-      <button class="user-btn" data-dropdown="userDropdown">👤 ▾</button>
+      <button class="user-btn" data-dropdown="userDropdown" type="button">👤 ▾</button>
       <div id="userDropdown" class="user-dropdown hidden">
-        <span>Nombre de usuario</span>
-        <button disabled>Cerrar sesión</button>
+        <span class="user-email"></span>
+        <button type="button" class="logout-btn">Cerrar sesión</button>
       </div>
     </div>
   </nav>

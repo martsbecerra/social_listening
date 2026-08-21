@@ -10,7 +10,8 @@
 // sincrónica y simple. Todo vive en un único archivo: data/monitoring.db.
 //
 // Guardamos acá cada posteo relevante que detectamos, para no volver a
-// notificarlo dos veces en corridas futuras.
+// notificarlo dos veces en corridas futuras. También los hashes de magic
+// links de login (nunca el token crudo).
 // ==========================================================================
 
 const fs = require('fs');
@@ -149,6 +150,28 @@ const setGeocodeCacheStmt = db.prepare(`
 const countReclamosStmt = db.prepare('SELECT COUNT(*) AS total FROM reclamos');
 const deleteReclamosBySourceStmt = db.prepare('DELETE FROM reclamos WHERE source = ?');
 const updateReclamoTematicaStmt = db.prepare('UPDATE reclamos SET tematica = ? WHERE id = ?');
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS magic_links (
+    token_hash TEXT PRIMARY KEY,
+    email TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    used_at TEXT
+  )
+`);
+
+const insertMagicLinkStmt = db.prepare(`
+  INSERT INTO magic_links (token_hash, email, expires_at, used_at)
+  VALUES (@tokenHash, @email, @expiresAt, NULL)
+`);
+const claimMagicLinkStmt = db.prepare(`
+  UPDATE magic_links
+  SET used_at = ?
+  WHERE token_hash = ?
+    AND used_at IS NULL
+    AND expires_at > ?
+`);
+const getMagicLinkStmt = db.prepare('SELECT email FROM magic_links WHERE token_hash = ?');
 
 function isKnownPost(id) {
   return Boolean(isKnownPostStmt.get(id));
@@ -323,6 +346,21 @@ function updateReclamoTematica(id, tematica) {
   updateReclamoTematicaStmt.run(normalizeTematica(tematica), id);
 }
 
+function insertMagicLink({ tokenHash, email, expiresAt }) {
+  insertMagicLinkStmt.run({ tokenHash, email, expiresAt });
+}
+
+/**
+ * Marca el token como usado solo si todavía es válido. Devuelve el email
+ * o null si ya se usó, expiró o no existe.
+ */
+function claimMagicLink(tokenHash, nowIso) {
+  const result = claimMagicLinkStmt.run(nowIso, tokenHash, nowIso);
+  if (result.changes === 0) return null;
+  const row = getMagicLinkStmt.get(tokenHash);
+  return row ? { email: row.email } : null;
+}
+
 module.exports = {
   isKnownPost,
   saveDetectedPost,
@@ -342,4 +380,6 @@ module.exports = {
   countReclamos,
   deleteReclamosBySource,
   updateReclamoTematica,
+  insertMagicLink,
+  claimMagicLink,
 };

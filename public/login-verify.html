@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Confirmar acceso — Social Listening App</title>
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+
+<body>
+  <div class="login-page">
+    <img src="logo.png" alt="Social Listening App" class="login-logo" />
+
+    <form class="card login-card" id="verifyForm" method="POST" action="/api/auth/verify">
+      <p class="login-verify-copy">Hacé clic para entrar. Este paso evita que un filtro de correo use el link por vos.
+      </p>
+      <input type="hidden" name="token" id="tokenInput" />
+      <button type="submit" class="login-submit" id="verifySubmit">Entrar</button>
+      <p id="verifyStatus" class="login-status is-error" role="status"></p>
+    </form>
+  </div>
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('token') || '';
+    const tokenInput = document.getElementById('tokenInput');
+    const form = document.getElementById('verifyForm');
+    const statusEl = document.getElementById('verifyStatus');
+    const submitBtn = document.getElementById('verifySubmit');
+
+    tokenInput.value = token;
+    if (!token) {
+      submitBtn.disabled = true;
+      statusEl.textContent = 'Falta el token. Pedí un link nuevo desde la página de inicio.';
+    }
+
+    form.addEventListener('submit', () => {
+      if (!tokenInput.value) {
+        statusEl.textContent = 'Falta el token. Pedí un link nuevo desde la página de inicio.';
+      }
+    });
+  </script>
+</body>
+
+</html>
