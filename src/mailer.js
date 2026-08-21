@@ -12,7 +12,18 @@ const nodemailer = require('nodemailer');
 
 let transporter = null;
 
+function smtpConfigError() {
+  const missing = ['SMTP_HOST', 'SMTP_USER', 'SMTP_PASS'].filter((key) => !process.env[key]);
+  if (missing.length === 0) return null;
+  return new Error(
+    `Faltan ${missing.join(', ')} en el .env. Sin SMTP_HOST, Nodemailer intenta 127.0.0.1 y el magic link no sale.`
+  );
+}
+
 function getTransporter() {
+  const configError = smtpConfigError();
+  if (configError) throw configError;
+
   if (transporter) return transporter;
 
   transporter = nodemailer.createTransport({

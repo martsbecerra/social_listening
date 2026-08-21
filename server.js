@@ -72,6 +72,9 @@ function checkEnv() {
   }
   if (!process.env.SESSION_SECRET) faltantes.push('SESSION_SECRET');
   if (!process.env.APP_BASE_URL) faltantes.push('APP_BASE_URL');
+  if (!process.env.SMTP_HOST) faltantes.push('SMTP_HOST');
+  if (!process.env.SMTP_USER) faltantes.push('SMTP_USER');
+  if (!process.env.SMTP_PASS) faltantes.push('SMTP_PASS');
   if (faltantes.length > 0) {
     console.warn(
       `\n⚠️  ATENCIÓN: faltan estas variables en el archivo .env: ${faltantes.join(', ')}` +
