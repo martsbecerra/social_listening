@@ -46,6 +46,11 @@ function logTask(phase, detail = {}) {
   console.log(`[analyze] ${phase}${payload}`);
 }
 
+function logAuth(phase, detail = {}) {
+  const payload = Object.keys(detail).length ? ` ${JSON.stringify(detail)}` : '';
+  console.log(`[auth] ${phase}${payload}`);
+}
+
 if (
   process.env.TRUST_PROXY === '1' ||
   process.env.TRUST_PROXY === 'true' ||
@@ -104,27 +109,33 @@ function isValidInstagramPostUrl(url) {
 app.post('/api/auth/magic-link', async (req, res) => {
   const email = normalizeEmail(req.body && req.body.email);
   const ip = req.ip || req.socket.remoteAddress || 'unknown';
+  logAuth('pedido de magic link', { email: email || null });
 
   if (isMagicLinkRateLimited({ ip, email })) {
+    logAuth('rate limit', { email: email || null });
     return res.status(429).json({ error: 'Demasiados intentos. Probá en unos minutos.' });
   }
 
   if (!isAuthConfigured()) {
-    console.error('Auth mal configurado: faltan SESSION_SECRET o APP_BASE_URL');
+    logAuth('config incompleta', { falta: 'SESSION_SECRET o APP_BASE_URL' });
     return res.status(503).json({
       error: 'El login no está configurado. Revisá SESSION_SECRET y APP_BASE_URL.',
     });
   }
 
   if (!email || !isEmailAllowed(email)) {
+    logAuth('email no autorizado o vacío', { email: email || null });
     return res.json(MAGIC_LINK_GENERIC);
   }
 
   try {
     const { rawToken } = issueMagicLink(email);
+    logAuth('enviando mail', { email, smtp: process.env.SMTP_HOST || null });
     await sendMagicLinkEmail({ email, rawToken });
+    logAuth('mail enviado', { email });
   } catch (err) {
-    console.error('Error enviando magic link:', err.message);
+    logAuth('error enviando mail', { email, message: err.message });
+    console.error('[auth] Error enviando magic link:', err.message);
   }
 
   return res.json(MAGIC_LINK_GENERIC);
@@ -134,6 +145,7 @@ app.post('/api/auth/verify', (req, res) => {
   const token = (req.body && req.body.token) || '';
   const result = redeemMagicLink(token);
   if (!result.ok) {
+    logAuth('verify fallido', { motivo: 'token inválido, usado o expirado' });
     return res
       .status(400)
       .type('html')
@@ -143,6 +155,7 @@ app.post('/api/auth/verify', (req, res) => {
       );
   }
   setSessionCookie(res, result.email);
+  logAuth('sesión iniciada', { email: result.email });
   return res.redirect(302, '/dashboard.html');
 });
 
@@ -154,6 +167,7 @@ app.get('/api/auth/me', (req, res) => {
 });
 
 app.post('/api/auth/logout', (req, res) => {
+  logAuth('logout', { email: req.auth ? req.auth.email : null });
   clearSessionCookie(res);
   return res.status(204).end();
 });
@@ -359,7 +373,10 @@ const server = app.listen(PORT, () => {
   console.log(`\n✅ Servidor listo en http://localhost:${PORT}`);
   console.log(`   Proveedor LLM: ${getProviderLabel(provider)} (${provider})`);
   console.log(
-    `   Límites: COMMENTS_LIMIT (Apify)=${process.env.COMMENTS_LIMIT || 100}, COMMENTS_ANALYSIS_LIMIT (LLM)=${resolveMaxCommentsLimit()}\n`
+    `   Límites: COMMENTS_LIMIT (Apify)=${process.env.COMMENTS_LIMIT || 100}, COMMENTS_ANALYSIS_LIMIT (LLM)=${resolveMaxCommentsLimit()}`
+  );
+  console.log(
+    `   Login: APP_BASE_URL=${process.env.APP_BASE_URL || '(falta)'} | SMTP=${process.env.SMTP_HOST || '(falta SMTP_HOST)'}\n`
   );
 });
 
