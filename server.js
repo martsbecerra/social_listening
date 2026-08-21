@@ -175,6 +175,13 @@ app.get('/api/monitoring/config', (req, res) => {
   res.json(monitor.loadConfig());
 });
 
+// Menciones detectadas en los últimos 7 días, para el resumen del dashboard.
+// Solo Instagram tiene scraping implementado hoy; el resto de las claves
+// simplemente no viene en la respuesta.
+app.get('/api/monitoring/counts', (req, res) => {
+  res.json({ instagram: db.countRecentPosts(7) });
+});
+
 // Borra un registro puntual de la tabla (ej. algo que no sirve o quedó mal).
 app.delete('/api/monitoring/posts/:id', (req, res) => {
   db.deletePost(req.params.id);

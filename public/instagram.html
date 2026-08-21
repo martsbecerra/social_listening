@@ -5,6 +5,12 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Instagram — Social Listening App</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=Instrument+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap"
+    rel="stylesheet"
+  />
   <!-- Tabulator: tabla de "Monitoreo en vivo" (orden/filtro/paginación del
        lado del cliente). Por CDN a propósito, sin build step ni dependencia
        nueva en package.json. -->
@@ -15,31 +21,52 @@
 
 <body>
   <header class="topbar">
-    <a class="topbar-brand" href="dashboard.html" title="Volver al inicio">
-      <img src="logo.png" alt="Social Listening App" />
-    </a>
+    <div class="crumb">
+      <a class="brand" href="dashboard.html">
+        <div class="meter" data-meter="5"></div>
+        <span class="brand-name"><span>social</span> <b>listening</b></span>
+      </a>
+      <span class="crumb-sep">/</span>
+      <span class="crumb-here">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+          <rect x="2.8" y="2.8" width="18.4" height="18.4" rx="5.4" />
+          <circle cx="12" cy="12" r="4.3" />
+          <circle cx="17.3" cy="6.7" r="1.15" fill="currentColor" stroke="none" />
+        </svg>
+        Instagram
+      </span>
+    </div>
+    <!-- Solo visual: sin lógica de autenticación todavía. -->
+    <div class="topbar-user">
+      <button class="user-btn" data-dropdown="userDropdown">
+        <span class="avatar">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <circle cx="12" cy="8" r="4" />
+            <path d="M12 14c-5 0-9 2.7-9 6v2h18v-2c0-3.3-4-6-9-6Z" />
+          </svg>
+        </span>
+        ▾
+      </button>
+      <div id="userDropdown" class="user-dropdown hidden">
+        <span>Nombre de usuario</span>
+        <button disabled>Cerrar sesión</button>
+      </div>
+    </div>
   </header>
 
   <nav class="tabs">
     <div class="tabs-group">
       <button class="tab-btn active" data-tab="analysis">Análisis de publicación</button>
-      <button class="tab-btn" data-tab="monitoring">Monitoreo en vivo</button>
+      <button class="tab-btn" data-tab="monitoring"><div class="meter" data-meter="4"></div>Monitoreo en vivo</button>
       <button class="tab-btn" data-tab="claims-map">Mapa de reclamos</button>
-    </div>
-    <!-- Solo visual: sin lógica de autenticación todavía. -->
-    <div class="topbar-user">
-      <button class="user-btn" data-dropdown="userDropdown">👤 ▾</button>
-      <div id="userDropdown" class="user-dropdown hidden">
-        <span>Nombre de usuario</span>
-        <button disabled>Cerrar sesión</button>
-      </div>
     </div>
   </nav>
 
   <!-- ===================== Solapa: Análisis de publicación ===================== -->
   <section id="tab-analysis" class="tab-panel">
     <div class="container">
-      <h1>🔍 Análisis de sentimiento en Instagram</h1>
+      <p class="tag panel-eyebrow">Análisis</p>
+      <h1 class="display">Análisis de sentimiento en Instagram</h1>
       <p class="sub">Pegá el link de una publicación y obtené un reporte ejecutivo listo para WhatsApp.</p>
 
       <div class="card">
@@ -87,7 +114,8 @@
   <!-- ===================== Solapa: Monitoreo en vivo ===================== -->
   <section id="tab-monitoring" class="tab-panel hidden">
     <div class="container-wide">
-      <h1>📡 Monitoreo en vivo</h1>
+      <p class="tag panel-eyebrow">Monitoreo</p>
+      <h1 class="display">Monitoreo en vivo</h1>
       <p class="sub">Detección automática de menciones cada 4 horas, con alerta por email.</p>
 
       <div class="card config-lists">
@@ -143,7 +171,8 @@
   <!-- ===================== Solapa: Mapa de reclamos ===================== -->
   <section id="tab-claims-map" class="tab-panel hidden">
     <div class="container-wide">
-      <h1>📍Mapa de reclamos</h1>
+      <p class="tag panel-eyebrow">Reclamos</p>
+      <h1 class="display">Mapa de reclamos</h1>
       <p class="sub">Geolocalización automática de reclamos cada 4 horas.</p>
 
       <div class="card claims-chips-card">
@@ -159,7 +188,11 @@
 
       <div class="card claims-map-card">
         <div id="claims-map"></div>
-        <p id="claimsMapEmpty" class="muted claims-map-empty hidden">Todavía no hay reclamos geolocalizados.</p>
+        <div id="claimsMapEmpty" class="hidden muted claims-map-empty">
+          <div class="meter" data-meter="16"></div>
+          <h3>Todavía no hay reclamos ubicados</h3>
+          <p>Cuando el análisis detecte comentarios con una dirección, van a aparecer acá.</p>
+        </div>
       </div>
     </div>
   </section>
@@ -186,6 +219,7 @@
     </div>
   </div>
 
+  <script src="js/meter.js"></script>
   <script src="js/main.js"></script>
   <script src="js/analysis.js"></script>
   <script src="https://unpkg.com/tabulator-tables@6.3.0/dist/js/tabulator.min.js"></script>

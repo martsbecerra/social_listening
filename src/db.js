@@ -60,6 +60,7 @@ const insertPostStmt = db.prepare(`
 `);
 const markNotifiedStmt = db.prepare('UPDATE detected_posts SET notified = 1 WHERE id = ?');
 const countPostsStmt = db.prepare('SELECT COUNT(*) AS total FROM detected_posts');
+const countRecentPostsStmt = db.prepare('SELECT COUNT(*) AS total FROM detected_posts WHERE detected_at >= ?');
 const listPostsPageStmt = db.prepare('SELECT * FROM detected_posts ORDER BY detected_at DESC LIMIT ? OFFSET ?');
 const listUnnotifiedStmt = db.prepare('SELECT * FROM detected_posts WHERE notified = 0 ORDER BY detected_at ASC');
 const listUnclassifiedStmt = db.prepare('SELECT id, caption FROM detected_posts WHERE title IS NULL ORDER BY detected_at ASC');
@@ -314,6 +315,13 @@ function countReclamos() {
   return countReclamosStmt.get().total;
 }
 
+// Total de posteos detectados en los últimos N días, para el resumen de
+// menciones del dashboard (data/monitoring.db, detected_at es ISO 8601).
+function countRecentPosts(days) {
+  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+  return countRecentPostsStmt.get(cutoff).total;
+}
+
 function deleteReclamosBySource(source) {
   const result = deleteReclamosBySourceStmt.run(source);
   return result.changes;
@@ -328,6 +336,7 @@ module.exports = {
   saveDetectedPost,
   markNotified,
   listDetectedPosts,
+  countRecentPosts,
   listUnnotified,
   listUnclassified,
   updateClassification,

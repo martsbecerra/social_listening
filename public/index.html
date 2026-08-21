@@ -4,23 +4,55 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Iniciar sesión — Social Listening App</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=Instrument+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap"
+    rel="stylesheet"
+  />
   <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body>
-  <div class="login-page">
-    <img src="logo.png" alt="Social Listening App" class="login-logo" />
+  <div class="auth">
+    <div class="auth-stage">
+      <div class="brand">
+        <div class="meter" data-meter="5" style="--bar-color:var(--jade-300)"></div>
+        <span class="brand-name"><span>social</span> <b>listening</b></span>
+      </div>
 
-    <div class="card login-card">
-      <!-- Solo visual: todavía no hay autenticación real. Cualquier valor
-           (o ninguno) y "Iniciar sesión" te lleva directo al dashboard. -->
-      <label for="loginEmail">Email</label>
-      <input type="text" id="loginEmail" placeholder="nombre@buenosaires.gob.ar" autocomplete="off" />
+      <div class="stage-mid">
+        <p class="tag stage-eyebrow">Equipo de Monitoreo</p>
+        <h1 class="stage-line">Lo que se dice, <em>cuando se dice</em>.</h1>
+        <p class="stage-sub">Monitoreo de menciones en redes, con lectura de sentimiento y alertas al equipo.</p>
+      </div>
 
-      <label for="loginPassword">Contraseña</label>
-      <input type="password" id="loginPassword" placeholder="••••••••" autocomplete="off" />
+      <div class="meter stage-meter" data-meter="26"></div>
+    </div>
 
-      <a href="dashboard.html" class="login-submit">Iniciar sesión</a>
+    <div class="auth-form">
+      <div class="auth-inner">
+        <h2 class="auth-title display">Entrar</h2>
+        <p class="auth-note">Usá tu cuenta institucional.</p>
+
+        <!-- Solo visual: todavía no hay autenticación real. Cualquier valor
+             (o ninguno) y "Iniciar sesión" te lleva directo al dashboard. -->
+        <div class="field">
+          <label class="tag" for="loginEmail">Email</label>
+          <input type="text" id="loginEmail" placeholder="nombre@buenosaires.gob.ar" autocomplete="off" />
+        </div>
+
+        <div class="field">
+          <label class="tag" for="loginPassword">Contraseña</label>
+          <input type="password" id="loginPassword" placeholder="••••••••" autocomplete="off" />
+        </div>
+
+        <a href="dashboard.html" class="login-submit">Iniciar sesión</a>
+
+        <p class="auth-foot tag">Acceso restringido</p>
+      </div>
     </div>
   </div>
+
+  <script src="js/meter.js"></script>
 </body>
 </html>
