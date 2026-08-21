@@ -273,7 +273,81 @@ function accountFilterEditor(cell, onRendered, success) {
   return input;
 }
 
+// -------------------------------------------------------------------------
+// Benchmark por cuenta (panel desplegable de la fila): compara likes y
+// comentarios del posteo contra la mediana histórica de ESA cuenta (nunca
+// contra otras cuentas ni contra seguidores — ver src/accountStats.js). El
+// backend ya manda "benchmark" armado en cada posteo de /api/monitoring/posts.
+// -------------------------------------------------------------------------
+const expandedRowIds = new Set();
+
+function formatBenchmarkNumber(n) {
+  if (n == null || !Number.isFinite(n)) return 'N/D';
+  return Number.isInteger(n) ? String(n) : n.toLocaleString('es-AR', { maximumFractionDigits: 1 });
+}
+
+function formatBenchmarkRatio(ratio) {
+  return ratio.toLocaleString('es-AR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+}
+
+function benchmarkLevelClass(metric) {
+  return `benchmark-${(metric && metric.level) || 'sin-referencia'}`;
+}
+
+function benchmarkLineText(label, metric) {
+  if (!metric || metric.level === 'sin-referencia') {
+    return `${label}: sin referencia (menos de 5 posteos recientes de esta cuenta)`;
+  }
+  return (
+    `${label}: ${metric.level} — ${formatBenchmarkNumber(metric.value)}, contra una mediana de ` +
+    `${formatBenchmarkNumber(metric.median)} en esta cuenta (${formatBenchmarkRatio(metric.ratio)}x)`
+  );
+}
+
+function buildDetailPanel(data) {
+  const panel = document.createElement('div');
+  panel.className = 'row-detail-panel';
+  const benchmark = data.benchmark || {};
+  for (const [label, metric] of [
+    ['Comentarios', benchmark.comments],
+    ['Likes', benchmark.likes],
+  ]) {
+    const line = document.createElement('p');
+    line.className = benchmarkLevelClass(metric);
+    line.textContent = benchmarkLineText(label, metric);
+    panel.appendChild(line);
+  }
+  return panel;
+}
+
+function toggleRowExpansion(row) {
+  const id = row.getData().id;
+  if (expandedRowIds.has(id)) expandedRowIds.delete(id);
+  else expandedRowIds.add(id);
+  if (typeof row.reformat === 'function') {
+    row.reformat();
+  } else if (monitoringTable) {
+    monitoringTable.redraw(true);
+  }
+}
+
 const MONITORING_COLUMNS = [
+  {
+    title: '',
+    field: 'expand',
+    headerSort: false,
+    hozAlign: 'center',
+    width: 44,
+    formatter: (cell) => {
+      const btn = document.createElement('button');
+      btn.className = 'ico row-expand-btn';
+      btn.title = 'Ver detalle';
+      btn.innerHTML =
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
+      btn.addEventListener('click', () => toggleRowExpansion(cell.getRow()));
+      return btn;
+    },
+  },
   {
     title: 'Cuenta',
     field: 'account',
@@ -405,13 +479,14 @@ const MONITORING_COLUMNS = [
     field: 'id',
     headerSort: false,
     hozAlign: 'center',
-    width: 60,
+    width: 72,
     formatter: (cell) => {
       const id = cell.getRow().getData().id;
       const btn = document.createElement('button');
-      btn.className = 'delete-row-btn';
+      btn.className = 'ico del';
       btn.title = 'Borrar';
-      btn.textContent = '✕';
+      btn.innerHTML =
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>';
       btn.addEventListener('click', () => openDeleteModal(id));
       return btn;
     },
@@ -446,6 +521,18 @@ function ensureMonitoringTable(posts) {
     index: 'id',
     layout: 'fitColumns',
     columns: MONITORING_COLUMNS,
+    rowFormatter: (row) => {
+      const data = row.getData();
+      const el = row.getElement();
+      const existingPanel = el.querySelector('.row-detail-panel');
+      if (expandedRowIds.has(data.id)) {
+        const freshPanel = buildDetailPanel(data);
+        if (existingPanel) existingPanel.replaceWith(freshPanel);
+        else el.appendChild(freshPanel);
+      } else if (existingPanel) {
+        existingPanel.remove();
+      }
+    },
     pagination: true,
     paginationSize: 20,
     paginationSizeSelector: [10, 20, 50, 100],

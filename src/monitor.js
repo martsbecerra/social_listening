@@ -43,29 +43,40 @@ function normalizeAccount(entry) {
 }
 
 /**
- * config/monitoring.json guarda las keywords agrupadas por categoría
- * (nombre_y_cargo, apodos_observados, etc.) y los hashtags aparte, sin el
- * "#" — eso es solo para que el archivo se pueda leer y mantener a mano.
- * Acá se aplana todo de vuelta a la única lista de strings que espera el
- * resto del código (evaluateRelevance, runMonitoringCycle siguen sin saber
- * que existen categorías; a un hashtag "JorgeMacri" se le vuelve a poner el
- * "#" adelante para que el filter(k => k.startsWith('#')) que ya existía lo
- * siga reconociendo igual que antes). Ver config/README.md.
+ * config/monitoring.json tiene dos formatos posibles:
+ *   - Viejo (anidado): { instagram: { accounts, hashtags, keywords: {categoría: [...]} } }.
+ *     Las keywords venían agrupadas por categoría y los hashtags aparte, sin
+ *     el "#" — solo para que el archivo se pudiera leer y mantener a mano.
+ *   - Actual (plano): { accounts: [...], keywords: [...] } — es lo que
+ *     escribe saveConfig() cada vez que se agrega/saca algo desde la app
+ *     (addAccount/removeAccount/addKeyword/removeKeyword), así que un
+ *     archivo que arrancó anidado termina en este formato apenas se edita
+ *     una vez desde la UI.
+ * Acá se soportan los dos, aplanando el viejo a la misma forma que ya espera
+ * el resto del código (evaluateRelevance, runMonitoringCycle no saben que
+ * existían categorías; a un hashtag "JorgeMacri" se le vuelve a poner el "#"
+ * adelante para que el filter(k => k.startsWith('#')) lo siga reconociendo).
  */
 function loadConfig() {
   const raw = fs.readFileSync(CONFIG_PATH, 'utf8');
   const parsed = JSON.parse(raw);
-  const ig = parsed.instagram || {};
-  const keywordGroups = ig.keywords || {};
 
-  const flatKeywords = [
-    ...Object.values(keywordGroups).flat(),
-    ...(Array.isArray(ig.hashtags) ? ig.hashtags.map((h) => `#${h}`) : []),
-  ];
+  if (parsed.instagram) {
+    const ig = parsed.instagram;
+    const keywordGroups = ig.keywords || {};
+    const flatKeywords = [
+      ...Object.values(keywordGroups).flat(),
+      ...(Array.isArray(ig.hashtags) ? ig.hashtags.map((h) => `#${h}`) : []),
+    ];
+    return {
+      accounts: (Array.isArray(ig.accounts) ? ig.accounts : []).map(normalizeAccount),
+      keywords: flatKeywords,
+    };
+  }
 
   return {
-    accounts: (Array.isArray(ig.accounts) ? ig.accounts : []).map(normalizeAccount),
-    keywords: flatKeywords,
+    accounts: (Array.isArray(parsed.accounts) ? parsed.accounts : []).map(normalizeAccount),
+    keywords: Array.isArray(parsed.keywords) ? parsed.keywords : [],
   };
 }
 
@@ -122,9 +133,23 @@ async function addAccount(account) {
   }
   await validateAccountExists(clean);
   const config = loadConfig();
-  if (!config.accounts.some((a) => a.toLowerCase() === clean.toLowerCase())) {
+  const isNew = !config.accounts.some((a) => a.toLowerCase() === clean.toLowerCase());
+  if (isNew) {
     config.accounts.push(clean);
     saveConfig(config);
+
+    // Sin esto la cuenta queda hasta un mes sin referencia (la cadencia
+    // normal es mensual, ver accountStats.js). Sin "await": no demorar la
+    // respuesta de "agregar cuenta" — ya hace su propio llamado a Apify
+    // arriba (validateAccountExists) y este es un segundo llamado aparte.
+    // require() adentro de la función (no arriba del archivo) para evitar
+    // una dependencia circular: accountStats.js ya importa este módulo para
+    // reusar scrapeAccount/loadConfig.
+    require('./accountStats')
+      .computeAccountStats(clean)
+      .catch((err) => {
+        console.error(`No se pudo calcular el benchmark de @${clean}:`, err.message);
+      });
   }
   return config;
 }
@@ -180,6 +205,28 @@ function textIncludesAny(text, needles) {
  * sourceType indica de dónde salió ('account' o 'hashtag') — se usa más
  * adelante para decidir cómo evaluar la relevancia de un posteo sin caption.
  */
+/**
+ * Tipo de posteo (reel|imagen|carrusel), para el benchmark de
+ * src/accountStats.js. Sin verificar contra una corrida real de Apify
+ * todavía (ver ese archivo) — probamos varios nombres de campo posibles del
+ * actor y si ninguno aparece, devolvemos null (misma filosofía "pick" que ya
+ * usa esta función y normalizePost() en apify.js).
+ */
+function derivePostType(raw) {
+  const productType = String(raw.productType || '').toLowerCase();
+  if (productType === 'clips') return 'reel';
+  if (productType === 'carousel_container') return 'carrusel';
+
+  const type = String(raw.type || '').toLowerCase();
+  if (type === 'sidecar') return 'carrusel';
+  if (type === 'video') return 'reel';
+  if (type === 'image') return 'imagen';
+
+  if (typeof raw.isVideo === 'boolean') return raw.isVideo ? 'reel' : 'imagen';
+
+  return null;
+}
+
 function normalizeMonitorPost(raw, { account, sourceType }) {
   const pick = (...values) => values.find((v) => v !== undefined && v !== null && v !== '');
   const shortCode = pick(raw.shortCode, raw.code);
@@ -196,6 +243,7 @@ function normalizeMonitorPost(raw, { account, sourceType }) {
     likes: pick(raw.likesCount, null),
     comments: pick(raw.commentsCount, null),
     postedAt: pick(raw.timestamp, null),
+    postType: derivePostType(raw),
     sourceType,
   };
 }
@@ -359,4 +407,5 @@ module.exports = {
   removeAccount,
   addKeyword,
   removeKeyword,
+  scrapeAccount,
 };

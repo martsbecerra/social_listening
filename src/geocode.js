@@ -1,134 +1,175 @@
 // ==========================================================================
 // geocode.js
 // --------------------------------------------------------------------------
-// Nominatim solo para el CLI de import. El mapa y el GET nunca geocodifican:
-// leen lat/lng ya guardados. Cache en geocode_cache + copia a reclamos.
+// Geocoding con USIG (servicio del GCBA): mucho mejor que Nominatim para
+// CABA, valida que la altura exista en esa calle. Cachea por dirección
+// normalizada en geocode_cache (src/db.js) para nunca pedirle a USIG la
+// misma dirección dos veces. No se llama desde /api/analyze (demasiado
+// lento): lo usa src/geoWorker.js, en cron o disparado tras un análisis.
 // ==========================================================================
 
 const db = require('./db');
-const { buildGeocodeQueryKey } = require('./reclamosAddress');
+const { cleanAddress, isInvalidAddress } = require('./addressClean');
 
-const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
-const MIN_INTERVAL_MS = 1100;
-const AMBA_VIEWBOX = '-58.75,-34.40,-58.25,-34.85';
-
-let lastNominatimAt = 0;
-
-function requireNominatimUserAgent() {
-  const ua = (process.env.NOMINATIM_USER_AGENT || '').trim();
-  if (!ua) {
-    const err = new Error(
-      'Falta NOMINATIM_USER_AGENT en el .env. Nominatim exige un User-Agent que identifique la app.'
-    );
-    err.userMessage = err.message;
-    throw err;
-  }
-  return ua;
-}
+const USIG_URL = 'https://servicios.usig.buenosaires.gob.ar/normalizar/';
+const MAX_ATTEMPTS = 5;
+const REQUEST_TIMEOUT_MS = 8000;
+const BASE_BACKOFF_MS = 500;
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function waitNominatimSlot() {
-  const wait = lastNominatimAt + MIN_INTERVAL_MS - Date.now();
-  if (wait > 0) await sleep(wait);
-  lastNominatimAt = Date.now();
+function buildCacheKey(direccionLimpia) {
+  return `usig:${direccionLimpia.toLowerCase()}`;
+}
+
+async function fetchWithTimeout(url, timeoutMs) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** GET a USIG con reintentos + backoff exponencial. Lanza si se agotan los intentos. */
+async function requestUsig(direccionLimpia) {
+  const url = new URL(USIG_URL);
+  // Sin calificar "CABA", USIG devuelve un resultado ambiguo por partido
+  // (Escobar, Ezeiza, Moreno, Pilar, Quilmes...) y ninguno trae coordenadas
+  // hasta que la dirección resuelve a un único partido.
+  url.searchParams.set('direccion', `${direccionLimpia}, CABA`);
+
+  let lastErr;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const resp = await fetchWithTimeout(url, REQUEST_TIMEOUT_MS);
+      if (resp.status === 429 || resp.status >= 500) {
+        throw new Error(`USIG HTTP ${resp.status}`);
+      }
+      if (!resp.ok) {
+        // 4xx que no sea 429: la dirección no es geocodificable, no reintentar.
+        return null;
+      }
+      return await resp.json();
+    } catch (err) {
+      lastErr = err;
+      if (attempt < MAX_ATTEMPTS) {
+        await sleep(BASE_BACKOFF_MS * 2 ** (attempt - 1));
+      }
+    }
+  }
+  throw lastErr;
 }
 
 /**
- * @param {string} direccionNormalizada
- * @returns {Promise<{ lat: number|null, lng: number|null, displayName: string|null, status: string }>}
+ * Geocodifica una dirección ya detectada (por Claude o por el import de
+ * Excel) contra USIG, con caché por dirección limpia.
+ * @param {string} direccionDetectada
+ * @returns {Promise<{
+ *   direccionNormalizada: string|null, calle: string|null, altura: number|null,
+ *   cruce: string|null, x: number|null, y: number|null, precision: string|null,
+ *   geoStatus: 'ok'|'sin_direccion'|'invalida'
+ * }>}
  */
-async function geocodeNormalizedAddress(direccionNormalizada) {
-  const queryKey = buildGeocodeQueryKey(direccionNormalizada);
-  const cached = db.getGeocodeCache(queryKey);
-  if (cached) {
+async function geocodeAddress(direccionDetectada) {
+  const limpia = cleanAddress(direccionDetectada);
+
+  if (isInvalidAddress(limpia)) {
     return {
-      lat: cached.lat,
-      lng: cached.lng,
-      displayName: cached.displayName,
-      status: cached.status,
+      direccionNormalizada: null,
+      calle: null,
+      altura: null,
+      cruce: null,
+      x: null,
+      y: null,
+      precision: null,
+      geoStatus: 'invalida',
     };
   }
 
-  const ua = requireNominatimUserAgent();
-  const url = new URL(NOMINATIM_URL);
-  url.searchParams.set('format', 'jsonv2');
-  url.searchParams.set('limit', '1');
-  url.searchParams.set('countrycodes', 'ar');
-  url.searchParams.set('viewbox', AMBA_VIEWBOX);
-  url.searchParams.set('bounded', '0');
-  url.searchParams.set('accept-language', 'es');
-  url.searchParams.set('q', queryKey);
-
-  await waitNominatimSlot();
-
-  let status = 'error';
-  let lat = null;
-  let lng = null;
-  let displayName = null;
-
-  try {
-    const resp = await fetch(url, {
-      headers: { 'User-Agent': ua, Accept: 'application/json' },
-    });
-    if (resp.status === 429) {
-      status = 'error';
-    } else if (!resp.ok) {
-      status = 'error';
-    } else {
-      const items = await resp.json();
-      const hit = Array.isArray(items) && items[0];
-      if (hit && hit.lat && hit.lon) {
-        lat = Number(hit.lat);
-        lng = Number(hit.lon);
-        displayName = hit.display_name || null;
-        status = 'ok';
-      } else {
-        status = 'not_found';
-      }
-    }
-  } catch {
-    status = 'error';
+  const cacheKey = buildCacheKey(limpia);
+  const cached = db.getGeocodeCache(cacheKey);
+  if (cached) {
+    return {
+      direccionNormalizada: cached.displayName,
+      calle: cached.calle,
+      altura: cached.altura,
+      cruce: cached.cruce,
+      x: cached.lng, // geocode_cache guarda X (longitud) en la columna lng.
+      y: cached.lat, // e Y (latitud) en lat: mismo sentido geográfico real.
+      precision: 'exacta',
+      geoStatus: cached.status === 'ok' ? 'ok' : 'sin_direccion',
+    };
   }
+
+  let data;
+  try {
+    data = await requestUsig(limpia);
+  } catch (err) {
+    // Falla de red/timeout agotando reintentos: no cachear, para reintentar
+    // en la próxima corrida del worker en vez de quedar "sin_direccion" para siempre.
+    const e = new Error(`USIG falló para "${limpia}": ${err.message}`);
+    e.transient = true;
+    throw e;
+  }
+
+  // cod_partido: por si la desambiguación por ", CABA" no alcanzara, no
+  // geocodificamos un reclamo de CABA a un partido del conurbano.
+  const hits = (data && Array.isArray(data.direccionesNormalizadas) && data.direccionesNormalizadas) || [];
+  const hit = hits.find((h) => h && h.coordenadas && h.cod_partido === 'caba') || null;
+  if (!hit) {
+    db.setGeocodeCache({
+      queryKey: cacheKey,
+      lat: null,
+      lng: null,
+      displayName: null,
+      status: 'not_found',
+      fetchedAt: new Date().toISOString(),
+    });
+    return {
+      direccionNormalizada: null,
+      calle: null,
+      altura: null,
+      cruce: null,
+      x: null,
+      y: null,
+      precision: null,
+      geoStatus: 'sin_direccion',
+    };
+  }
+
+  const x = Number(hit.coordenadas.x);
+  const y = Number(hit.coordenadas.y);
+  const calle = hit.nombre_calle || null;
+  const altura = hit.altura != null && hit.altura !== '' ? Number(hit.altura) : null;
+  const cruce = hit.nombre_calle_cruce || null;
+  const direccionNormalizada = hit.direccion || limpia;
 
   db.setGeocodeCache({
-    queryKey,
-    lat,
-    lng,
-    displayName,
-    status,
+    queryKey: cacheKey,
+    lat: Number.isFinite(y) ? y : null,
+    lng: Number.isFinite(x) ? x : null,
+    displayName: direccionNormalizada,
+    status: 'ok',
     fetchedAt: new Date().toISOString(),
+    calle,
+    altura,
+    cruce,
   });
 
-  return { lat, lng, displayName, status };
+  return {
+    direccionNormalizada,
+    calle,
+    altura,
+    cruce,
+    x: Number.isFinite(x) ? x : null,
+    y: Number.isFinite(y) ? y : null,
+    precision: 'exacta',
+    geoStatus: Number.isFinite(x) && Number.isFinite(y) ? 'ok' : 'sin_direccion',
+  };
 }
 
-/**
- * Geocodifica claves pendientes y copia lat/lng + status a las filas.
- * @returns {Promise<{ pending: number, fromCache: number, fetched: number }>}
- */
-async function geocodePendingReclamos() {
-  const pending = db.listPendingGeocode();
-  let fromCache = 0;
-  let fetched = 0;
-
-  for (const norm of pending) {
-    const queryKey = buildGeocodeQueryKey(norm);
-    const hadCache = Boolean(db.getGeocodeCache(queryKey));
-    const result = await geocodeNormalizedAddress(norm);
-    if (hadCache) fromCache += 1;
-    else fetched += 1;
-    db.applyGeocodeToReclamos(norm, result);
-  }
-
-  return { pending: pending.length, fromCache, fetched };
-}
-
-module.exports = {
-  requireNominatimUserAgent,
-  geocodeNormalizedAddress,
-  geocodePendingReclamos,
-  buildGeocodeQueryKey,
-};
+module.exports = { geocodeAddress };

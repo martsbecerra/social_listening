@@ -20,8 +20,10 @@ const { resolveMaxCommentsLimit } = require('./src/commentSample');
 const { getLlmProvider, requiredLlmEnvKeys, getProviderLabel } = require('./src/llm/providerConfig');
 const db = require('./src/db');
 const monitor = require('./src/monitor');
-const { startScheduler, runCycleAndNotify } = require('./src/scheduler');
-const { collectTematicas } = require('./src/tematica');
+const { startScheduler, runCycleAndNotify, getCronExpression, getLastRunAt, estimateRunsPerDay } = require('./src/scheduler');
+const { processPendingReclamosInBackground } = require('./src/geoWorker');
+const accountStats = require('./src/accountStats');
+const { CATEGORIAS_RECLAMO, ESTADOS_RECLAMO, isValidEstado } = require('./src/categoriaReclamo');
 
 const app = express();
 
@@ -132,7 +134,7 @@ app.post('/api/analyze', async (req, res) => {
     logTask('respuesta OK', { msTotal: Date.now() - startedAt });
 
     // 5) Devolvemos el reporte y el CSV al navegador.
-    return res.json({
+    res.json({
       report,
       csv,
       meta: {
@@ -145,6 +147,12 @@ app.post('/api/analyze', async (req, res) => {
         llmAttempts: analysisMeta?.llmAttempts ?? null,
       },
     });
+
+    // Los reclamos con ubicación ya quedaron guardados en 'pendiente'
+    // (analyzeComments.js); geocodificarlos pega a USIG por red, así que se
+    // dispara después de responder y sin esperar, para no demorar el endpoint.
+    processPendingReclamosInBackground();
+    return;
   } catch (err) {
     logTask('error', {
       msTotal: Date.now() - startedAt,
@@ -168,7 +176,23 @@ app.get('/api/monitoring/posts', (req, res) => {
   // lado del cliente (Tabulator), así que el frontend pide todo de una vez.
   const pageSize = Math.min(5000, Math.max(1, Number(req.query.pageSize) || 20));
   const { posts, total } = db.listDetectedPosts({ page, pageSize });
-  res.json({ posts, total, page, pageSize });
+
+  // Benchmark (mediana propia de la cuenta) para el panel desplegable de
+  // cada fila. Un solo listAllAccountStats() para todo el request, no una
+  // query por posteo.
+  const statsMap = accountStats.buildAccountStatsMap();
+  const postsWithBenchmark = posts.map((post) => ({
+    ...post,
+    benchmark: accountStats.classifyPostAgainstBenchmark({
+      account: post.account,
+      postType: post.post_type,
+      likes: post.likes,
+      comments: post.comments,
+      statsMap,
+    }),
+  }));
+
+  res.json({ posts: postsWithBenchmark, total, page, pageSize });
 });
 
 app.get('/api/monitoring/config', (req, res) => {
@@ -180,6 +204,18 @@ app.get('/api/monitoring/config', (req, res) => {
 // simplemente no viene en la respuesta.
 app.get('/api/monitoring/counts', (req, res) => {
   res.json({ instagram: db.countRecentPosts(7) });
+});
+
+// Datos reales para el pie de página (footer.js en las 3 páginas): nada
+// hardcodeado en el HTML/JS del cliente.
+const PLATAFORMAS_SOPORTADAS = ['instagram', 'x', 'facebook', 'tiktok']; // mismas 4 tarjetas de dashboard.html
+app.get('/api/footer-stats', (req, res) => {
+  res.json({
+    plataformaCount: PLATAFORMAS_SOPORTADAS.length,
+    corridasPorDia: estimateRunsPerDay(getCronExpression()),
+    categoriaCount: CATEGORIAS_RECLAMO.length,
+    lastRunAt: getLastRunAt(),
+  });
 });
 
 // Borra un registro puntual de la tabla (ej. algo que no sirve o quedó mal).
@@ -247,23 +283,73 @@ app.post('/api/monitoring/backfill-classification', async (req, res) => {
   }
 });
 
+// --------------------------------------------------------------------------
+// Mapa de reclamos: filtros combinables + edición de estado + export CSV.
+// --------------------------------------------------------------------------
+
+/** Query params compartidos por el GET y el export CSV. */
+function parseReclamosFilters(query) {
+  const toList = (v) => {
+    if (v == null || v === '') return undefined;
+    return Array.isArray(v) ? v : String(v).split(',').filter(Boolean);
+  };
+  return {
+    categoria: toList(query.categoria),
+    estado: toList(query.estado),
+    barrio: query.barrio || undefined,
+    comuna: query.comuna || undefined,
+    desde: query.desde || undefined,
+    hasta: query.hasta || undefined,
+    q: query.q || undefined,
+  };
+}
+
 app.get('/api/reclamos', (req, res) => {
-  const reclamos = db.listReclamos().map((row) => ({
-    id: row.id,
-    username: row.username,
-    commentText: row.commentText,
-    postUrl: row.postUrl,
-    tematica: row.tematica,
-    direccionDetectada: row.direccionDetectada,
-    direccionNormalizada: row.direccionNormalizada,
-    lat: row.lat,
-    lng: row.lng,
-    postedAt: row.postedAt,
-  }));
-  const mapped = reclamos.filter(
-    (row) => row.lat != null && row.lng != null && row.direccionNormalizada
-  );
-  res.json({ tematicas: collectTematicas(mapped), reclamos });
+  const reclamos = db.listReclamosFiltered(parseReclamosFilters(req.query));
+  res.json({ categorias: CATEGORIAS_RECLAMO, estados: ESTADOS_RECLAMO, reclamos });
+});
+
+// Edita solo el estado del reclamo (Pendiente | En tratamiento | Resuelto | Desestimado).
+app.patch('/api/reclamos/:id', (req, res) => {
+  const { estado } = req.body || {};
+  if (!isValidEstado(estado)) {
+    return res.status(400).json({ error: 'Estado inválido.' });
+  }
+  db.updateEstado(req.params.id, estado);
+  res.json({ ok: true });
+});
+
+function escapeCsvField(value) {
+  const s = value == null ? '' : String(value);
+  return `"${s.replace(/"/g, '""')}"`;
+}
+
+const RECLAMOS_CSV_HEADER = [
+  'id', 'plataforma', 'categoria', 'estado', 'direccion_normalizada', 'calle',
+  'altura', 'cruce', 'barrio', 'comuna', 'autor', 'fecha', 'texto_original', 'post_url',
+];
+
+// Exporta TODOS los reclamos que pasan los filtros activos (no solo lo
+// visible en el mapa): mismos query params que GET /api/reclamos.
+app.get('/api/reclamos/export.csv', (req, res) => {
+  const reclamos = db.listReclamosFiltered(parseReclamosFilters(req.query));
+  const rows = [RECLAMOS_CSV_HEADER.map(escapeCsvField).join(';')];
+  for (const r of reclamos) {
+    rows.push(
+      [
+        r.id, r.plataforma, r.categoria, r.estado, r.direccionNormalizada, r.calle,
+        r.altura, r.cruce, r.barrio, r.comuna, r.autor, r.fecha, r.textoOriginal, r.postUrl,
+      ]
+        .map(escapeCsvField)
+        .join(';')
+    );
+  }
+  // BOM UTF-8 explícito: el CSV tiene tildes y emojis, y sin BOM Excel en
+  // Windows lo abre mal interpretado como ANSI.
+  const csv = '﻿' + rows.join('\n') + '\n';
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="reclamos.csv"');
+  res.send(csv);
 });
 
 // --------------------------------------------------------------------------

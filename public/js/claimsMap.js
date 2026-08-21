@@ -1,67 +1,30 @@
-// Mapa de reclamos: fetch crudo, agrega en el cliente, Leaflet CDN.
+// Mapa de reclamos: filtros (categoría, estado, barrio, comuna, fecha, texto)
+// contra GET /api/reclamos, agrupado por dirección en el cliente. Leaflet CDN.
 // Se refresca cada vez que se entra a la solapa (main.js).
 
-const CABA_CENTER = [-34.6037, -58.3816];
+const CABA_CENTER = [-34.6083, -58.4386];
 const CABA_ZOOM = 12;
-// Negro reservado para ubicaciones con más de una temática (nunca para un tema).
-const MIXED_PIN = { fill: '#000000', border: '#ffffff', text: '#ffffff' };
-
-// Pares fondo/texto curados (WCAG AA ≥ 4.5:1). Negro reservado para MIXED_PIN.
-const TEMATICA_THEMES = {
-  bache: { bg: '#B45309', text: '#FFFFFF' },
-  'poda de árboles': { bg: '#15803D', text: '#FFFFFF' },
-  alumbrado: { bg: '#A16207', text: '#FFFFFF' },
-  basura: { bg: '#57534E', text: '#FFFFFF' },
-  inseguridad: { bg: '#DC2626', text: '#FFFFFF' },
-  'semáforo roto': { bg: '#6D28D9', text: '#FFFFFF' },
-  'ruidos molestos': { bg: '#A21CAF', text: '#FFFFFF' },
-  'corte de luz': { bg: '#334155', text: '#F8FAFC' },
-  agua: { bg: '#0369A1', text: '#FFFFFF' },
-  transporte: { bg: '#4338CA', text: '#FFFFFF' },
-  limpieza: { bg: '#0F766E', text: '#FFFFFF' },
-  veredas: { bg: '#3F6212', text: '#FFFFFF' },
-  inundación: { bg: '#0E7490', text: '#FFFFFF' },
-  salud: { bg: '#BE123C', text: '#FFFFFF' },
-  educación: { bg: '#1E40AF', text: '#FFFFFF' },
-  estacionamiento: { bg: '#C2410C', text: '#FFFFFF' },
-  otro: { bg: '#475569', text: '#FFFFFF' },
-};
+const CABA_MIN_ZOOM = 10;
+const CLUSTER_FIT_MAX_ZOOM = 15;
+// AMBA: limita el paneo para que no se pueda alejar a otro continente.
+const AMBA_BOUNDS = [
+  [-35.05, -58.9],
+  [-34.2, -58.05],
+];
+const SEARCH_DEBOUNCE_MS = 350;
 
 let claimsMap = null;
 let claimsLayer = null;
 let rawReclamos = [];
-let allTematicas = [];
-let selectedTematicas = new Set();
-
-function hslToHex(h, s, l) {
-  const sat = s / 100;
-  const light = l / 100;
-  const chroma = sat * Math.min(light, 1 - light);
-  const hueChannel = (n) => {
-    const k = (n + h / 30) % 12;
-    const mix = light - chroma * Math.max(Math.min(k - 3, 9 - k, 1), -1);
-    return Math.round(255 * mix)
-      .toString(16)
-      .padStart(2, '0');
-  };
-  return `#${hueChannel(0)}${hueChannel(8)}${hueChannel(4)}`;
-}
-
-function hashTemaColor(name) {
-  const key = String(name || '');
-  let hash = 0;
-  for (let i = 0; i < key.length; i += 1) {
-    hash = Math.imul(31, hash) + key.charCodeAt(i);
-  }
-  return hslToHex(Math.abs(hash) % 360, 58, 46);
-}
-
-function temaTheme(name) {
-  const known = TEMATICA_THEMES[name];
-  if (known) return known;
-  const bg = hashTemaColor(name);
-  return { bg, text: contrastingText(bg) };
-}
+let allCategorias = [];
+let allEstados = [];
+let selectedCategorias = new Set();
+let selectedEstados = new Set();
+let categoriaMultiSelect = null;
+let estadoMultiSelect = null;
+let openFilterPanel = null;
+let searchDebounceTimer = null;
+let pinSteps = null;
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -71,168 +34,338 @@ function escapeHtml(value) {
     .replace(/"/g, '&quot;');
 }
 
+function cssVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
 function ensureClaimsMap() {
   if (claimsMap) return claimsMap;
-  claimsMap = L.map('claims-map', { zoomControl: true }).setView(CABA_CENTER, CABA_ZOOM);
+  claimsMap = L.map('claims-map', {
+    zoomControl: true,
+    minZoom: CABA_MIN_ZOOM,
+    maxBounds: AMBA_BOUNDS,
+    maxBoundsViscosity: 1.0,
+  }).setView(CABA_CENTER, CABA_ZOOM);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '&copy; OpenStreetMap',
     maxZoom: 19,
   }).addTo(claimsMap);
   claimsLayer = L.layerGroup().addTo(claimsMap);
+  wireGlobalPopupHandlers();
   return claimsMap;
 }
 
-function syncChipSelectedState() {
-  document.querySelectorAll('#claimsMapChips .claims-chip').forEach((btn) => {
-    btn.classList.toggle('is-selected', selectedTematicas.has(btn.dataset.tematica));
-  });
+// -------------------------------------------------------------------------
+// Filtros
+// -------------------------------------------------------------------------
+
+function currentFilters() {
+  return {
+    categoria: [...selectedCategorias],
+    estado: [...selectedEstados],
+    barrio: document.getElementById('claimsBarrio')?.value || '',
+    comuna: document.getElementById('claimsComuna')?.value || '',
+    desde: document.getElementById('claimsDesde')?.value || '',
+    hasta: document.getElementById('claimsHasta')?.value || '',
+    q: document.getElementById('claimsBuscar')?.value.trim() || '',
+  };
 }
 
-function setAllTematicas(on) {
-  selectedTematicas = on ? new Set(allTematicas) : new Set();
-  syncChipSelectedState();
-  renderMarkers();
+function isDefaultFilters(f) {
+  return (
+    f.categoria.length === allCategorias.length &&
+    f.estado.length === allEstados.length &&
+    !f.barrio &&
+    !f.comuna &&
+    !f.desde &&
+    !f.hasta &&
+    !f.q
+  );
 }
+
+function buildQueryString(f) {
+  const params = new URLSearchParams();
+  if (f.categoria.length > 0 && f.categoria.length < allCategorias.length) {
+    params.set('categoria', f.categoria.join(','));
+  }
+  if (f.estado.length > 0 && f.estado.length < allEstados.length) {
+    params.set('estado', f.estado.join(','));
+  }
+  if (f.barrio) params.set('barrio', f.barrio);
+  if (f.comuna) params.set('comuna', f.comuna);
+  if (f.desde) params.set('desde', f.desde);
+  if (f.hasta) params.set('hasta', f.hasta);
+  if (f.q) params.set('q', f.q);
+  return params.toString();
+}
+
+async function applyFiltersAndReload() {
+  const errorEl = document.getElementById('claimsMapError');
+
+  // "Ninguna" categoría/estado tildado: no hay nada que mostrar, no hace
+  // falta pegarle al servidor.
+  if (selectedCategorias.size === 0 || selectedEstados.size === 0) {
+    rawReclamos = [];
+    renderMarkers();
+    return;
+  }
+
+  try {
+    const qs = buildQueryString(currentFilters());
+    const resp = await fetch(`/api/reclamos${qs ? `?${qs}` : ''}`);
+    if (!resp.ok) throw new Error('No se pudieron cargar los reclamos.');
+    const data = await resp.json();
+    rawReclamos = Array.isArray(data.reclamos) ? data.reclamos : [];
+    if (errorEl) {
+      errorEl.classList.add('hidden');
+      errorEl.textContent = '';
+    }
+    renderMarkers();
+  } catch (err) {
+    rawReclamos = [];
+    renderMarkers();
+    if (errorEl) {
+      errorEl.textContent = err.message || 'No se pudieron cargar los reclamos.';
+      errorEl.classList.remove('hidden');
+    }
+  }
+}
+
+function resetOtherFilters() {
+  for (const id of ['claimsBarrio', 'claimsComuna', 'claimsDesde', 'claimsHasta', 'claimsBuscar']) {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  }
+}
+
+function populateBarrioComunaOptions(reclamos) {
+  const barrios = [...new Set(reclamos.map((r) => r.barrio).filter(Boolean))].sort((a, b) =>
+    a.localeCompare(b, 'es')
+  );
+  const comunas = [...new Set(reclamos.map((r) => r.comuna).filter((c) => c != null))].sort((a, b) => a - b);
+
+  const barrioSel = document.getElementById('claimsBarrio');
+  if (barrioSel) {
+    barrioSel.innerHTML = '<option value="">Barrio</option>';
+    for (const b of barrios) {
+      const opt = document.createElement('option');
+      opt.value = b;
+      opt.textContent = b;
+      barrioSel.appendChild(opt);
+    }
+  }
+
+  const comunaSel = document.getElementById('claimsComuna');
+  if (comunaSel) {
+    comunaSel.innerHTML = '<option value="">Comuna</option>';
+    for (const c of comunas) {
+      const opt = document.createElement('option');
+      opt.value = String(c);
+      opt.textContent = `Comuna ${c}`;
+      comunaSel.appendChild(opt);
+    }
+  }
+}
+
+// -------------------------------------------------------------------------
+// Multi-select desplegable (categoría / estado): botón cerrado con contador
+// + panel flotante con checkboxes. Tildar filtra al instante, sin botón
+// "Aplicar". Mismo mecanismo de apertura/cierre que el dropdown de usuario
+// del header (main.js: toggle de .hidden + click afuera), más Escape.
+// -------------------------------------------------------------------------
+
+function closeOpenFilterPanel() {
+  if (!openFilterPanel) return;
+  openFilterPanel.panel.classList.add('hidden');
+  openFilterPanel = null;
+}
+
+document.addEventListener('click', (e) => {
+  if (!openFilterPanel) return;
+  const { btn, panel } = openFilterPanel;
+  if (!btn.contains(e.target) && !panel.contains(e.target)) closeOpenFilterPanel();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeOpenFilterPanel();
+});
+
+/**
+ * @param {{ containerId: string, label: string, options: string[], selectedSet: Set<string> }} config
+ * @returns {{ selectAll: () => void, selectNone: () => void }}
+ */
+function createFilterMultiSelect({ containerId, label, options, selectedSet }) {
+  const host = document.getElementById(containerId);
+  if (!host) return { selectAll() {}, selectNone() {} };
+  host.innerHTML = '';
+
+  const wrap = document.createElement('div');
+  wrap.className = 'claims-filter-select';
+
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'claims-filter-select-btn';
+
+  const panel = document.createElement('div');
+  panel.className = 'claims-filter-select-panel hidden';
+
+  const actions = document.createElement('div');
+  actions.className = 'claims-filter-select-actions';
+  const allBtn = document.createElement('button');
+  allBtn.type = 'button';
+  allBtn.textContent = 'Seleccionar todas';
+  const noneBtn = document.createElement('button');
+  noneBtn.type = 'button';
+  noneBtn.textContent = 'Ninguna';
+  actions.append(allBtn, noneBtn);
+  panel.appendChild(actions);
+
+  const checkboxes = new Map();
+  for (const value of options) {
+    const optLabel = document.createElement('label');
+    optLabel.className = 'claims-filter-select-option';
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = selectedSet.has(value);
+    checkbox.addEventListener('change', () => {
+      if (checkbox.checked) selectedSet.add(value);
+      else selectedSet.delete(value);
+      updateLabel();
+      applyFiltersAndReload();
+    });
+    optLabel.append(checkbox, document.createTextNode(value));
+    panel.appendChild(optLabel);
+    checkboxes.set(value, checkbox);
+  }
+
+  function updateLabel() {
+    const n = selectedSet.size;
+    btn.textContent = n > 0 && n < options.length ? `${label} (${n})` : label;
+  }
+
+  function syncCheckboxes() {
+    checkboxes.forEach((cb, value) => {
+      cb.checked = selectedSet.has(value);
+    });
+    updateLabel();
+  }
+
+  allBtn.addEventListener('click', () => {
+    options.forEach((v) => selectedSet.add(v));
+    syncCheckboxes();
+    applyFiltersAndReload();
+  });
+  noneBtn.addEventListener('click', () => {
+    selectedSet.clear();
+    syncCheckboxes();
+    applyFiltersAndReload();
+  });
+
+  btn.addEventListener('click', () => {
+    const willOpen = panel.classList.contains('hidden');
+    closeOpenFilterPanel();
+    if (willOpen) {
+      panel.classList.remove('hidden');
+      openFilterPanel = { btn, panel };
+    }
+  });
+
+  wrap.append(btn, panel);
+  host.appendChild(wrap);
+  updateLabel();
+
+  return {
+    selectAll() {
+      options.forEach((v) => selectedSet.add(v));
+      syncCheckboxes();
+    },
+    selectNone() {
+      selectedSet.clear();
+      syncCheckboxes();
+    },
+  };
+}
+
+// -------------------------------------------------------------------------
+// Agrupado + pines
+// -------------------------------------------------------------------------
 
 function hasMapLocation(row) {
-  return row.lat != null && row.lng != null && Boolean(row.direccionNormalizada);
-}
-
-function countReclamosByTematica() {
-  const counts = new Map(allTematicas.map((t) => [t, 0]));
-  for (const row of rawReclamos) {
-    if (!hasMapLocation(row)) continue;
-    counts.set(row.tematica, (counts.get(row.tematica) || 0) + 1);
-  }
-  return counts;
-}
-
-function tematicasOnMap(reclamos) {
-  const names = new Set();
-  for (const row of reclamos) {
-    if (hasMapLocation(row) && row.tematica) names.add(row.tematica);
-  }
-  return [...names].sort((a, b) => {
-    if (a === 'otro') return 1;
-    if (b === 'otro') return -1;
-    return a.localeCompare(b, 'es');
-  });
-}
-
-function renderChips(tematicas) {
-  const host = document.getElementById('claimsMapChips');
-  if (!host) return;
-  allTematicas = tematicas;
-  selectedTematicas = new Set(tematicas);
-  const totals = countReclamosByTematica();
-  const allBtn = document.getElementById('claimsSelectAllBtn');
-  if (allBtn) {
-    const total = [...totals.values()].reduce((sum, n) => sum + n, 0);
-    allBtn.innerHTML = `Todas <span class="claims-chip-count">(${total})</span>`;
-  }
-  host.innerHTML = '';
-  for (const tematica of tematicas) {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'claims-chip is-selected';
-    btn.dataset.tematica = tematica;
-    const theme = temaTheme(tematica);
-    btn.style.background = theme.bg;
-    btn.style.borderColor = theme.bg;
-    btn.style.color = theme.text;
-    const count = totals.get(tematica) || 0;
-    btn.innerHTML = `${escapeHtml(tematica)} <span class="claims-chip-count">(${count})</span>`;
-    btn.addEventListener('click', () => {
-      if (selectedTematicas.has(tematica)) selectedTematicas.delete(tematica);
-      else selectedTematicas.add(tematica);
-      btn.classList.toggle('is-selected', selectedTematicas.has(tematica));
-      renderMarkers();
-    });
-    host.appendChild(btn);
-  }
+  return row.x != null && row.y != null && Boolean(row.direccionNormalizada);
 }
 
 function clusterVisible() {
   const groups = new Map();
   for (const row of rawReclamos) {
     if (!hasMapLocation(row)) continue;
-    if (!selectedTematicas.has(row.tematica)) continue;
     const key = row.direccionNormalizada;
     if (!groups.has(key)) {
-      groups.set(key, {
-        address: key,
-        lat: row.lat,
-        lng: row.lng,
-        reclamos: [],
-      });
+      groups.set(key, { address: key, lat: row.y, lng: row.x, reclamos: [] });
     }
     groups.get(key).reclamos.push(row);
   }
   return [...groups.values()];
 }
 
-function tematicaCounts(reclamos) {
+function categoriaCounts(reclamos) {
   const counts = new Map();
-  for (const row of reclamos) {
-    counts.set(row.tematica, (counts.get(row.tematica) || 0) + 1);
-  }
-  return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-}
-
-function temaPill(label, count, bg, text) {
-  return `<span class="claims-tema-pill" style="background:${bg};color:${text}">${escapeHtml(label)} <span class="claims-chip-count">(${count})</span></span>`;
+  for (const row of reclamos) counts.set(row.categoria, (counts.get(row.categoria) || 0) + 1);
+  return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'es'));
 }
 
 function tooltipHtml(group) {
-  const total = temaPill('Total', group.reclamos.length, MIXED_PIN.fill, MIXED_PIN.text);
-  const lines = tematicaCounts(group.reclamos)
-    .map(([name, n]) => {
-      const theme = temaTheme(name);
-      return temaPill(name, n, theme.bg, theme.text);
-    })
+  const lines = categoriaCounts(group.reclamos)
+    .map(([name, n]) => `${escapeHtml(name)} (${n})`)
     .join('<br>');
-  return `${escapeHtml(group.address)}<br>${total}<br>${lines}`;
+  return `<strong>${escapeHtml(group.address)}</strong><br>${group.reclamos.length} reclamo(s)<br>${lines}`;
+}
+
+function estadoSelectHtml(reclamo) {
+  const options = allEstados
+    .map(
+      (e) =>
+        `<option value="${escapeHtml(e)}"${e === reclamo.estado ? ' selected' : ''}>${escapeHtml(e)}</option>`
+    )
+    .join('');
+  return `<select class="claims-popup-estado" data-id="${escapeHtml(reclamo.id)}">${options}</select>`;
 }
 
 function popupHtml(group) {
-  const byTheme = new Map();
-  for (const row of group.reclamos) {
-    if (!byTheme.has(row.tematica)) byTheme.set(row.tematica, []);
-    byTheme.get(row.tematica).push(row);
-  }
-  const sections = [...byTheme.entries()]
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([tematica, rows]) => {
-      const items = rows
-        .map((row) => {
-          const user = escapeHtml(row.username || 'desconocido');
-          const comment = escapeHtml(row.commentText || '');
-          const url = row.postUrl || '#';
-          return `<div class="claims-popup-item"><div class="claims-popup-user">@${user}</div><div class="claims-popup-comment">${comment}</div><a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">Ver posteo</a></div>`;
-        })
-        .join('');
-      const theme = temaTheme(tematica);
-      return `<h3 class="claims-tema-pill" style="background:${theme.bg};color:${theme.text}">${escapeHtml(tematica)}</h3>${items}`;
+  const items = group.reclamos
+    .map((r) => {
+      const user = escapeHtml(r.autor || 'desconocido');
+      const comment = escapeHtml(r.textoOriginal || '');
+      const url = r.postUrl || r.commentUrl || '#';
+      return `<div class="claims-popup-item">
+        <div class="claims-popup-user">@${user} · <span class="claims-tema-pill" style="background:var(--jade-500);color:#fff">${escapeHtml(r.categoria)}</span></div>
+        <div class="claims-popup-comment">${comment}</div>
+        <a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">Ver posteo</a>
+        ${estadoSelectHtml(r)}
+      </div>`;
     })
     .join('');
-  return `<div class="claims-popup"><h2>${escapeHtml(group.address)}</h2>${sections}</div>`;
+  return `<div class="claims-popup"><h2>${escapeHtml(group.address)}</h2>${items}</div>`;
 }
 
-function contrastingText(hex) {
-  const raw = String(hex || '').replace('#', '');
-  if (raw.length < 6) return '#0f172a';
-  const r = parseInt(raw.slice(0, 2), 16);
-  const g = parseInt(raw.slice(2, 4), 16);
-  const b = parseInt(raw.slice(4, 6), 16);
-  const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-  return lum > 0.62 ? '#0f172a' : '#f8fafc';
+function getPinSteps() {
+  if (pinSteps) return pinSteps;
+  pinSteps = [
+    { min: 1, bg: cssVar('--jade-150'), text: cssVar('--jade-950') },
+    { min: 2, bg: cssVar('--jade-300'), text: cssVar('--jade-950') },
+    { min: 4, bg: cssVar('--jade-400'), text: '#ffffff' },
+    { min: 7, bg: cssVar('--jade-500'), text: '#ffffff' },
+    { min: 12, bg: cssVar('--jade-700'), text: '#ffffff' },
+    { min: 20, bg: cssVar('--jade-900'), text: '#ffffff' },
+  ];
+  return pinSteps;
 }
 
-function setEmptyState(isEmpty) {
-  const empty = document.getElementById('claimsMapEmpty');
-  const mapEl = document.getElementById('claims-map');
-  if (empty) empty.classList.toggle('hidden', !isEmpty);
-  if (mapEl) mapEl.classList.toggle('is-empty', isEmpty);
+function pinTheme(count) {
+  const steps = getPinSteps();
+  let chosen = steps[0];
+  for (const step of steps) {
+    if (count >= step.min) chosen = step;
+  }
+  return chosen;
 }
 
 function pinDiameter(count) {
@@ -241,40 +374,100 @@ function pinDiameter(count) {
   return Math.min(80, Math.round(26 + 10 * Math.sqrt(n - 1) + 6 * (n - 1)));
 }
 
+function setEmptyState(isEmpty, filtered) {
+  const empty = document.getElementById('claimsMapEmpty');
+  const mapEl = document.getElementById('claims-map');
+  const title = document.getElementById('claimsMapEmptyTitle');
+  const text = document.getElementById('claimsMapEmptyText');
+  if (empty) empty.classList.toggle('hidden', !isEmpty);
+  if (mapEl) mapEl.classList.toggle('is-empty', isEmpty);
+  if (!isEmpty || !title || !text) return;
+  if (filtered) {
+    title.textContent = 'Ningún reclamo coincide con los filtros';
+    text.textContent = 'Probá ampliar el rango de fechas o tildar más categorías/estados.';
+  } else {
+    title.textContent = 'Todavía no hay reclamos ubicados';
+    text.textContent = 'Cuando el análisis detecte comentarios con una dirección, van a aparecer acá.';
+  }
+}
+
+function updateClearButtonState() {
+  const btn = document.getElementById('claimsClearBtn');
+  if (btn) btn.disabled = isDefaultFilters(currentFilters());
+}
+
 function renderMarkers() {
   if (!claimsLayer || !claimsMap) return;
   claimsLayer.clearLayers();
   const groups = clusterVisible();
-  setEmptyState(groups.length === 0);
+  const filtered = !isDefaultFilters(currentFilters());
+  setEmptyState(groups.length === 0, filtered);
+  updateClearButtonState();
 
   for (const group of groups) {
     const count = group.reclamos.length;
     const diameter = pinDiameter(count);
     const radius = diameter / 2;
-    const uniqueTemas = [...new Set(group.reclamos.map((r) => r.tematica))];
-    const mixed = uniqueTemas.length > 1;
-    const theme = mixed ? MIXED_PIN : temaTheme(uniqueTemas[0]);
-    const fill = theme.fill || theme.bg;
-    const border = mixed ? MIXED_PIN.border : '#000';
-    const text = theme.text;
+    const theme = pinTheme(count);
     const icon = L.divIcon({
       className: 'claims-pin-wrap',
       iconSize: [diameter, diameter],
       iconAnchor: [radius, radius],
-      html: `<div class="claims-pin" style="width:${diameter}px;height:${diameter}px;background:${fill};border-color:${border};color:${text};font-size:${diameter >= 48 ? 15 : diameter >= 36 ? 13 : 11}px">${count}</div>`,
+      html: `<div class="claims-pin" style="width:${diameter}px;height:${diameter}px;background:${theme.bg};border-color:${theme.bg};color:${theme.text};font-size:${diameter >= 48 ? 15 : diameter >= 36 ? 13 : 11}px">${count}</div>`,
     });
     const marker = L.marker([group.lat, group.lng], { icon });
     marker.bindTooltip(tooltipHtml(group), { sticky: true, opacity: 0.95 });
-    marker.bindPopup(popupHtml(group), { maxWidth: 360, maxHeight: 320 });
+    marker.bindPopup(popupHtml(group), { maxWidth: 360, maxHeight: 340 });
     claimsLayer.addLayer(marker);
   }
 
-  claimsMap.setView(CABA_CENTER, CABA_ZOOM);
   if (groups.length > 0) {
     const bounds = L.latLngBounds(groups.map((g) => [g.lat, g.lng]));
-    claimsMap.fitBounds(bounds, { padding: [28, 28], maxZoom: 16 });
+    claimsMap.fitBounds(bounds, { padding: [24, 24], maxZoom: CLUSTER_FIT_MAX_ZOOM });
+  } else {
+    claimsMap.setView(CABA_CENTER, CABA_ZOOM);
   }
 }
+
+// -------------------------------------------------------------------------
+// Estado editable desde el popup (PATCH /api/reclamos/:id)
+// -------------------------------------------------------------------------
+
+function wireGlobalPopupHandlers() {
+  claimsMap.on('popupopen', (e) => {
+    const root = e.popup.getElement();
+    if (!root) return;
+    root.querySelectorAll('.claims-popup-estado').forEach((select) => {
+      select.dataset.previous = select.value;
+      select.addEventListener('change', async () => {
+        const id = select.dataset.id;
+        const nuevoEstado = select.value;
+        const previous = select.dataset.previous;
+        select.disabled = true;
+        try {
+          const resp = await fetch(`/api/reclamos/${encodeURIComponent(id)}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ estado: nuevoEstado }),
+          });
+          if (!resp.ok) throw new Error('No se pudo actualizar el estado.');
+          const row = rawReclamos.find((r) => r.id === id);
+          if (row) row.estado = nuevoEstado;
+          select.dataset.previous = nuevoEstado;
+        } catch (err) {
+          select.value = previous;
+          window.alert(err.message || 'No se pudo actualizar el estado.');
+        } finally {
+          select.disabled = false;
+        }
+      });
+    });
+  });
+}
+
+// -------------------------------------------------------------------------
+// Carga inicial + descarga de CSV
+// -------------------------------------------------------------------------
 
 async function refreshClaimsMap() {
   const errorEl = document.getElementById('claimsMapError');
@@ -287,14 +480,35 @@ async function refreshClaimsMap() {
     const resp = await fetch('/api/reclamos');
     if (!resp.ok) throw new Error('No se pudieron cargar los reclamos.');
     const data = await resp.json();
+
+    allCategorias = Array.isArray(data.categorias) ? data.categorias : [];
+    allEstados = Array.isArray(data.estados) ? data.estados : [];
+    selectedCategorias = new Set(allCategorias);
+    selectedEstados = new Set(allEstados);
     rawReclamos = Array.isArray(data.reclamos) ? data.reclamos : [];
-    renderChips(tematicasOnMap(rawReclamos));
+
+    closeOpenFilterPanel();
+    categoriaMultiSelect = createFilterMultiSelect({
+      containerId: 'claimsCategoriaSelect',
+      label: 'Categoría',
+      options: allCategorias,
+      selectedSet: selectedCategorias,
+    });
+    estadoMultiSelect = createFilterMultiSelect({
+      containerId: 'claimsEstadoSelect',
+      label: 'Estado',
+      options: allEstados,
+      selectedSet: selectedEstados,
+    });
+    populateBarrioComunaOptions(rawReclamos);
+    resetOtherFilters();
+
     ensureClaimsMap();
     claimsMap.invalidateSize();
     renderMarkers();
   } catch (err) {
     rawReclamos = [];
-    setEmptyState(true);
+    setEmptyState(true, false);
     if (errorEl) {
       errorEl.textContent = err.message || 'No se pudieron cargar los reclamos.';
       errorEl.classList.remove('hidden');
@@ -304,9 +518,24 @@ async function refreshClaimsMap() {
 
 window.refreshClaimsMap = refreshClaimsMap;
 
-document.getElementById('claimsSelectAllBtn')?.addEventListener('click', () => {
-  setAllTematicas(true);
+for (const id of ['claimsBarrio', 'claimsComuna', 'claimsDesde', 'claimsHasta']) {
+  document.getElementById(id)?.addEventListener('change', () => applyFiltersAndReload());
+}
+document.getElementById('claimsBuscar')?.addEventListener('input', () => {
+  clearTimeout(searchDebounceTimer);
+  searchDebounceTimer = setTimeout(() => applyFiltersAndReload(), SEARCH_DEBOUNCE_MS);
 });
-document.getElementById('claimsSelectNoneBtn')?.addEventListener('click', () => {
-  setAllTematicas(false);
+document.getElementById('claimsClearBtn')?.addEventListener('click', () => {
+  categoriaMultiSelect?.selectAll();
+  estadoMultiSelect?.selectAll();
+  resetOtherFilters();
+  applyFiltersAndReload();
+});
+document.getElementById('claimsDownloadCsvBtn')?.addEventListener('click', () => {
+  if (selectedCategorias.size === 0 || selectedEstados.size === 0) {
+    window.alert('No hay reclamos para exportar con los filtros actuales.');
+    return;
+  }
+  const qs = buildQueryString(currentFilters());
+  window.location.href = `/api/reclamos/export.csv${qs ? `?${qs}` : ''}`;
 });

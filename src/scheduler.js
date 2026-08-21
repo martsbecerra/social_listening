@@ -14,7 +14,40 @@
 const cron = require('node-cron');
 const { runMonitoringCycle } = require('./monitor');
 const { notifyNewPost } = require('./notify');
+const { processPendingReclamos } = require('./geoWorker');
+const { refreshStaleAccountStats } = require('./accountStats');
 const db = require('./db');
+
+const DEFAULT_CRON = '0 */4 * * *';
+
+// Momento en que terminó la última corrida (cron o "Actualizar ahora"), para
+// el pie de página. En memoria nomás: si el server reinicia, vuelve a null
+// hasta la próxima corrida — el frontend lo maneja ocultando el dato en vez
+// de inventar una hora.
+let lastRunAt = null;
+
+function getCronExpression() {
+  return process.env.MONITOR_CRON || DEFAULT_CRON;
+}
+
+function getLastRunAt() {
+  return lastRunAt;
+}
+
+/**
+ * Corridas por día a partir del campo de horas de la expresión cron
+ * (ej. cada 4 horas -> 6). Cubre los formatos que MONITOR_CRON admite en
+ * el .env.example: notación de paso (cada N horas), "*" (cada hora), lista
+ * de horas fijas ("6,12,18") y una sola hora fija.
+ */
+function estimateRunsPerDay(cronExpression) {
+  const hourField = String(cronExpression || '').trim().split(/\s+/)[1] || '*';
+  if (hourField === '*') return 24;
+  const step = hourField.match(/^\*\/(\d+)$/);
+  if (step) return Math.max(1, Math.round(24 / Number(step[1])));
+  const fixedHours = hourField.split(',').filter(Boolean).length;
+  return fixedHours > 0 ? fixedHours : 1;
+}
 
 /**
  * Corre un ciclo de monitoreo completo y notifica cada posteo pendiente.
@@ -31,11 +64,25 @@ async function runCycleAndNotify() {
     await notifyNewPost(post);
   }
 
+  try {
+    await processPendingReclamos();
+  } catch (err) {
+    console.error('Error geocodificando reclamos pendientes:', err.message);
+  }
+
+  try {
+    await refreshStaleAccountStats();
+  } catch (err) {
+    console.error('Error recalculando el benchmark de cuentas:', err.message);
+  }
+
+  lastRunAt = new Date().toISOString();
+
   return { checked, newCount: newPosts.length };
 }
 
 function startScheduler() {
-  const cronExpression = process.env.MONITOR_CRON || '0 */4 * * *';
+  const cronExpression = getCronExpression();
 
   cron.schedule(cronExpression, () => {
     runCycleAndNotify().catch((err) => {
@@ -46,4 +93,10 @@ function startScheduler() {
   console.log(`✅ Monitoreo automático agendado (cron: "${cronExpression}")`);
 }
 
-module.exports = { startScheduler, runCycleAndNotify };
+module.exports = {
+  startScheduler,
+  runCycleAndNotify,
+  getCronExpression,
+  getLastRunAt,
+  estimateRunsPerDay,
+};

@@ -161,30 +161,208 @@ a {
   color: var(--jade-500);
 }
 
-/* ------------------------------------------------------------------ */
-/* Header                                                              */
-/* ------------------------------------------------------------------ */
-.topbar {
+/* ══════════════════════════════════════════════════════════
+   FOOTER — eco de la cabecera en versión clara, fluye al final
+   del contenido (no sticky/fijo)
+   ══════════════════════════════════════════════════════════ */
+.foot {
+  position: relative;
+  overflow: hidden;
+  margin-top: auto;
+  background:
+    radial-gradient(80% 180% at 92% 100%, rgba(42, 165, 124, 0.14) 0%, transparent 60%),
+    radial-gradient(60% 140% at 6% 0%, rgba(138, 106, 82, 0.09) 0%, transparent 58%),
+    linear-gradient(170deg, var(--jade-50) 0%, var(--clay-100) 100%);
+  border-top: 1px solid var(--jade-150);
+}
+.foot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(90deg, rgba(6, 56, 46, 0.022) 0 1px, transparent 1px 5px);
+  mask-image: linear-gradient(to right, transparent, #000 45%, transparent);
+}
+.foot-in {
+  position: relative;
+  z-index: 2;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 38px clamp(18px, 4vw, 40px) 28px;
+}
+.foot-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) repeat(2, minmax(0, 1fr));
+  gap: 32px;
+}
+.foot h4 {
+  color: var(--jade-700);
+  margin-bottom: 12px;
+}
+.foot-lead {
+  margin-top: 14px;
+  font-size: 13.5px;
+  color: var(--clay-700);
+  max-width: 38ch;
+  line-height: 1.6;
+}
+.foot-lead b {
+  color: var(--jade-900);
+  font-weight: 600;
+}
+.stat-row {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.stat {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  font-size: 13px;
+  color: var(--clay-500);
+}
+.stat b {
+  font-family: "DM Mono", monospace;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--jade-900);
+}
+.foot-links {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13.5px;
+}
+.foot-links a {
+  color: var(--clay-700);
+  text-decoration: none;
+  width: fit-content;
+  transition: color 0.16s;
+}
+.foot-links a:hover {
+  color: var(--jade-700);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.foot-rule {
+  margin: 26px 0 0;
+  height: 1px;
+  background: linear-gradient(90deg, var(--jade-150), transparent);
+}
+.foot-base {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+  flex-wrap: wrap;
+  padding-top: 16px;
+  color: var(--clay-500);
+}
+.pulse-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--clay-500);
+}
+.pulse-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 99px;
+  background: var(--jade-400);
+  animation: blink 2.2s ease-in-out infinite;
+}
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@media (max-width: 760px) {
+  .foot-grid {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+}
+
+/* Pie mínimo del login: una sola franja fina (wordmark + año), sin las
+   columnas/regla/estado del pie completo — reusa el fondo de .foot (mismo
+   degradé y trama), solo cambia el contenido interno. */
+.foot-mini-in {
+  position: relative;
+  z-index: 2;
+  max-width: 1080px;
+  margin: 0 auto;
   padding: 14px clamp(18px, 4vw, 40px);
-  background: rgba(252, 253, 251, 0.86);
-  backdrop-filter: blur(10px);
-  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.foot-mini-in .brand {
+  gap: 7px;
+}
+.foot-mini-in .brand .meter {
+  --meter-h: 14px;
+  --bar-w: 2px;
+  --bar-gap: 2px;
+}
+.foot-mini-in .brand-name {
+  font-size: 12.5px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Header                                                              */
+/* ------------------------------------------------------------------ */
+.topbar {
   position: sticky;
   top: 0;
-  /* Por encima de ".tabs" (también sticky, z-index 20): son hermanos y con
-     el mismo z-index gana el que aparece después en el DOM — el dropdown
-     de usuario vive dentro de este header, así que si no queda arriba,
-     ".tabs" lo tapa aunque el dropdown tenga su propio z-index más alto
-     (ese z-index solo compite dentro del contexto de apilamiento de este
-     mismo header). */
-  z-index: 25;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 15px clamp(18px, 4vw, 40px);
+  color: #fff;
+  /* Degradé jade oscuro: sigue siendo opaco (sin alpha en la base lineal),
+     Leaflet en el mapa de reclamos queda con z-index bajo (ver más abajo)
+     pero igual necesita un fondo sólido para no transparentarse por debajo
+     al hacer scroll dentro del mapa. */
+  background:
+    radial-gradient(90% 220% at 8% 0%, rgba(42, 165, 124, 0.34) 0%, transparent 60%),
+    linear-gradient(120deg, var(--jade-900) 0%, var(--jade-950) 70%, #02201b 100%);
+  border-bottom: 1px solid var(--line);
+  /* Por encima de ".tabs" (también sticky, z-index 90) y muy por encima de
+     Leaflet (paneles/controles forzados a z-index 1 más abajo). */
+  z-index: 100;
+}
+/* Trama de escaneo, igual criterio que .top::after de la referencia. */
+.topbar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.032) 0 1px, transparent 1px 5px);
+  mask-image: linear-gradient(to right, transparent, #000 40%, transparent);
+}
+.topbar > * {
+  position: relative;
+  z-index: 2;
 }
 .dashboard-topbar {
   justify-content: space-between;
+}
+.topbar .brand-name {
+  color: #fff;
+}
+.topbar .brand-name span {
+  color: var(--jade-300);
 }
 
 .crumb {
@@ -193,7 +371,7 @@ a {
   gap: 10px;
 }
 .crumb-sep {
-  color: var(--clay-200);
+  color: rgba(255, 255, 255, 0.26);
 }
 .crumb-here {
   display: inline-flex;
@@ -201,12 +379,11 @@ a {
   gap: 7px;
   font-size: 14px;
   font-weight: 600;
-  color: var(--jade-900);
+  color: rgba(255, 255, 255, 0.93);
 }
 .crumb-here svg {
   width: 17px;
   height: 17px;
-  color: var(--jade-700);
 }
 
 .topbar-user {
@@ -218,21 +395,21 @@ a {
   display: inline-flex;
   align-items: center;
   gap: 9px;
-  padding: 6px 14px 6px 7px;
+  padding: 6px 13px 6px 7px;
   cursor: pointer;
-  background: #fff;
-  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 99px;
   font-size: 13.5px;
-  color: var(--clay-700);
-  box-shadow: var(--shadow-sm);
+  color: rgba(255, 255, 255, 0.92);
+  box-shadow: none;
   transition:
-    border-color 0.16s,
-    box-shadow 0.16s;
+    background 0.16s,
+    border-color 0.16s;
 }
 .user-btn:hover {
-  border-color: var(--jade-150);
-  box-shadow: 0 2px 10px rgba(6, 56, 46, 0.08);
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.3);
 }
 .avatar {
   width: 25px;
@@ -241,8 +418,10 @@ a {
   display: grid;
   place-items: center;
   flex-shrink: 0;
-  background: linear-gradient(135deg, var(--jade-500), var(--jade-300));
-  color: #fff;
+  background: linear-gradient(135deg, var(--jade-400), var(--jade-300));
+  color: var(--jade-950);
+  font-size: 10.5px;
+  font-weight: 700;
 }
 .avatar svg {
   width: 13px;
@@ -297,7 +476,7 @@ a {
   border-bottom: 1px solid var(--line);
   position: sticky;
   top: 0;
-  z-index: 20;
+  z-index: 90;
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -353,7 +532,7 @@ a {
   transform: scaleX(1);
 }
 .tab-btn .meter {
-  --meter-h: 11px;
+  --meter-h: 13px;
   --bar-w: 2px;
   --bar-gap: 2px;
   opacity: 0.35;
@@ -361,6 +540,87 @@ a {
 }
 .tab-btn.active .meter {
   opacity: 1;
+}
+
+/* Ícono de cada solapa: los tres animan siempre, no solo el activo (el
+   medidor de "Monitoreo" ya lo hacía — sus barras corren siempre, .active
+   solo le sube la opacidad). Duraciones a propósito distintas (3s / medidor
+   variable / 2.6s) para que no se sincronicen entre sí. */
+.glyph {
+  width: 17px;
+  height: 17px;
+  flex: none;
+  color: var(--jade-400);
+}
+.tab-btn.active .glyph {
+  color: var(--jade-500);
+}
+
+/* Análisis — la línea de tendencia se dibuja de menor a mayor y el punto la sigue */
+.glyph-an .trend {
+  stroke-dasharray: 26;
+  stroke-dashoffset: 26;
+  animation: draw 3s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+.glyph-an .head {
+  opacity: 0;
+  animation: headMove 3s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+@keyframes draw {
+  0% {
+    stroke-dashoffset: 26;
+  }
+  55% {
+    stroke-dashoffset: 0;
+  }
+  85% {
+    stroke-dashoffset: 0;
+  }
+  100% {
+    stroke-dashoffset: 26;
+  }
+}
+@keyframes headMove {
+  0% {
+    opacity: 0;
+    transform: translate(-8px, 6px);
+  }
+  12% {
+    opacity: 1;
+  }
+  55% {
+    opacity: 1;
+    transform: translate(0, 0);
+  }
+  85% {
+    opacity: 1;
+    transform: translate(0, 0);
+  }
+  92%,
+  100% {
+    opacity: 0;
+    transform: translate(0, 0);
+  }
+}
+
+/* Mapa de reclamos — pin fijo con onda de radar que se expande */
+.glyph-mp .ping {
+  transform-origin: 12px 10px;
+  animation: ping 2.6s cubic-bezier(0.2, 0.7, 0.3, 1) infinite;
+}
+@keyframes ping {
+  0% {
+    transform: scale(0.3);
+    opacity: 0.85;
+  }
+  70% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
 }
 
 .tab-panel {
@@ -405,6 +665,11 @@ a {
   display: flex !important;
   position: absolute !important;
   inset: 0 !important;
+  /* Su tabla de Tabulator (100+ filas) es más alta que este panel de 100vh
+     y sin esto el desborde queda "visible" (default) — no se ve porque
+     visibility:hidden lo oculta, pero igual infla el scrollHeight del
+     documento entero, en cualquier solapa, no solo esta. */
+  overflow: hidden !important;
   visibility: hidden !important;
   pointer-events: none !important;
   z-index: -1 !important;
@@ -887,21 +1152,35 @@ pre.report {
   color: var(--clay-900);
 }
 
-.delete-row-btn {
-  width: auto;
+/* Botón de ícono del prototipo aprobado (design/plataforma.html: .ico/.ico.del),
+   nunca portado a la app — acá achicado (24px/13px svg) para la fila de la tabla. */
+.ico {
+  width: 24px;
+  height: 24px;
   margin: 0;
-  padding: 5px 10px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  vertical-align: middle;
+  cursor: pointer;
   background: none;
-  border: 1px solid var(--line);
+  border: 1px solid transparent;
+  border-radius: 6px;
   color: var(--clay-500);
-  border-radius: 8px;
-  font-size: 0.85rem;
   box-shadow: none;
+  transition:
+    background 0.14s,
+    color 0.14s,
+    border-color 0.14s;
 }
-.delete-row-btn:hover {
-  border-color: var(--coral-500);
-  color: var(--coral-700);
+.ico svg {
+  width: 13px;
+  height: 13px;
+}
+.ico.del:hover {
   background: var(--coral-100);
+  color: var(--coral-700);
+  border-color: #f2d2c5;
   transform: none;
   box-shadow: none;
   filter: none;
@@ -975,8 +1254,22 @@ pre.report {
 /* ══════════════════════════════════════════════════════════
    1 · INGRESO (index.html)
    ══════════════════════════════════════════════════════════ */
+/* Login: panel jade + formulario + franja de pie tienen que entrar en
+   100vh sin scroll (en una pantalla razonable). ".auth" necesita
+   min-height:0 para poder achicarse dentro de ".login-page" con altura fija
+   — sin esto, un hijo flex no se reduce por debajo de la altura de su
+   contenido aunque el padre sea más chico. Por debajo de 600px de alto
+   (pantallas muy bajas) se cae al comportamiento normal (scroll), para no
+   recortar el formulario. */
+@media (min-height: 600px) {
+  body.login-page {
+    height: 100vh;
+    overflow: hidden;
+  }
+}
 .auth {
   flex: 1;
+  min-height: 0;
   display: grid;
   grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
 }
@@ -1151,6 +1444,9 @@ pre.report {
 .dashboard-main {
   flex: 1;
   padding: clamp(30px, 5vw, 54px) clamp(18px, 4vw, 40px) 72px;
+  /* Sin .tabs de por medio, el jade de .topbar quedaría pegado directo al
+     contenido — un respiro corto para que la transición no se vea cortada. */
+  background: linear-gradient(180deg, var(--jade-50) 0%, var(--paper) 140px);
 }
 .dash-shell {
   max-width: 1080px;
@@ -1386,6 +1682,52 @@ pre.report {
   padding: 12px 14px;
   color: var(--clay-900);
 }
+/* Panel desplegable de la fila (benchmark de likes/comentarios contra la
+   mediana propia de la cuenta) — display:block a propósito, para que la
+   fila crezca y muestre el contenido debajo de las celdas en vez de
+   recortarlo (.tabulator-row no tiene overflow:hidden). */
+.row-detail-panel {
+  display: block;
+  width: 100%;
+  padding: 12px 14px 14px;
+  background: var(--jade-50);
+  border-top: 1px solid var(--line);
+}
+.row-detail-panel p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.row-detail-panel p + p {
+  margin-top: 4px;
+}
+/* Niveles: alto en jade (mucha interacción, no es "malo"), normal en clay,
+   bajo en clay atenuado — nunca coral, coral es solo para alertas. */
+.benchmark-alto {
+  color: var(--jade-700);
+  font-weight: 600;
+}
+.benchmark-normal {
+  color: var(--clay-700);
+}
+.benchmark-bajo {
+  color: var(--clay-500);
+}
+.benchmark-sin-referencia {
+  color: var(--clay-500);
+  font-style: italic;
+}
+.tabulator .tabulator-cell[tabulator-field="id"] {
+  overflow: visible;
+  /* inline-flex, no flex: "flex" es block-level y fuerza salto de línea
+     antes de sí mismo dentro del flujo inline-block de las demás celdas
+     (.tabulator-row .tabulator-cell es display:inline-block por defecto de
+     Tabulator), sin importar que sobre ancho en la fila. inline-flex centra
+     igual (align-items/justify-content) pero fluye inline como sus hermanas. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
 .tabulator-row .tabulator-cell.title-cell {
   /* Sin max-width fijo: que ocupe todo el ancho que Tabulator le asigne a
      la columna (ahora más grande, para que se vea mejor la previsualización
@@ -1467,63 +1809,163 @@ pre.report {
    ofrecimos como función, así que lo sacamos del todo en vez de dejarlo
    ahí sin usar. */
 .tabulator .tabulator-col-resize-handle {
-  display: none;
+  display: none !important;
 }
 
 /* ------------------------------------------------------------------ */
 /* Mapa de reclamos                                                    */
 /* ------------------------------------------------------------------ */
-.claims-chips-card {
+/* Leaflet le pone z-index ~1000 a sus panes/controles por defecto, muy por
+   encima de .topbar (100) y .tabs (90): al scrollear DENTRO del mapa,
+   tapaba el header. Se lo baja acá en vez de seguir subiendo el header a
+   números cada vez más arbitrarios. */
+.leaflet-pane,
+.leaflet-top,
+.leaflet-bottom,
+.leaflet-control {
+  z-index: 1 !important;
+}
+.claims-filters-card {
   padding: 16px 18px;
 }
-.claims-filter-title {
-  margin: 0 0 10px;
-  font-family: "DM Mono", monospace;
-  font-size: 10.5px;
-  font-weight: 500;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--jade-500);
-  text-align: left;
-}
-.claims-select-btn {
-  font-weight: 500;
-}
-.claims-chips-toolbar {
+.claims-filters-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }
-.claims-chips {
-  display: contents;
+/* Mismo alto (38px) para todos los controles de la fila — selects, fechas,
+   buscador, el botón cerrado de los multi-select y Limpiar/Descargar CSV —
+   así quedan alineados aunque cada uno tenga su propio font/padding base. */
+.claims-filters-row select,
+.claims-filters-row input[type="date"],
+.claims-filters-row input[type="text"],
+.claims-filter-select-btn,
+.claims-filters-row .btn-small {
+  height: 38px;
+  margin: 0;
+  padding: 0 10px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--clay-900);
+  font-size: 13.5px;
+  box-shadow: none;
+  transition:
+    border-color 0.16s,
+    box-shadow 0.16s;
 }
-.claims-chip {
+/* Barrio/Comuna: sin esto se estiran al nombre más largo ("Villa Santa
+   Rita") y no entran los nueve controles en una fila; el nativo trunca con
+   ellipsis solo, no hace falta manejarlo a mano. */
+#claimsBarrio {
+  width: 128px;
+}
+#claimsComuna {
+  width: 108px;
+}
+.claims-filters-row select:focus,
+.claims-filters-row input:focus,
+.claims-filter-select-btn:focus-visible {
+  outline: none;
+  border-color: var(--jade-400);
+  box-shadow: 0 0 0 3.5px var(--jade-100);
+  background: #fff;
+}
+.claims-search {
+  flex: 1 1 140px;
+  width: auto;
+}
+.claims-download-btn {
+  white-space: nowrap;
+}
+
+/* Multi-select desplegable (categoría / estado): botón cerrado + panel
+   flotante con checkboxes. Mismo mecanismo de apertura/cierre que el
+   dropdown de usuario del header (main.js: toggle de .hidden + click
+   afuera). */
+.claims-filter-select {
+  position: relative;
+}
+.claims-filter-select-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: auto;
+  cursor: pointer;
+  font-family: "Instrument Sans", sans-serif;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.claims-filter-select-btn::after {
+  content: "▾";
+  font-size: 10px;
+  color: var(--clay-500);
+}
+.claims-filter-select-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 5;
+  min-width: 240px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow-md);
+  padding: 10px;
+}
+.claims-filter-select-actions {
+  display: flex;
+  gap: 6px;
+  padding-bottom: 8px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+}
+.claims-filter-select-actions button {
   width: auto;
   margin: 0;
   padding: 5px 10px;
-  border-radius: 999px;
-  border: 1px solid transparent;
-  font-size: 0.75rem;
-  font-weight: 600;
-  line-height: 1.2;
-  white-space: nowrap;
-  opacity: 0.4;
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  color: var(--clay-700);
+  border-radius: 7px;
   box-shadow: none;
-  transition:
-    opacity 0.14s,
-    filter 0.14s;
 }
-.claims-chip:hover {
+.claims-filter-select-actions button:hover:not(:disabled) {
+  background: var(--jade-50);
+  border-color: var(--jade-150);
   transform: none;
-  filter: brightness(1.08);
   box-shadow: none;
 }
-.claims-chip.is-selected {
-  opacity: 1;
-}
-.claims-chip-count {
+.claims-filter-select-option {
+  /* Pisa el <label> global (mayúsculas, DM Mono, letter-spacing) pensado
+     para rótulos de formulario — acá es un ítem de lista normal. */
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 0;
+  padding: 7px 8px;
+  border-radius: 8px;
+  font-family: "Instrument Sans", sans-serif;
+  font-size: 13.5px;
   font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--clay-900);
+  cursor: pointer;
+}
+.claims-filter-select-option:hover {
+  background: var(--jade-50);
+}
+.claims-filter-select-option input[type="checkbox"] {
+  accent-color: var(--jade-500);
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
 }
 .claims-tema-pill {
   display: inline-block;
@@ -1531,9 +1973,6 @@ pre.report {
   border-radius: 999px;
   font-weight: 600;
   font-size: 12.5px;
-}
-.claims-tema-pill .claims-chip-count {
-  font-weight: 400;
 }
 
 .claims-map-card {
@@ -1637,6 +2076,15 @@ pre.report {
 .claims-popup a {
   color: var(--jade-700);
 }
+.claims-popup-estado {
+  margin: 0;
+  padding: 5px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--clay-900);
+  font-size: 12.5px;
+}
 
 /* ══════════════════════════════════════════════════════════ */
 @media (max-width: 380px) {
@@ -1661,5 +2109,16 @@ pre.report {
   }
   .tab-btn.active::after {
     transform: scaleX(1);
+  }
+  .glyph-an .trend {
+    stroke-dashoffset: 0;
+  }
+  .glyph-an .head {
+    opacity: 1;
+    transform: none;
+  }
+  .glyph-mp .ping {
+    opacity: 0.35;
+    transform: scale(1);
   }
 }

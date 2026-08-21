@@ -21,13 +21,8 @@
     <!-- Solo visual: sin lógica de autenticación todavía. -->
     <div class="topbar-user">
       <button class="user-btn" data-dropdown="userDropdown">
-        <span class="avatar">
-          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-            <circle cx="12" cy="8" r="4" />
-            <path d="M12 14c-5 0-9 2.7-9 6v2h18v-2c0-3.3-4-6-9-6Z" />
-          </svg>
-        </span>
-        ▾
+        <span class="avatar">MB</span>
+        M. Becerra
       </button>
       <div id="userDropdown" class="user-dropdown hidden">
         <span>Nombre de usuario</span>
@@ -86,8 +81,50 @@
     </div>
   </main>
 
+  <footer class="foot">
+    <div class="foot-in">
+      <div class="foot-grid">
+        <div>
+          <a class="brand" href="dashboard.html">
+            <div class="meter" data-meter="5"></div>
+            <span class="brand-name"><span>social</span> <b>listening</b></span>
+          </a>
+          <p class="foot-lead">Una herramienta de <b>DGAND</b> para escuchar lo que se dice en redes, medir cómo se dice y convertir los reclamos en un punto del mapa.</p>
+        </div>
+
+        <div>
+          <h4 class="tag">Qué escuchamos</h4>
+          <div class="stat-row">
+            <span class="stat"><b id="footerPlataformas">–</b> plataformas</span>
+            <span class="stat"><b id="footerCorridas">–</b> corridas por día</span>
+            <span class="stat"><b id="footerTematicas">–</b> temáticas de reclamo</span>
+          </div>
+        </div>
+
+        <div>
+          <h4 class="tag">Atajos</h4>
+          <nav class="foot-links">
+            <a href="instagram.html#tab-analysis">Análisis de publicación</a>
+            <a href="instagram.html#tab-monitoring">Monitoreo en vivo</a>
+            <a href="instagram.html#tab-claims-map">Mapa de reclamos</a>
+          </nav>
+        </div>
+      </div>
+
+      <div class="foot-rule"></div>
+      <div class="foot-base">
+        <span class="pulse-line" id="footerPulse">
+          <span class="pulse-dot"></span>
+          <span id="footerPulseText">Escuchando</span>
+        </span>
+        <span class="tag">DGAND · <span id="footerYear"></span></span>
+      </div>
+    </div>
+  </footer>
+
   <script src="js/meter.js"></script>
   <script src="js/main.js"></script>
   <script src="js/dashboard.js"></script>
+  <script src="js/footer.js"></script>
 </body>
 </html>

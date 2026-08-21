@@ -30,3 +30,11 @@ document.querySelectorAll('.user-btn').forEach((btn) => {
     }
   });
 });
+
+// Atajos del pie de página: si la URL trae #tab-analysis / #tab-monitoring /
+// #tab-claims-map, abre esa solapa al cargar. Dispara el mismo click que ya
+// usa el usuario — no es un camino de navegación nuevo.
+if (location.hash.startsWith('#tab-')) {
+  const targetTab = location.hash.slice('#tab-'.length);
+  document.querySelector(`.tab-btn[data-tab="${targetTab}"]`)?.click();
+}

@@ -6,16 +6,19 @@
   "scripts": {
     "start": "node server.js",
     "stop": "node scripts/stop-server.js",
-    "import-reclamos-seed": "node scripts/import-reclamos-seed.js"
+    "import-reclamos-excel": "node scripts/import-reclamos-excel.js"
   },
   "engines": {
     "node": ">=22.5.0"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.112.3",
+    "@turf/boolean-point-in-polygon": "^7.2.0",
+    "@turf/helpers": "^7.2.0",
     "dotenv": "^16.4.5",
     "express": "^4.21.2",
     "node-cron": "^3.0.3",
-    "nodemailer": "^6.9.15"
+    "nodemailer": "^6.9.15",
+    "xlsx": "^0.18.5"
   }
 }

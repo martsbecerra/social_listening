@@ -11,10 +11,13 @@ App web que:
    las cuentas trackeadas o que mencione las palabras clave/hashtags
    configurados, y avisa por email (solapa "Monitoreo en vivo").
 3. Muestra la solapa "Mapa de reclamos" (Leaflet): círculos por dirección
-   normalizada, filtro por temática (etiquetas libres normalizadas) y popup
-   con el comentario. Hoy se alimenta
-   de un seed Brandwatch/X cargado **solo por script CLI**. El writer de
-   Análisis / cron de 4 horas todavía no está implementado.
+   normalizada, con filtros combinables por categoría (lista cerrada de
+   nueve), estado, barrio/comuna, rango de fechas y texto libre, más
+   descarga de CSV. Se alimenta de dos fuentes: el análisis de una
+   publicación (`/api/analyze` guarda reclamos con ubicación en
+   `geo_status = 'pendiente'`; un worker los geocodifica con USIG después,
+   sin bloquear la respuesta) y un import puntual de Excel
+   (`scripts/import-reclamos-excel.js`) para cargar reclamos ya resueltos.
 
 ---
 
@@ -29,9 +32,14 @@ social_listening_app/
 │   ├── llm/                  # Proveedores: anthropicProvider, openrouterProvider.
 │   ├── prompt.js             # La metodología de análisis (system prompt).
 │   ├── db.js                 # SQLite: posteos detectados + reclamos del mapa.
-│   ├── reclamosAddress.js    # Heurística de calle para el seed.
-│   ├── tematica.js           # Normaliza etiquetas libres de temática.
-│   ├── geocode.js            # Nominatim + cache (solo el CLI de import).
+│   ├── reclamosAddress.js    # Obsoleto (heurística del seed viejo); sin uso.
+│   ├── tematica.js           # Normaliza etiquetas libres del CSV de reclamos (legacy).
+│   ├── categoriaReclamo.js   # Categoría (9) y estado (4) cerrados del mapa.
+│   ├── addressClean.js       # Limpieza de direcciones antes de geocodificar (USIG).
+│   ├── geocode.js            # USIG + geocode_cache (lo usa geoWorker.js).
+│   ├── territorios.js        # Comuna/barrio por punto-en-polígono (GeoJSON GCBA).
+│   ├── geoWorker.js          # Geocodifica reclamos 'pendiente' (cron + post-análisis).
+│   ├── reclamosFromAnalysis.js # reclamosGeo de Claude -> filas para la tabla reclamos.
 │   ├── monitor.js            # Detección de posteos nuevos + config de cuentas/keywords.
 │   ├── classifier.js         # Título + sentimiento de cada posteo (Claude Haiku).
 │   ├── mailer.js             # Envío de emails de alerta (Nodemailer).
@@ -43,7 +51,7 @@ social_listening_app/
 │   └── monitoring.json       # Cuentas y palabras clave/hashtags a trackear.
 ├── data/
 │   ├── monitoring.db         # Base SQLite (se crea sola, no se versiona).
-│   └── seeds/brandwatch-x-reclamos.tsv  # Seed local del mapa (gitignored).
+│   └── geo/                  # Cache en disco de comunas.geojson y barrios.geojson (GCBA).
 ├── public/
 │   ├── index.html            # Login de fachada (sin auth real todavía).
 │   ├── dashboard.html        # Selector de red social.
@@ -55,7 +63,7 @@ social_listening_app/
 │       ├── monitoring.js     # Lógica de "Monitoreo en vivo".
 │       └── claimsMap.js      # Mapa de reclamos (Leaflet, agrega en el cliente).
 ├── scripts/
-│   ├── import-reclamos-seed.js  # Carga el TSV Brandwatch/X a SQLite (solo CLI).
+│   ├── import-reclamos-excel.js # Carga un Excel de reclamos ya resueltos (solo CLI).
 │   └── stop-server.js           # Mata el proceso que ocupa el puerto (npm run stop).
 ├── .env.example               # Plantilla de las claves (copiala a .env).
 ├── .gitignore                 # Evita subir node_modules, .env y data/.
@@ -232,8 +240,9 @@ Abrí `.env` y pegá:
   ["contraseña de aplicación"](https://myaccount.google.com/apppasswords)
   (necesarias solo para las alertas del monitoreo)
 - `ALERT_EMAIL_TO` → a quién avisar cuando aparezca un posteo relevante
-- `NOMINATIM_USER_AGENT` → identificador de la app (obligatorio solo para el
-  script de import del mapa; Nominatim lo exige)
+
+El geocoding del mapa de reclamos usa USIG (servicio del GCBA) y no necesita
+ninguna clave.
 
 ### 4. Arrancar la app
 
@@ -252,20 +261,27 @@ npm run stop
 Abrí esa dirección en el navegador (login de fachada → dashboard → Instagram),
 pegá el link de una publicación y hacé clic en **Analizar publicación**.
 
-### 5. Cargar el seed del mapa de reclamos (script, no la app)
+### 5. Reclamos del mapa
 
-El mapa **no importa solo**. Copiá el TSV Brandwatch/X (UTF-16) a
-`data/seeds/brandwatch-x-reclamos.tsv` (`data/` no se versiona) y corré:
+El mapa se alimenta solo: cada vez que analizás una publicación
+("Análisis de publicación"), los comentarios con una dirección concreta
+quedan guardados como reclamos en `geo_status = 'pendiente'`, y se
+geocodifican con USIG poco después (sin bloquear la respuesta del análisis).
+También corren cada 4hs junto con el cron de monitoreo, por si algo quedó
+pendiente por una falla transitoria de USIG.
+
+Para cargar de una vez un lote de reclamos ya resueltos (Excel con hoja
+"Reclamos" y columnas `direccion`, `comuna`, `barrio`, `link`, `texto`,
+`autor`, `fecha`, `X`, `Y`, entre otras):
 
 ```powershell
-npm run import-reclamos-seed -- --dry-run data/seeds/brandwatch-x-reclamos.tsv
-npm run import-reclamos-seed -- data/seeds/brandwatch-x-reclamos.tsv
+npm run import-reclamos-excel -- --dry-run "ruta\al\archivo.xlsx"
+npm run import-reclamos-excel -- "ruta\al\archivo.xlsx"
 ```
 
-`--dry-run` lista las direcciones extraídas y **no** toca la DB ni Nominatim.
-El import real geocodifica calles concretas (no City, no “Palermo” de los RT)
-y deja las 1801 filas en `monitoring.db`. Más adelante los reclamos van a
-entrar por otro camino (Análisis / monitoreo); este script es solo el seed.
+`--dry-run` solo imprime un resumen y no toca la DB. El import real es
+idempotente (usa el link de cada fila como id): correrlo dos veces no
+duplica filas.
 
 ---
 
