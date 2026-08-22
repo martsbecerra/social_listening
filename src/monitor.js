@@ -271,6 +271,37 @@ async function scrapeAccount(username, { resultsLimit, lookback }) {
     .map((raw) => normalizeMonitorPost(raw, { account: username, sourceType: 'account' }));
 }
 
+/**
+ * Cantidad de seguidores de una cuenta. Los items de "posts" NO traen este
+ * dato (confirmado contra la doc del actor apify/instagram-scraper: solo
+ * ownerFullName/ownerUsername/ownerId a nivel de posteo) — hace falta una
+ * corrida aparte con resultsType "details" sobre la URL del perfil, que
+ * devuelve followersCount en el nivel superior del item. Se llama desde
+ * accountStats.computeAccountStats, con la misma cadencia que el benchmark
+ * (mensual / cuenta nueva / recálculo forzado) — no en cada corrida de 4hs.
+ *
+ * Nunca tira: sin token de Apify, cuenta privada, actor caído o cualquier
+ * otro error, devuelve null (la columna de seguidores queda en "-", el
+ * resto del ciclo de monitoreo sigue sin verse afectado).
+ * @returns {Promise<number|null>}
+ */
+async function fetchAccountFollowers(username) {
+  try {
+    const items = await runActorSync({
+      directUrls: [`https://www.instagram.com/${username}/`],
+      resultsType: 'details',
+      resultsLimit: 1,
+    });
+    const raw = (Array.isArray(items) && items[0]) || null;
+    if (!raw || raw.error) return null;
+    const value = Number(raw.followersCount);
+    return Number.isFinite(value) ? value : null;
+  } catch (err) {
+    console.error(`No se pudieron traer los seguidores de @${username}:`, err.message);
+    return null;
+  }
+}
+
 async function scrapeHashtag(tag, { resultsLimit }) {
   const items = await runActorSync({
     directUrls: [`https://www.instagram.com/explore/tags/${tag}/`],
@@ -375,6 +406,11 @@ async function runMonitoringCycle() {
       title: evaluation.title,
       sentiment: evaluation.sentiment,
       matchedReason: evaluation.matchedReason,
+      // Snapshot de la caché (account_followers), no un llamado a Apify acá:
+      // eso encarecería cada corrida de 4hs. Se refresca por afuera, en
+      // accountStats.computeAccountStats. Posts sin cuenta (hashtag) o de
+      // cuentas todavía sin caché quedan null -> "-" en la tabla.
+      followers: post.account ? db.getAccountFollowers(post.account, 'instagram') : null,
     };
 
     db.saveDetectedPost(postWithClassification);
@@ -408,4 +444,5 @@ module.exports = {
   addKeyword,
   removeKeyword,
   scrapeAccount,
+  fetchAccountFollowers,
 };

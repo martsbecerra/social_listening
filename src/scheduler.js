@@ -50,6 +50,56 @@ function estimateRunsPerDay(cronExpression) {
 }
 
 /**
+ * Lista ordenada de horas (0-23) en las que dispara la expresión cron, para
+ * el mismo subconjunto de formatos que ya interpreta estimateRunsPerDay
+ * ("*", paso "*" + N, lista fija de horas).
+ */
+function parseHourField(hourField) {
+  if (hourField === '*') return Array.from({ length: 24 }, (_, i) => i);
+  const step = hourField.match(/^\*\/(\d+)$/);
+  if (step) {
+    const n = Math.max(1, Number(step[1]));
+    const hours = [];
+    for (let h = 0; h < 24; h += n) hours.push(h);
+    return hours;
+  }
+  const fixed = hourField
+    .split(',')
+    .map(Number)
+    .filter((h) => Number.isFinite(h) && h >= 0 && h <= 23);
+  return fixed.length > 0 ? fixed.sort((a, b) => a - b) : [0];
+}
+
+/**
+ * Próxima vez que va a disparar el cron, a partir de "from" (por defecto,
+ * ahora). Mismo formato de MONITOR_CRON que ya soporta el resto de este
+ * archivo — no depende de una librería de parseo de cron aparte.
+ * @returns {Date}
+ */
+function getNextRunAt(cronExpression, from = new Date()) {
+  const parts = String(cronExpression || '').trim().split(/\s+/);
+  const minuteField = parts[0] || '0';
+  const hourField = parts[1] || '*';
+  const minute = Number.isFinite(Number(minuteField)) ? Number(minuteField) : 0;
+  const hours = parseHourField(hourField);
+
+  for (let dayOffset = 0; dayOffset <= 1; dayOffset += 1) {
+    for (const hour of hours) {
+      const candidate = new Date(from);
+      candidate.setDate(candidate.getDate() + dayOffset);
+      candidate.setHours(hour, minute, 0, 0);
+      if (candidate > from) return candidate;
+    }
+  }
+  // No debería pasar (parseHourField siempre devuelve al menos una hora
+  // válida), pero por las dudas: mismo horario mañana.
+  const fallback = new Date(from);
+  fallback.setDate(fallback.getDate() + 1);
+  fallback.setHours(hours[0], minute, 0, 0);
+  return fallback;
+}
+
+/**
  * Corre un ciclo de monitoreo completo y notifica cada posteo pendiente.
  * Además de los recién detectados en esta corrida, reintenta los de
  * corridas anteriores cuyo email haya fallado (ver db.listUnnotified) — así
@@ -99,4 +149,5 @@ module.exports = {
   getCronExpression,
   getLastRunAt,
   estimateRunsPerDay,
+  getNextRunAt,
 };

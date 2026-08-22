@@ -56,13 +56,20 @@ if (!existingColumns.includes('sentiment')) {
 if (!existingColumns.includes('post_type')) {
   db.exec('ALTER TABLE detected_posts ADD COLUMN post_type TEXT');
 }
+// Snapshot de seguidores de la cuenta al momento de guardar el posteo (no en
+// tiempo real): viene de la caché account_followers, que se refresca con la
+// misma cadencia que account_stats (ver src/accountStats.js). Las filas
+// guardadas antes de esto, o de cuentas todavía sin caché, quedan NULL.
+if (!existingColumns.includes('followers')) {
+  db.exec('ALTER TABLE detected_posts ADD COLUMN followers INTEGER');
+}
 
 const isKnownPostStmt = db.prepare('SELECT 1 FROM detected_posts WHERE id = ?');
 const insertPostStmt = db.prepare(`
   INSERT INTO detected_posts
-    (id, account, url, caption, matched_reason, likes, comments, posted_at, detected_at, notified, title, sentiment, post_type)
+    (id, account, url, caption, matched_reason, likes, comments, posted_at, detected_at, notified, title, sentiment, post_type, followers)
   VALUES
-    (@id, @account, @url, @caption, @matchedReason, @likes, @comments, @postedAt, @detectedAt, 0, @title, @sentiment, @postType)
+    (@id, @account, @url, @caption, @matchedReason, @likes, @comments, @postedAt, @detectedAt, 0, @title, @sentiment, @postType, @followers)
 `);
 const markNotifiedStmt = db.prepare('UPDATE detected_posts SET notified = 1 WHERE id = ?');
 const countPostsStmt = db.prepare('SELECT COUNT(*) AS total FROM detected_posts');
@@ -190,6 +197,33 @@ const getAccountStatsFreshnessStmt = db.prepare(`
 `);
 const listAllAccountStatsStmt = db.prepare('SELECT * FROM account_stats');
 
+// Caché de seguidores por cuenta: tabla propia (no una columna más en
+// account_stats) porque account_stats tiene hasta una fila por post_type y
+// duplicaría el mismo número de seguidores en cada una, además de la
+// ambigüedad de "cuál fila leer" si esa cuenta no tiene fila con
+// post_type NULL. Se refresca con la misma cadencia que account_stats (ver
+// computeAccountStats en src/accountStats.js).
+db.exec(`
+  CREATE TABLE IF NOT EXISTS account_followers (
+    account TEXT NOT NULL,
+    platform TEXT NOT NULL,
+    followers INTEGER,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (account, platform)
+  )
+`);
+const insertAccountFollowersStmt = db.prepare(`
+  INSERT INTO account_followers (account, platform, followers, updated_at)
+  VALUES (@account, @platform, @followers, @updatedAt)
+`);
+const updateAccountFollowersStmt = db.prepare(`
+  UPDATE account_followers SET followers = @followers, updated_at = @updatedAt
+  WHERE account = @account AND platform = @platform
+`);
+const getAccountFollowersStmt = db.prepare(
+  'SELECT followers FROM account_followers WHERE account = ? AND platform = ?'
+);
+
 const upsertReclamoStmt = db.prepare(`
   INSERT INTO reclamos (
     id, comentario_id, plataforma, post_url, comment_url, autor, fecha,
@@ -280,6 +314,7 @@ function saveDetectedPost(post) {
     title: post.title || null,
     sentiment: post.sentiment || null,
     postType: post.postType || null,
+    followers: post.followers ?? null,
   });
 }
 
@@ -572,6 +607,22 @@ function listAllAccountStats() {
   return listAllAccountStatsStmt.all().map(mapAccountStatsRow);
 }
 
+function upsertAccountFollowers({ account, platform, followers, updatedAt }) {
+  const params = { account, platform, followers: followers ?? null, updatedAt: updatedAt || new Date().toISOString() };
+  const existing = getAccountFollowersStmt.get(account, platform);
+  if (existing) {
+    updateAccountFollowersStmt.run(params);
+  } else {
+    insertAccountFollowersStmt.run(params);
+  }
+}
+
+/** @returns {number|null} Última cantidad de seguidores cacheada, o null si nunca se calculó. */
+function getAccountFollowers(account, platform) {
+  const row = getAccountFollowersStmt.get(account, platform);
+  return row ? row.followers : null;
+}
+
 module.exports = {
   isKnownPost,
   saveDetectedPost,
@@ -587,6 +638,8 @@ module.exports = {
   getAccountStats,
   getAccountStatsFreshness,
   listAllAccountStats,
+  upsertAccountFollowers,
+  getAccountFollowers,
   upsertReclamo,
   listReclamosFiltered,
   updateEstado,

@@ -23,7 +23,21 @@ const monitoringStatusTextEl = document.getElementById('monitoringStatusText');
 const monitoringProgressFillEl = document.getElementById('monitoringProgressFill');
 const monitoringResultEl = document.getElementById('monitoringResult');
 const monitoringLoadErrorEl = document.getElementById('monitoringLoadError');
-const monitoringResultsCountEl = document.getElementById('monitoringResultsCount');
+const monitoringNextRunEl = document.getElementById('monitoringNextRun');
+
+const highlightsSectionEl = document.getElementById('monitoringHighlightsSection');
+const cardsEl = document.getElementById('cards');
+
+const fSentEl = document.getElementById('fSent');
+const fAccEl = document.getElementById('fAcc');
+const fNotiEl = document.getElementById('fNoti');
+const chkWrapEl = document.getElementById('chkWrap');
+const qEl = document.getElementById('q');
+const sortSelects = [...document.querySelectorAll('.srt')];
+const sDateEl = document.getElementById('sDate');
+const nEl = document.getElementById('n');
+const mEl = document.getElementById('m');
+const monitoringClearBtn = document.getElementById('clear');
 
 const KEYWORDS_PREVIEW_COUNT = 2;
 // Todo de una sola vez: el orden/filtro/paginación ahora los maneja
@@ -31,35 +45,45 @@ const KEYWORDS_PREVIEW_COUNT = 2;
 const FETCH_ALL_PAGE_SIZE = 5000;
 let pendingDeleteId = null;
 
-function renderTagList(listEl, items, onRemove) {
+// -------------------------------------------------------------------------
+// Config: cuentas trackeadas / palabras clave (visible arriba, sin modal).
+// Los ids/handlers de este bloque no cambian — solo el marcado que genera
+// renderTagList pasa de <li> (.tag-list) a .chip, calcado de
+// design/monitoreo.html.
+// -------------------------------------------------------------------------
+function renderTagList(listEl, items, onRemove, extraClass) {
   listEl.innerHTML = '';
   if (items.length === 0) {
-    listEl.innerHTML = '<li class="muted" style="background:none;border:none;">Ninguna todavía</li>';
+    const empty = document.createElement('span');
+    empty.className = 'muted';
+    empty.textContent = 'Ninguna todavía';
+    listEl.appendChild(empty);
     return;
   }
   items.forEach((item) => {
-    const li = document.createElement('li');
+    const chip = document.createElement('span');
+    chip.className = extraClass ? `chip ${extraClass}` : 'chip';
     const span = document.createElement('span');
     span.textContent = item;
     const btn = document.createElement('button');
-    btn.className = 'remove-tag';
+    btn.type = 'button';
     btn.textContent = '✕';
     btn.title = 'Quitar';
     btn.addEventListener('click', () => onRemove(item));
-    li.appendChild(span);
-    li.appendChild(btn);
-    listEl.appendChild(li);
+    chip.appendChild(span);
+    chip.appendChild(btn);
+    listEl.appendChild(chip);
   });
 }
 
 function renderKeywordLists(keywords) {
   const preview = keywords.slice(0, KEYWORDS_PREVIEW_COUNT);
-  renderTagList(keywordListPreviewEl, preview, removeKeyword);
-  renderTagList(keywordListFullEl, keywords, removeKeyword);
+  renderTagList(keywordListPreviewEl, preview, removeKeyword, 'kw');
+  renderTagList(keywordListFullEl, keywords, removeKeyword, 'kw');
 
-  // renderTagList reemplaza todo el contenido del <ul>, así que el botón
-  // "Ver todas" (que vive dentro de ese mismo <ul> para quedar alineado a
-  // la derecha en la misma fila) hay que volver a engancharlo después.
+  // renderTagList reemplaza todo el contenido del contenedor, así que el
+  // botón "Ver todas" (que vive ahí adentro para quedar en la misma fila
+  // que los chips) hay que volver a engancharlo después.
   if (keywords.length > KEYWORDS_PREVIEW_COUNT) {
     viewAllKeywordsBtn.textContent = `Ver todas (${keywords.length})`;
     viewAllKeywordsBtn.classList.remove('hidden');
@@ -77,9 +101,8 @@ async function loadConfig() {
     renderTagList(accountListEl, config.accounts, removeAccount);
     renderKeywordLists(config.keywords);
   } catch (err) {
-    const msg = '<li class="muted" style="background:none;border:none;">No se pudo cargar. Reiniciá el servidor y recargá la página.</li>';
-    accountListEl.innerHTML = msg;
-    keywordListPreviewEl.innerHTML = msg;
+    accountListEl.innerHTML = '<span class="muted">No se pudo cargar. Reiniciá el servidor y recargá la página.</span>';
+    keywordListPreviewEl.innerHTML = '<span class="muted">No se pudo cargar. Reiniciá el servidor y recargá la página.</span>';
     console.error('Error cargando config de monitoreo:', err);
   }
 }
@@ -164,6 +187,9 @@ function closeKeywordsModal() { keywordsModal.classList.add('hidden'); }
 // --------------------------------------------------------------------
 const SENTIMENT_LABELS = { positivo: 'Positivo', neutral: 'Neutral', negativo: 'Negativo' };
 const SENTIMENT_OPTIONS = ['positivo', 'neutral', 'negativo'];
+// Igual que MK en la referencia: clase corta por sentimiento, para las
+// tarjetas destacadas y el borde de color.
+const SENTIMENT_SHORT = { positivo: 'pos', neutral: 'neu', negativo: 'neg' };
 
 function openDeleteModal(id) {
   pendingDeleteId = id;
@@ -182,7 +208,7 @@ async function confirmDelete() {
     await fetch(`/api/monitoring/posts/${encodeURIComponent(id)}`, { method: 'DELETE' });
     if (monitoringTable) {
       monitoringTable.deleteRow(id);
-      updateResultsCountText();
+      updateCounts();
     }
   } catch (err) {
     console.error('Error borrando el registro:', err);
@@ -208,69 +234,21 @@ async function updateSentiment(id, sentiment, selectEl) {
   }
 }
 
-// Formatea likes/comments con separador de miles es-AR, o "N/D" si no hay dato.
+// Formatea un número con separador de miles es-AR, o "—" si no hay dato
+// (mismo símbolo que usa design/monitoreo.html en fmt/abbr).
 function formatCount(value) {
-  return value === null || value === undefined ? 'N/D' : Number(value).toLocaleString('es-AR');
+  return value === null || value === undefined ? '—' : Number(value).toLocaleString('es-AR');
 }
 
-// Interpreta lo que se tipeó en el filtro de fecha (día[/mes[/año]]),
-// tolerando con o sin cero adelante y año de 2 o 4 dígitos:
-// "8/8", "08/8", "08/08" y "08/08/26" tienen que interpretarse igual.
-function parseTypedDate(text) {
-  const parts = text.trim().split(/[\/\-\s]+/).filter(Boolean).map(Number);
-  if (parts.length === 0 || parts.some((n) => Number.isNaN(n))) return null;
-  const [day, month, yearRaw] = parts;
-  let year = yearRaw;
-  if (year !== undefined && year < 100) year += 2000; // "26" -> 2026
-  return { day, month, year };
-}
-
-// Compara lo tipeado contra la fecha real (ISO 8601) de la fila. Si no
-// mencionás mes o año, no se exigen (así "8" solo filtra por día).
-// Si lo tipeado no se puede interpretar como fecha, no se filtra nada,
-// para no terminar ocultando toda la tabla por un texto raro.
-function dateHeaderFilterFunc(headerValue, rowValue) {
-  if (!headerValue) return true;
-  if (!rowValue) return false;
-  const typed = parseTypedDate(headerValue);
-  if (!typed) return true;
-  const d = new Date(rowValue);
-  if (typed.day !== d.getDate()) return false;
-  if (typed.month !== undefined && typed.month !== d.getMonth() + 1) return false;
-  if (typed.year !== undefined && typed.year !== d.getFullYear()) return false;
-  return true;
-}
-
-const ACCOUNT_FILTER_DATALIST_ID = 'accountFilterOptions';
-
-// Arma (o actualiza) la <datalist> con las cuentas presentes en los datos
-// cargados: sin duplicados y ordenada alfabéticamente. El filtro sigue
-// aceptando texto libre (no obliga a elegir de la lista).
-function updateAccountFilterOptions(posts) {
-  let datalist = document.getElementById(ACCOUNT_FILTER_DATALIST_ID);
-  if (!datalist) {
-    datalist = document.createElement('datalist');
-    datalist.id = ACCOUNT_FILTER_DATALIST_ID;
-    document.body.appendChild(datalist);
-  }
-  const cuentas = [...new Set(posts.map((p) => p.account).filter((a) => a && a !== 'N/D'))]
-    .sort((a, b) => a.localeCompare(b, 'es'));
-  datalist.innerHTML = cuentas.map((a) => `<option value="${a}"></option>`).join('');
-}
-
-// Editor de filtro a medida para la columna Cuenta: un input de texto común
-// pero conectado a la <datalist> de arriba, así se puede escribir libremente
-// O elegir de un desplegable con las cuentas ya vistas. Sigue filtrando por
-// coincidencia parcial en cada tecla, vía headerFilterFunc: "like".
-function accountFilterEditor(cell, onRendered, success) {
-  const input = document.createElement('input');
-  input.type = 'text';
-  input.setAttribute('list', ACCOUNT_FILTER_DATALIST_ID);
-  input.placeholder = 'Filtrar...';
-  input.value = cell.getValue() || '';
-  input.addEventListener('input', () => success(input.value));
-  onRendered(() => input.focus());
-  return input;
+// Seguidores en formato abreviado con coma decimal (48,2K / 1,2M) — la
+// referencia hace .replace('.', ',') a propósito, formato es-AR. Sin dato:
+// guión, nunca "0" (0 seguidores reales sí se muestra como "0").
+function formatFollowers(value) {
+  const n = Number(value);
+  if (value == null || !Number.isFinite(n)) return '—';
+  if (n >= 1e6) return `${(n / 1e6).toFixed(1).replace('.', ',')}M`;
+  if (n >= 1e3) return `${(n / 1e3).toFixed(1).replace('.', ',')}K`;
+  return String(n);
 }
 
 // -------------------------------------------------------------------------
@@ -279,123 +257,436 @@ function accountFilterEditor(cell, onRendered, success) {
 // contra otras cuentas ni contra seguidores — ver src/accountStats.js). El
 // backend ya manda "benchmark" armado en cada posteo de /api/monitoring/posts.
 // -------------------------------------------------------------------------
-const expandedRowIds = new Set();
+let expandedRowId = null;
 
 function formatBenchmarkNumber(n) {
-  if (n == null || !Number.isFinite(n)) return 'N/D';
-  return Number.isInteger(n) ? String(n) : n.toLocaleString('es-AR', { maximumFractionDigits: 1 });
+  return n == null || !Number.isFinite(n) ? '—' : n.toLocaleString('es-AR');
 }
 
 function formatBenchmarkRatio(ratio) {
   return ratio.toLocaleString('es-AR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 }
 
+// "sin-referencia" (guión, como lo manda el backend) -> "sinref" (la clase
+// CSS de la referencia, .bn.sinref).
 function benchmarkLevelClass(metric) {
-  return `benchmark-${(metric && metric.level) || 'sin-referencia'}`;
+  const level = (metric && metric.level) || 'sin-referencia';
+  return level === 'sin-referencia' ? 'sinref' : level;
 }
 
-function benchmarkLineText(label, metric) {
+// <span class="bn {nivel}">{label}: <strong>{nivel}</strong> — <span
+// class="v">{valor}</span>, contra una mediana de <span class="v">
+// {mediana}</span> en esta cuenta (<span class="v">{ratio}x</span>)</span>
+// — misma estructura que bench() en design/monitoreo.html.
+function buildBenchLine(label, metric) {
+  const span = document.createElement('span');
+  span.className = `bn ${benchmarkLevelClass(metric)}`;
+
   if (!metric || metric.level === 'sin-referencia') {
-    return `${label}: sin referencia (menos de 5 posteos recientes de esta cuenta)`;
+    span.textContent = `${label}: sin referencia (menos de 5 posteos recientes de esta cuenta)`;
+    return span;
   }
+
+  span.appendChild(document.createTextNode(`${label}: `));
+  const strong = document.createElement('strong');
+  strong.textContent = metric.level;
+  span.appendChild(strong);
+  span.appendChild(document.createTextNode(' — '));
+  const value = document.createElement('span');
+  value.className = 'v';
+  value.textContent = formatBenchmarkNumber(metric.value);
+  span.appendChild(value);
+  span.appendChild(document.createTextNode(', contra una mediana de '));
+  const median = document.createElement('span');
+  median.className = 'v';
+  median.textContent = formatBenchmarkNumber(metric.median);
+  span.appendChild(median);
+  span.appendChild(document.createTextNode(' en esta cuenta ('));
+  const ratio = document.createElement('span');
+  ratio.className = 'v';
+  ratio.textContent = `${formatBenchmarkRatio(metric.ratio)}x`;
+  span.appendChild(ratio);
+  span.appendChild(document.createTextNode(')'));
+  return span;
+}
+
+// Fecha + hora completas (24hs, no "a. m./p. m."). "N/D" si no hay fecha.
+function formatFullDateTime(iso) {
+  if (!iso) return { date: 'N/D', time: '' };
+  const d = new Date(iso);
+  return {
+    date: d.toLocaleDateString('es-AR'),
+    time: d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false }),
+  };
+}
+
+// Panel desplegable — mismo marcado que .dt en design/monitoreo.html.
+function buildDetailPanel(data) {
+  const wrap = document.createElement('div');
+  wrap.className = 'dt';
+  // Sin esto, cualquier click adentro del panel (un link, el texto) burbujea
+  // hasta el rowClick de Tabulator y cierra el panel que se acaba de abrir
+  // (en la referencia esto no hace falta: el detalle es un <tr> hermano, no
+  // un hijo de la fila — acá Tabulator no permite esa forma).
+  wrap.addEventListener('click', (e) => e.stopPropagation());
+
+  const h4 = document.createElement('h4');
+  h4.textContent = data.title || '(sin clasificar)';
+  wrap.appendChild(h4);
+
+  const cap = document.createElement('p');
+  cap.className = 'dt-cap';
+  cap.textContent = data.caption || '';
+  wrap.appendChild(cap);
+
+  const bench = document.createElement('div');
+  bench.className = 'dt-bench';
+  const benchmark = data.benchmark || {};
+  bench.appendChild(buildBenchLine('Comentarios', benchmark.comments));
+  bench.appendChild(buildBenchLine('Likes', benchmark.likes));
+  wrap.appendChild(bench);
+
+  const links = document.createElement('div');
+  links.className = 'dt-links';
+  if (data.account && data.account !== 'N/D') {
+    const profile = document.createElement('a');
+    profile.href = `https://instagram.com/${data.account}`;
+    profile.target = '_blank';
+    profile.rel = 'noopener';
+    profile.textContent = 'Ver perfil';
+    links.appendChild(profile);
+  }
+  const post = document.createElement('a');
+  post.href = data.url;
+  post.target = '_blank';
+  post.rel = 'noopener';
+  post.textContent = 'Ver publicación';
+  links.appendChild(post);
+  wrap.appendChild(links);
+
+  const meta = document.createElement('p');
+  meta.className = 'dt-meta';
+  const { date, time } = formatFullDateTime(data.posted_at);
+  meta.textContent = time ? `${date} · ${time} · Instagram` : `${date} · Instagram`;
+  wrap.appendChild(meta);
+
+  return wrap;
+}
+
+// Reformatea una fila puntual si está montada en el DOM ahora mismo (podría
+// no estarlo, por paginación).
+function reformatRowIfMounted(id) {
+  if (!monitoringTable) return;
+  const row = monitoringTable.getRow(id);
+  if (row && typeof row.reformat === 'function') row.reformat();
+}
+
+// Solo una fila abierta a la vez: abrir una cierra la que estuviera abierta
+// (mismo criterio que el listener de "tb" en la referencia).
+function toggleRowExpansion(row) {
+  const id = row.getData().id;
+  const previous = expandedRowId;
+  expandedRowId = expandedRowId === id ? null : id;
+  if (previous != null && previous !== expandedRowId) reformatRowIfMounted(previous);
+  if (typeof row.reformat === 'function') row.reformat();
+  else if (monitoringTable) monitoringTable.redraw(true);
+}
+
+// -------------------------------------------------------------------------
+// Tarjetas destacadas ("Se despegaron"): posteos — no cuentas — cuya cuenta
+// tiene benchmark real (account_stats) en AMBAS métricas y cuyo ratio mayor
+// (likes o comentarios) llega a 1.5x. Mismo criterio que "dest" en
+// design/monitoreo.html.
+// -------------------------------------------------------------------------
+const HIGHLIGHT_MIN_RATIO = 1.5;
+const HIGHLIGHT_CARD_COUNT = 4;
+
+function highlightTop(post) {
+  const benchmark = post.benchmark || {};
+  const bl = benchmark.likes, bc = benchmark.comments;
+  if (!bl || bl.level === 'sin-referencia' || !bc || bc.level === 'sin-referencia') return null;
+  const useComments = bc.ratio >= bl.ratio;
+  return {
+    best: Math.max(bl.ratio, bc.ratio),
+    label: useComments ? 'comentarios' : 'likes',
+    ratio: useComments ? bc.ratio : bl.ratio,
+  };
+}
+
+function renderHighlightCards(posts) {
+  const scored = posts
+    .map((post) => ({ post, top: highlightTop(post) }))
+    .filter((entry) => entry.top && entry.top.best >= HIGHLIGHT_MIN_RATIO)
+    .sort((a, b) => b.top.best - a.top.best)
+    .slice(0, HIGHLIGHT_CARD_COUNT);
+
+  cardsEl.innerHTML = '';
+  if (scored.length === 0) {
+    highlightsSectionEl.classList.add('hidden');
+    return;
+  }
+  highlightsSectionEl.classList.remove('hidden');
+
+  for (const { post, top } of scored) {
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = `hl ${SENTIMENT_SHORT[post.sentiment] || 'neu'}`;
+    card.dataset.go = post.id;
+
+    const topRow = document.createElement('span');
+    topRow.className = 'hl-top';
+    const acc = document.createElement('span');
+    acc.className = 'hl-acc';
+    acc.textContent = post.account && post.account !== 'N/D' ? `@${post.account}` : 'N/D';
+    const plat = document.createElement('span');
+    plat.className = 'hl-plat';
+    plat.textContent = 'Instagram';
+    topRow.append(acc, plat);
+
+    const title = document.createElement('span');
+    title.className = 'hl-title';
+    title.textContent = post.title || '(sin clasificar)';
+
+    const metric = document.createElement('span');
+    metric.className = 'hl-metric';
+    const b = document.createElement('b');
+    b.textContent = `${formatBenchmarkRatio(top.ratio)}x`;
+    metric.appendChild(b);
+    metric.appendChild(document.createTextNode(` los ${top.label} habituales de la cuenta`));
+
+    card.append(topRow, title, metric);
+    card.addEventListener('click', () => highlightGoToRow(post.id));
+    cardsEl.appendChild(card);
+  }
+}
+
+// Busca la fila en el conjunto activo (filtrado + ordenado) actual — igual
+// que la referencia, no reinicia filtros: si el posteo está tapado por un
+// filtro, no hace nada. A diferencia de la referencia (tabla plana, sin
+// paginación), acá hay que ubicar en qué página de Tabulator cae.
+async function highlightGoToRow(id) {
+  if (!monitoringTable) return;
+  const rows = monitoringTable.getRows('active');
+  const idx = rows.findIndex((r) => r.getData().id === id);
+  if (idx === -1) return;
+
+  const pageSize = monitoringTable.getPageSize();
+  await monitoringTable.setPage(Math.floor(idx / pageSize) + 1);
+
+  const row = monitoringTable.getRow(id);
+  if (!row) return;
+  expandedRowId = id;
+  row.reformat();
+
+  const el = row.getElement();
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  el.classList.remove('flash');
+  void el.offsetWidth; // fuerza reflow para poder repetir la animación si ya se había disparado antes.
+  el.classList.add('flash');
+}
+
+// -------------------------------------------------------------------------
+// Filtros + orden (barra "Filtrar" / "Ordenar"): selects nativos, igual que
+// design/monitoreo.html — sin desplegables a medida.
+// -------------------------------------------------------------------------
+let sortField = 'posted_at';
+let sortDir = 'desc';
+// Claves cortas de los <option value="d|desc"> (calcadas de la referencia)
+// a los fields reales de Tabulator.
+const SORT_FIELD_MAP = { d: 'posted_at', l: 'likes', c: 'comments', fol: 'followers' };
+const SORTABLE_FIELDS = ['posted_at', 'likes', 'comments', 'followers'];
+
+function normalizeSearch(text) {
+  return String(text || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(new RegExp('[\\u0300-\\u036f]', 'g'), '');
+}
+
+function isDefaultFilterState() {
   return (
-    `${label}: ${metric.level} — ${formatBenchmarkNumber(metric.value)}, contra una mediana de ` +
-    `${formatBenchmarkNumber(metric.median)} en esta cuenta (${formatBenchmarkRatio(metric.ratio)}x)`
+    !fSentEl.value &&
+    !fAccEl.value &&
+    !fNotiEl.checked &&
+    !qEl.value.trim() &&
+    sortField === 'posted_at' &&
+    sortDir === 'desc'
   );
 }
 
-function buildDetailPanel(data) {
-  const panel = document.createElement('div');
-  panel.className = 'row-detail-panel';
-  const benchmark = data.benchmark || {};
-  for (const [label, metric] of [
-    ['Comentarios', benchmark.comments],
-    ['Likes', benchmark.likes],
-  ]) {
-    const line = document.createElement('p');
-    line.className = benchmarkLevelClass(metric);
-    line.textContent = benchmarkLineText(label, metric);
-    panel.appendChild(line);
-  }
-  return panel;
+function updateMonitoringClearButtonState() {
+  monitoringClearBtn.disabled = isDefaultFilterState();
 }
 
-function toggleRowExpansion(row) {
-  const id = row.getData().id;
-  if (expandedRowIds.has(id)) expandedRowIds.delete(id);
-  else expandedRowIds.add(id);
-  if (typeof row.reformat === 'function') {
-    row.reformat();
-  } else if (monitoringTable) {
-    monitoringTable.redraw(true);
+function updateSortColumnHighlight() {
+  if (!monitoringTable) return;
+  for (const field of SORTABLE_FIELDS) {
+    const column = monitoringTable.getColumn(field);
+    if (!column) continue;
+    column.getElement().classList.toggle('act', field === sortField);
   }
+}
+
+function updateCounts() {
+  if (!monitoringTable) return;
+  nEl.textContent = monitoringTable.getDataCount('active');
+  mEl.textContent = monitoringTable.getDataCount();
+}
+
+function applyFilters() {
+  if (!monitoringTable) return;
+  const fs = fSentEl.value;
+  const fa = fAccEl.value;
+  const fn = fNotiEl.checked;
+  const q = normalizeSearch(qEl.value.trim());
+
+  monitoringTable.setFilter((data) => {
+    if (fs && data.sentiment !== fs) return false;
+    if (fa && data.account !== fa) return false;
+    if (fn && data.notified) return false;
+    if (q) {
+      const haystack = normalizeSearch(`${data.title || ''} ${data.account || ''} ${data.caption || ''}`);
+      if (!haystack.includes(q)) return false;
+    }
+    return true;
+  });
+
+  fSentEl.classList.toggle('on', !!fs);
+  fAccEl.classList.toggle('on', !!fa);
+  chkWrapEl.classList.toggle('on', fn);
+
+  updateCounts();
+  updateMonitoringClearButtonState();
+}
+
+function applySort() {
+  if (!monitoringTable) return;
+  monitoringTable.setSort(sortField, sortDir);
+  updateSortColumnHighlight();
+  updateCounts();
+  updateMonitoringClearButtonState();
+}
+
+// Un select de orden elegido resetea los otros tres a neutro — solo uno
+// activo a la vez, igual que la referencia.
+sortSelects.forEach((sel) => {
+  sel.addEventListener('change', () => {
+    if (sel.value) {
+      const [key, dir] = sel.value.split('|');
+      sortField = SORT_FIELD_MAP[key];
+      sortDir = dir;
+      sortSelects.forEach((other) => {
+        if (other !== sel) other.value = '';
+      });
+    } else {
+      sortField = 'posted_at';
+      sortDir = 'desc';
+      sDateEl.value = 'd|desc';
+    }
+    sortSelects.forEach((o) => o.classList.toggle('on', !!o.value));
+    applySort();
+  });
+});
+
+// Reconstruye el <select> de Cuenta con las cuentas presentes en los datos
+// cargados. Si la cuenta elegida ya no está, vuelve a "Todas".
+function ensureAccountFilterOptions(posts) {
+  const previous = fAccEl.value;
+  const accounts = [...new Set(posts.map((p) => p.account).filter((a) => a && a !== 'N/D'))].sort((a, b) =>
+    a.localeCompare(b, 'es')
+  );
+  fAccEl.innerHTML = '<option value="">Cuenta</option>';
+  for (const account of accounts) {
+    const opt = document.createElement('option');
+    opt.value = account;
+    opt.textContent = `@${account}`;
+    fAccEl.appendChild(opt);
+  }
+  fAccEl.value = accounts.includes(previous) ? previous : '';
+}
+
+function resetFilters() {
+  fSentEl.value = '';
+  fAccEl.value = '';
+  fNotiEl.checked = false;
+  qEl.value = '';
+  sortSelects.forEach((o) => {
+    o.value = '';
+    o.classList.remove('on');
+  });
+  sDateEl.value = 'd|desc';
+  sortField = 'posted_at';
+  sortDir = 'desc';
+  applyFilters();
+  applySort();
 }
 
 const MONITORING_COLUMNS = [
   {
+    // Puramente visual: el toggle real es rowClick sobre toda la fila (ver
+    // ensureMonitoringTable) — clickear en cualquier parte de la fila abre
+    // el detalle, como en la referencia. La rotación la maneja el CSS a
+    // partir de la clase "on" que pone rowFormatter en la fila.
     title: '',
     field: 'expand',
     headerSort: false,
     hozAlign: 'center',
-    width: 44,
-    formatter: (cell) => {
-      const btn = document.createElement('button');
-      btn.className = 'ico row-expand-btn';
-      btn.title = 'Ver detalle';
-      btn.innerHTML =
-        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
-      btn.addEventListener('click', () => toggleRowExpansion(cell.getRow()));
-      return btn;
-    },
+    width: 34,
+    formatter: () =>
+      '<span class="chev"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 2l4 4-4 4"/></svg></span>',
   },
   {
     title: 'Cuenta',
     field: 'account',
-    headerFilter: accountFilterEditor,
-    headerFilterFunc: 'like',
+    headerSort: false,
     formatter: (cell) => {
       const account = cell.getValue();
       if (!account || account === 'N/D') return 'N/D';
       const a = document.createElement('a');
-      a.href = `https://www.instagram.com/${account}/`;
+      a.className = 'c-acc';
+      a.href = `https://instagram.com/${account}`;
       a.target = '_blank';
       a.rel = 'noopener';
       a.textContent = `@${account}`;
+      a.addEventListener('click', (e) => e.stopPropagation());
       return a;
     },
   },
   {
+    title: 'Seguidores',
+    field: 'followers',
+    headerSort: false,
+    width: 100,
+    hozAlign: 'right',
+    headerHozAlign: 'right',
+    sorter: 'number',
+    formatter: (cell) => `<span class="c-num">${formatFollowers(cell.getValue())}</span>`,
+  },
+  {
     title: 'Título',
     field: 'title',
-    headerFilter: 'input',
-    cssClass: 'title-cell',
-    // Que se lleve la mayor parte del ancho libre: es lo que más importa
-    // ver bien (la previsualización del posteo).
-    widthGrow: 4,
+    headerSort: false,
+    cssClass: 'c-title-cell',
+    // El título completo va en el panel desplegable — acá solo una vista
+    // previa recortada con puntos suspensivos (mismo max-width que .c-title
+    // en la referencia).
+    widthGrow: 2,
     formatter: (cell) => {
-      const row = cell.getRow().getData();
       const title = cell.getValue() || '(sin clasificar)';
-      const a = document.createElement('a');
-      a.href = row.url;
-      a.target = '_blank';
-      a.rel = 'noopener';
-      a.textContent = title;
-      a.title = title;
-      a.className = 'title-link';
-      return a;
+      const span = document.createElement('span');
+      span.className = 'c-title';
+      span.title = title;
+      span.textContent = title;
+      return span;
     },
   },
   {
     title: 'Sentimiento',
     field: 'sentiment',
+    headerSort: false,
     width: 140,
     hozAlign: 'center',
     headerHozAlign: 'left',
-    headerFilter: 'list',
-    headerFilterParams: {
-      values: { '': 'Todos', positivo: 'Positivo', neutral: 'Neutral', negativo: 'Negativo' },
-    },
-    headerFilterFunc: '=',
     formatter: (cell) => {
       const id = cell.getRow().getData().id;
       const sentiment = cell.getValue() || 'neutral';
@@ -416,22 +707,17 @@ const MONITORING_COLUMNS = [
   {
     title: 'Fecha',
     field: 'posted_at',
+    headerSort: false,
     width: 110,
     hozAlign: 'center',
     headerHozAlign: 'left',
-    headerFilter: 'input',
-    headerFilterFunc: dateHeaderFilterFunc,
-    headerFilterParams: { placeholder: 'ej: 8/8' },
-    // Las fechas se guardan en ISO 8601 (2026-08-11T22:29:57.000Z): ese
-    // formato ordena bien como texto plano, sin necesitar un parser de
-    // fechas aparte (Tabulator/Luxon) solo para esta columna. El filtro sí
-    // usa una función a medida (dateHeaderFilterFunc) porque el filtro
-    // "like" por defecto compara contra ese string crudo, no contra lo que
-    // se ve en pantalla.
+    // Las fechas se guardan en ISO 8601: ese formato ordena bien como texto
+    // plano, sin necesitar un parser de fechas aparte para esta columna.
     sorter: 'string',
     formatter: (cell) => {
       const row = cell.getRow().getData();
       const span = document.createElement('span');
+      span.className = 'c-date';
       span.textContent = cell.getValue() ? new Date(cell.getValue()).toLocaleDateString('es-AR') : 'N/D';
       span.title = `Detectado: ${new Date(row.detected_at).toLocaleString('es-AR')}`;
       return span;
@@ -440,32 +726,32 @@ const MONITORING_COLUMNS = [
   {
     title: 'Likes',
     field: 'likes',
+    headerSort: false,
     width: 100,
     hozAlign: 'right',
-    headerHozAlign: 'left',
+    headerHozAlign: 'right',
     sorter: 'number',
-    headerFilter: 'input',
-    formatter: (cell) => formatCount(cell.getValue()),
+    formatter: (cell) => `<span class="c-num">${formatCount(cell.getValue())}</span>`,
   },
   {
-    title: 'Comentarios',
+    // Abreviado, igual que la referencia (el select de orden sí dice
+    // "Comentarios" completo).
+    title: 'Coment.',
     field: 'comments',
+    headerSort: false,
     hozAlign: 'right',
-    headerHozAlign: 'left',
+    headerHozAlign: 'right',
     sorter: 'number',
-    headerFilter: 'input',
-    formatter: (cell) => formatCount(cell.getValue()),
+    formatter: (cell) => `<span class="c-num">${formatCount(cell.getValue())}</span>`,
   },
   {
     title: 'Notificado',
     field: 'notified',
+    headerSort: false,
     width: 120,
     hozAlign: 'center',
-    headerHozAlign: 'left',
+    headerHozAlign: 'center',
     sorter: 'number',
-    headerFilter: 'list',
-    headerFilterParams: { values: { '': 'Todos', 1: 'Sí', 0: 'No' } },
-    headerFilterFunc: '=',
     formatter: (cell) => {
       const notified = cell.getValue();
       const span = document.createElement('span');
@@ -478,16 +764,19 @@ const MONITORING_COLUMNS = [
     title: '',
     field: 'id',
     headerSort: false,
-    hozAlign: 'center',
-    width: 72,
+    hozAlign: 'right',
+    width: 56,
     formatter: (cell) => {
       const id = cell.getRow().getData().id;
       const btn = document.createElement('button');
       btn.className = 'ico del';
       btn.title = 'Borrar';
       btn.innerHTML =
-        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>';
-      btn.addEventListener('click', () => openDeleteModal(id));
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>';
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openDeleteModal(id);
+      });
       return btn;
     },
   },
@@ -495,27 +784,17 @@ const MONITORING_COLUMNS = [
 
 let monitoringTable = null;
 
-// "Mostrando X de Y posteos" (+ "(filtrados)" si hay algún filtro de
-// encabezado activo). X son los resultados que pasan el filtro actual
-// (getDataCount("active")), Y es el total sin filtrar.
-function updateResultsCountText() {
-  if (!monitoringTable) return;
-  const total = monitoringTable.getDataCount();
-  const filtrados = monitoringTable.getDataCount('active');
-  const hayFiltrosActivos = monitoringTable.getFilters(true).length > 0;
-  let texto = `Mostrando ${filtrados} de ${total} posteos`;
-  if (hayFiltrosActivos) texto += ' (filtrados)';
-  monitoringResultsCountEl.textContent = texto;
-}
-
 function ensureMonitoringTable(posts) {
-  updateAccountFilterOptions(posts);
+  ensureAccountFilterOptions(posts);
 
   if (monitoringTable) {
-    monitoringTable.setData(posts);
-    updateResultsCountText();
+    monitoringTable.setData(posts).then(() => {
+      applyFilters();
+      applySort();
+    });
     return;
   }
+
   monitoringTable = new Tabulator('#monitoringTable', {
     data: posts,
     index: 'id',
@@ -524,8 +803,10 @@ function ensureMonitoringTable(posts) {
     rowFormatter: (row) => {
       const data = row.getData();
       const el = row.getElement();
-      const existingPanel = el.querySelector('.row-detail-panel');
-      if (expandedRowIds.has(data.id)) {
+      const isOpen = expandedRowId === data.id;
+      el.classList.toggle('on', isOpen);
+      const existingPanel = el.querySelector('.dt');
+      if (isOpen) {
         const freshPanel = buildDetailPanel(data);
         if (existingPanel) existingPanel.replaceWith(freshPanel);
         else el.appendChild(freshPanel);
@@ -546,9 +827,18 @@ function ensureMonitoringTable(posts) {
       },
     },
   });
-  monitoringTable.on('pageLoaded', updateResultsCountText);
-  monitoringTable.on('dataFiltered', updateResultsCountText);
-  monitoringTable.on('tableBuilt', updateResultsCountText);
+  monitoringTable.on('pageLoaded', updateCounts);
+  monitoringTable.on('tableBuilt', () => {
+    applyFilters();
+    applySort();
+  });
+  // rowClick pasado en el constructor no se conecta en esta build de
+  // Tabulator 6.3.0 (comprobado en vivo) — .on() después de construir la
+  // tabla sí funciona. Clickear en cualquier parte de la fila abre/cierra
+  // su detalle (igual que la referencia); los controles interactivos de
+  // adentro (links, borrar, sentimiento) cortan la propagación en su propio
+  // formatter.
+  monitoringTable.on('rowClick', (e, row) => toggleRowExpansion(row));
 }
 
 async function loadPosts() {
@@ -558,10 +848,29 @@ async function loadPosts() {
     const data = await resp.json();
     monitoringLoadErrorEl.classList.add('hidden');
     ensureMonitoringTable(data.posts);
+    renderHighlightCards(data.posts);
   } catch (err) {
     monitoringLoadErrorEl.textContent = 'No se pudo cargar la tabla. Reiniciá el servidor (para que tome el código nuevo) y recargá la página.';
     monitoringLoadErrorEl.classList.remove('hidden');
     console.error('Error cargando posteos detectados:', err);
+  }
+}
+
+// Hora real de la próxima corrida (el backend calcula desde MONITOR_CRON) —
+// nunca una hora inventada. Si falla, queda el placeholder "–".
+async function loadNextRun() {
+  try {
+    const resp = await fetch('/api/monitoring/status');
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    const time = new Date(data.nextRunAt).toLocaleTimeString('es-AR', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+    monitoringNextRunEl.textContent = `próxima corrida ${time}`;
+  } catch (err) {
+    console.error('Error cargando la próxima corrida:', err);
   }
 }
 
@@ -661,5 +970,12 @@ deleteConfirmBtn.addEventListener('click', confirmDelete);
 deleteModal.addEventListener('click', (e) => { if (e.target === deleteModal) closeDeleteModal(); });
 runNowBtn.addEventListener('click', runNow);
 
+fSentEl.addEventListener('change', applyFilters);
+fAccEl.addEventListener('change', applyFilters);
+fNotiEl.addEventListener('change', applyFilters);
+qEl.addEventListener('input', applyFilters);
+monitoringClearBtn.addEventListener('click', resetFilters);
+
 loadConfig();
 loadPosts();
+loadNextRun();

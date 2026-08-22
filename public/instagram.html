@@ -128,31 +128,37 @@
       <h1 class="display">Monitoreo en vivo</h1>
       <p class="sub">Detección automática de menciones cada 4 horas, con alerta por email.</p>
 
-      <div class="card config-lists">
+      <!-- Config: visible, en dos columnas compactas -->
+      <div class="card config">
         <div>
-          <label for="newAccount">Cuentas trackeadas</label>
-          <div class="config-add-row">
+          <h3 class="tag">Cuentas trackeadas</h3>
+          <div class="add-row">
             <input type="text" id="newAccount" placeholder="usuario (sin @)" autocomplete="off" />
-            <button id="addAccountBtn">Agregar</button>
+            <button id="addAccountBtn" class="btn-ghost">Agregar</button>
           </div>
           <p id="accountError" class="error hidden" style="margin-top:8px;"></p>
-          <ul id="accountList" class="tag-list"></ul>
+          <div id="accountList" class="chips"></div>
         </div>
         <div>
-          <label for="newKeyword">Palabras clave / hashtags</label>
-          <div class="config-add-row">
+          <h3 class="tag">Palabras clave / hashtags</h3>
+          <div class="add-row">
             <input type="text" id="newKeyword" placeholder="Jorge Macri o #JorgeMacri" autocomplete="off" />
-            <button id="addKeywordBtn">Agregar</button>
+            <button id="addKeywordBtn" class="btn-ghost">Agregar</button>
           </div>
           <p id="keywordError" class="error hidden" style="margin-top:8px;"></p>
-          <ul id="keywordListPreview" class="tag-list">
-            <button id="viewAllKeywordsBtn" class="btn-small btn-copy view-all-btn hidden"></button>
-          </ul>
+          <div id="keywordListPreview" class="chips">
+            <button id="viewAllKeywordsBtn" class="chip-more hidden"></button>
+          </div>
         </div>
       </div>
 
-      <div class="card monitoring-toolbar">
-        <button id="runNowBtn">Actualizar ahora</button>
+      <!-- Barra fina de acción -->
+      <div class="runbar">
+        <button id="runNowBtn" class="btn">Actualizar ahora</button>
+        <span class="live">
+          <div class="meter" data-meter="7"></div>
+          <span><b>Escuchando</b> · <span id="monitoringNextRun">próxima corrida –</span></span>
+        </span>
       </div>
 
       <div id="monitoringStatusCard" class="card hidden">
@@ -171,9 +177,72 @@
 
       <p id="monitoringLoadError" class="error hidden"></p>
 
-      <div class="card monitoring-table-card">
+      <!-- Tarjetas destacadas -->
+      <div id="monitoringHighlightsSection" class="hidden">
+        <div class="sec-head">
+          <h2>Se despegaron</h2>
+          <span>Posteos muy por encima del promedio de su propia cuenta</span>
+        </div>
+        <div class="cards" id="cards"></div>
+      </div>
+
+      <!-- Filtros -->
+      <div class="filters">
+        <div class="frow">
+          <span class="frow-lbl tag">Filtrar</span>
+
+          <select id="fSent" aria-label="Filtrar por sentimiento">
+            <option value="">Sentimiento</option>
+            <option value="positivo">Positivo</option>
+            <option value="neutral">Neutral</option>
+            <option value="negativo">Negativo</option>
+          </select>
+
+          <select id="fAcc" aria-label="Filtrar por cuenta">
+            <option value="">Cuenta</option>
+          </select>
+
+          <label class="chk" id="chkWrap">
+            <input type="checkbox" id="fNoti" /> Sin notificar
+          </label>
+
+          <input type="search" id="q" placeholder="Buscar título, cuenta o texto del posteo..." />
+        </div>
+
+        <div class="frow">
+          <span class="frow-lbl tag">Ordenar</span>
+
+          <select class="srt" id="sDate" aria-label="Ordenar por fecha">
+            <option value="">Fecha</option>
+            <option value="d|desc">Fecha ↓ más nuevos</option>
+            <option value="d|asc">Fecha ↑ más viejos</option>
+          </select>
+
+          <select class="srt" id="sLikes" aria-label="Ordenar por likes">
+            <option value="">Likes</option>
+            <option value="l|desc">Likes ↓</option>
+            <option value="l|asc">Likes ↑</option>
+          </select>
+
+          <select class="srt" id="sCom" aria-label="Ordenar por comentarios">
+            <option value="">Comentarios</option>
+            <option value="c|desc">Comentarios ↓</option>
+            <option value="c|asc">Comentarios ↑</option>
+          </select>
+
+          <select class="srt" id="sFol" aria-label="Ordenar por seguidores">
+            <option value="">Seguidores</option>
+            <option value="fol|desc">Seguidores ↓</option>
+            <option value="fol|asc">Seguidores ↑</option>
+          </select>
+
+          <span class="f-count">Mostrando <b id="n">0</b> de <b id="m">0</b> posteos</span>
+          <button class="f-clear" id="clear" type="button" disabled>Limpiar</button>
+        </div>
+      </div>
+
+      <div class="card tbl-wrap">
         <div id="monitoringTable"></div>
-        <p id="monitoringResultsCount" class="muted" style="text-align:center; margin-top:8px;"></p>
       </div>
     </div>
   </section>

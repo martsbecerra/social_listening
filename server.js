@@ -20,7 +20,7 @@ const { resolveMaxCommentsLimit } = require('./src/commentSample');
 const { getLlmProvider, requiredLlmEnvKeys, getProviderLabel } = require('./src/llm/providerConfig');
 const db = require('./src/db');
 const monitor = require('./src/monitor');
-const { startScheduler, runCycleAndNotify, getCronExpression, getLastRunAt, estimateRunsPerDay } = require('./src/scheduler');
+const { startScheduler, runCycleAndNotify, getCronExpression, getLastRunAt, estimateRunsPerDay, getNextRunAt } = require('./src/scheduler');
 const { processPendingReclamosInBackground } = require('./src/geoWorker');
 const accountStats = require('./src/accountStats');
 const { CATEGORIAS_RECLAMO, ESTADOS_RECLAMO, isValidEstado } = require('./src/categoriaReclamo');
@@ -197,6 +197,12 @@ app.get('/api/monitoring/posts', (req, res) => {
 
 app.get('/api/monitoring/config', (req, res) => {
   res.json(monitor.loadConfig());
+});
+
+// Para la barra de acción de "Monitoreo en vivo" ("Escuchando · próxima
+// corrida HH:MM") — la hora sale de la expresión cron real, no está fija.
+app.get('/api/monitoring/status', (req, res) => {
+  res.json({ nextRunAt: getNextRunAt(getCronExpression()).toISOString() });
 });
 
 // Menciones detectadas en los últimos 7 días, para el resumen del dashboard.

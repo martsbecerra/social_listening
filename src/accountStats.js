@@ -59,6 +59,23 @@ async function computeAccountStats(account, platform = PLATFORM) {
     lookback: undefined, // sin onlyPostsNewerThan: el filtro de 3 meses se hace acá abajo, no en el actor.
   });
 
+  // Seguidores: corrida aparte (resultsType "details"), no viene en los
+  // items de "posts". fetchAccountFollowers ya nunca tira (devuelve null
+  // sin token/cuenta privada/etc.), pero el try/catch queda igual acá: si
+  // algo inesperado fallara guardando la caché, no tiene que tirar abajo el
+  // cálculo del benchmark — la cuenta simplemente sigue sin seguidores
+  // cacheados (columna en "-" hasta el próximo recálculo).
+  let followersChecked = 0;
+  try {
+    const followers = await monitor.fetchAccountFollowers(account);
+    if (followers != null) {
+      db.upsertAccountFollowers({ account, platform, followers, updatedAt: new Date().toISOString() });
+    }
+    followersChecked = 1;
+  } catch (err) {
+    console.error(`[accountStats] No se pudo traer seguidores de @${account}:`, err.message);
+  }
+
   const cutoffMs = Date.now() - BENCHMARK_MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
   const recent = posts.filter((p) => p.postedAt && new Date(p.postedAt).getTime() >= cutoffMs);
 
@@ -85,7 +102,7 @@ async function computeAccountStats(account, platform = PLATFORM) {
     groupsSaved += 1;
   }
 
-  return { account, platform, fetched: posts.length, recent: recent.length, groupsSaved };
+  return { account, platform, fetched: posts.length, recent: recent.length, groupsSaved, followersChecked };
 }
 
 /**
@@ -100,6 +117,7 @@ async function refreshStaleAccountStats() {
 
   let recalculated = 0;
   let apifyResultsConsumed = 0;
+  let followersChecked = 0;
   let skippedFresh = 0;
 
   for (const account of accounts) {
@@ -112,17 +130,19 @@ async function refreshStaleAccountStats() {
       const result = await computeAccountStats(account, PLATFORM);
       recalculated += 1;
       apifyResultsConsumed += result.fetched;
+      followersChecked += result.followersChecked;
     } catch (err) {
       console.error(`[accountStats] No se pudo recalcular @${account}:`, err.message);
     }
   }
 
   console.log(
-    `[accountStats] ${recalculated} cuentas recalculadas, ${apifyResultsConsumed} resultados de Apify consumidos` +
+    `[accountStats] ${recalculated} cuentas recalculadas, ${apifyResultsConsumed} resultados de Apify consumidos, ` +
+      `${followersChecked} consultas de seguidores` +
       (skippedFresh > 0 ? ` (${skippedFresh} ya estaban al día)` : '')
   );
 
-  return { recalculated, apifyResultsConsumed, skippedFresh };
+  return { recalculated, apifyResultsConsumed, followersChecked, skippedFresh };
 }
 
 /** Todas las filas de account_stats en un Map, para clasificar N posteos sin hacer N queries. */
