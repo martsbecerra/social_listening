@@ -93,6 +93,17 @@ function mapApifyError(status) {
   return 'El servicio de extracción (Apify) falló al procesar la publicación. Intentá de nuevo en unos minutos.';
 }
 
+// Texto exacto que devuelve Apify para el límite mensual duro del plan
+// (visto en vivo: 403 {"error":{"type":"actor-disabled","message":"Monthly
+// usage hard limit exceeded..."}}) — runActorSync lo deja adentro de
+// err.message tal cual, así que un includes alcanza sin parsear el JSON.
+// Compartida entre scripts/recalc-account-stats.js y src/metricsRefresh.js:
+// los dos necesitan cortar la corrida en vez de seguir fallando cuenta por
+// cuenta cuando se agota la cuota.
+function isQuotaExceededError(err) {
+  return String((err && err.message) || '').includes('Monthly usage hard limit exceeded');
+}
+
 /**
  * Extrae comentarios y datos del posteo de una URL de Instagram.
  *
@@ -208,4 +219,4 @@ function normalizeComments(commentItems) {
     }));
 }
 
-module.exports = { scrapeInstagram, runActorSync, mapApifyError };
+module.exports = { scrapeInstagram, runActorSync, mapApifyError, isQuotaExceededError };

@@ -259,6 +259,43 @@ const updatePostMetricsStmt = db.prepare(
 );
 const updateFollowersForAccountStmt = db.prepare('UPDATE detected_posts SET followers = ? WHERE account = ?');
 
+// Marcas de "último pase" de los tramos tibio/frío del refresco de métricas
+// (ver src/metricsRefresh.js) — en la base, no en memoria, para que
+// sobrevivan a un reinicio del proceso. Clave/valor genérico en vez de
+// columnas sueltas: solo dos claves hoy, pero no ata el esquema a eso.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS refresh_state (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  )
+`);
+const getRefreshStateStmt = db.prepare('SELECT value FROM refresh_state WHERE key = ?');
+const setRefreshStateStmt = db.prepare(`
+  INSERT INTO refresh_state (key, value) VALUES (@key, @value)
+  ON CONFLICT(key) DO UPDATE SET value = excluded.value
+`);
+
+// Cuentas con posteos en una ventana de edad (sinceIso, untilIso], agrupadas
+// con el conteo de posteos y el más reciente — para poder priorizar y armar
+// el log de "N posteos en tramo X" sin una query aparte por cuenta. Un solo
+// statement parametrizado para los 3 tramos del refresco de métricas:
+// cadenceIso en NULL desactiva el filtro de metrics_updated_at (tramo
+// caliente, que no tiene cadencia propia — el cron de 4hs ya lo es; y el
+// barrido frío, gateado enteramente a nivel de tramo, no por posteo).
+const listAccountsDueForRefreshStmt = db.prepare(`
+  SELECT account, MAX(posted_at) AS mostRecentPostedAt, COUNT(*) AS postCount
+  FROM detected_posts
+  WHERE account IS NOT NULL AND account != 'N/D' AND posted_at IS NOT NULL
+    AND posted_at > @sinceIso AND posted_at <= @untilIso
+    AND (@cadenceIso IS NULL OR metrics_updated_at IS NULL OR metrics_updated_at < @cadenceIso)
+  GROUP BY account
+`);
+
+const getPostForMetricsRefreshStmt = db.prepare('SELECT likes, comments, account, posted_at FROM detected_posts WHERE id = ?');
+const applyMetricsRefreshStmt = db.prepare(
+  'UPDATE detected_posts SET likes = @likes, comments = @comments, metrics_updated_at = @metricsUpdatedAt WHERE id = @id'
+);
+
 const upsertReclamoStmt = db.prepare(`
   INSERT INTO reclamos (
     id, comentario_id, plataforma, post_url, comment_url, autor, fecha,
@@ -714,6 +751,62 @@ function updateFollowersForAccount(account, followers) {
   updateFollowersForAccountStmt.run(followers ?? null, account);
 }
 
+function getRefreshState(key) {
+  const row = getRefreshStateStmt.get(key);
+  return row ? row.value : null;
+}
+
+function setRefreshState(key, value) {
+  setRefreshStateStmt.run({ key, value });
+}
+
+/**
+ * Cuentas con al menos un posteo con posted_at en (sinceIso, untilIso] que
+ * cumpla la cadencia (cadenceIso null = sin filtro de metrics_updated_at).
+ * @returns {{account: string, mostRecentPostedAt: string, postCount: number}[]}
+ */
+function listAccountsDueForRefresh({ sinceIso, untilIso, cadenceIso = null }) {
+  return listAccountsDueForRefreshStmt.all({ sinceIso, untilIso, cadenceIso });
+}
+
+/**
+ * Refresca likes/comments de un posteo YA guardado (nunca inserta, nunca
+ * toca título/sentimiento/post_type). A diferencia de
+ * updatePostMetricsIfChanged, SIEMPRE escribe (y por lo tanto SIEMPRE
+ * actualiza metrics_updated_at), haya cambiado el valor o no — es lo que
+ * permite que la cadencia del tramo tibio/frío (que compara contra
+ * metrics_updated_at) funcione: un posteo estable que no creció tiene que
+ * poder marcarse como "ya lo revisé recién", no quedar con la marca vieja
+ * y parecer eternamente pendiente.
+ * @returns {{changed: boolean, account: string, postedAt: string,
+ *   previousLikes: number|null, previousComments: number|null,
+ *   likes: number|null, comments: number|null}|null} null si el id no está guardado.
+ */
+function applyMetricsRefresh(id, { likes, comments }) {
+  const existing = getPostForMetricsRefreshStmt.get(id);
+  if (!existing) return null;
+  const cleanLikes = rejectNegative(likes ?? null);
+  const cleanComments = rejectNegative(comments ?? null);
+  const changed = existing.likes !== cleanLikes || existing.comments !== cleanComments;
+
+  applyMetricsRefreshStmt.run({
+    id,
+    likes: cleanLikes,
+    comments: cleanComments,
+    metricsUpdatedAt: new Date().toISOString(),
+  });
+
+  return {
+    changed,
+    account: existing.account,
+    postedAt: existing.posted_at,
+    previousLikes: existing.likes,
+    previousComments: existing.comments,
+    likes: cleanLikes,
+    comments: cleanComments,
+  };
+}
+
 module.exports = {
   isKnownPost,
   saveDetectedPost,
@@ -735,6 +828,10 @@ module.exports = {
   getAllAccountStatsFreshness,
   updatePostMetricsIfChanged,
   updateFollowersForAccount,
+  getRefreshState,
+  setRefreshState,
+  listAccountsDueForRefresh,
+  applyMetricsRefresh,
   upsertReclamo,
   listReclamosFiltered,
   updateEstado,

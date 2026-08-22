@@ -343,3 +343,29 @@ variar según la versión. El código en `src/apify.js` intenta varias alternati
 (`ownerUsername`, `owner.is_verified`, `videoPlayCount`/`videoViewCount`, etc.).
 Si algún dato aparece como `N/D`, revisá una corrida real en el panel de Apify
 para ver el nombre exacto del campo y ajustá `normalizePost` / `normalizeComments`.
+
+### ⚠️ Verificar en la primera corrida real: ids del refresco de métricas
+
+`src/metricsRefresh.js` (y el refresco "gratis" que hace `runMonitoringCycle`
+contra posteos ya conocidos) cruzan lo que devuelve `scrapeAccount` contra
+`detected_posts` **por id**. Ese id se arma en `normalizeMonitorPost`
+(`src/monitor.js`) probando alternativas: `pick(raw.id, shortCode, raw.pk)` —
+la primera que venga definida gana.
+
+El riesgo: si en algún momento cambia CUÁL de esas alternativas trae Apify
+para un mismo posteo (por ejemplo, hoy no manda `raw.id` y usa `shortCode`,
+pero en el futuro empieza a mandar `raw.id` también), el id que se arma para
+ese posteo cambia de string — y el cruce por id deja de matchear. No tira
+ningún error: simplemente actualiza 0 filas, en silencio. Es el modo de
+falla más difícil de notar que tiene todo este mecanismo.
+
+Qué revisar en la primera corrida real:
+
+1. Tomá una cuenta trackeada con posteos ya guardados. Compará a mano un
+   `id` que devuelva `scrapeAccount('esa_cuenta', {...})` contra el `id`
+   guardado en `detected_posts` para ese mismo posteo (mismo `shortCode`/URL).
+   Tienen que ser el mismo string exacto.
+2. Mirá la consola durante/después del ciclo: si aparece
+   `[metricsRefresh] ATENCIÓN: N cuentas consultadas, 0 filas actualizadas`,
+   es la señal de que el cruce por id dejó de funcionar — hay que revisar
+   `normalizeMonitorPost` contra la respuesta real del actor.

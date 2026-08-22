@@ -29,6 +29,7 @@ const fs = require('fs');
 const path = require('path');
 const { runActorSync } = require('./apify');
 const { classifyPost, classifyRelevance } = require('./classifier');
+const { checkAndLogJump } = require('./viralJumpDetector');
 const db = require('./db');
 
 const CONFIG_PATH = path.join(__dirname, '..', 'config', 'monitoring.json');
@@ -406,9 +407,23 @@ async function runMonitoringCycle() {
   }
 
   const newPosts = [];
+  let metricsRefreshedFree = 0;
   for (const post of seenInThisRun.values()) {
-    // Evitamos gastar una clasificación en algo que ya conocemos.
-    if (db.isKnownPost(post.id)) continue;
+    if (db.isKnownPost(post.id)) {
+      // Ya lo conocíamos: no hace falta re-detectarlo ni re-clasificarlo
+      // (mismo título, mismo sentimiento). Pero esta misma respuesta de
+      // Apify que ya se pagó trae sus likes/comments ACTUALES — aprovecharla
+      // para refrescar la fila sale gratis, en vez de descartarla acá y que
+      // src/metricsRefresh.js tenga que volver a pedirle esta cuenta a
+      // Apify más tarde.
+      const refresh = db.applyMetricsRefresh(post.id, { likes: post.likes, comments: post.comments });
+      if (refresh) {
+        metricsRefreshedFree += 1;
+        checkAndLogJump({ account: refresh.account, id: post.id, postedAt: refresh.postedAt, metric: 'comentarios', previous: refresh.previousComments, current: refresh.comments });
+        checkAndLogJump({ account: refresh.account, id: post.id, postedAt: refresh.postedAt, metric: 'likes', previous: refresh.previousLikes, current: refresh.likes });
+      }
+      continue;
+    }
 
     const evaluation = await evaluateRelevance(post, plainKeywords);
     if (!evaluation.relevant) continue;
@@ -429,7 +444,15 @@ async function runMonitoringCycle() {
     newPosts.push(postWithClassification);
   }
 
-  return { checked: seenInThisRun.size, newPosts };
+  if (metricsRefreshedFree > 0) {
+    console.log(`[monitor] ${metricsRefreshedFree} posteo(s) ya conocidos refrescados gratis con este mismo ciclo.`);
+  }
+
+  // Cuentas trackeadas cuyo perfil se scrapeó de verdad en este ciclo (no
+  // las de hashtag: ahí solo se pesca el posteo puntual que matcheó, nunca
+  // "los últimos N" de esa cuenta). src/metricsRefresh.js las usa para no
+  // volver a pedirle Apify a una cuenta que ya se acaba de consultar.
+  return { checked: seenInThisRun.size, newPosts, scrapedAccounts: accounts };
 }
 
 /**

@@ -35,6 +35,7 @@ const { stdin, stdout } = require('node:process');
 
 const accountStats = require('../src/accountStats');
 const db = require('../src/db');
+const { isQuotaExceededError } = require('../src/apify');
 
 const PENDIENTES_PATH = path.join(__dirname, 'pendientes-benchmark.txt');
 
@@ -69,14 +70,6 @@ function readPendientesFile() {
 
 function writePendientesFile(accounts) {
   fs.writeFileSync(PENDIENTES_PATH, accounts.map((a) => `${a}\n`).join(''), 'utf8');
-}
-
-// El texto exacto que devuelve Apify para el límite mensual duro del plan
-// (visto en vivo: 403 {"error":{"type":"actor-disabled","message":"Monthly
-// usage hard limit exceeded..."}}) — src/apify.js lo deja adentro de
-// err.message tal cual, así que un includes alcanza sin parsear JSON.
-function isQuotaExceededError(err) {
-  return String((err && err.message) || '').includes('Monthly usage hard limit exceeded');
 }
 
 async function recalcOne(account, { index, total } = {}) {

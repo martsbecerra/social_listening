@@ -16,6 +16,7 @@ const { runMonitoringCycle } = require('./monitor');
 const { notifyNewPost } = require('./notify');
 const { processPendingReclamos } = require('./geoWorker');
 const { refreshStaleAccountStats } = require('./accountStats');
+const { refreshPostMetrics } = require('./metricsRefresh');
 const db = require('./db');
 
 const DEFAULT_CRON = '0 */4 * * *';
@@ -107,7 +108,7 @@ function getNextRunAt(cronExpression, from = new Date()) {
  * Exportada aparte para poder llamarla a mano (botón "Actualizar ahora").
  */
 async function runCycleAndNotify() {
-  const { checked, newPosts } = await runMonitoringCycle();
+  const { checked, newPosts, scrapedAccounts } = await runMonitoringCycle();
 
   const pending = db.listUnnotified();
   for (const post of pending) {
@@ -124,6 +125,15 @@ async function runCycleAndNotify() {
     await refreshStaleAccountStats();
   } catch (err) {
     console.error('Error recalculando el benchmark de cuentas:', err.message);
+  }
+
+  try {
+    // Las cuentas de scrapedAccounts ya se consultaron recién arriba (y
+    // monitor.js ya aprovechó esa misma respuesta para refrescar sus
+    // posteos conocidos) — se excluyen acá para no pagarlas dos veces.
+    await refreshPostMetrics({ skipAccounts: scrapedAccounts });
+  } catch (err) {
+    console.error('Error refrescando métricas de posteos:', err.message);
   }
 
   lastRunAt = new Date().toISOString();
