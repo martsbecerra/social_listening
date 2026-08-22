@@ -1259,7 +1259,8 @@ pre.report {
   box-shadow: 0 4px 16px rgba(6, 56, 46, 0.05);
 }
 .filters select,
-.filters input[type="search"] {
+.filters input[type="search"],
+.filters input[type="date"] {
   font-family: "Instrument Sans", sans-serif;
   font-size: 13.5px;
   color: var(--clay-900);
@@ -1274,11 +1275,27 @@ pre.report {
     box-shadow 0.15s,
     background 0.15s;
 }
-.filters select {
+/* appearance:none + flechita propia (mismo mecanismo — y el mismo path SVG
+   de flechita — que ya usa .sentiment-select más abajo), para que el
+   indicador de los <select> nativos de esta barra sea IDÉNTICO al de
+   .acc-select-btn (el dropdown de Cuenta armado a mano): un <select> sin
+   esto se apoya en la flechita que dibuja el navegador, que no es la misma
+   forma/tamaño que un ícono nuestro — quedan visualmente distintos aunque
+   el resto del control sea igual. */
+.filters select,
+.acc-select-btn {
   cursor: pointer;
   width: auto;
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 30px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath fill='%238a6a52' d='M1 1l5 5 5-5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 10px 7px;
 }
-.filters select:hover {
+.filters select:hover,
+.acc-select-btn:hover {
   border-color: var(--jade-150);
 }
 .filters select:focus,
@@ -1286,8 +1303,10 @@ pre.report {
   border-color: var(--jade-400);
   box-shadow: 0 0 0 3px var(--jade-100);
 }
-.filters select.on {
-  background: var(--jade-50);
+.filters select.on,
+.filters input[type="date"].on,
+.acc-select-btn.on {
+  background-color: var(--jade-50);
   border-color: var(--jade-300);
   color: var(--jade-900);
   font-weight: 500;
@@ -1299,6 +1318,84 @@ pre.report {
 }
 .filters input[type="search"]:focus {
   background: #fff;
+}
+/* Dropdown de Cuenta a medida (no un <select> nativo): con ~70 opciones el
+   navegador puede abrir un <select> real hacia arriba si no hay espacio
+   debajo, y eso no se puede forzar por CSS. Este panel se ancla siempre
+   hacia abajo del botón. Mismo look que los <select> de al lado. */
+.acc-select {
+  position: relative;
+}
+.acc-select-btn {
+  display: inline-flex;
+  align-items: center;
+  width: auto;
+  cursor: pointer;
+  font-family: "Instrument Sans", sans-serif;
+  font-size: 13.5px;
+  font-weight: 400;
+  color: var(--clay-900);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  /* padding-right en 30px explícito, no heredado del padding-right:30px de
+     la regla compartida de arriba: esta regla es un shorthand "padding" más
+     abajo en el archivo, y un shorthand posterior gana sobre un longhand
+     anterior con la misma especificidad — probado en vivo, con "padding:
+     9px 12px" acá el botón de Cuenta quedaba con solo 12px y la flechita
+     pisada por el texto. Mismo motivo para background-color en vez de
+     background: el shorthand "background" resetea la imagen a "none". */
+  padding: 9px 30px 9px 12px;
+  background-color: #fff;
+  outline: none;
+  margin: 0;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s,
+    background 0.15s;
+}
+.acc-select-btn:focus-visible {
+  border-color: var(--jade-400);
+  box-shadow: 0 0 0 3px var(--jade-100);
+}
+/* position:fixed, no absolute: .filters tiene overflow:hidden (a propósito,
+   para las esquinas redondeadas de la barra) y recortaba el panel al ser
+   descendiente suyo. Un <select> nativo escapa esto porque el navegador
+   pinta su popup fuera del DOM; este panel, al ser un div común, tiene que
+   escapar el contenedor de verdad — se reubica en document.body al abrirse
+   (ensureAccPanelInBody) y top/left se calculan en JS desde el botón. */
+.acc-select-panel {
+  position: fixed;
+  z-index: 150;
+  min-width: 220px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow-md);
+  padding: 6px;
+}
+.acc-select-option {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-weight: 400;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-family: "Instrument Sans", sans-serif;
+  font-size: 13.5px;
+  color: var(--clay-900);
+}
+.acc-select-option:hover {
+  background: var(--jade-50);
+}
+.acc-select-option.sel {
+  color: var(--jade-900);
+  font-weight: 600;
+  background: var(--jade-50);
 }
 .frow {
   display: flex;

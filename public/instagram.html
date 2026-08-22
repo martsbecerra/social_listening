@@ -198,25 +198,31 @@
             <option value="negativo">Negativo</option>
           </select>
 
-          <select id="fAcc" aria-label="Filtrar por cuenta">
-            <option value="">Cuenta</option>
-          </select>
+          <!-- No es un <select> nativo a propósito: con ~70 opciones (todas
+               las cuentas vistas, no solo las trackeadas) el navegador puede
+               decidir abrir el desplegable hacia arriba si no hay espacio
+               debajo — comportamiento del navegador, no controlable por
+               CSS en un <select> real. Este panel propio sí se puede anclar
+               siempre hacia abajo. -->
+          <div class="acc-select" id="fAccSelect">
+            <button type="button" class="acc-select-btn" id="fAccBtn" aria-haspopup="listbox" aria-expanded="false">
+              Cuenta
+            </button>
+            <div class="acc-select-panel hidden" id="fAccPanel" role="listbox" aria-label="Cuenta"></div>
+          </div>
 
           <label class="chk" id="chkWrap">
             <input type="checkbox" id="fNoti" /> Sin notificar
           </label>
+
+          <input type="date" id="fDesde" aria-label="Fecha desde" />
+          <input type="date" id="fHasta" aria-label="Fecha hasta" />
 
           <input type="search" id="q" placeholder="Buscar título, cuenta o texto del posteo..." />
         </div>
 
         <div class="frow">
           <span class="frow-lbl tag">Ordenar</span>
-
-          <select class="srt" id="sDate" aria-label="Ordenar por fecha">
-            <option value="">Fecha</option>
-            <option value="d|desc">Fecha ↓ más nuevos</option>
-            <option value="d|asc">Fecha ↑ más viejos</option>
-          </select>
 
           <select class="srt" id="sLikes" aria-label="Ordenar por likes">
             <option value="">Likes</option>

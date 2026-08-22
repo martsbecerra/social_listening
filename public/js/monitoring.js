@@ -29,9 +29,12 @@ const highlightsSectionEl = document.getElementById('monitoringHighlightsSection
 const cardsEl = document.getElementById('cards');
 
 const fSentEl = document.getElementById('fSent');
-const fAccEl = document.getElementById('fAcc');
+const fAccBtnEl = document.getElementById('fAccBtn');
+const fAccPanelEl = document.getElementById('fAccPanel');
 const fNotiEl = document.getElementById('fNoti');
 const chkWrapEl = document.getElementById('chkWrap');
+const fDesdeEl = document.getElementById('fDesde');
+const fHastaEl = document.getElementById('fHasta');
 const qEl = document.getElementById('q');
 const sortSelects = [...document.querySelectorAll('.srt')];
 const sLikesEl = document.getElementById('sLikes');
@@ -489,12 +492,17 @@ async function highlightGoToRow(id) {
 // Filtros + orden (barra "Filtrar" / "Ordenar"): selects nativos, igual que
 // design/monitoreo.html — sin desplegables a medida.
 // -------------------------------------------------------------------------
+// sortField/sortDir en null = sin orden forzado (orden natural: el que ya
+// trae /api/monitoring/posts, más nuevos primero). Solo el estado inicial
+// de la página fuerza "likes desc" — un select vaciado a mano, o "Limpiar",
+// dejan el orden en null como cualquier otro filtro que se limpia.
 let sortField = 'likes';
 let sortDir = 'desc';
-// Claves cortas de los <option value="d|desc"> (calcadas de la referencia)
-// a los fields reales de Tabulator.
-const SORT_FIELD_MAP = { d: 'posted_at', l: 'likes', c: 'comments', fol: 'followers' };
-const SORTABLE_FIELDS = ['posted_at', 'likes', 'comments', 'followers'];
+// Claves cortas de los <option value="l|desc"> (calcadas de la referencia)
+// a los fields reales de Tabulator. El rango de fechas ahora filtra en vez
+// de ordenar (ver fDesde/fHasta), así que ya no hay clave "d" acá.
+const SORT_FIELD_MAP = { l: 'likes', c: 'comments', fol: 'followers' };
+const SORTABLE_FIELDS = ['likes', 'comments', 'followers'];
 
 function normalizeSearch(text) {
   return String(text || '')
@@ -503,14 +511,19 @@ function normalizeSearch(text) {
     .replace(new RegExp('[\\u0300-\\u036f]', 'g'), '');
 }
 
+// Cuenta seleccionada en el dropdown a medida (ver fAccBtnEl/fAccPanelEl más
+// abajo) — reemplaza a fAccEl.value de un <select> nativo.
+let fAccValue = '';
+
 function isDefaultFilterState() {
   return (
     !fSentEl.value &&
-    !fAccEl.value &&
+    !fAccValue &&
     !fNotiEl.checked &&
+    !fDesdeEl.value &&
+    !fHastaEl.value &&
     !qEl.value.trim() &&
-    sortField === 'likes' &&
-    sortDir === 'desc'
+    sortField === null
   );
 }
 
@@ -536,14 +549,22 @@ function updateCounts() {
 function applyFilters() {
   if (!monitoringTable) return;
   const fs = fSentEl.value;
-  const fa = fAccEl.value;
+  const fa = fAccValue;
   const fn = fNotiEl.checked;
+  const fDesde = fDesdeEl.value; // "YYYY-MM-DD" del <input type="date"> o ""
+  const fHasta = fHastaEl.value;
   const q = normalizeSearch(qEl.value.trim());
 
   monitoringTable.setFilter((data) => {
     if (fs && data.sentiment !== fs) return false;
     if (fa && data.account !== fa) return false;
     if (fn && data.notified) return false;
+    if (fDesde || fHasta) {
+      if (!data.posted_at) return false;
+      const posted = new Date(data.posted_at);
+      if (fDesde && posted < new Date(`${fDesde}T00:00:00`)) return false;
+      if (fHasta && posted > new Date(`${fHasta}T23:59:59.999`)) return false;
+    }
     if (q) {
       const haystack = normalizeSearch(`${data.title || ''} ${data.account || ''} ${data.caption || ''}`);
       if (!haystack.includes(q)) return false;
@@ -552,8 +573,10 @@ function applyFilters() {
   });
 
   fSentEl.classList.toggle('on', !!fs);
-  fAccEl.classList.toggle('on', !!fa);
+  fAccBtnEl.classList.toggle('on', !!fa);
   chkWrapEl.classList.toggle('on', fn);
+  fDesdeEl.classList.toggle('on', !!fDesde);
+  fHastaEl.classList.toggle('on', !!fHasta);
 
   updateCounts();
   updateMonitoringClearButtonState();
@@ -561,14 +584,22 @@ function applyFilters() {
 
 function applySort() {
   if (!monitoringTable) return;
-  monitoringTable.setSort(sortField, sortDir);
+  if (sortField) {
+    monitoringTable.setSort(sortField, sortDir);
+  } else {
+    // Ningún select de orden elegido: orden natural (el que ya trae
+    // /api/monitoring/posts), no forzamos ningún campo.
+    monitoringTable.clearSort();
+  }
   updateSortColumnHighlight();
   updateCounts();
   updateMonitoringClearButtonState();
 }
 
-// Un select de orden elegido resetea los otros tres a neutro — solo uno
-// activo a la vez, igual que la referencia.
+// Un select de orden elegido resetea los otros dos a neutro — solo uno
+// activo a la vez, igual que la referencia. Vaciar el select activo (elegir
+// la opción en blanco) deja el orden en null: no vuelve a imponerse solo,
+// para poder "sacarlo" de verdad desde el propio desplegable.
 sortSelects.forEach((sel) => {
   sel.addEventListener('change', () => {
     if (sel.value) {
@@ -579,51 +610,136 @@ sortSelects.forEach((sel) => {
         if (other !== sel) other.value = '';
       });
     } else {
-      sortField = 'likes';
-      sortDir = 'desc';
-      sLikesEl.value = 'l|desc';
+      sortField = null;
+      sortDir = null;
     }
     sortSelects.forEach((o) => o.classList.toggle('on', !!o.value));
     applySort();
   });
 });
 
-// Reconstruye el <select> de Cuenta con las cuentas presentes en los datos
+// -------------------------------------------------------------------------
+// Dropdown de Cuenta a medida (botón + panel propio, no un <select> nativo
+// — ver el comentario en instagram.html sobre por qué). Selección única,
+// se cierra solo al elegir, clickear afuera o Escape.
+// -------------------------------------------------------------------------
+// .filters tiene overflow:hidden (esquinas redondeadas de la barra, a
+// propósito). El panel es un <div> común — a diferencia del popup de un
+// <select> nativo, que el navegador pinta fuera del DOM — así que si se
+// queda adentro de .filters, ese overflow lo recorta. Se reubica una sola
+// vez como hijo directo de <body> para escapar cualquier contenedor con
+// overflow/stacking context propio, y se posiciona a mano en cada apertura.
+let accPanelMovedToBody = false;
+
+function positionAccPanel() {
+  const rect = fAccBtnEl.getBoundingClientRect();
+  fAccPanelEl.style.top = `${rect.bottom + 6}px`;
+  fAccPanelEl.style.left = `${rect.left}px`;
+  fAccPanelEl.style.minWidth = `${rect.width}px`;
+}
+
+function closeAccPanel() {
+  fAccPanelEl.classList.add('hidden');
+  fAccBtnEl.setAttribute('aria-expanded', 'false');
+}
+
+function openAccPanel() {
+  if (!accPanelMovedToBody) {
+    document.body.appendChild(fAccPanelEl);
+    accPanelMovedToBody = true;
+  }
+  positionAccPanel();
+  fAccPanelEl.classList.remove('hidden');
+  fAccBtnEl.setAttribute('aria-expanded', 'true');
+}
+
+function selectAccount(value, label) {
+  fAccValue = value;
+  fAccBtnEl.textContent = label;
+  closeAccPanel();
+  applyFilters();
+}
+
+fAccBtnEl.addEventListener('click', () => {
+  if (fAccPanelEl.classList.contains('hidden')) openAccPanel();
+  else closeAccPanel();
+});
+document.addEventListener('click', (e) => {
+  if (!fAccPanelEl.classList.contains('hidden') && !fAccBtnEl.contains(e.target) && !fAccPanelEl.contains(e.target)) {
+    closeAccPanel();
+  }
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeAccPanel();
+});
+// Reposicionado en fixed, no relativo a un ancestro: si se scrollea con el
+// panel abierto se desalinearía del botón. Más simple y predecible cerrarlo,
+// mismo comportamiento que un <select> nativo (también se cierra al scrollear).
+window.addEventListener('scroll', () => closeAccPanel(), true);
+window.addEventListener('resize', () => closeAccPanel());
+
+// Reconstruye el panel de Cuenta con las cuentas presentes en los datos
 // cargados. Si la cuenta elegida ya no está, vuelve a "Todas".
 function ensureAccountFilterOptions(posts) {
-  const previous = fAccEl.value;
+  const previous = fAccValue;
   const accounts = [...new Set(posts.map((p) => p.account).filter((a) => a && a !== 'N/D'))].sort((a, b) =>
     a.localeCompare(b, 'es')
   );
-  fAccEl.innerHTML = '<option value="">Cuenta</option>';
+  const stillValid = accounts.includes(previous);
+
+  fAccPanelEl.innerHTML = '';
+  const allBtn = document.createElement('button');
+  allBtn.type = 'button';
+  allBtn.className = `acc-select-option${stillValid ? '' : ' sel'}`;
+  allBtn.textContent = 'Cuenta';
+  allBtn.addEventListener('click', () => selectAccount('', 'Cuenta'));
+  fAccPanelEl.appendChild(allBtn);
+
   for (const account of accounts) {
-    const opt = document.createElement('option');
-    opt.value = account;
-    opt.textContent = `@${account}`;
-    fAccEl.appendChild(opt);
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = `acc-select-option${account === previous ? ' sel' : ''}`;
+    btn.textContent = `@${account}`;
+    btn.addEventListener('click', () => selectAccount(account, `@${account}`));
+    fAccPanelEl.appendChild(btn);
   }
-  fAccEl.value = accounts.includes(previous) ? previous : '';
+
+  if (!stillValid) {
+    fAccValue = '';
+    fAccBtnEl.textContent = 'Cuenta';
+  }
 }
 
+// "Limpiar" resetea TODO a blanco, orden incluido — el mismo tratamiento
+// que el resto de los controles de esta barra. El "Likes desc" solo es el
+// arranque de la página (ver más abajo), no un estado al que este botón
+// vuelva: si fuera así, no habría forma de sacar el orden con "Limpiar"
+// cuando ya se estaba en ese estado.
 function resetFilters() {
   fSentEl.value = '';
-  fAccEl.value = '';
+  fAccValue = '';
+  fAccBtnEl.textContent = 'Cuenta';
+  fAccBtnEl.classList.remove('on');
   fNotiEl.checked = false;
+  fDesdeEl.value = '';
+  fHastaEl.value = '';
+  fDesdeEl.classList.remove('on');
+  fHastaEl.classList.remove('on');
   qEl.value = '';
   sortSelects.forEach((o) => {
     o.value = '';
     o.classList.remove('on');
   });
-  sLikesEl.value = 'l|desc';
-  sLikesEl.classList.add('on');
-  sortField = 'likes';
-  sortDir = 'desc';
+  sortField = null;
+  sortDir = null;
   applyFilters();
   applySort();
 }
 
-// Estado inicial: Likes de mayor a menor (igual que resetFilters), para que
-// el select ya arranque mostrando "Likes ↓" tildado en vez de en blanco.
+// Estado inicial: Likes de mayor a menor, para que el select ya arranque
+// mostrando "Likes ↓" tildado en vez de en blanco (sortField ya vale
+// 'likes' arriba). Es un default de arranque, no un piso al que "Limpiar"
+// o el propio select tengan que volver.
 sLikesEl.value = 'l|desc';
 sLikesEl.classList.add('on');
 
@@ -986,8 +1102,9 @@ deleteModal.addEventListener('click', (e) => { if (e.target === deleteModal) clo
 runNowBtn.addEventListener('click', runNow);
 
 fSentEl.addEventListener('change', applyFilters);
-fAccEl.addEventListener('change', applyFilters);
 fNotiEl.addEventListener('change', applyFilters);
+fDesdeEl.addEventListener('change', applyFilters);
+fHastaEl.addEventListener('change', applyFilters);
 qEl.addEventListener('input', applyFilters);
 monitoringClearBtn.addEventListener('click', resetFilters);
 
