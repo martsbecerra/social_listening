@@ -95,8 +95,13 @@ async function computeAccountStats(account, platform = PLATFORM) {
       platform,
       postType,
       nPosts: group.length,
-      medianLikes: median(group.map((p) => Number(p.likes))),
-      medianComments: median(group.map((p) => Number(p.comments))),
+      // Sin Number(...) acá a propósito: p.likes/p.comments pueden ser null
+      // (dato faltante, ej. el centinela -1 de Apify ya convertido a null en
+      // normalizeMonitorPost). Number(null) da 0, un "cero" inventado que
+      // Number.isFinite deja pasar y contaminaría la mediana; pasando el
+      // valor crudo, median() lo descarta con su propio filter(Number.isFinite).
+      medianLikes: median(group.map((p) => p.likes)),
+      medianComments: median(group.map((p) => p.comments)),
       computedAt,
     });
     groupsSaved += 1;

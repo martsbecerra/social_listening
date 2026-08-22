@@ -227,6 +227,18 @@ function derivePostType(raw) {
   return null;
 }
 
+// Apify (apify/instagram-scraper) devuelve -1 en likesCount cuando el autor
+// ocultó el contador de "me gusta" del posteo — no es un dato real, es un
+// centinela de "no disponible" (confirmado: es un comportamiento documentado
+// del actor, no un error de parseo nuestro). Lo tratamos igual que "sin
+// dato" — null, nunca -1 ni 0 — para no inventar un valor ni contaminar la
+// mediana de account_stats. No hay documentación de que commentsCount use el
+// mismo centinela, pero por las dudas (y porque un comentario negativo nunca
+// puede ser real) se aplica el mismo criterio ahí también.
+function nullIfMissingSentinel(value) {
+  return typeof value === 'number' && value < 0 ? null : value;
+}
+
 function normalizeMonitorPost(raw, { account, sourceType }) {
   const pick = (...values) => values.find((v) => v !== undefined && v !== null && v !== '');
   const shortCode = pick(raw.shortCode, raw.code);
@@ -240,8 +252,8 @@ function normalizeMonitorPost(raw, { account, sourceType }) {
     url,
     caption: pick(raw.caption, ''),
     hashtagsText: hashtags,
-    likes: pick(raw.likesCount, null),
-    comments: pick(raw.commentsCount, null),
+    likes: nullIfMissingSentinel(pick(raw.likesCount, null)),
+    comments: nullIfMissingSentinel(pick(raw.commentsCount, null)),
     postedAt: pick(raw.timestamp, null),
     postType: derivePostType(raw),
     sourceType,

@@ -63,6 +63,15 @@ if (!existingColumns.includes('post_type')) {
 if (!existingColumns.includes('followers')) {
   db.exec('ALTER TABLE detected_posts ADD COLUMN followers INTEGER');
 }
+// Limpieza de datos: Apify devuelve -1 en likesCount cuando el autor ocultó
+// el contador de "me gusta" (centinela documentado del actor, no un error de
+// parseo) — se guardaba tal cual, como si fuera un valor real. Un posteo sin
+// dato no es lo mismo que un posteo con cero likes (contaminaría medianas y
+// se vería como una fila rota), así que pasa a NULL como cualquier otro dato
+// faltante. Se corre en cada arranque; sin filas negativas es un UPDATE
+// vacío, no hace falta guardarlo como migración "de una sola vez".
+db.exec('UPDATE detected_posts SET likes = NULL WHERE likes < 0');
+db.exec('UPDATE detected_posts SET comments = NULL WHERE comments < 0');
 
 const isKnownPostStmt = db.prepare('SELECT 1 FROM detected_posts WHERE id = ?');
 const insertPostStmt = db.prepare(`
@@ -300,6 +309,14 @@ function isKnownPost(id) {
   return Boolean(isKnownPostStmt.get(id));
 }
 
+// Defensa en profundidad: además de la limpieza del centinela -1 en el
+// origen (src/monitor.js), rechazamos acá cualquier likes/comments negativo
+// que igual llegara a guardarse (de esta fuente o de alguna futura) — un
+// dato faltante se guarda NULL, nunca un número negativo ni 0 inventado.
+function rejectNegative(value) {
+  return typeof value === 'number' && value < 0 ? null : value;
+}
+
 function saveDetectedPost(post) {
   insertPostStmt.run({
     id: post.id,
@@ -307,8 +324,8 @@ function saveDetectedPost(post) {
     url: post.url,
     caption: post.caption || '',
     matchedReason: post.matchedReason || '',
-    likes: post.likes ?? null,
-    comments: post.comments ?? null,
+    likes: rejectNegative(post.likes ?? null),
+    comments: rejectNegative(post.comments ?? null),
     postedAt: post.postedAt || null,
     detectedAt: new Date().toISOString(),
     title: post.title || null,

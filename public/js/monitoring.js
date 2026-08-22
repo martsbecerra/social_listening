@@ -34,7 +34,7 @@ const fNotiEl = document.getElementById('fNoti');
 const chkWrapEl = document.getElementById('chkWrap');
 const qEl = document.getElementById('q');
 const sortSelects = [...document.querySelectorAll('.srt')];
-const sDateEl = document.getElementById('sDate');
+const sLikesEl = document.getElementById('sLikes');
 const nEl = document.getElementById('n');
 const mEl = document.getElementById('m');
 const monitoringClearBtn = document.getElementById('clear');
@@ -489,7 +489,7 @@ async function highlightGoToRow(id) {
 // Filtros + orden (barra "Filtrar" / "Ordenar"): selects nativos, igual que
 // design/monitoreo.html — sin desplegables a medida.
 // -------------------------------------------------------------------------
-let sortField = 'posted_at';
+let sortField = 'likes';
 let sortDir = 'desc';
 // Claves cortas de los <option value="d|desc"> (calcadas de la referencia)
 // a los fields reales de Tabulator.
@@ -509,7 +509,7 @@ function isDefaultFilterState() {
     !fAccEl.value &&
     !fNotiEl.checked &&
     !qEl.value.trim() &&
-    sortField === 'posted_at' &&
+    sortField === 'likes' &&
     sortDir === 'desc'
   );
 }
@@ -579,9 +579,9 @@ sortSelects.forEach((sel) => {
         if (other !== sel) other.value = '';
       });
     } else {
-      sortField = 'posted_at';
+      sortField = 'likes';
       sortDir = 'desc';
-      sDateEl.value = 'd|desc';
+      sLikesEl.value = 'l|desc';
     }
     sortSelects.forEach((o) => o.classList.toggle('on', !!o.value));
     applySort();
@@ -614,12 +614,18 @@ function resetFilters() {
     o.value = '';
     o.classList.remove('on');
   });
-  sDateEl.value = 'd|desc';
-  sortField = 'posted_at';
+  sLikesEl.value = 'l|desc';
+  sLikesEl.classList.add('on');
+  sortField = 'likes';
   sortDir = 'desc';
   applyFilters();
   applySort();
 }
+
+// Estado inicial: Likes de mayor a menor (igual que resetFilters), para que
+// el select ya arranque mostrando "Likes ↓" tildado en vez de en blanco.
+sLikesEl.value = 'l|desc';
+sLikesEl.classList.add('on');
 
 const MONITORING_COLUMNS = [
   {
@@ -631,7 +637,16 @@ const MONITORING_COLUMNS = [
     field: 'expand',
     headerSort: false,
     hozAlign: 'center',
-    width: 34,
+    // 48px, no 34: es el mínimo real para que el contenido (.chev de
+    // 22x22px + los 13px de padding horizontal de .tabulator-cell a cada
+    // lado = 48px) entre sin desbordar. Con menos, el CSS base de Tabulator
+    // (.tabulator-cell{overflow:hidden;text-overflow:ellipsis;white-space:
+    // nowrap}, no algo que hayamos agregado nosotros) recorta el chevron y
+    // muestra los puntos suspensivos — comprobado en vivo con
+    // cell.scrollWidth vs cell.clientWidth. minWidth repite el mismo valor
+    // porque el default de Tabulator (40px) por sí solo tampoco alcanza.
+    width: 48,
+    minWidth: 48,
     formatter: () =>
       '<span class="chev"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 2l4 4-4 4"/></svg></span>',
   },
