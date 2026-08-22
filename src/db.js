@@ -63,6 +63,13 @@ if (!existingColumns.includes('post_type')) {
 if (!existingColumns.includes('followers')) {
   db.exec('ALTER TABLE detected_posts ADD COLUMN followers INTEGER');
 }
+// Cuándo se actualizaron por última vez likes/comments de este posteo desde
+// un recálculo de benchmark (no desde la detección original) — ver
+// updatePostMetricsIfChanged más abajo. NULL si nunca se tocó después de
+// guardarse.
+if (!existingColumns.includes('metrics_updated_at')) {
+  db.exec('ALTER TABLE detected_posts ADD COLUMN metrics_updated_at TEXT');
+}
 // Limpieza de datos: Apify devuelve -1 en likesCount cuando el autor ocultó
 // el contador de "me gusta" (centinela documentado del actor, no un error de
 // parseo) — se guardaba tal cual, como si fuera un valor real. Un posteo sin
@@ -232,6 +239,25 @@ const updateAccountFollowersStmt = db.prepare(`
 const getAccountFollowersStmt = db.prepare(
   'SELECT followers FROM account_followers WHERE account = ? AND platform = ?'
 );
+
+// Carga inicial / recálculo forzado del benchmark (ver scripts/recalc-
+// account-stats.js): el universo de cuentas a procesar es la unión de las
+// trackeadas (config/monitoring.json) con las que ya aparecen en
+// detected_posts (llegaron por hashtag, nunca se trackearon explícitamente).
+const listDistinctPostAccountsStmt = db.prepare(
+  `SELECT DISTINCT account FROM detected_posts WHERE account IS NOT NULL AND account != 'N/D' ORDER BY account`
+);
+// Freshness de TODAS las cuentas de una, no una query por cuenta — con
+// 100-150 cuentas en el universo ampliado, N queries individuales ya no es
+// gratis (ver accountStats.refreshStaleAccountStats).
+const getAllAccountStatsFreshnessStmt = db.prepare(
+  'SELECT account, MAX(computed_at) AS lastComputedAt FROM account_stats WHERE platform = ? GROUP BY account'
+);
+const getPostMetricsStmt = db.prepare('SELECT likes, comments, post_type FROM detected_posts WHERE id = ?');
+const updatePostMetricsStmt = db.prepare(
+  'UPDATE detected_posts SET likes = @likes, comments = @comments, post_type = @postType, metrics_updated_at = @metricsUpdatedAt WHERE id = @id'
+);
+const updateFollowersForAccountStmt = db.prepare('UPDATE detected_posts SET followers = ? WHERE account = ?');
 
 const upsertReclamoStmt = db.prepare(`
   INSERT INTO reclamos (
@@ -640,6 +666,54 @@ function getAccountFollowers(account, platform) {
   return row ? row.followers : null;
 }
 
+/** @returns {string[]} Cuentas distintas presentes en detected_posts (sin NULL ni 'N/D'). */
+function listDistinctPostAccounts() {
+  return listDistinctPostAccountsStmt.all().map((row) => row.account);
+}
+
+/** @returns {{account: string, lastComputedAt: string|null}[]} Freshness de account_stats para TODAS las cuentas que tengan al menos una fila, de una sola query. */
+function getAllAccountStatsFreshness(platform) {
+  return getAllAccountStatsFreshnessStmt.all(platform);
+}
+
+/**
+ * Actualiza likes/comments/post_type de un posteo YA guardado si algo
+ * cambió (ej. un recálculo de benchmark trae el mismo posteo con métricas
+ * nuevas, o con un post_type que antes no se guardaba). No hace nada si el
+ * id no existe en detected_posts — nunca inserta, solo actualiza lo que ya
+ * está. rejectNegative evita reabrir la puerta al centinela -1 de Apify por
+ * esta vía.
+ *
+ * post_type SOLO se completa si faltaba (existing.post_type es NULL) —
+ * nunca se pisa un valor ya conocido, a diferencia de likes/comments que sí
+ * son métricas vivas y se actualizan siempre que cambien.
+ * @returns {boolean} true si se escribió un cambio real.
+ */
+function updatePostMetricsIfChanged(id, { likes, comments, postType }) {
+  const existing = getPostMetricsStmt.get(id);
+  if (!existing) return false;
+  const cleanLikes = rejectNegative(likes ?? null);
+  const cleanComments = rejectNegative(comments ?? null);
+  const nextPostType = existing.post_type != null ? existing.post_type : postType || null;
+
+  if (existing.likes === cleanLikes && existing.comments === cleanComments && existing.post_type === nextPostType) {
+    return false;
+  }
+  updatePostMetricsStmt.run({
+    id,
+    likes: cleanLikes,
+    comments: cleanComments,
+    postType: nextPostType,
+    metricsUpdatedAt: new Date().toISOString(),
+  });
+  return true;
+}
+
+/** Propaga la cantidad de seguidores a TODOS los posteos ya guardados de una cuenta (no solo a los nuevos). */
+function updateFollowersForAccount(account, followers) {
+  updateFollowersForAccountStmt.run(followers ?? null, account);
+}
+
 module.exports = {
   isKnownPost,
   saveDetectedPost,
@@ -657,6 +731,10 @@ module.exports = {
   listAllAccountStats,
   upsertAccountFollowers,
   getAccountFollowers,
+  listDistinctPostAccounts,
+  getAllAccountStatsFreshness,
+  updatePostMetricsIfChanged,
+  updateFollowersForAccount,
   upsertReclamo,
   listReclamosFiltered,
   updateEstado,
