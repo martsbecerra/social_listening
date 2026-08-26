@@ -27,6 +27,11 @@ const DEFAULT_CRON = '0 */4 * * *';
 // de inventar una hora.
 let lastRunAt = null;
 
+// Un solo ciclo a la vez: el clasificador es lento (await por posteo) y dos
+// corridas en paralelo (cron + botón, o dos pestañas) llegan las dos a
+// isKnownPost === false y la segunda revienta con UNIQUE al insertar.
+let cycleInProgress = false;
+
 function getCronExpression() {
   return process.env.MONITOR_CRON || DEFAULT_CRON;
 }
@@ -107,7 +112,27 @@ function getNextRunAt(cronExpression, from = new Date()) {
  * un problema pasajero de SMTP no hace que un posteo se pierda para siempre.
  * Exportada aparte para poder llamarla a mano (botón "Actualizar ahora").
  */
-async function runCycleAndNotify() {
+async function runCycleAndNotify({ ifBusy = 'throw' } = {}) {
+  if (cycleInProgress) {
+    if (ifBusy === 'skip') {
+      console.log('[monitor] ya hay un ciclo en curso; se saltea este disparo.');
+      return { checked: 0, newCount: 0, skipped: true };
+    }
+    const err = new Error('Ya hay un ciclo de monitoreo en curso');
+    err.userMessage = 'Ya hay un ciclo de monitoreo en curso. Esperá a que termine.';
+    err.code = 'CYCLE_IN_PROGRESS';
+    throw err;
+  }
+
+  cycleInProgress = true;
+  try {
+    return await runCycleAndNotifyUnlocked();
+  } finally {
+    cycleInProgress = false;
+  }
+}
+
+async function runCycleAndNotifyUnlocked() {
   const { checked, newPosts, scrapedAccounts } = await runMonitoringCycle();
 
   const pending = db.listUnnotified();
@@ -145,7 +170,7 @@ function startScheduler() {
   const cronExpression = getCronExpression();
 
   cron.schedule(cronExpression, () => {
-    runCycleAndNotify().catch((err) => {
+    runCycleAndNotify({ ifBusy: 'skip' }).catch((err) => {
       console.error('Error en el ciclo de monitoreo agendado:', err.message);
     });
   });

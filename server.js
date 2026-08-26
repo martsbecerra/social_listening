@@ -402,6 +402,9 @@ app.post('/api/monitoring/run-now', async (req, res) => {
     const result = await runCycleAndNotify();
     res.json(result);
   } catch (err) {
+    if (err.code === 'CYCLE_IN_PROGRESS') {
+      return res.status(409).json({ error: err.userMessage });
+    }
     console.error('Error en /api/monitoring/run-now:', err);
     res.status(502).json({ error: err.userMessage || 'Falló el ciclo de monitoreo. Revisá la consola del servidor.' });
   }
