@@ -15,7 +15,7 @@ const {
   parseAndMergeInfluencerCsvs,
   normalizeHandle,
 } = require('../src/x/influencersParse');
-const { isValidXPostUrl, parseXPostUrl } = require('../src/x/url');
+const { isValidXPostUrl, parseXPostUrl, canonicalizeStatusUrl, profileUrl } = require('../src/x/url');
 const {
   levelFromViews,
   levelFromInteractions,
@@ -65,6 +65,34 @@ describe('x-platform parse/kpis/url', { concurrency: false }, () => {
     assert.equal(isValidXPostUrl('https://x.com/i/web/status/123'), true);
     assert.equal(isValidXPostUrl('https://www.instagram.com/p/AAA/'), false);
     assert.equal(parseXPostUrl('https://x.com/foo/status/99').id, '99');
+    assert.equal(parseXPostUrl('https://x.com/foo/status/99').handle, 'foo');
+    assert.equal(parseXPostUrl('https://x.com/foo/status/99').url, 'https://x.com/foo/status/99');
+    assert.equal(parseXPostUrl('https://x.com/i/web/status/123').url, 'https://x.com/i/web/status/123');
+    assert.equal(
+      canonicalizeStatusUrl('https://x.com/i/web/status/77', 'autor', '77'),
+      'https://x.com/autor/status/77'
+    );
+    assert.equal(profileUrl('Autor'), 'https://x.com/Autor');
+
+    const canon = normalizeThread(
+      {
+        post: {
+          id: '123',
+          url: 'https://x.com/i/web/status/123',
+          authorHandle: 'Foo',
+          likes: 1,
+          retweets: 0,
+          quotes: 0,
+          replies: 0,
+          views: 10,
+          text: 'hola',
+        },
+        items: [{ id: '456', authorHandle: 'Bar', text: 'ok' }],
+      },
+      'https://x.com/foo/status/123'
+    );
+    assert.equal(canon.post.url, 'https://x.com/foo/status/123');
+    assert.equal(canon.items[0].url, 'https://x.com/bar/status/456');
   });
 
   test('KPIs independientes y +5% (REQ-X-04)', () => {
@@ -212,17 +240,21 @@ describe('x-platform parse/kpis/url', { concurrency: false }, () => {
     const prevOr = process.env.OPENROUTER_API_KEY;
     const prevXai = process.env.XAI_API_KEY;
     const prevModel = process.env.XAI_MODEL;
+    const prevXModel = process.env.OPENROUTER_X_MODEL;
     process.env.OPENROUTER_API_KEY = 'or-test';
     delete process.env.XAI_API_KEY;
     delete process.env.XAI_MODEL;
+    delete process.env.OPENROUTER_X_MODEL;
     try {
       const cfg = getFetchConfig();
       assert.equal(cfg.backend, 'openrouter');
-      assert.equal(cfg.model, 'x-ai/grok-4.6');
-      process.env.XAI_MODEL = 'grok-4.6';
+      assert.equal(cfg.model, 'x-ai/grok-4.3');
+      process.env.XAI_MODEL = 'grok-4.3';
+      assert.equal(openRouterGrokModel(), 'x-ai/grok-4.3');
+      process.env.XAI_MODEL = 'x-ai/grok-4.6';
       assert.equal(openRouterGrokModel(), 'x-ai/grok-4.6');
-      process.env.XAI_MODEL = 'x-ai/grok-4.1-fast';
-      assert.equal(openRouterGrokModel(), 'x-ai/grok-4.1-fast');
+      process.env.OPENROUTER_X_MODEL = 'grok-4.3';
+      assert.equal(openRouterGrokModel(), 'x-ai/grok-4.3');
     } finally {
       if (prevOr == null) delete process.env.OPENROUTER_API_KEY;
       else process.env.OPENROUTER_API_KEY = prevOr;
@@ -230,6 +262,8 @@ describe('x-platform parse/kpis/url', { concurrency: false }, () => {
       else process.env.XAI_API_KEY = prevXai;
       if (prevModel == null) delete process.env.XAI_MODEL;
       else process.env.XAI_MODEL = prevModel;
+      if (prevXModel == null) delete process.env.OPENROUTER_X_MODEL;
+      else process.env.OPENROUTER_X_MODEL = prevXModel;
     }
   });
 });

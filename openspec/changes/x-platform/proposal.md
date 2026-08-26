@@ -2,14 +2,14 @@
 
 ## Intent
 
-Sumar la plataforma X al producto, con la misma interfaz que Instagram (tres solapas). El análisis de una publicación trae el hilo con Grok (`x_search` de xAI), no con Apify. El LLM clasifica; el código calcula KPIs, sentimiento y el reporte WhatsApp según la metodología de `data/X/Prompt Grok.txt`. Monitoreo en vivo y mapa de reclamos quedan especificados y se construyen después.
+Sumar la plataforma X al producto, con la misma interfaz que Instagram (tres solapas). El análisis de una publicación trae el hilo y clasifica con Grok vía OpenRouter (`OPENROUTER_X_MODEL`), no con Apify ni con `LLM_PROVIDER` de Instagram. El código calcula KPIs, sentimiento y el reporte WhatsApp según la metodología de `data/X/Prompt Grok.txt`. Monitoreo en vivo y mapa de reclamos quedan especificados y se construyen después.
 
 ## Scope
 
 ### In Scope
 
 - Página X (`public/x.html`) con las tres solapas y el chrome de Instagram
-- Análisis de publicación: URL de X → Grok fetch → clasificación LLM → reporte + CSV
+- Análisis de publicación: URL de X → Grok fetch → clasificación Grok (OpenRouter) → reporte + CSV
 - Padrón ANTIK-PRO en SQLite, ingerido desde los dos CSV
 - Reclamos geolocalizables guardados con `plataforma = 'x'` (el mapa X se implementa en una fase posterior)
 - OpenSpec (este cambio) y tests de parseo, KPIs y URLs
@@ -35,8 +35,8 @@ Sumar la plataforma X al producto, con la misma interfaz que Instagram (tres sol
 
 ## Approach
 
-1. Fetch: xAI Responses API + tool `x_search`.
-2. Clasificación: `LLM_PROVIDER` actual, schema X (no el de Instagram).
+1. Fetch: Grok X Search vía OpenRouter (`openrouter:web_search`); respaldo xAI `x_search`.
+2. Clasificación: Grok en OpenRouter (`OPENROUTER_X_MODEL`), schema X. No usa `LLM_PROVIDER`.
 3. Reporte: código (`src/x/kpis.js` + `src/x/reportBuilder.js`) con la plantilla del Prompt Grok.
 4. Actores: merge de ambos CSV → `x_influencers`.
 5. UI: clonar solapas de Instagram; monitoreo y mapa muestran “Próximamente”.
@@ -65,8 +65,8 @@ Revertir el cambio de código. La tabla `x_influencers` y filas `reclamos` con `
 
 ## Dependencies
 
-- `OPENROUTER_API_KEY` para el fetch de X (Grok); `XAI_API_KEY` solo como respaldo. No aborta el arranque si ambas faltan (Instagram sigue). El 502 de `/api/x/analyze` explica la falta.
-- `LLM_PROVIDER` ya existente para clasificar
+- `OPENROUTER_API_KEY` para fetch y clasificación de X (Grok). `XAI_API_KEY` solo respalda el fetch. No aborta el arranque si faltan (Instagram sigue). El 502 de `/api/x/analyze` explica la falta.
+- `LLM_PROVIDER` / `CLAUDE_MODEL` / `OPENROUTER_MODEL` siguen aplicando solo a Instagram y al monitoreo.
 
 ## Success Criteria
 

@@ -8,11 +8,10 @@
 const { parseXPostUrl } = require('./url');
 const { normalizeThread, hasPostMetrics } = require('./threadNormalize');
 const { fromOpenRouterUsage } = require('../llm/usage');
+const { getOpenRouterXModel, getDirectXaiModel, DEFAULT_OPENROUTER_X_MODEL } = require('./grokModel');
 
 const DEFAULT_XAI_BASE = 'https://api.x.ai/v1';
 const DEFAULT_OPENROUTER_BASE = 'https://openrouter.ai/api/v1';
-const DEFAULT_XAI_MODEL = 'grok-4.6';
-const DEFAULT_OPENROUTER_MODEL = 'x-ai/grok-4.6';
 
 function getOpenRouterBaseUrl() {
   const raw = (process.env.OPENROUTER_BASE_URL || '').trim() || DEFAULT_OPENROUTER_BASE;
@@ -25,14 +24,11 @@ function getXaiBaseUrl() {
 }
 
 function openRouterGrokModel() {
-  const raw = (process.env.XAI_MODEL || '').trim();
-  if (!raw) return DEFAULT_OPENROUTER_MODEL;
-  if (raw.includes('/')) return raw;
-  return `x-ai/${raw}`;
+  return getOpenRouterXModel();
 }
 
 function xaiGrokModel() {
-  return (process.env.XAI_MODEL || '').trim() || DEFAULT_XAI_MODEL;
+  return getDirectXaiModel();
 }
 
 /**
@@ -129,7 +125,7 @@ Devolvé ÚNICAMENTE un JSON válido (sin markdown, sin reporte WhatsApp) con es
 Reglas:
 - Números enteros, sin sufijos K/M.
 - items: solo respuestas DIRECTAS al post o QTs que citan el post original. Prohibido QT de QT.
-- url de cada item debe ser el link real de X.
+- url de cada ítem: https://x.com/{handle}/status/{id} (no t.co ni i/web/status).
 - Si no pudiste leer el post, devolvé post en null.
 - threadComplete=false si el hilo está incompleto.`;
 }
@@ -323,5 +319,5 @@ module.exports = {
   getFetchConfig,
   getFetchBackend,
   openRouterGrokModel,
-  DEFAULT_MODEL: DEFAULT_OPENROUTER_MODEL,
+  DEFAULT_MODEL: DEFAULT_OPENROUTER_X_MODEL,
 };

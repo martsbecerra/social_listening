@@ -1,5 +1,5 @@
 // ==========================================================================
-// analyze.js — Orquesta fetch ya hecho: muestra → LLM → KPIs → reporte X.
+// analyze.js — Orquesta fetch ya hecho: muestra → Grok → KPIs → reporte X.
 // ==========================================================================
 
 const db = require('../db');
@@ -10,12 +10,12 @@ const { validateAndNormalizeAnalysis } = require('./validate');
 const { buildWhatsAppReport } = require('./reportBuilder');
 const { buildUserPrompt } = require('./userPrompt');
 const { requestStructuredAnalysis } = require('../llm');
-const { getLlmProvider, getProviderLabel } = require('../llm/providerConfig');
+const { getOpenRouterXModel } = require('./grokModel');
 const { buildReclamosFromAnalysis } = require('./reclamosFromAnalysis');
 const { applyInfluencerAccountTypes } = require('./influencers');
 
 async function analyzeXThread({ url, post, items, influencerMap }) {
-  const provider = getLlmProvider();
+  const grokModel = getOpenRouterXModel();
   const { sample, total, isPartial } = prepareXSample({ post, items }, influencerMap);
 
   const userPrompt = buildUserPrompt({
@@ -36,15 +36,17 @@ async function analyzeXThread({ url, post, items, influencerMap }) {
       userPrompt,
       schema: ANALYSIS_JSON_SCHEMA,
       schemaName: 'analisis_x',
+      provider: 'openrouter',
+      model: grokModel,
+      jsonFallback: true,
     });
     parsed = llmResult.parsed;
     tokenUsage = llmResult.usage ?? null;
     llmAttempts = llmResult.attempts ?? null;
   } catch (err) {
     if (err.userMessage) throw err;
-    const label = getProviderLabel(provider);
-    const e = new Error(`${label} falló: ${err.message}`);
-    e.userMessage = `El servicio de análisis (${label}) falló. Intentá de nuevo en unos minutos.`;
+    const e = new Error(`Grok falló: ${err.message}`);
+    e.userMessage = 'El análisis de X (Grok vía OpenRouter) falló. Intentá de nuevo en unos minutos.';
     throw e;
   }
 
@@ -75,7 +77,8 @@ async function analyzeXThread({ url, post, items, influencerMap }) {
       ...reportResult.meta,
       sampleSize: sample.length,
       totalComments: total,
-      llmProvider: provider,
+      llmProvider: 'openrouter',
+      llmModel: grokModel,
       tokenUsage,
       llmAttempts,
     },
