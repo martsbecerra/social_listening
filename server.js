@@ -345,7 +345,15 @@ app.post('/api/x/analyze', async (req, res) => {
     logXTask('análisis Grok completado', {
       ms: Date.now() - analysisStartedAt,
       itemsAnalizados: analysisMeta?.sampleSize ?? items.length,
+      itemsHilo: analysisMeta?.totalComments ?? 1 + items.length,
+      muestraParcial: Boolean(
+        analysisMeta?.sampleSize != null &&
+        analysisMeta?.totalComments != null &&
+        analysisMeta.sampleSize < analysisMeta.totalComments
+      ) || threadComplete === false,
       tokens: analysisMeta?.tokenUsage ?? null,
+      costUsd: analysisMeta?.tokenUsage?.costUsd ?? null,
+      costSource: analysisMeta?.tokenUsage?.costSource ?? null,
       llmIntentos: analysisMeta?.llmAttempts ?? null,
     });
 
@@ -363,9 +371,6 @@ app.post('/api/x/analyze', async (req, res) => {
           analysisMeta?.totalComments != null &&
           analysisMeta.sampleSize < analysisMeta.totalComments
         ) || threadComplete === false,
-        tokenUsage: analysisMeta?.tokenUsage ?? null,
-        grokUsage: grokUsage ?? null,
-        llmAttempts: analysisMeta?.llmAttempts ?? null,
       },
     });
 

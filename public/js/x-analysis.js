@@ -71,38 +71,6 @@ function stopLoading(exito) {
   }
 }
 
-function formatCostUsd(usd, source) {
-  if (!Number.isFinite(usd)) return '';
-  const formatted = usd.toLocaleString('es-AR', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 4,
-    maximumFractionDigits: 6,
-  });
-  if (source === 'openrouter') return formatted;
-  if (source === 'estimate_env' || source === 'estimate_anthropic') {
-    return `~${formatted} est.`;
-  }
-  return formatted;
-}
-
-function formatMetaLine(m) {
-  const commentPart = m.muestraParcial
-    ? `${m.comentariosAnalizados} ítems analizados (muestra priorizada de ${m.comentariosUnicos} del hilo)`
-    : `${m.comentariosAnalizados ?? m.comentariosExtraidos} ítems analizados`;
-
-  const t = m.tokenUsage;
-  if (!t || !Number.isFinite(t.totalTokens)) return commentPart;
-
-  const fmt = (n) => (Number.isFinite(n) ? n.toLocaleString('es-AR') : '—');
-  const tokenPart = `${fmt(t.totalTokens)} tokens LLM (${fmt(t.inputTokens)} entrada · ${fmt(t.outputTokens)} salida)`;
-  const costPart = formatCostUsd(t.costUsd, t.costSource);
-  const parts = [commentPart, tokenPart];
-  if (costPart) parts.push(`costo LLM ${costPart}`);
-  if (m.llmAttempts > 1) parts.push(`${m.llmAttempts} intentos LLM`);
-  return parts.join(' · ');
-}
-
 async function analyze() {
   const url = urlInput.value.trim();
 
@@ -134,7 +102,8 @@ async function analyze() {
     stopLoading(true);
 
     reportEl.textContent = data.report;
-    metaEl.textContent = formatMetaLine(data.meta || {});
+    metaEl.textContent = '';
+    hide(metaEl);
     currentCsv = data.csv || '';
     show(resultCard);
   } catch (err) {
@@ -199,6 +168,7 @@ function clearAll() {
   hide(errorEl);
   reportEl.textContent = '';
   metaEl.textContent = '';
+  hide(metaEl);
   currentCsv = '';
   urlInput.focus();
 }
