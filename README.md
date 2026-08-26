@@ -344,6 +344,20 @@ El costo por análisis es bajo: son unos pocos miles de tokens de entrada
 > `LLM_INPUT_USD_PER_MTOK` / `LLM_OUTPUT_USD_PER_MTOK` en `.env`, que tienen
 > prioridad sobre todo lo demás. Queda para resolver aparte.
 
+> **Pendiente — la `tematica` de los reclamos no se persiste.**
+> `RECLAMO_GEO_SCHEMA` (`src/analysisSchema.js`) obliga al LLM a devolver una
+> `tematica` por reclamo: una etiqueta libre y corta ("bache profundo", "luz
+> quemada"), más específica que la `categoria`, que es un enum cerrado. Pero la
+> tabla `reclamos` no tiene columna para ella: se usa para armar el reporte y
+> se descarta al guardar. Si se quisiera filtrar o agrupar por temática fina en
+> el mapa, hay que agregar la columna con el mismo patrón incremental que ya
+> usa `src/db.js` y pasarla en `buildReclamosFromAnalysis`. Queda para resolver
+> aparte.
+>
+> Distinto es el caso de las columnas del Excel de X (`visualizacion`,
+> `c_likes`, `c_retweets`, `c_replies`, `reclamo_reiterado`, `sentimiento`):
+> ésas **se descartan a propósito** al importar y no hay intención de guardarlas.
+
 ---
 
 ## 🛟 Manejo de errores
