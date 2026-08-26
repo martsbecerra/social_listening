@@ -50,6 +50,8 @@ function buildReclamosFromAnalysis({ url, sample, classifications }) {
         detectedAt: now,
         textoOriginal: comment.text || '',
         categoria: r.categoria,
+        // La completa el paso 2 (clasificarReclamo.js) antes de guardar.
+        subcategoria: '',
         direccionDetectada: r.direccionDetectada,
         direccionNormalizada: null,
         calle: null,
@@ -59,7 +61,11 @@ function buildReclamosFromAnalysis({ url, sample, classifications }) {
         y: null,
         comuna: null,
         barrio: null,
-        precision: null,
+        // Un lugar con nombre propio ("Plaza Italia") se geocodifica igual,
+        // pero cae en el centroide del lugar, no en una altura. Se marca
+        // distinto para que el mapa no finja una precisión que no hay; el
+        // resto de los tipos son direcciones puntuales.
+        precision: r.tipoUbicacion === 'lugar_nombrado' ? 'aproximada' : 'exacta',
         geoStatus: 'pendiente',
         estado: 'Pendiente',
       });

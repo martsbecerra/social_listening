@@ -407,6 +407,43 @@ así el revert no depende de acordarse del mapeo:
 
 Es idempotente: correrlo dos veces no duplica ni rompe nada.
 
+### Qué ubicación es "accionable"
+
+Un reclamo entra al mapa sólo si el comentario menciona un lugar al que se
+podría mandar una cuadrilla. El LLM devuelve el tipo en `tipoUbicacion`, y de
+ahí sale la `precision` con la que se guarda:
+
+| `tipoUbicacion` | Ejemplo | `precision` |
+|---|---|---|
+| `calle_altura` | "Juramento 3109" | `exacta` |
+| `cruce` | "Nazca y Rivadavia" | `exacta` |
+| `tramo` | "Cabildo entre Juramento y Mendoza" | `exacta` |
+| `lugar_nombrado` | "Plaza Italia", "Hospital Durand" | **`aproximada`** |
+
+**No** son accionables y no generan reclamo: un barrio solo ("vivo en
+Palermo"), una comuna, la ciudad, una provincia o un país, referencias vagas
+("por mi casa", "toda la zona") y números que no son altura (horarios, precios,
+cantidades). Las reglas están en el system prompt con ejemplos de cada caso.
+
+Un `tramo` se geocodifica por su **primera esquina** (`addressClean.js` lo
+convierte a un cruce): un tramo de cuadra no tiene punto propio, y su esquina
+inicial cae dentro del tramo mencionado.
+
+> **Pendiente — los lugares con nombre propio no llegan al mapa.**
+> `precision: 'aproximada'` ya se asigna bien, pero el servicio de USIG que
+> usamos (`/normalizar/`) es un normalizador de **direcciones**, no un
+> buscador de lugares: "Plaza Italia" devuelve la calle *Calzada Circular Plaza
+> Italia* sin coordenadas, y "Hospital Durand" o "Parque Centenario" no
+> devuelven nada. Esos reclamos quedan en `sin_direccion`: se guardan y se ven
+> en la lista, pero sin pin.
+>
+> Para resolverlo harían falta dos piezas: una fuente de coordenadas de lugares
+> (los GeoJSON públicos de Buenos Aires Data — espacios verdes, hospitales,
+> escuelas — cargados igual que los polígonos de `data/geo`), y después el
+> reverse geocoding de USIG
+> (`ws.usig.buenosaires.gob.ar/geocoder/2.2/reversegeocoding`), que dado un
+> punto devuelve la puerta y la esquina más cercanas con calle y altura.
+
 ### Los estados de `geo_status`
 
 Cada reclamo guarda en qué terminó su geocodificación:

@@ -75,7 +75,12 @@ async function processPendingReclamos() {
         y: geo.y,
         comuna: territorio ? territorio.comuna : null,
         barrio: territorio ? territorio.barrio : null,
-        precision: geo.precision,
+        // USIG siempre devuelve 'exacta' cuando resuelve, porque para él la
+        // consulta resolvió y punto. Pero si el LLM dijo que la ubicación era
+        // un lugar con nombre propio ("Plaza Italia"), el punto es el centroide
+        // del lugar, no una altura: esa marca la puso reclamosFromAnalysis y no
+        // se pisa. Ver el pin punteado del mapa.
+        precision: reclamo.precision === 'aproximada' ? 'aproximada' : geo.precision,
         geoStatus,
       });
       processed += 1;

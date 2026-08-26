@@ -47,6 +47,11 @@ async function requestUsig(direccionLimpia, { calificarCaba = true } = {}) {
   // (Escobar, Ezeiza, Moreno, Pilar, Quilmes...) y ninguno trae coordenadas
   // hasta que la dirección resuelve a un único partido.
   url.searchParams.set('direccion', calificarCaba ? `${direccionLimpia}, CABA` : direccionLimpia);
+  // Sin esto USIG normaliza pero no siempre devuelve el punto: las esquinas
+  // resolvían de forma inconsistente ("Nazca y Rivadavia" traía coordenadas,
+  // "Cabildo y Juramento" no), y las que no traían terminaban en
+  // 'sin_direccion' aunque fueran cruces perfectamente válidos de CABA.
+  url.searchParams.set('geocodificar', 'true');
 
   let lastErr;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
@@ -153,14 +158,45 @@ async function geocodeAddress(direccionDetectada) {
   const hits = (data && Array.isArray(data.direccionesNormalizadas) && data.direccionesNormalizadas) || [];
   const hit = hits.find((h) => h && h.coordenadas && h.cod_partido === 'caba') || null;
   if (!hit) {
-    // CABA no la reconoció. Antes se devolvía 'sin_direccion' acá y se perdía
+    const ahora = new Date().toISOString();
+
+    // OJO con la diferencia entre "USIG no la reconoce" y "USIG la reconoce
+    // pero no puede darle un punto". Para "Plaza Italia" o "Cabildo y
+    // Juramento" devuelve candidatos con cod_partido 'caba' SIN coordenadas:
+    // son direcciones porteñas que no pudo precisar, no direcciones de afuera.
+    // Si en ese caso saliéramos a buscar en otros partidos, encontraríamos
+    // homónimos (Plaza Italia existe en La Plata) y las marcaríamos fuera_caba,
+    // que las saca del mapa por completo. Sólo se busca afuera cuando CABA no
+    // reconoció NADA.
+    const hayCandidatoCaba = hits.some((h) => h && h.cod_partido === 'caba');
+    if (hayCandidatoCaba) {
+      db.setGeocodeCache({
+        queryKey: cacheKey,
+        lat: null,
+        lng: null,
+        displayName: null,
+        status: 'not_found',
+        fetchedAt: ahora,
+      });
+      return {
+        direccionNormalizada: null,
+        calle: null,
+        altura: null,
+        cruce: null,
+        x: null,
+        y: null,
+        precision: null,
+        geoStatus: 'sin_direccion',
+      };
+    }
+
+    // CABA no reconoció nada. Antes se devolvía 'sin_direccion' acá y se perdía
     // una distinción importante: "el comentario no traía dirección" y "la
     // dirección es de otro municipio" quedaban idénticas, así que no había
     // forma de ver que el geocoding estaba trayendo cosas de afuera.
     // Consultamos de nuevo SIN forzar CABA: si USIG la ubica en otro partido,
     // es fuera_caba; si no la ubica en ningún lado, sí es sin_direccion.
     const afuera = await buscarEnOtroPartido(limpia);
-    const ahora = new Date().toISOString();
 
     if (afuera) {
       db.setGeocodeCache({

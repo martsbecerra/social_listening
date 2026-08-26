@@ -6,11 +6,17 @@
 // tematica es string libre (max 40); la normalización vive en tematica.js.
 // ==========================================================================
 
-const { CATEGORIAS_RECLAMO } = require('./categoriaReclamo');
+const { listCategorias } = require('./categoriasConfig');
 
 // Valores permitidos; deben coincidir con validateAnalysis.js y el system prompt.
 const SENTIMENTS = ['positivo', 'negativo', 'neutral', 'ruido'];
 const ACCOUNT_TYPES = ['oficial', 'periodista', 'opositor', 'vecino', 'ruido'];
+
+// Qué tipo de ubicación detectó el modelo. De acá sale la `precision` con la
+// que se guarda el reclamo: un lugar con nombre propio ("Plaza Italia") se
+// geocodifica igual, pero no es lo mismo que una altura exacta, y el mapa
+// tiene que poder mostrar esa diferencia en vez de fingir precisión.
+const TIPOS_UBICACION = ['calle_altura', 'cruce', 'tramo', 'lugar_nombrado'];
 
 // Una fila del CSV de reclamos (puede haber varias por comentario). También
 // alimenta la tabla `reclamos` del mapa: direccionDetectada + categoria son
@@ -29,11 +35,22 @@ const RECLAMO_GEO_SCHEMA = {
     },
     categoria: {
       type: 'string',
-      enum: CATEGORIAS_RECLAMO,
-      description: 'Categoría cerrada del reclamo para el mapa. "Otros" si no encaja en ninguna.',
+      // Generado desde config/categorias-reclamos.json, nunca escrito a mano:
+      // si la lista del cliente cambia, el enum cambia solo.
+      enum: listCategorias(),
+      description:
+        'Categoría cerrada del reclamo. Sólo el primer nivel: la subcategoría se pide aparte. ' +
+        '"Coyuntura / Otros" si no encaja en ninguna.',
+    },
+    tipoUbicacion: {
+      type: 'string',
+      enum: TIPOS_UBICACION,
+      description:
+        'Qué clase de ubicación es: calle_altura ("Juramento 3109"), cruce ("Nazca y Rivadavia"), ' +
+        'tramo (una avenida entre dos calles) o lugar_nombrado ("Plaza Italia", "Hospital Durand").',
     },
   },
-  required: ['direccionDetectada', 'direccionNormalizada', 'tematica', 'categoria'],
+  required: ['direccionDetectada', 'direccionNormalizada', 'tematica', 'categoria', 'tipoUbicacion'],
 };
 
 // Clasificación por comentario; index coincide con la lista numerada del user prompt.
@@ -98,4 +115,5 @@ module.exports = {
   ANALYSIS_JSON_SCHEMA,
   SENTIMENTS,
   ACCOUNT_TYPES,
+  TIPOS_UBICACION,
 };
