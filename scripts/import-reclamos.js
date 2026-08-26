@@ -35,6 +35,8 @@ const tabla = require('../src/importers/tabla');
 const { parsearFecha } = require('../src/importers/fechas');
 const { extraerUbicaciones, sumarUsage } = require('../src/importers/extraerDireccion');
 const { asignarSubcategorias } = require('../src/clasificarReclamo');
+const { geocodeAddress } = require('../src/geocode');
+const { ubicarPunto } = require('../src/territorios');
 const { normalizeClasificacion } = require('../src/categoriasConfig');
 const { getLlmProvider, getClassifierModel } = require('../src/llm/providerConfig');
 const db = require('../src/db');
@@ -47,13 +49,15 @@ const PRECIO_ESTIMADO = { inputPorMTok: 1, outputPorMTok: 5 };
 
 function parseArgs(argv) {
   const args = argv.slice(2);
-  const opts = { dryRun: false, limit: null, si: false, map: {}, archivo: null };
+  const opts = { dryRun: false, limit: null, muestra: null, si: false, map: {}, archivo: null };
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (a === '--dry-run') opts.dryRun = true;
     else if (a === '--si' || a === '--yes') opts.si = true;
     else if (a === '--limit') opts.limit = Number(args[++i]);
     else if (a.startsWith('--limit=')) opts.limit = Number(a.slice('--limit='.length));
+    else if (a === '--muestra') opts.muestra = Number(args[++i]);
+    else if (a.startsWith('--muestra=')) opts.muestra = Number(a.slice('--muestra='.length));
     else if (a === '--map') {
       const [campo, ...resto] = String(args[++i] || '').split('=');
       if (campo && resto.length) opts.map[campo.trim()] = resto.join('=').trim();
@@ -63,7 +67,8 @@ function parseArgs(argv) {
 }
 
 function uso() {
-  console.error('Uso: node scripts/import-reclamos.js <archivo.xlsx|csv> [--dry-run] [--limit N] [--si] [--map campo=Columna]');
+  console.error('Uso: node scripts/import-reclamos.js <archivo.xlsx|csv> [--dry-run] [--limit N] [--muestra N] [--si] [--map campo=Columna]');
+  console.error('  --muestra N  toma N filas VALIDAS (con direccion accionable) por cada categoria del archivo');
 }
 
 async function confirmar(pregunta) {
@@ -191,21 +196,66 @@ async function main() {
   // --- 4. Estimación de costo ---
   const provider = getLlmProvider();
   const modelo = getClassifierModel(provider);
-  const charsTexto = preparadas.reduce((n, p) => n + p.texto.length + p.pista.length, 0);
-  // ~4 caracteres por token, más el system prompt por lote.
-  const lotesUbic = Math.ceil(preparadas.length / 15);
-  const lotesSub = Math.ceil(preparadas.length / 25);
-  const inputEstimado = Math.round(charsTexto / 4 + charsTexto / 8) + lotesUbic * 700 + lotesSub * 1200;
-  const outputEstimado = preparadas.length * 40;
-  const costoEstimado =
-    (inputEstimado * PRECIO_ESTIMADO.inputPorMTok + outputEstimado * PRECIO_ESTIMADO.outputPorMTok) / 1e6;
+  // Categorías presentes en el archivo, ya unificadas por los alias. El
+  // histórico de X trae 4 valores crudos pero dos son la misma categoría mal
+  // escrita, así que acá quedan 3.
+  const categoriasPresentes = [...new Set(preparadas.map((p) => p.categoria))];
+  console.log(`\nCategorías presentes (ya unificadas): ${categoriasPresentes.join(' | ')}`);
+
+  const modoMuestra = Number.isFinite(opts.muestra) && opts.muestra > 0;
+  const TOPE_POR_CATEGORIA = modoMuestra ? opts.muestra * 5 : Infinity;
+
+  // Cuántas filas se van a evaluar con el LLM. En modo muestra no se sabe de
+  // antemano: depende de cuántas filas haya que descartar para juntar las N
+  // válidas de cada categoría, así que se estima el piso y el techo.
+  const aEvaluarMin = modoMuestra
+    ? categoriasPresentes.length * opts.muestra
+    : preparadas.length;
+  const aEvaluarMax = modoMuestra
+    ? categoriasPresentes.reduce(
+        (n, c) => n + Math.min(TOPE_POR_CATEGORIA, preparadas.filter((p) => p.categoria === c).length),
+        0
+      )
+    : preparadas.length;
+
+  const charsProm =
+    preparadas.reduce((n, p) => n + p.texto.length + p.pista.length, 0) / Math.max(1, preparadas.length);
+
+  function estimar(filasAEvaluar, filasAClasificar) {
+    const lotesUbic = Math.ceil(filasAEvaluar / 15);
+    const lotesSub = Math.ceil(filasAClasificar / 25);
+    const input =
+      Math.round((charsProm * filasAEvaluar) / 4 + (charsProm * filasAClasificar) / 8) +
+      lotesUbic * 700 +
+      lotesSub * 1200;
+    const output = filasAEvaluar * 30 + filasAClasificar * 15;
+    return {
+      lotesUbic,
+      lotesSub,
+      input,
+      output,
+      costo: (input * PRECIO_ESTIMADO.inputPorMTok + output * PRECIO_ESTIMADO.outputPorMTok) / 1e6,
+    };
+  }
+
+  const estMin = estimar(aEvaluarMin, aEvaluarMin);
+  const estMax = estimar(aEvaluarMax, aEvaluarMin);
 
   console.log('\n--- COSTO ESTIMADO ---');
   console.log(`  proveedor : ${provider}  |  modelo: ${modelo}`);
-  console.log(`  filas     : ${preparadas.length}`);
-  console.log(`  llamadas  : ~${lotesUbic} (ubicación) + ~${lotesSub} (subcategoría) = ~${lotesUbic + lotesSub}`);
-  console.log(`  tokens    : ~${inputEstimado.toLocaleString('es-AR')} entrada, ~${outputEstimado.toLocaleString('es-AR')} salida`);
-  console.log(`  costo     : ~USD ${costoEstimado.toFixed(3)}`);
+  if (modoMuestra) {
+    console.log(`  modo      : muestra de ${opts.muestra} filas VÁLIDAS por categoría`);
+    console.log(`  tope      : ${TOPE_POR_CATEGORIA} filas evaluadas por categoría`);
+    console.log(`  a guardar : hasta ${categoriasPresentes.length * opts.muestra} filas`);
+    console.log(`  a evaluar : entre ${aEvaluarMin} y ${aEvaluarMax} filas`);
+    console.log(`  llamadas  : ~${estMin.lotesUbic + estMin.lotesSub} a ~${estMax.lotesUbic + estMax.lotesSub}`);
+    console.log(`  costo     : ~USD ${estMin.costo.toFixed(3)} a ~USD ${estMax.costo.toFixed(3)}`);
+  } else {
+    console.log(`  filas     : ${preparadas.length}`);
+    console.log(`  llamadas  : ~${estMin.lotesUbic} (ubicación) + ~${estMin.lotesSub} (subcategoría)`);
+    console.log(`  tokens    : ~${estMin.input.toLocaleString('es-AR')} entrada, ~${estMin.output.toLocaleString('es-AR')} salida`);
+    console.log(`  costo     : ~USD ${estMin.costo.toFixed(3)}`);
+  }
   console.log('  (estimación con la tarifa pública; el costo real lo informa la API al terminar)');
 
   if (opts.dryRun) console.log('\n--dry-run: no se va a escribir nada en la base.');
@@ -219,48 +269,165 @@ async function main() {
   }
 
   // --- 5. Ubicaciones (LLM) ---
-  console.log('\nExtrayendo ubicaciones...');
   let usage = null;
-  const { ubicaciones, usage: uUbic, llamadas: llUbic } = await extraerUbicaciones(
-    preparadas.map((p) => ({ texto: p.texto, pista: p.pista })),
-    {
-      onProgress: (hechas, total) => {
-        process.stdout.write(`\r  ${hechas}/${total} filas`);
-      },
-    }
-  );
-  process.stdout.write('\n');
-  usage = sumarUsage(usage, uUbic);
+  let llUbic = 0;
+  let seleccionadas = [];
+  const descartadas = [];
+  const evaluadasPorCat = {};
+  const validasPorCat = {};
 
-  preparadas.forEach((p, i) => {
-    p.ubicacion = ubicaciones[i] || { direccion: null, tipo: null };
-  });
+  if (modoMuestra) {
+    console.log('\nBuscando filas válidas por categoría...');
+    for (const cat of categoriasPresentes) {
+      const candidatas = preparadas.filter((p) => p.categoria === cat);
+      const elegidas = [];
+      let evaluadas = 0;
+
+      // Se avanza de a lotes: cada lote es una llamada. Se corta apenas se
+      // juntan las N válidas, para no pagar por filas que no hacen falta.
+      for (let i = 0; i < candidatas.length && elegidas.length < opts.muestra && evaluadas < TOPE_POR_CATEGORIA; ) {
+        const cuantas = Math.min(15, TOPE_POR_CATEGORIA - evaluadas, candidatas.length - i);
+        const lote = candidatas.slice(i, i + cuantas);
+        const { ubicaciones, usage: u, llamadas } = await extraerUbicaciones(
+          lote.map((p) => ({ texto: p.texto, pista: p.pista }))
+        );
+        usage = sumarUsage(usage, u);
+        llUbic += llamadas;
+        evaluadas += lote.length;
+        i += lote.length;
+
+        lote.forEach((p, k) => {
+          p.ubicacion = ubicaciones[k] || { direccion: null, tipo: null };
+          if (p.ubicacion.direccion && elegidas.length < opts.muestra) elegidas.push(p);
+          // Las que se evaluaron y no entraron a la muestra por no tener
+          // dirección accionable se guardan aparte: son las que permiten
+          // juzgar si el criterio está descartando de más. No se importan en
+          // modo muestra, pero sí se reportan con ejemplos.
+          else if (!p.ubicacion.direccion) descartadas.push(p);
+        });
+        process.stdout.write(`\r  ${cat}: ${elegidas.length}/${opts.muestra} válidas (${evaluadas} evaluadas)`);
+      }
+      process.stdout.write('\n');
+
+      evaluadasPorCat[cat] = evaluadas;
+      validasPorCat[cat] = elegidas.length;
+      if (elegidas.length < opts.muestra) {
+        console.log(
+          `    ⚠️  sólo ${elegidas.length} de ${opts.muestra} en "${cat}" tras evaluar ${evaluadas} filas` +
+          `${evaluadas >= TOPE_POR_CATEGORIA ? ' (se alcanzó el tope)' : ' (se agotaron las filas)'}.`
+        );
+      }
+      seleccionadas.push(...elegidas);
+    }
+  } else {
+    console.log('\nExtrayendo ubicaciones...');
+    const { ubicaciones, usage: u, llamadas } = await extraerUbicaciones(
+      preparadas.map((p) => ({ texto: p.texto, pista: p.pista })),
+      { onProgress: (h, t) => process.stdout.write(`\r  ${h}/${t} filas`) }
+    );
+    process.stdout.write('\n');
+    usage = sumarUsage(usage, u);
+    llUbic += llamadas;
+    preparadas.forEach((p, i) => {
+      p.ubicacion = ubicaciones[i] || { direccion: null, tipo: null };
+    });
+    seleccionadas = preparadas;
+  }
 
   // --- 6. Subcategorías (LLM) ---
   console.log('Asignando subcategorías...');
   const { subcategorias, usage: uSub, llamadas: llSub } = await asignarSubcategorias(
-    preparadas.map((p) => ({
+    seleccionadas.map((p) => ({
       categoria: p.categoria,
       texto: p.texto,
-      direccionDetectada: p.ubicacion.direccion || p.pista,
+      direccionDetectada: (p.ubicacion && p.ubicacion.direccion) || p.pista,
     }))
   );
   usage = sumarUsage(usage, uSub);
-  preparadas.forEach((p, i) => {
+  seleccionadas.forEach((p, i) => {
     p.subcategoria = subcategorias[i] || '';
   });
 
-  // --- 7. Armar filas finales + dedupe ---
+  // --- 7. Geocodificar ---
+  //
+  // Se geocodifica DURANTE la importación, no después: es el mismo trabajo que
+  // haría el worker, pero hacerlo acá permite decir en el resumen POR QUÉ cada
+  // fila no llegó al mapa. Sin esto, "sin dirección en el texto", "USIG no la
+  // resolvió" y "es de otro partido" quedarían todas como un mismo número, que
+  // no sirve para saber si el pipeline anda bien o si hay algo roto.
+  //
+  // Muchas filas no van a terminar en pin, y eso es lo esperable con este tipo
+  // de dato: direcciones incompletas, ambiguas o inexistentes.
+  const conDireccion = seleccionadas.filter((p) => p.ubicacion && p.ubicacion.direccion);
+  console.log(`\nGeocodificando ${conDireccion.length} direcciones...`);
+
+  let hechas = 0;
+  for (const p of seleccionadas) {
+    p.geo = null;
+
+    if (!p.ubicacion.direccion) {
+      p.motivo = 'sin_direccion_en_texto';
+      continue;
+    }
+
+    // Coordenadas del archivo, si son usables: no hace falta molestar a USIG.
+    if (p.coords) {
+      const territorio = await ubicarPunto(p.coords.lon, p.coords.lat);
+      p.geo = {
+        geoStatus: territorio ? 'ok' : 'fuera_caba',
+        x: p.coords.lon,
+        y: p.coords.lat,
+        comuna: territorio ? territorio.comuna : null,
+        barrio: territorio ? territorio.barrio : null,
+        direccionNormalizada: p.ubicacion.direccion,
+        calle: null,
+        altura: null,
+        cruce: null,
+        fuente: 'archivo',
+      };
+      p.motivo = territorio ? 'con_pin' : 'fuera_caba';
+      hechas += 1;
+      process.stdout.write(`\r  ${hechas}/${conDireccion.length}`);
+      continue;
+    }
+
+    try {
+      const g = await geocodeAddress(p.ubicacion.direccion, { soloLectura: opts.dryRun });
+      if (g.geoStatus === 'ok') {
+        const territorio = await ubicarPunto(g.x, g.y);
+        p.geo = {
+          ...g,
+          geoStatus: territorio ? 'ok' : 'fuera_caba',
+          comuna: territorio ? territorio.comuna : null,
+          barrio: territorio ? territorio.barrio : null,
+          fuente: 'usig',
+        };
+        p.motivo = territorio ? 'con_pin' : 'fuera_caba';
+      } else {
+        p.geo = { ...g, comuna: null, barrio: null, fuente: 'usig' };
+        p.motivo = g.geoStatus === 'fuera_caba' ? 'fuera_caba' : 'usig_no_resolvio';
+      }
+    } catch (err) {
+      // Falla transitoria de USIG: queda 'pendiente' y lo reintenta el worker.
+      p.geo = { geoStatus: 'pendiente', fuente: 'usig' };
+      p.motivo = 'geocoding_pendiente';
+    }
+    hechas += 1;
+    process.stdout.write(`\r  ${hechas}/${conDireccion.length}`);
+  }
+  if (conDireccion.length > 0) process.stdout.write('\n');
+
+  // --- 8. Armar filas finales + dedupe ---
   const ahora = new Date().toISOString();
   const porId = new Map();
   let duplicadosEnArchivo = 0;
 
-  for (const p of preparadas) {
+  for (const p of seleccionadas) {
     // La dirección ORIGINAL del archivo se guarda siempre, aunque el modelo la
     // haya descartado: es lo que permite auditar después si el criterio está
-    // descartando de más. La que se geocodifica es la que validó el modelo.
+    // descartando de más.
     const direccionDetectada = p.ubicacion.direccion || p.pista || null;
-    const tieneUbicacion = Boolean(p.ubicacion.direccion);
+    const g = p.geo;
 
     const id = construirId(p.link, p.ubicacion.direccion || p.pista, p.categoria, p.indice);
     if (porId.has(id)) {
@@ -268,7 +435,6 @@ async function main() {
       continue;
     }
 
-    const usaCoords = tieneUbicacion && p.coords;
     porId.set(id, {
       id,
       comentarioId: id,
@@ -283,53 +449,95 @@ async function main() {
       categoria: p.categoria,
       subcategoria: p.subcategoria,
       direccionDetectada,
-      direccionNormalizada: usaCoords ? p.ubicacion.direccion : null,
-      calle: null,
-      altura: null,
-      cruce: null,
-      x: usaCoords ? p.coords.lon : null,
-      y: usaCoords ? p.coords.lat : null,
-      comuna: usaCoords && Number.isFinite(p.comuna) ? p.comuna : null,
-      barrio: null,
-      precision: p.ubicacion.tipo === 'lugar_nombrado' ? 'aproximada' : tieneUbicacion ? 'exacta' : null,
-      // Con ubicación pero sin coordenadas usables -> 'pendiente', lo resuelve
-      // el worker de siempre. Sin ubicación -> 'sin_direccion': la fila se
-      // guarda igual, no se pierde, sólo no va al mapa.
-      geoStatus: !tieneUbicacion ? 'sin_direccion' : usaCoords ? 'ok' : 'pendiente',
+      direccionNormalizada: g && g.geoStatus === 'ok' ? g.direccionNormalizada : null,
+      calle: g ? g.calle || null : null,
+      altura: g ? g.altura ?? null : null,
+      cruce: g ? g.cruce || null : null,
+      x: g && g.geoStatus === 'ok' ? g.x : null,
+      y: g && g.geoStatus === 'ok' ? g.y : null,
+      comuna: g && g.geoStatus === 'ok' ? (g.comuna ?? (Number.isFinite(p.comuna) ? p.comuna : null)) : null,
+      barrio: g && g.geoStatus === 'ok' ? g.barrio : null,
+      precision:
+        p.ubicacion.tipo === 'lugar_nombrado' ? 'aproximada' : p.ubicacion.direccion ? 'exacta' : null,
+      // Ninguna fila se pierde: la que no llega al mapa igual se guarda, con el
+      // geo_status que explica por qué.
+      geoStatus: g ? g.geoStatus : 'sin_direccion',
       estado: 'Pendiente',
+      _motivo: p.motivo,
       _tipoUbicacion: p.ubicacion.tipo,
-      _descartoPista: Boolean(p.pista) && !tieneUbicacion,
+      _pista: p.pista,
+      _descartoPista: Boolean(p.pista) && !p.ubicacion.direccion,
     });
   }
 
   const finales = [...porId.values()];
 
-  // --- 8. Resumen ---
-  const conUbic = finales.filter((r) => r.geoStatus !== 'sin_direccion').length;
-  const sinUbic = finales.length - conUbic;
-  const conCoords = finales.filter((r) => r.geoStatus === 'ok').length;
-  const aGeocodificar = finales.filter((r) => r.geoStatus === 'pendiente').length;
-  const descartes = finales.filter((r) => r._descartoPista).length;
+  // --- 9. Resumen ---
+  const MOTIVOS = [
+    ['con_pin', 'con pin (geocodificadas ok)'],
+    ['sin_direccion_en_texto', 'sin dirección accionable en el texto'],
+    ['usig_no_resolvio', 'con dirección detectada, USIG no la resolvió'],
+    ['fuera_caba', 'fuera de CABA'],
+    ['geocoding_pendiente', 'geocoding pendiente (falla transitoria de USIG)'],
+  ];
+  const conteo = {};
+  finales.forEach((r) => {
+    conteo[r._motivo] = (conteo[r._motivo] || 0) + 1;
+  });
 
   console.log('\n========== RESUMEN ==========');
   console.log(`  filas leídas          : ${filas.length}`);
   console.log(`  filas procesables     : ${preparadas.length}`);
   console.log(`  duplicados en archivo : ${duplicadosEnArchivo}  (clave: link + dirección + categoría)`);
-  console.log(`  filas a guardar       : ${finales.length}`);
-  console.log('');
-  console.log(`  con ubicación accionable : ${conUbic}  (${pct(conUbic, finales.length)})`);
-  console.log(`     - con coordenadas del archivo : ${conCoords}`);
-  console.log(`     - a geocodificar con USIG     : ${aGeocodificar}`);
-  console.log(`  sin ubicación (sin_direccion)    : ${sinUbic}  (${pct(sinUbic, finales.length)})`);
-  console.log(`     de ésas, con pista descartada : ${descartes}`);
+  console.log(`  filas a guardar       : ${finales.length}   <- ninguna se descarta`);
+
+  console.log('\n  POR QUÉ CADA FILA LLEGA O NO AL MAPA:');
+  for (const [clave, etiqueta] of MOTIVOS) {
+    const n = conteo[clave] || 0;
+    if (n === 0 && clave === 'geocoding_pendiente') continue;
+    console.log(`     ${String(n).padStart(6)}  ${pct(n, finales.length).padStart(4)}  ${etiqueta}`);
+  }
+
+  // --- Ejemplos por motivo, para poder juzgar si el criterio descarta de más ---
+  // En modo muestra, las filas evaluadas y descartadas no se importan, pero
+  // son las que dicen si el criterio de "ubicación accionable" está bien
+  // calibrado o si está tirando cosas que sí eran ubicables.
+  if (descartadas.length > 0) {
+    const evaluadas = Object.values(evaluadasPorCat).reduce((a, b) => a + b, 0);
+    console.log('\n  DESCARTADAS AL BUSCAR LA MUESTRA (no se importan):');
+    console.log(`     ${String(descartadas.length).padStart(6)}  ${pct(descartadas.length, evaluadas).padStart(4)}  de ${evaluadas} filas evaluadas, sin dirección accionable en el texto`);
+    console.log('\n   --- ejemplos, para juzgar si el criterio descarta de más ---');
+    for (const p of descartadas.slice(0, 6)) {
+      console.log(`     texto : ${p.texto.slice(0, 130).replace(/\s+/g, ' ')}`);
+      console.log(`     pista descartada: ${p.pista || '(el archivo tampoco traía)'}`);
+      console.log('');
+    }
+  }
+
+  console.log('\n  EJEMPLOS DE CADA MOTIVO:');
+  for (const [clave, etiqueta] of MOTIVOS) {
+    const muestra = finales.filter((r) => r._motivo === clave).slice(0, 3);
+    if (muestra.length === 0) continue;
+    console.log(`\n   --- ${etiqueta} ---`);
+    for (const r of muestra) {
+      console.log(`     texto : ${r.textoOriginal.slice(0, 120).replace(/\s+/g, ' ')}`);
+      if (clave === 'sin_direccion_en_texto') {
+        console.log(`     pista descartada: ${r._pista || '(el archivo tampoco traía)'}`);
+      } else {
+        console.log(`     dirección: ${r.direccionDetectada}${r.barrio ? `  ->  ${r.barrio}` : ''}`);
+      }
+    }
+  }
 
   const porTipo = {};
   finales.forEach((r) => {
     if (r._tipoUbicacion) porTipo[r._tipoUbicacion] = (porTipo[r._tipoUbicacion] || 0) + 1;
   });
   if (Object.keys(porTipo).length > 0) {
-    console.log('\n  tipos de ubicación:');
-    Object.entries(porTipo).sort((a, b) => b[1] - a[1]).forEach(([k, v]) => console.log(`     ${String(v).padStart(6)}  ${k}`));
+    console.log('\n  tipos de ubicación detectados:');
+    Object.entries(porTipo)
+      .sort((a, b) => b[1] - a[1])
+      .forEach(([k, v]) => console.log(`     ${String(v).padStart(6)}  ${k}`));
   }
 
   console.log('\n  distribución por categoría:');
@@ -349,34 +557,32 @@ async function main() {
   console.log('\n  costo real del LLM:');
   if (usage) {
     console.log(`     llamadas : ${llUbic + llSub}  (${llUbic} ubicación + ${llSub} subcategoría)`);
-    console.log(`     tokens   : ${usage.inputTokens.toLocaleString('es-AR')} entrada, ${usage.outputTokens.toLocaleString('es-AR')} salida`);
+    console.log(
+      `     tokens   : ${usage.inputTokens.toLocaleString('es-AR')} entrada, ${usage.outputTokens.toLocaleString('es-AR')} salida`
+    );
     console.log(`     costo    : ${usage.costUsd != null ? `USD ${usage.costUsd.toFixed(4)}` : '(no informado por la API)'}`);
   } else {
     console.log('     (sin datos de uso)');
   }
 
-  // --- 9. Escribir ---
+  // --- 10. Escribir ---
   if (opts.dryRun) {
-    console.log('\n--dry-run: NO se escribió nada en la base.\n');
-    console.log('  Muestra de las primeras 5 filas que se guardarían:');
-    finales.slice(0, 5).forEach((r) => {
-      console.log(`   - [${r.geoStatus}] ${r.categoria} / ${r.subcategoria || '(sin sub)'}`);
-      console.log(`     dirección: ${r.direccionDetectada || '(ninguna)'}${r._descartoPista ? '   <- pista descartada por el texto' : ''}`);
-      console.log(`     texto: ${r.textoOriginal.slice(0, 90)}`);
-    });
-    console.log('');
+    console.log('\n--dry-run: NO se escribió nada en la base (ni en la caché de geocoding).\n');
     return;
   }
 
   let guardadas = 0;
   for (const r of finales) {
-    const { _tipoUbicacion, _descartoPista, ...fila } = r;
+    const { _motivo, _tipoUbicacion, _pista, _descartoPista, ...fila } = r;
     db.upsertReclamo(fila);
     guardadas += 1;
   }
   console.log(`\n✅ ${guardadas} reclamos guardados (upsert idempotente).`);
-  if (aGeocodificar > 0) {
-    console.log(`   ${aGeocodificar} quedaron en 'pendiente': los resuelve el worker de geocoding.\n`);
+  const pendientes = conteo.geocoding_pendiente || 0;
+  if (pendientes > 0) {
+    console.log(`   ${pendientes} quedaron en 'pendiente': los reintenta el worker de geocoding.\n`);
+  } else {
+    console.log('');
   }
 }
 

@@ -107,7 +107,10 @@ async function buscarEnOtroPartido(direccionLimpia) {
  *   geoStatus: 'ok'|'sin_direccion'|'invalida'|'fuera_caba'
  * }>}
  */
-async function geocodeAddress(direccionDetectada) {
+async function geocodeAddress(direccionDetectada, { soloLectura = false } = {}) {
+  // soloLectura: consulta y lee la cache, pero no la escribe. Lo usa el
+  // --dry-run del importador, que no debe dejar rastro en la base.
+  const guardarCache = (entry) => { if (!soloLectura) db.setGeocodeCache(entry); };
   const limpia = cleanAddress(direccionDetectada);
 
   if (isInvalidAddress(limpia)) {
@@ -170,7 +173,7 @@ async function geocodeAddress(direccionDetectada) {
     // reconoció NADA.
     const hayCandidatoCaba = hits.some((h) => h && h.cod_partido === 'caba');
     if (hayCandidatoCaba) {
-      db.setGeocodeCache({
+      guardarCache({
         queryKey: cacheKey,
         lat: null,
         lng: null,
@@ -199,7 +202,7 @@ async function geocodeAddress(direccionDetectada) {
     const afuera = await buscarEnOtroPartido(limpia);
 
     if (afuera) {
-      db.setGeocodeCache({
+      guardarCache({
         queryKey: cacheKey,
         lat: null,
         lng: null,
@@ -222,7 +225,7 @@ async function geocodeAddress(direccionDetectada) {
       };
     }
 
-    db.setGeocodeCache({
+    guardarCache({
       queryKey: cacheKey,
       lat: null,
       lng: null,
@@ -249,7 +252,7 @@ async function geocodeAddress(direccionDetectada) {
   const cruce = hit.nombre_calle_cruce || null;
   const direccionNormalizada = hit.direccion || limpia;
 
-  db.setGeocodeCache({
+  guardarCache({
     queryKey: cacheKey,
     lat: Number.isFinite(y) ? y : null,
     lng: Number.isFinite(x) ? x : null,

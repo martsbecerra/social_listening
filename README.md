@@ -410,15 +410,41 @@ Es idempotente: correrlo dos veces no duplica ni rompe nada.
 ### Importar reclamos desde Excel o CSV
 
 ```
-node scripts/import-reclamos.js data/import/<archivo> [--dry-run] [--limit N] [--si]
+node scripts/import-reclamos.js data/import/<archivo> [--dry-run] [--muestra N] [--limit N] [--si]
 ```
 
-- `--dry-run` procesa todo y muestra el resultado **sin escribir en la base**.
+- `--dry-run` procesa todo y muestra el resultado **sin escribir en la base**
+  (tampoco en la caché de geocoding).
+- `--muestra N` toma **N filas válidas por categoría** en vez de importar todo.
+  "Válida" = el LLM le encontró una dirección accionable. Si una fila no la
+  tiene, sigue buscando hasta juntar las N o llegar al tope de **5N filas
+  evaluadas** por categoría; si no llegó, avisa cuántas consiguió.
 - `--limit N` procesa sólo las primeras N filas (para probar barato).
 - `--si` saltea la confirmación (para correr desatendido).
 - `--map campo=Columna` fuerza el mapeo de una columna.
 
 Antes de llamar al LLM muestra el **costo estimado** y pide confirmación.
+
+**El resumen distingue por qué cada fila llega o no al mapa**, que es lo que
+permite ver si el pipeline anda bien o si hay algo roto:
+
+| Motivo | Qué significa |
+|---|---|
+| con pin | Geocodificada ok, aparece en el mapa |
+| sin dirección accionable en el texto | El texto no menciona un lugar al que mandar una cuadrilla |
+| con dirección detectada, USIG no la resolvió | Había dirección, pero USIG no le pudo dar un punto |
+| fuera de CABA | Dirección real, de otro partido |
+| geocoding pendiente | Falla transitoria de USIG; lo reintenta el worker |
+
+Que **la mayoría de las filas no termine en pin es lo esperable** con este tipo
+de dato: las direcciones vienen incompletas, ambiguas o directamente no hay. Un
+20–30% de pines sobre el total es normal. El importador geocodifica durante la
+corrida (no deja todo en `pendiente`) justamente para poder informar el motivo
+de cada fila en el momento, y muestra ejemplos de cada uno.
+
+En modo `--muestra`, las filas evaluadas que quedaron afuera se reportan aparte
+con ejemplos: son las que dicen si el criterio de "ubicación accionable" está
+bien calibrado o si está descartando de más.
 
 **Detección de columnas.** Busca por nombre tolerando variantes
 (`texto|comentario|contenido|mensaje|hit_sentence`, `fecha|date|mes`,
