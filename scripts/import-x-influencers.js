@@ -1,0 +1,12 @@
+#!/usr/bin/env node
+// Importa los CSV ANTIK-PRO a SQLite (x_influencers).
+// Uso: node scripts/import-x-influencers.js
+
+require('dotenv').config();
+
+const { importInfluencerCsvs } = require('../src/x/influencers');
+
+const result = importInfluencerCsvs();
+console.log(`Importados ${result.imported} handles a x_influencers.`);
+console.log(`  numérico: ${result.numericPath}`);
+console.log(`  extra:    ${result.extraPath}`);

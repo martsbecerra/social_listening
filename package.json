@@ -6,8 +6,9 @@
   "scripts": {
     "start": "node server.js",
     "stop": "node scripts/stop-server.js",
-    "test": "node --test test/ignoreDetectedPost.test.js",
-    "import-reclamos-excel": "node scripts/import-reclamos-excel.js"
+    "test": "node --test test/*.test.js",
+    "import-reclamos-excel": "node scripts/import-reclamos-excel.js",
+    "import-x-influencers": "node scripts/import-x-influencers.js"
   },
   "engines": {
     "node": ">=22.5.0"

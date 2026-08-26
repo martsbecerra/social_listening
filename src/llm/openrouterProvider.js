@@ -80,7 +80,7 @@ async function postChatCompletion(body) {
   return data;
 }
 
-async function requestStructuredAnalysis({ system, userPrompt }) {
+async function requestStructuredAnalysis({ system, userPrompt, schema, schemaName }) {
   const model = getAnalysisModel('openrouter');
 
   const body = {
@@ -93,9 +93,9 @@ async function requestStructuredAnalysis({ system, userPrompt }) {
     response_format: {
       type: 'json_schema',
       json_schema: {
-        name: 'analisis_instagram',
+        name: schemaName || 'analisis_instagram',
         strict: true,
-        schema: ANALYSIS_JSON_SCHEMA,
+        schema: schema || ANALYSIS_JSON_SCHEMA,
       },
     },
   };

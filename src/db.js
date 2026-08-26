@@ -177,6 +177,81 @@ db.exec('CREATE INDEX IF NOT EXISTS idx_reclamos_plataforma ON reclamos(platafor
 db.exec('CREATE INDEX IF NOT EXISTS idx_reclamos_fecha ON reclamos(fecha)');
 
 db.exec(`
+  CREATE TABLE IF NOT EXISTS x_influencers (
+    handle TEXT PRIMARY KEY,
+    lista TEXT NOT NULL DEFAULT 'antik-pro',
+    tipo_identidad TEXT NOT NULL CHECK(tipo_identidad IN ('con_identidad','sin_identidad')),
+    seguidores INTEGER,
+    updated_at TEXT NOT NULL
+  )
+`);
+
+const upsertXInfluencerStmt = db.prepare(`
+  INSERT INTO x_influencers (handle, lista, tipo_identidad, seguidores, updated_at)
+  VALUES (@handle, @lista, @tipoIdentidad, @seguidores, @updatedAt)
+  ON CONFLICT(handle) DO UPDATE SET
+    lista = excluded.lista,
+    tipo_identidad = excluded.tipo_identidad,
+    seguidores = excluded.seguidores,
+    updated_at = excluded.updated_at
+`);
+const getXInfluencerStmt = db.prepare('SELECT * FROM x_influencers WHERE handle = ?');
+const listXInfluencersStmt = db.prepare('SELECT * FROM x_influencers ORDER BY handle');
+const countXInfluencersStmt = db.prepare('SELECT COUNT(*) AS total FROM x_influencers');
+
+function upsertXInfluencer(row) {
+  upsertXInfluencerStmt.run({
+    handle: row.handle,
+    lista: row.lista || 'antik-pro',
+    tipoIdentidad: row.tipoIdentidad || 'sin_identidad',
+    seguidores: row.seguidores ?? null,
+    updatedAt: row.updatedAt || new Date().toISOString(),
+  });
+}
+
+function upsertXInfluencers(rows) {
+  const now = new Date().toISOString();
+  const list = rows || [];
+  db.exec('BEGIN');
+  try {
+    for (const row of list) {
+      upsertXInfluencer({ ...row, updatedAt: now });
+    }
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+  return list.length;
+}
+
+function getXInfluencer(handle) {
+  return getXInfluencerStmt.get(handle) || null;
+}
+
+function listXInfluencers() {
+  return listXInfluencersStmt.all();
+}
+
+function countXInfluencers() {
+  return countXInfluencersStmt.get().total;
+}
+
+/** Mapa handle → fila, para el cruce de identidad en el análisis. */
+function getXInfluencerMap() {
+  const map = new Map();
+  for (const row of listXInfluencers()) {
+    map.set(row.handle, {
+      handle: row.handle,
+      lista: row.lista,
+      tipoIdentidad: row.tipo_identidad,
+      seguidores: row.seguidores,
+    });
+  }
+  return map;
+}
+
+db.exec(`
   CREATE TABLE IF NOT EXISTS geocode_cache (
     query_key TEXT PRIMARY KEY,
     lat REAL,
@@ -935,4 +1010,10 @@ module.exports = {
   setGeocodeCache,
   insertMagicLink,
   claimMagicLink,
+  upsertXInfluencer,
+  upsertXInfluencers,
+  getXInfluencer,
+  listXInfluencers,
+  countXInfluencers,
+  getXInfluencerMap,
 };

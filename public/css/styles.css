@@ -724,6 +724,34 @@ p.sub {
   padding: 22px;
   margin-top: 16px;
 }
+.soon-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 14px;
+  padding: 48px 24px;
+  color: var(--clay-500);
+}
+.soon-panel .meter {
+  --meter-h: 34px;
+  --bar-w: 4px;
+  --bar-gap: 4px;
+  --bar-color: var(--clay-200);
+  opacity: 0.8;
+}
+.soon-panel h3 {
+  margin: 0;
+  font-family: "Bricolage Grotesque", sans-serif;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--jade-900);
+}
+.soon-panel p {
+  margin: 0;
+  font-size: 14px;
+  max-width: 46ch;
+}
 label {
   display: block;
   font-family: "DM Mono", monospace;

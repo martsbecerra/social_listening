@@ -3,9 +3,7 @@
 // --------------------------------------------------------------------------
 // Punto de entrada de la aplicación. Levanta un servidor web con Express que:
 //   1) Sirve la página web (public/index.html).
-//   2) Expone un endpoint /api/analyze que recibe el link de Instagram,
-//      llama a Apify (extraer datos) y a Claude (analizarlos), y devuelve
-//      el reporte.
+//   2) Expone /api/analyze (Instagram + Apify) y /api/x/analyze (X + Grok).
 // ==========================================================================
 
 // dotenv carga las variables del archivo .env a process.env (APIFY_API_TOKEN, etc.)
@@ -17,6 +15,10 @@ const path = require('path');
 const { scrapeInstagram } = require('./src/apify');
 const { analyzeComments } = require('./src/analyzeComments');
 const { resolveMaxCommentsLimit } = require('./src/commentSample');
+const { isValidXPostUrl } = require('./src/x/url');
+const { fetchXThread, getModel: getXaiModel, getFetchBackend } = require('./src/x/grokFetch');
+const { analyzeXThread } = require('./src/x/analyze');
+const { seedXInfluencersIfEmpty } = require('./src/x/influencers');
 const {
   getLlmProvider,
   requiredLlmEnvKeys,
@@ -297,6 +299,92 @@ app.post('/api/analyze', async (req, res) => {
   }
 });
 
+function logXTask(phase, detail = {}) {
+  const payload = Object.keys(detail).length ? ` ${JSON.stringify(detail)}` : '';
+  console.log(`[analyze-x] ${phase}${payload}`);
+}
+
+app.post('/api/x/analyze', async (req, res) => {
+  const { url } = req.body || {};
+  const startedAt = Date.now();
+
+  if (!isValidXPostUrl(url)) {
+    logXTask('validación fallida', { url: url || null });
+    return res.status(400).json({
+      error: 'Ingresá un link válido de una publicación de X (por ejemplo: https://x.com/usuario/status/1234567890).',
+    });
+  }
+
+  logXTask('inicio', { url });
+
+  try {
+    logXTask('extracción Grok iniciada');
+    const fetchStartedAt = Date.now();
+    const { post, items, usage: grokUsage, threadComplete } = await fetchXThread(url);
+    logXTask('extracción Grok completada', {
+      ms: Date.now() - fetchStartedAt,
+      items: items?.length ?? 0,
+      cuenta: post?.authorHandle ?? post?.username ?? null,
+      threadComplete: threadComplete !== false,
+      grokTokens: grokUsage ?? null,
+    });
+
+    const influencerMap = db.getXInfluencerMap();
+    logXTask('análisis LLM iniciado', {
+      proveedor: getLlmProvider(),
+      items: items.length,
+      padron: influencerMap.size,
+    });
+    const analysisStartedAt = Date.now();
+    const { report, csv, meta: analysisMeta } = await analyzeXThread({
+      url,
+      post,
+      items,
+      influencerMap,
+    });
+    logXTask('análisis LLM completado', {
+      ms: Date.now() - analysisStartedAt,
+      itemsAnalizados: analysisMeta?.sampleSize ?? items.length,
+      tokens: analysisMeta?.tokenUsage ?? null,
+      llmIntentos: analysisMeta?.llmAttempts ?? null,
+    });
+
+    logXTask('respuesta OK', { msTotal: Date.now() - startedAt });
+
+    res.json({
+      report,
+      csv,
+      meta: {
+        comentariosExtraidos: 1 + items.length,
+        comentariosAnalizados: analysisMeta?.sampleSize ?? 1 + items.length,
+        comentariosUnicos: analysisMeta?.totalComments ?? 1 + items.length,
+        muestraParcial: Boolean(
+          analysisMeta?.sampleSize != null &&
+          analysisMeta?.totalComments != null &&
+          analysisMeta.sampleSize < analysisMeta.totalComments
+        ) || threadComplete === false,
+        tokenUsage: analysisMeta?.tokenUsage ?? null,
+        grokUsage: grokUsage ?? null,
+        llmAttempts: analysisMeta?.llmAttempts ?? null,
+      },
+    });
+
+    processPendingReclamosInBackground();
+    return;
+  } catch (err) {
+    logXTask('error', {
+      msTotal: Date.now() - startedAt,
+      message: err.message,
+      fase: err.userMessage ? 'servicio externo' : 'interno',
+    });
+    console.error('Error en /api/x/analyze:', err);
+    const status = err.statusCode === 422 ? 422 : 502;
+    return res.status(status).json({
+      error: err.userMessage || 'Ocurrió un error al procesar la publicación. Intentá de nuevo en unos minutos.',
+    });
+  }
+});
+
 // --------------------------------------------------------------------------
 // Monitoreo automático: config, tabla de posteos detectados, disparo manual.
 // --------------------------------------------------------------------------
@@ -497,6 +585,14 @@ app.get('/api/reclamos/export.csv', (req, res) => {
 // --------------------------------------------------------------------------
 const PORT = process.env.PORT || 3000;
 checkEnv();
+try {
+  const seed = seedXInfluencersIfEmpty();
+  if (seed.seeded) {
+    console.log(`[x] padrón ANTIK-PRO cargado: ${seed.total} handles`);
+  }
+} catch (err) {
+  console.warn('[x] no se pudo cargar el padrón ANTIK-PRO:', err.message);
+}
 startScheduler();
 const server = app.listen(PORT, () => {
   const provider = getLlmProvider();
@@ -504,6 +600,14 @@ const server = app.listen(PORT, () => {
   console.log(`   Proveedor LLM: ${getProviderLabel(provider)} (${provider})`);
   console.log(`   Modelo análisis: ${getAnalysisModel(provider)}`);
   console.log(`   Modelo clasificador: ${getClassifierModel(provider)}`);
+  const grokBackend = getFetchBackend();
+  const grokHint =
+    grokBackend === 'openrouter'
+      ? 'OpenRouter'
+      : grokBackend === 'xai'
+        ? 'xAI directo'
+        : 'sin clave (OPENROUTER_API_KEY o XAI_API_KEY)';
+  console.log(`   Modelo Grok (X): ${getXaiModel()} · ${grokHint}`);
   console.log(
     `   Límites: COMMENTS_LIMIT (Apify)=${process.env.COMMENTS_LIMIT || 100}, COMMENTS_ANALYSIS_LIMIT (LLM)=${resolveMaxCommentsLimit()}`
   );

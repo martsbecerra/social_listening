@@ -7,10 +7,14 @@ App web que:
    Claude u **OpenRouter**) siguiendo una metodología de análisis político,
    mostrando un **reporte ejecutivo** listo para WhatsApp (solapa "Análisis de
    publicación").
-2. Monitorea automáticamente, cada 4 horas, si aparece algún posteo nuevo de
+2. Recibe el link de una publicación de **X**, trae el hilo con **Grok**
+   (`x_search` de Grok vía OpenRouter, no Apify) y arma el mismo tipo de reporte con la
+   plantilla de X (solapa Análisis en `x.html`). Monitoreo y mapa de X
+   están especificados y se construyen después.
+3. Monitorea automáticamente, cada 4 horas, si aparece algún posteo nuevo de
    las cuentas trackeadas o que mencione las palabras clave/hashtags
-   configurados, y avisa por email (solapa "Monitoreo en vivo").
-3. Muestra la solapa "Mapa de reclamos" (Leaflet): círculos por dirección
+   configurados, y avisa por email (solapa "Monitoreo en vivo" de Instagram).
+4. Muestra la solapa "Mapa de reclamos" (Leaflet): círculos por dirección
    normalizada, con filtros combinables por categoría (lista cerrada de
    nueve), estado, barrio/comuna, rango de fechas y texto libre, más
    descarga de CSV. Se alimenta de dos fuentes: el análisis de una
@@ -29,6 +33,7 @@ social_listening_app/
 ├── src/
 │   ├── apify.js              # Extrae comentarios y datos del posteo desde Apify.
 │   ├── analyzeComments.js    # Orquestación del análisis (Apify → LLM → reporte).
+│   ├── x/                    # Plataforma X: Grok fetch, KPIs, reporte, padrón.
 │   ├── llm/                  # Proveedores: anthropicProvider, openrouterProvider.
 │   ├── prompt.js             # La metodología de análisis (system prompt).
 │   ├── db.js                 # SQLite: posteos detectados + reclamos del mapa.
@@ -50,6 +55,7 @@ social_listening_app/
 │       └── whatsapp.js       # Placeholder para notificación por WhatsApp (no implementado).
 ├── config/
 │   ├── monitoring.json       # Cuentas y palabras clave/hashtags a trackear.
+│   ├── x-influencers/        # CSV ANTIK-PRO (padrón de actores de X).
 │   └── allowed-emails.example.txt  # Plantilla de emails que pueden entrar.
 ├── data/
 │   ├── monitoring.db         # Base SQLite (se crea sola, no se versiona).
@@ -59,11 +65,13 @@ social_listening_app/
 │   ├── login-verify.html     # Confirma el link (POST, un solo uso).
 │   ├── dashboard.html        # Selector de red social.
 │   ├── instagram.html        # App Instagram: análisis + monitoreo + mapa de reclamos (tabs).
+│   ├── x.html                # App X: análisis (Grok); monitoreo y mapa próximamente.
 │   ├── css/styles.css        # Estilos (paleta oscura corporativa).
 │   └── js/
 │       ├── main.js           # Tabs + dropdown de usuario (sesión / logout).
 │       ├── login.js          # Pedido del magic link.
-│       ├── analysis.js       # Lógica de "Análisis de publicación".
+│       ├── analysis.js       # Lógica de "Análisis de publicación" (Instagram).
+│       ├── x-analysis.js     # Análisis de publicación de X (`/api/x/analyze`).
 │       ├── monitoring.js     # Lógica de "Monitoreo en vivo".
 │       └── claimsMap.js      # Mapa de reclamos (Leaflet, agrega en el cliente).
 ├── scripts/
@@ -259,7 +267,9 @@ Abrí `.env` y pegá:
 - `APIFY_API_TOKEN` → https://console.apify.com/account/integrations
 - **Anthropic (default):** `LLM_PROVIDER=anthropic`, `ANTHROPIC_API_KEY` → https://console.anthropic.com/settings/keys
 - **OpenRouter:** `LLM_PROVIDER=openrouter`, `OPENROUTER_API_KEY` → https://openrouter.ai/settings/keys
-  (los modelos ya vienen con default equivalente al de Anthropic, no hace falta setearlos)
+  (los modelos ya vienen con default equivalente al de Anthropic, no hace falta setearlos).
+  La misma clave sirve para **traer el hilo de X con Grok** (X Search nativo).
+- `XAI_API_KEY` → opcional; solo si no usás OpenRouter y querés pegarle directo a https://console.x.ai/
 - `SMTP_USER` / `SMTP_PASS` → tu Gmail y una
   ["contraseña de aplicación"](https://myaccount.google.com/apppasswords)
   (alertas del monitoreo y magic link de login)
@@ -288,7 +298,15 @@ npm run stop
 
 Abrí esa dirección en el navegador, pedí un magic link con un email de la
 allowlist, entrá, y en Instagram pegá el link de una publicación y hacé clic
-en **Analizar publicación**.
+en **Analizar publicación**. En el dashboard, **X** abre el mismo flujo para
+un posteo de x.com (hace falta `OPENROUTER_API_KEY`, la misma de siempre).
+
+El padrón ANTIK-PRO se carga solo al arrancar si la tabla está vacía, desde
+`config/x-influencers/`. Para forzar un reimport:
+
+```powershell
+npm run import-x-influencers
+```
 
 ### 5. Reclamos del mapa
 

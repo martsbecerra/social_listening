@@ -57,3 +57,10 @@ agrupamiento visual (ninguna keyword se pierde, solo el orden/las
 categorías). Por ahora, si querés mantener la categorización prolija,
 conviene agregar keywords nuevas editando este archivo a mano, en el grupo
 que corresponda.
+
+## `config/x-influencers/`
+
+Padrón ANTIK-PRO para el análisis de X. `antik-pro.csv` (seguidores
+enteros) se mergea con `antik-pro-extra.csv` (formato "Mil") al arrancar
+si `x_influencers` está vacía, o con `npm run import-x-influencers`.
+
