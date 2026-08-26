@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "stop": "node scripts/stop-server.js",
+    "test": "node --test test/ignoreDetectedPost.test.js",
     "import-reclamos-excel": "node scripts/import-reclamos-excel.js"
   },
   "engines": {

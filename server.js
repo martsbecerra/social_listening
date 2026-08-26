@@ -354,9 +354,10 @@ app.get('/api/footer-stats', (req, res) => {
   });
 });
 
-// Borra un registro puntual de la tabla (ej. algo que no sirve o quedó mal).
-app.delete('/api/monitoring/posts/:id', (req, res) => {
-  db.deletePost(req.params.id);
+// Ignora un registro puntual de la tabla (cruz de la fila). La fila queda
+// en SQLite con ignored=1 para no re-detectarlo; deja de listarse.
+app.post('/api/monitoring/posts/:id/ignore', (req, res) => {
+  db.ignorePost(req.params.id);
   res.json({ ok: true });
 });
 

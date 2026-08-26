@@ -10,7 +10,9 @@
 // sincrónica y simple. Todo vive en un único archivo: data/monitoring.db.
 //
 // Guardamos acá cada posteo relevante que detectamos, para no volver a
-// notificarlo dos veces en corridas futuras. También los hashes de magic
+// notificarlo dos veces en corridas futuras. Si se ignora desde la tabla,
+// la fila se queda (ignored=1): sigue bloqueando re-detección, pero ya no
+// aparece en la UI ni en los mails pendientes. También los hashes de magic
 // links de login (nunca el token crudo).
 // ==========================================================================
 
@@ -19,9 +21,11 @@ const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
 
 const DATA_DIR = path.join(__dirname, '..', 'data');
-const DB_PATH = path.join(DATA_DIR, 'monitoring.db');
+// MONITORING_DB_PATH: solo para tests (tempfile). En runtime normal sigue
+// siendo data/monitoring.db.
+const DB_PATH = process.env.MONITORING_DB_PATH || path.join(DATA_DIR, 'monitoring.db');
 
-fs.mkdirSync(DATA_DIR, { recursive: true });
+fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
 
 const db = new DatabaseSync(DB_PATH);
 db.exec('PRAGMA journal_mode = WAL');
@@ -71,6 +75,15 @@ if (!existingColumns.includes('followers')) {
 if (!existingColumns.includes('metrics_updated_at')) {
   db.exec('ALTER TABLE detected_posts ADD COLUMN metrics_updated_at TEXT');
 }
+// Soft-ignore: la cruz de la tabla no borra la fila. Se queda con
+// ignored=1 para que findExistingPostId / el unique de url sigan
+// bloqueando una re-detección (y un re-mail) en la próxima corrida.
+if (!existingColumns.includes('ignored')) {
+  db.exec('ALTER TABLE detected_posts ADD COLUMN ignored INTEGER NOT NULL DEFAULT 0');
+}
+if (!existingColumns.includes('ignored_at')) {
+  db.exec('ALTER TABLE detected_posts ADD COLUMN ignored_at TEXT');
+}
 // Limpieza de datos: Apify devuelve -1 en likesCount cuando el autor ocultó
 // el contador de "me gusta" (centinela documentado del actor, no un error de
 // parseo) — se guardaba tal cual, como si fuera un valor real. Un posteo sin
@@ -97,14 +110,18 @@ const insertPostStmt = db.prepare(`
     (@id, @account, @url, @caption, @matchedReason, @likes, @comments, @postedAt, @detectedAt, 0, @title, @sentiment, @postType, @followers)
 `);
 const markNotifiedStmt = db.prepare('UPDATE detected_posts SET notified = 1 WHERE id = ?');
-const countPostsStmt = db.prepare('SELECT COUNT(*) AS total FROM detected_posts');
-const countRecentPostsStmt = db.prepare('SELECT COUNT(*) AS total FROM detected_posts WHERE detected_at >= ?');
-const listPostsPageStmt = db.prepare('SELECT * FROM detected_posts ORDER BY detected_at DESC LIMIT ? OFFSET ?');
-const listUnnotifiedStmt = db.prepare('SELECT * FROM detected_posts WHERE notified = 0 ORDER BY detected_at ASC');
-const listUnclassifiedStmt = db.prepare('SELECT id, caption FROM detected_posts WHERE title IS NULL ORDER BY detected_at ASC');
+const countPostsStmt = db.prepare('SELECT COUNT(*) AS total FROM detected_posts WHERE ignored = 0');
+const countRecentPostsStmt = db.prepare('SELECT COUNT(*) AS total FROM detected_posts WHERE ignored = 0 AND detected_at >= ?');
+const listPostsPageStmt = db.prepare('SELECT * FROM detected_posts WHERE ignored = 0 ORDER BY detected_at DESC LIMIT ? OFFSET ?');
+const listUnnotifiedStmt = db.prepare('SELECT * FROM detected_posts WHERE notified = 0 AND ignored = 0 ORDER BY detected_at ASC');
+const listUnclassifiedStmt = db.prepare('SELECT id, caption FROM detected_posts WHERE title IS NULL AND ignored = 0 ORDER BY detected_at ASC');
 const updateClassificationStmt = db.prepare('UPDATE detected_posts SET title = ?, sentiment = ? WHERE id = ?');
 const updateSentimentStmt = db.prepare('UPDATE detected_posts SET sentiment = ? WHERE id = ?');
-const deletePostStmt = db.prepare('DELETE FROM detected_posts WHERE id = ?');
+// Solo la primera vez: si ya estaba ignorado, ignored_at se conserva.
+const ignorePostStmt = db.prepare(
+  'UPDATE detected_posts SET ignored = 1, ignored_at = ? WHERE id = ? AND ignored = 0'
+);
+const getPostIgnoredAtStmt = db.prepare('SELECT ignored, ignored_at FROM detected_posts WHERE id = ?');
 
 // La forma vieja de `reclamos` (source/username/comment_text/lat/lng/tematica
 // libre) es incompatible con el esquema de categorías cerradas + USIG. La
@@ -254,7 +271,7 @@ const getAccountFollowersStmt = db.prepare(
 // trackeadas (config/monitoring.json) con las que ya aparecen en
 // detected_posts (llegaron por hashtag, nunca se trackearon explícitamente).
 const listDistinctPostAccountsStmt = db.prepare(
-  `SELECT DISTINCT account FROM detected_posts WHERE account IS NOT NULL AND account != 'N/D' ORDER BY account`
+  `SELECT DISTINCT account FROM detected_posts WHERE ignored = 0 AND account IS NOT NULL AND account != 'N/D' ORDER BY account`
 );
 // Freshness de TODAS las cuentas de una, no una query por cuenta — con
 // 100-150 cuentas en el universo ampliado, N queries individuales ya no es
@@ -262,7 +279,7 @@ const listDistinctPostAccountsStmt = db.prepare(
 const getAllAccountStatsFreshnessStmt = db.prepare(
   'SELECT account, MAX(computed_at) AS lastComputedAt FROM account_stats WHERE platform = ? GROUP BY account'
 );
-const getPostMetricsStmt = db.prepare('SELECT likes, comments, post_type FROM detected_posts WHERE id = ?');
+const getPostMetricsStmt = db.prepare('SELECT likes, comments, post_type, ignored FROM detected_posts WHERE id = ?');
 const updatePostMetricsStmt = db.prepare(
   'UPDATE detected_posts SET likes = @likes, comments = @comments, post_type = @postType, metrics_updated_at = @metricsUpdatedAt WHERE id = @id'
 );
@@ -294,13 +311,15 @@ const setRefreshStateStmt = db.prepare(`
 const listAccountsDueForRefreshStmt = db.prepare(`
   SELECT account, MAX(posted_at) AS mostRecentPostedAt, COUNT(*) AS postCount
   FROM detected_posts
-  WHERE account IS NOT NULL AND account != 'N/D' AND posted_at IS NOT NULL
+  WHERE ignored = 0 AND account IS NOT NULL AND account != 'N/D' AND posted_at IS NOT NULL
     AND posted_at > @sinceIso AND posted_at <= @untilIso
     AND (@cadenceIso IS NULL OR metrics_updated_at IS NULL OR metrics_updated_at < @cadenceIso)
   GROUP BY account
 `);
 
-const getPostForMetricsRefreshStmt = db.prepare('SELECT likes, comments, account, posted_at FROM detected_posts WHERE id = ?');
+const getPostForMetricsRefreshStmt = db.prepare(
+  'SELECT likes, comments, account, posted_at, ignored FROM detected_posts WHERE id = ?'
+);
 const applyMetricsRefreshStmt = db.prepare(
   'UPDATE detected_posts SET likes = @likes, comments = @comments, metrics_updated_at = @metricsUpdatedAt WHERE id = @id'
 );
@@ -449,7 +468,8 @@ function markNotified(id) {
 
 /**
  * Página de posteos detectados (los más nuevos primero) + el total de filas,
- * para poder armar la paginación en la interfaz.
+ * para poder armar la paginación en la interfaz. Los ignorados no salen:
+ * siguen en la tabla SQLite para el dedupe, pero no en este listado.
  */
 function listDetectedPosts({ page = 1, pageSize = 20 } = {}) {
   const total = countPostsStmt.get().total;
@@ -480,11 +500,20 @@ function updateSentiment(id, sentiment) {
 }
 
 /**
- * Borra un registro puntual de la tabla (ej. un posteo que no sirve, o un
- * "posteo" basura guardado por un bug). No hay deshacer.
+ * Marca un posteo como ignorado (cruz de la tabla de monitoreo). La fila
+ * se queda: findExistingPostId y el unique de url siguen viéndola, así que
+ * la próxima corrida no la re-detecta ni re-notifica. No hay deshacer en
+ * la UI; ignored_at queda para auditoría. Si ya estaba ignorado, no pisa
+ * la fecha original.
  */
-function deletePost(id) {
-  deletePostStmt.run(id);
+function ignorePost(id) {
+  ignorePostStmt.run(new Date().toISOString(), id);
+}
+
+function getPostIgnoreState(id) {
+  const row = getPostIgnoredAtStmt.get(id);
+  if (!row) return null;
+  return { ignored: row.ignored === 1, ignoredAt: row.ignored_at || null };
 }
 
 /**
@@ -769,11 +798,12 @@ function getAllAccountStatsFreshness(platform) {
  * post_type SOLO se completa si faltaba (existing.post_type es NULL) —
  * nunca se pisa un valor ya conocido, a diferencia de likes/comments que sí
  * son métricas vivas y se actualizan siempre que cambien.
- * @returns {boolean} true si se escribió un cambio real.
+ * @returns {boolean} true si se escribió un cambio real. false si el id no
+ * existe, está ignorado, o las métricas no cambiaron.
  */
 function updatePostMetricsIfChanged(id, { likes, comments, postType }) {
   const existing = getPostMetricsStmt.get(id);
-  if (!existing) return false;
+  if (!existing || existing.ignored) return false;
   const cleanLikes = rejectNegative(likes ?? null);
   const cleanComments = rejectNegative(comments ?? null);
   const nextPostType = existing.post_type != null ? existing.post_type : postType || null;
@@ -825,11 +855,12 @@ function listAccountsDueForRefresh({ sinceIso, untilIso, cadenceIso = null }) {
  * y parecer eternamente pendiente.
  * @returns {{changed: boolean, account: string, postedAt: string,
  *   previousLikes: number|null, previousComments: number|null,
- *   likes: number|null, comments: number|null}|null} null si el id no está guardado.
+ *   likes: number|null, comments: number|null}|null} null si el id no está
+ *   guardado o está ignorado (no se escriben métricas de un ignorado).
  */
 function applyMetricsRefresh(id, { likes, comments }) {
   const existing = getPostForMetricsRefreshStmt.get(id);
-  if (!existing) return null;
+  if (!existing || existing.ignored) return null;
   const cleanLikes = rejectNegative(likes ?? null);
   const cleanComments = rejectNegative(comments ?? null);
   const changed = existing.likes !== cleanLikes || existing.comments !== cleanComments;
@@ -878,7 +909,8 @@ module.exports = {
   listUnclassified,
   updateClassification,
   updateSentiment,
-  deletePost,
+  ignorePost,
+  getPostIgnoreState,
   upsertAccountStats,
   getAccountStats,
   getAccountStatsFreshness,
