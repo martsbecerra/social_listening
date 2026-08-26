@@ -104,7 +104,7 @@ async function buscarEnOtroPartido(direccionLimpia) {
  * @returns {Promise<{
  *   direccionNormalizada: string|null, calle: string|null, altura: number|null,
  *   cruce: string|null, x: number|null, y: number|null, precision: string|null,
- *   geoStatus: 'ok'|'sin_direccion'|'invalida'|'fuera_caba'
+ *   geoStatus: 'ok'|'no_encontrada'|'invalida'|'fuera_caba'
  * }>}
  */
 async function geocodeAddress(direccionDetectada, { soloLectura = false } = {}) {
@@ -132,7 +132,7 @@ async function geocodeAddress(direccionDetectada, { soloLectura = false } = {}) 
     // 'fuera_caba' se cachea igual que los demás: una dirección de otro
     // partido no cambia de partido, no hay por qué volver a preguntar.
     const geoStatus =
-      cached.status === 'ok' ? 'ok' : cached.status === 'fuera_caba' ? 'fuera_caba' : 'sin_direccion';
+      cached.status === 'ok' ? 'ok' : cached.status === 'fuera_caba' ? 'fuera_caba' : 'no_encontrada';
     return {
       direccionNormalizada: cached.displayName,
       calle: cached.calle,
@@ -189,7 +189,7 @@ async function geocodeAddress(direccionDetectada, { soloLectura = false } = {}) 
         x: null,
         y: null,
         precision: null,
-        geoStatus: 'sin_direccion',
+        geoStatus: 'no_encontrada',
       };
     }
 
@@ -241,7 +241,7 @@ async function geocodeAddress(direccionDetectada, { soloLectura = false } = {}) 
       x: null,
       y: null,
       precision: null,
-      geoStatus: 'sin_direccion',
+      geoStatus: 'no_encontrada',
     };
   }
 

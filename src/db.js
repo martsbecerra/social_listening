@@ -115,7 +115,13 @@ if (reclamosColumnsBefore.length > 0 && !reclamosColumnsBefore.includes('comenta
 // cliente. La categoría NO está acá a propósito — ver más abajo.
 const ESTADO_SQL_LIST = "'Pendiente','En tratamiento','Resuelto','Desestimado'";
 const PLATAFORMA_SQL_LIST = "'instagram','x','tiktok','facebook'";
-const GEO_STATUS_SQL_LIST = "'pendiente','ok','sin_direccion','invalida','fuera_caba'";
+// 'sin_direccion' y 'no_encontrada' son cosas distintas y hay que poder
+// separarlas: la primera es "el texto no menciona un lugar accionable", la
+// segunda es "había una dirección pero USIG no le pudo dar un punto". Mezclarlas
+// impide medir qué proporción de reclamos es geolocalizable, que es un dato en
+// sí mismo, y saber contra qué comparar si algún día mejora la extracción.
+const GEO_STATUS_SQL_LIST =
+  "'pendiente','ok','sin_direccion','no_encontrada','invalida','fuera_caba'";
 
 // `categoria` y `subcategoria` van sin CHECK: la lista de categorías la define
 // el cliente en config/categorias-reclamos.json, es larga y va a cambiar. Un
@@ -136,6 +142,7 @@ db.exec(`
     categoria TEXT NOT NULL,
     subcategoria TEXT,
     precision_fecha TEXT,
+    import_origen TEXT,
     direccion_detectada TEXT,
     direccion_normalizada TEXT,
     calle TEXT,
@@ -170,12 +177,26 @@ if (!reclamosColumns.includes('subcategoria')) {
 if (!reclamosColumns.includes('precision_fecha')) {
   db.exec('ALTER TABLE reclamos ADD COLUMN precision_fecha TEXT');
 }
+// De qué archivo vino la fila, cuando entró por scripts/import-reclamos.js.
+// Es lo que permite deshacer una importación puntual sin restaurar un backup
+// entero (`--revert`). NULL en todo lo que no vino de un import.
+if (!reclamosColumns.includes('import_origen')) {
+  db.exec('ALTER TABLE reclamos ADD COLUMN import_origen TEXT');
+}
 
 const reclamosDdl =
   db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'reclamos'").get()?.sql || '';
-// El CHECK viejo se reconoce por una de las categorías que ya no existen.
-if (/CHECK\s*\(\s*categoria\s+IN/i.test(reclamosDdl)) {
-  console.log('[db] Migrando `reclamos`: se quita el CHECK de categoria (la lista vive en config/).');
+// Dos motivos para reconstruir, los dos por CHECKs que SQLite no sabe alterar:
+//   - el CHECK viejo de `categoria`, que ya no va (la lista vive en config/);
+//   - el CHECK de `geo_status`, si todavía no conoce 'no_encontrada'.
+const sobraCheckCategoria = /CHECK\s*\(\s*categoria\s+IN/i.test(reclamosDdl);
+const faltaNoEncontrada =
+  /CHECK\s*\(\s*geo_status\s+IN/i.test(reclamosDdl) && !reclamosDdl.includes("'no_encontrada'");
+if (sobraCheckCategoria || faltaNoEncontrada) {
+  console.log(
+    `[db] Migrando \`reclamos\`:${sobraCheckCategoria ? ' se quita el CHECK de categoria;' : ''}` +
+    `${faltaNoEncontrada ? " se agrega 'no_encontrada' a geo_status;" : ''}`
+  );
   db.exec('PRAGMA foreign_keys = OFF');
   db.exec('BEGIN');
   try {
@@ -193,6 +214,7 @@ if (/CHECK\s*\(\s*categoria\s+IN/i.test(reclamosDdl)) {
         categoria TEXT NOT NULL,
         subcategoria TEXT,
     precision_fecha TEXT,
+    import_origen TEXT,
         direccion_detectada TEXT,
         direccion_normalizada TEXT,
         calle TEXT,
@@ -210,7 +232,7 @@ if (/CHECK\s*\(\s*categoria\s+IN/i.test(reclamosDdl)) {
     db.exec(`
       INSERT INTO reclamos_nueva
       SELECT id, comentario_id, plataforma, post_url, comment_url, autor, fecha, detected_at,
-             texto_original, categoria, subcategoria, precision_fecha, direccion_detectada, direccion_normalizada,
+             texto_original, categoria, subcategoria, precision_fecha, import_origen, direccion_detectada, direccion_normalizada,
              calle, altura, cruce, x, y, comuna, barrio, precision, geo_status, estado
       FROM reclamos
     `);
@@ -381,12 +403,12 @@ const applyMetricsRefreshStmt = db.prepare(
 const upsertReclamoStmt = db.prepare(`
   INSERT INTO reclamos (
     id, comentario_id, plataforma, post_url, comment_url, autor, fecha,
-    detected_at, texto_original, categoria, subcategoria, precision_fecha, direccion_detectada,
+    detected_at, texto_original, categoria, subcategoria, precision_fecha, import_origen, direccion_detectada,
     direccion_normalizada, calle, altura, cruce, x, y, comuna, barrio,
     precision, geo_status, estado
   ) VALUES (
     @id, @comentarioId, @plataforma, @postUrl, @commentUrl, @autor, @fecha,
-    @detectedAt, @textoOriginal, @categoria, @subcategoria, @precisionFecha, @direccionDetectada,
+    @detectedAt, @textoOriginal, @categoria, @subcategoria, @precisionFecha, @importOrigen, @direccionDetectada,
     @direccionNormalizada, @calle, @altura, @cruce, @x, @y, @comuna, @barrio,
     @precision, @geoStatus, @estado
   )
@@ -402,6 +424,7 @@ const upsertReclamoStmt = db.prepare(`
     categoria = excluded.categoria,
     subcategoria = excluded.subcategoria,
     precision_fecha = excluded.precision_fecha,
+    import_origen = excluded.import_origen,
     direccion_detectada = excluded.direccion_detectada,
     direccion_normalizada = excluded.direccion_normalizada,
     calle = excluded.calle,
@@ -559,6 +582,7 @@ function mapReclamoRow(row) {
     categoria: row.categoria,
     subcategoria: row.subcategoria,
     precisionFecha: row.precision_fecha,
+    importOrigen: row.import_origen,
     direccionDetectada: row.direccion_detectada,
     direccionNormalizada: row.direccion_normalizada,
     calle: row.calle,
@@ -602,6 +626,7 @@ function upsertReclamo(reclamo) {
     categoria,
     subcategoria: subcategoria || null,
     precisionFecha: reclamo.precisionFecha || null,
+    importOrigen: reclamo.importOrigen || null,
     direccionDetectada: reclamo.direccionDetectada || null,
     direccionNormalizada: reclamo.direccionNormalizada || null,
     calle: reclamo.calle || null,
@@ -675,6 +700,19 @@ function listReclamosFiltered(filters = {}) {
   const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
   const rows = db.prepare(`SELECT * FROM reclamos ${where} ORDER BY fecha DESC`).all(params);
   return rows.map(mapReclamoRow);
+}
+
+/** Filas que vinieron de una importación puntual. Ver --revert del importador. */
+function listReclamosPorOrigen(origen) {
+  return db
+    .prepare('SELECT * FROM reclamos WHERE import_origen = ?')
+    .all(origen)
+    .map(mapReclamoRow);
+}
+
+/** Borra SOLO lo importado desde ese archivo; el resto de la base no se toca. */
+function deleteReclamosPorOrigen(origen) {
+  return db.prepare('DELETE FROM reclamos WHERE import_origen = ?').run(origen).changes;
 }
 
 function updateEstado(id, estado) {
@@ -938,6 +976,8 @@ module.exports = {
   applyMetricsRefresh,
   upsertReclamo,
   listReclamosFiltered,
+  listReclamosPorOrigen,
+  deleteReclamosPorOrigen,
   updateEstado,
   listPendingGeoReclamos,
   updateReclamoGeo,

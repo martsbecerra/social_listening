@@ -49,10 +49,11 @@ const PRECIO_ESTIMADO = { inputPorMTok: 1, outputPorMTok: 5 };
 
 function parseArgs(argv) {
   const args = argv.slice(2);
-  const opts = { dryRun: false, limit: null, muestra: null, si: false, map: {}, archivo: null };
+  const opts = { dryRun: false, limit: null, muestra: null, si: false, revert: false, map: {}, archivo: null };
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (a === '--dry-run') opts.dryRun = true;
+    else if (a === '--revert') opts.revert = true;
     else if (a === '--si' || a === '--yes') opts.si = true;
     else if (a === '--limit') opts.limit = Number(args[++i]);
     else if (a.startsWith('--limit=')) opts.limit = Number(a.slice('--limit='.length));
@@ -69,6 +70,7 @@ function parseArgs(argv) {
 function uso() {
   console.error('Uso: node scripts/import-reclamos.js <archivo.xlsx|csv> [--dry-run] [--limit N] [--muestra N] [--si] [--map campo=Columna]');
   console.error('  --muestra N  toma N filas VALIDAS (con direccion accionable) por cada categoria del archivo');
+  console.error('  --revert     borra las filas ya importadas desde ese archivo (no toca el resto de la base)');
 }
 
 async function confirmar(pregunta) {
@@ -91,6 +93,56 @@ function pct(n, total) {
   return total > 0 ? `${Math.round((n / total) * 100)}%` : '0%';
 }
 
+/**
+ * Deshace la importación de un archivo: borra las filas cuyo `import_origen`
+ * coincide. Existe para poder revertir una corrida que salió mal sin tener que
+ * restaurar un backup entero, que se llevaría puesto todo lo demás.
+ *
+ * Sólo toca filas que vinieron de un import: lo detectado por el monitoreo o
+ * por el análisis de publicaciones tiene import_origen NULL y no se ve afectado.
+ */
+async function revertir(origen, opts) {
+  const filas = db.listReclamosPorOrigen(origen);
+
+  if (filas.length === 0) {
+    console.log(`\nNo hay reclamos importados desde "${origen}". Nada que revertir.\n`);
+    return;
+  }
+
+  console.log(`\nSe van a BORRAR ${filas.length} reclamos importados desde "${origen}".`);
+  const porStatus = {};
+  filas.forEach((r) => {
+    porStatus[r.geoStatus] = (porStatus[r.geoStatus] || 0) + 1;
+  });
+  Object.entries(porStatus)
+    .sort((a, b) => b[1] - a[1])
+    .forEach(([k, v]) => console.log(`   ${String(v).padStart(6)}  ${k}`));
+
+  const rango = filas
+    .map((r) => r.detectedAt)
+    .filter(Boolean)
+    .sort();
+  if (rango.length > 0) {
+    console.log(`   importados entre ${rango[0]} y ${rango[rango.length - 1]}`);
+  }
+
+  if (opts.dryRun) {
+    console.log('\n--dry-run: no se borró nada.\n');
+    return;
+  }
+
+  if (!opts.si) {
+    const ok = await confirmar('\n¿Confirmás el borrado? (s/n) ');
+    if (!ok) {
+      console.log('Cancelado. No se borró nada.\n');
+      return;
+    }
+  }
+
+  const borradas = db.deleteReclamosPorOrigen(origen);
+  console.log(`\n✅ ${borradas} reclamos borrados. El resto de la base quedó intacto.\n`);
+}
+
 // --------------------------------------------------------------------------
 
 async function main() {
@@ -101,7 +153,15 @@ async function main() {
   }
 
   const filePath = path.resolve(opts.archivo);
+  // Nombre del archivo, que es lo que se guarda en cada fila para poder
+  // deshacer esta importación después sin restaurar un backup entero.
+  const origen = path.basename(filePath);
   console.log(`\nArchivo: ${filePath}`);
+
+  if (opts.revert) {
+    await revertir(origen, opts);
+    return;
+  }
 
   // --- 1. Leer y mapear columnas ---
   const { columnas, filas: todas, hoja } = tabla.leerTabla(filePath);
@@ -334,6 +394,17 @@ async function main() {
     seleccionadas = preparadas;
   }
 
+  // Las descartadas al buscar la muestra también se guardan: saber qué
+  // proporción de reclamos NO es geolocalizable es un dato en sí mismo, y si
+  // algún día mejora la extracción hay contra qué medir sin volver al archivo.
+  // No van al mapa (les falta ubicación), pero quedan en la base con su motivo.
+  // Se suman ACÁ, antes del paso de subcategorías, para que también la reciban:
+  // ya se pagó por leerlas, sería raro guardarlas a medio clasificar.
+  if (descartadas.length > 0) {
+    console.log(`\n${descartadas.length} filas descartadas se guardan igual, con su motivo.`);
+    seleccionadas = seleccionadas.concat(descartadas);
+  }
+
   // --- 6. Subcategorías (LLM) ---
   console.log('Asignando subcategorías...');
   const { subcategorias, usage: uSub, llamadas: llSub } = await asignarSubcategorias(
@@ -450,6 +521,7 @@ async function main() {
       autor: p.autor || null,
       fecha: p.fecha,
       precisionFecha: p.precisionFecha,
+      importOrigen: origen,
       detectedAt: ahora,
       textoOriginal: p.texto,
       categoria: p.categoria,
@@ -467,6 +539,9 @@ async function main() {
         p.ubicacion.tipo === 'lugar_nombrado' ? 'aproximada' : p.ubicacion.direccion ? 'exacta' : null,
       // Ninguna fila se pierde: la que no llega al mapa igual se guarda, con el
       // geo_status que explica por qué.
+      // sin_direccion = el texto no traia lugar accionable.
+      // no_encontrada = habia direccion pero USIG no le pudo dar un punto.
+      // Son dos cosas distintas y el geocoder ya las separa.
       geoStatus: g ? g.geoStatus : 'sin_direccion',
       estado: 'Pendiente',
       _motivo: p.motivo,

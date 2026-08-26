@@ -11,13 +11,13 @@ App web que:
    las cuentas trackeadas o que mencione las palabras clave/hashtags
    configurados, y avisa por email (solapa "Monitoreo en vivo").
 3. Muestra la solapa "Mapa de reclamos" (Leaflet): círculos por dirección
-   normalizada, con filtros combinables por categoría (lista cerrada de
-   nueve), estado, barrio/comuna, rango de fechas y texto libre, más
-   descarga de CSV. Se alimenta de dos fuentes: el análisis de una
-   publicación (`/api/analyze` guarda reclamos con ubicación en
-   `geo_status = 'pendiente'`; un worker los geocodifica con USIG después,
-   sin bloquear la respuesta) y un import puntual de Excel
-   (`scripts/import-reclamos-excel.js`) para cargar reclamos ya resueltos.
+   normalizada, con filtros combinables por categoría y subcategoría (esquema
+   de dos niveles del cliente, en `config/categorias-reclamos.json`), estado,
+   barrio/comuna, rango de fechas y texto libre, más descarga de CSV. Se
+   alimenta de dos fuentes: el análisis de una publicación (`/api/analyze`
+   guarda reclamos con ubicación en `geo_status = 'pendiente'`; un worker los
+   geocodifica con USIG después, sin bloquear la respuesta) y el importador
+   genérico de Excel/CSV (`scripts/import-reclamos.js`).
 
 ---
 
@@ -34,7 +34,10 @@ social_listening_app/
 │   ├── db.js                 # SQLite: posteos detectados + reclamos del mapa.
 │   ├── reclamosAddress.js    # Obsoleto (heurística del seed viejo); sin uso.
 │   ├── tematica.js           # Normaliza etiquetas libres del CSV de reclamos (legacy).
-│   ├── categoriaReclamo.js   # Categoría (9) y estado (4) cerrados del mapa.
+│   ├── categoriasConfig.js   # Carga y valida config/categorias-reclamos.json.
+│   ├── categoriaReclamo.js   # Estado (4) cerrado del mapa; re-exporta categorías.
+│   ├── clasificarReclamo.js  # Paso 2: subcategoría (1 llamada por análisis).
+│   ├── importers/            # Lectura de tablas, fechas y extracción de ubicación.
 │   ├── addressClean.js       # Limpieza de direcciones antes de geocodificar (USIG).
 │   ├── geocode.js            # USIG + geocode_cache (lo usa geoWorker.js).
 │   ├── territorios.js        # Comuna/barrio por punto-en-polígono (GeoJSON GCBA).
@@ -48,7 +51,8 @@ social_listening_app/
 │   └── notifiers/
 │       └── whatsapp.js       # Placeholder para notificación por WhatsApp (no implementado).
 ├── config/
-│   └── monitoring.json       # Cuentas y palabras clave/hashtags a trackear.
+│   ├── monitoring.json       # Cuentas y palabras clave/hashtags a trackear.
+│   └── categorias-reclamos.json # Categorías y subcategorías del cliente (26/85).
 ├── data/
 │   ├── monitoring.db         # Base SQLite (se crea sola, no se versiona).
 │   └── geo/                  # Cache en disco de comunas.geojson y barrios.geojson (GCBA).
@@ -63,7 +67,8 @@ social_listening_app/
 │       ├── monitoring.js     # Lógica de "Monitoreo en vivo".
 │       └── claimsMap.js      # Mapa de reclamos (Leaflet, agrega en el cliente).
 ├── scripts/
-│   ├── import-reclamos-excel.js # Carga un Excel de reclamos ya resueltos (solo CLI).
+│   ├── import-reclamos.js       # Importador genérico de Excel/CSV (solo CLI).
+│   ├── migrate-categorias.js    # Migra categorías viejas al esquema de dos niveles.
 │   └── stop-server.js           # Mata el proceso que ocupa el puerto (npm run stop).
 ├── .env.example               # Plantilla de las claves (copiala a .env).
 ├── .gitignore                 # Evita subir node_modules, .env y data/.
@@ -433,6 +438,7 @@ permite ver si el pipeline anda bien o si hay algo roto:
 | con pin | Geocodificada ok, aparece en el mapa |
 | sin dirección accionable en el texto | El texto no menciona un lugar al que mandar una cuadrilla |
 | con dirección detectada, USIG no la resolvió | Había dirección, pero USIG no le pudo dar un punto |
+| con dirección detectada, USIG no la resolvió | Había dirección, pero USIG no le pudo dar un punto (`no_encontrada`) |
 | fuera de CABA | Dirección real, de otro partido |
 | geocoding pendiente | Falla transitoria de USIG; lo reintenta el worker |
 
@@ -463,11 +469,32 @@ pide el mapeo**, sin escribir nada.
 | Fecha completa | `precision_fecha = 'exacta'` |
 | Columna `direccion` poco confiable | La usa como **pista**; manda el texto y deja que el LLM decida |
 
-**Las filas sin ubicación accionable NO se descartan**: entran con
-`geo_status = 'sin_direccion'`. Sirven para estadística aunque no vayan al mapa.
+**Ninguna fila se pierde.** Las que no llegan al mapa se guardan igual, con el
+`geo_status` que explica por qué — incluidas las que en modo `--muestra` quedaron
+fuera de la muestra. Saber qué proporción de reclamos **no** es geolocalizable
+es un dato en sí mismo, y si algún día mejora la extracción hay contra qué medir
+sin volver al archivo.
+
+Se distinguen dos motivos que antes colapsaban en uno:
+
+- `sin_direccion` — el texto no menciona un lugar accionable.
+- `no_encontrada` — había una dirección, pero USIG no le pudo dar un punto.
+
 La dirección original del archivo se guarda igual en `direccion_detectada`,
 aunque el modelo la descarte, para poder auditar si el criterio está
 descartando de más.
+
+**Deshacer una importación.** `--revert` borra las filas que vinieron de ese
+archivo, sin tocar el resto de la base:
+
+```
+node scripts/import-reclamos.js data/import/<archivo> --revert [--dry-run]
+```
+
+Cada fila importada guarda su archivo de origen en `import_origen`. Lo detectado
+por el monitoreo o por el análisis de publicaciones tiene ese campo en `NULL` y
+nunca se ve afectado, así que revertir una importación que salió mal no exige
+restaurar un backup entero.
 
 > **Por qué la columna `direccion` es una pista y no la verdad.** En el
 > histórico de X, esa columna salió de un extractor ingenuo: "hasta las **18h**"
@@ -527,7 +554,8 @@ Cada reclamo guarda en qué terminó su geocodificación:
 |---|---|---|
 | `pendiente` | Detectado, todavía sin geocodificar | No (hasta que corra el worker) |
 | `ok` | Resuelto dentro de CABA, con comuna y barrio | **Sí**, con pin |
-| `sin_direccion` | No había dirección, o USIG no la encontró en ningún lado | No (queda en la lista, sin pin) |
+| `sin_direccion` | El texto no menciona un lugar accionable | No (queda en la lista, sin pin) |
+| `no_encontrada` | Había dirección, pero USIG no le pudo dar un punto | No (queda en la lista, sin pin) |
 | `fuera_caba` | Dirección real, pero de otro partido | No — se excluye siempre |
 | `invalida` | El texto no parece una dirección (`addressClean.js`) | No |
 
