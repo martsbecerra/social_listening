@@ -18,29 +18,17 @@ document.querySelectorAll('.user-btn').forEach((btn) => {
   const dropdown = document.getElementById(btn.dataset.dropdown);
   if (!dropdown) return;
 
-  btn.addEventListener('click', () => {
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
     dropdown.classList.toggle('hidden');
-  });
-
-  document.addEventListener('click', (e) => {
-    if (!btn.contains(e.target) && !dropdown.contains(e.target)) {
-      dropdown.classList.add('hidden');
-    }
   });
 });
 
-document.querySelectorAll('.user-btn').forEach((btn) => {
-  const dropdown = document.getElementById(btn.dataset.dropdown);
-  if (!dropdown) return;
-
-  btn.addEventListener('click', () => {
-    dropdown.classList.toggle('hidden');
-  });
-
-  document.addEventListener('click', (e) => {
-    if (!btn.contains(e.target) && !dropdown.contains(e.target)) {
-      dropdown.classList.add('hidden');
-    }
+document.addEventListener('click', (e) => {
+  document.querySelectorAll('.user-dropdown').forEach((dropdown) => {
+    const btn = document.querySelector(`.user-btn[data-dropdown="${dropdown.id}"]`);
+    if (btn && (btn.contains(e.target) || dropdown.contains(e.target))) return;
+    dropdown.classList.add('hidden');
   });
 });
 

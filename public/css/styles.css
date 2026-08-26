@@ -323,7 +323,10 @@ a {
 .topbar {
   position: sticky;
   top: 0;
-  overflow: hidden;
+  /* visible: el menú de usuario cuelga debajo del badge. Los degradés
+     del fondo ya se recortan solos (background-clip); no hace falta
+     overflow:hidden acá. */
+  overflow: visible;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -440,7 +443,7 @@ a {
   flex-direction: column;
   gap: 10px;
   box-shadow: var(--shadow-md);
-  z-index: 30;
+  z-index: 110;
 }
 .user-dropdown span {
   color: var(--clay-500);
