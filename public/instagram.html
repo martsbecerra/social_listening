@@ -211,36 +211,10 @@
             <div class="acc-select-panel hidden" id="fAccPanel" role="listbox" aria-label="Cuenta"></div>
           </div>
 
-          <label class="chk" id="chkWrap">
-            <input type="checkbox" id="fNoti" /> Sin notificar
-          </label>
-
           <input type="date" id="fDesde" aria-label="Fecha desde" />
           <input type="date" id="fHasta" aria-label="Fecha hasta" />
 
           <input type="search" id="q" placeholder="Buscar título, cuenta o texto del posteo..." />
-        </div>
-
-        <div class="frow">
-          <span class="frow-lbl tag">Ordenar</span>
-
-          <select class="srt" id="sLikes" aria-label="Ordenar por likes">
-            <option value="">Likes</option>
-            <option value="l|desc">Likes ↓</option>
-            <option value="l|asc">Likes ↑</option>
-          </select>
-
-          <select class="srt" id="sCom" aria-label="Ordenar por comentarios">
-            <option value="">Comentarios</option>
-            <option value="c|desc">Comentarios ↓</option>
-            <option value="c|asc">Comentarios ↑</option>
-          </select>
-
-          <select class="srt" id="sFol" aria-label="Ordenar por seguidores">
-            <option value="">Seguidores</option>
-            <option value="fol|desc">Seguidores ↓</option>
-            <option value="fol|asc">Seguidores ↑</option>
-          </select>
 
           <span class="f-count">Mostrando <b id="n">0</b> de <b id="m">0</b> posteos</span>
           <button class="f-clear" id="clear" type="button" disabled>Limpiar</button>
@@ -297,13 +271,13 @@
     </div>
   </section>
 
-  <!-- Popup de confirmación para borrar un registro de la tabla -->
-  <div id="deleteModal" class="modal-overlay hidden">
+  <!-- Popup de confirmación para ignorar un posteo de la tabla -->
+  <div id="ignoreModal" class="modal-overlay hidden">
     <div class="modal-box">
-      <p>¿Seguro que querés borrar este registro?</p>
+      <p>¿Seguro que querés ignorar esta publicación?</p>
       <div class="modal-actions">
-        <button id="deleteCancelBtn" class="btn-clear">Cancelar</button>
-        <button id="deleteConfirmBtn">Sí, borrar</button>
+        <button id="ignoreCancelBtn" class="btn-clear">Cancelar</button>
+        <button id="ignoreConfirmBtn">Sí, ignorar</button>
       </div>
     </div>
   </div>

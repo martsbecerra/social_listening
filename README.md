@@ -131,7 +131,10 @@ Hace falta `SESSION_SECRET` (string largo aleatorio) y `APP_BASE_URL` (p. ej.
   Node desde la versión 22.5 — esto evita tener que compilar código nativo
   (que en Windows requiere Visual Studio Build Tools, algo que esta PC no
   tenía instalado). Acá vive la tabla `detected_posts`, que guarda cada
-  posteo relevante ya visto para no volver a notificarlo dos veces.
+  posteo relevante ya visto para no volver a notificarlo dos veces. La cruz
+  de cada fila **ignora** el posteo (la fila queda con `ignored = 1`): deja
+  de verse en la tabla, pero sigue bloqueando una re-detección de la misma
+  URL.
 
 - **`src/monitor.js`**: el detector. Por cada cuenta trackeada, le pide a
   Apify sus posteos más recientes; por cada hashtag trackeado, scrapea esa

@@ -437,12 +437,11 @@ async function runMonitoringCycle() {
     // la URL sigue siendo la misma pieza y no hay que re-clasificarla.
     const existingId = db.findExistingPostId(post.id, post.url);
     if (existingId) {
-      // Ya lo conocíamos: no hace falta re-detectarlo ni re-clasificarlo
-      // (mismo título, mismo sentimiento). Pero esta misma respuesta de
-      // Apify que ya se pagó trae sus likes/comments ACTUALES — aprovecharla
-      // para refrescar la fila sale gratis, en vez de descartarla acá y que
-      // src/metricsRefresh.js tenga que volver a pedirle esta cuenta a
-      // Apify más tarde.
+      // Ya lo conocíamos (incluye ignorados: la fila sigue en SQLite para
+      // no re-detectar ni re-notificar). No reclasificar. Si no está
+      // ignorado, esta misma respuesta de Apify trae likes/comments
+      // actuales — refrescar la fila sale gratis. Si está ignorado,
+      // applyMetricsRefresh es no-op.
       const refresh = db.applyMetricsRefresh(existingId, { likes: post.likes, comments: post.comments });
       if (refresh) {
         metricsRefreshedFree += 1;

@@ -1419,40 +1419,6 @@ pre.report {
   flex: none;
   width: 62px;
 }
-.chk {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13.5px;
-  color: var(--clay-900);
-  cursor: pointer;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  padding: 9px 12px;
-  background: #fff;
-  user-select: none;
-  white-space: nowrap;
-  transition:
-    border-color 0.15s,
-    background 0.15s;
-  margin-bottom: 0;
-  font-family: "Instrument Sans", sans-serif;
-  font-weight: 400;
-  letter-spacing: normal;
-  text-transform: none;
-}
-.chk input {
-  accent-color: var(--jade-500);
-  width: 15px;
-  height: 15px;
-  cursor: pointer;
-}
-.chk.on {
-  background: var(--jade-50);
-  border-color: var(--jade-300);
-  color: var(--jade-900);
-  font-weight: 500;
-}
 .f-count {
   font-size: 12.5px;
   color: var(--clay-500);
@@ -1544,11 +1510,56 @@ pre.report {
   font-size: 12.5px;
   color: var(--clay-500);
 }
-/* Columna por la que se está ordenando (JS le pone .act al header exacto
-   vía column.getElement()) — mismo "thead th.act{color:jade-700}" que la
-   referencia. */
-.tabulator .tabulator-col.act .tabulator-col-title {
+/* Columna por la que se está ordenando — Tabulator marca el header con
+   aria-sort (usa "asc"/"desc" en esta versión). El par de flechas
+   (.sort-ind) es headerSortElement, no el caret default. */
+.tabulator .tabulator-header .tabulator-col.tabulator-sortable {
+  cursor: pointer;
+}
+.tabulator .tabulator-header .tabulator-col.tabulator-sortable .tabulator-col-content {
+  padding-right: 22px;
+}
+.tabulator .tabulator-col[aria-sort="asc"] .tabulator-col-title,
+.tabulator .tabulator-col[aria-sort="desc"] .tabulator-col-title,
+.tabulator .tabulator-col[aria-sort="ascending"] .tabulator-col-title,
+.tabulator .tabulator-col[aria-sort="descending"] .tabulator-col-title {
   color: var(--jade-700);
+}
+.tabulator .tabulator-header .tabulator-col-sorter {
+  width: auto;
+}
+.tabulator .tabulator-col-sorter:has(.sort-ind) .tabulator-arrow {
+  display: none;
+}
+.sort-ind {
+  display: inline-flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 2px;
+  height: 12px;
+}
+.sort-ind .sort-up,
+.sort-ind .sort-down {
+  display: block;
+  width: 0;
+  height: 0;
+  border-left: 3.5px solid transparent;
+  border-right: 3.5px solid transparent;
+}
+.sort-ind .sort-up {
+  border-bottom: 4px solid var(--clay-200);
+}
+.sort-ind .sort-down {
+  border-top: 4px solid var(--clay-200);
+}
+.tabulator-col[aria-sort="asc"] .sort-up,
+.tabulator-col[aria-sort="ascending"] .sort-up {
+  border-bottom-color: var(--jade-500);
+}
+.tabulator-col[aria-sort="desc"] .sort-down,
+.tabulator-col[aria-sort="descending"] .sort-down {
+  border-top-color: var(--jade-500);
 }
 
 /* Panel desplegable de la fila (título completo, caption, benchmark, links,
@@ -2242,13 +2253,6 @@ pre.report {
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--clay-500);
-}
-.tabulator .tabulator-header .tabulator-col-sorter .tabulator-arrow {
-  border-bottom-color: var(--clay-200);
-}
-.tabulator .tabulator-col[aria-sort="asc"] .tabulator-arrow,
-.tabulator .tabulator-col[aria-sort="desc"] .tabulator-arrow {
-  border-bottom-color: var(--jade-500);
 }
 .tabulator .tabulator-header .tabulator-col.tabulator-sortable:hover,
 .tabulator .tabulator-header .tabulator-col.tabulator-sortable:focus-within {
