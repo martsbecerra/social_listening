@@ -2,7 +2,7 @@
 // gate.js
 // --------------------------------------------------------------------------
 // Corre ANTES de express.static. Páginas de la app y /api/* piden sesión;
-// login, css, logo y las rutas de auth públicas pasan.
+// login, css, logo, favicon y las rutas de auth públicas pasan.
 // ==========================================================================
 
 const { readSession } = require('./session');
@@ -13,6 +13,9 @@ const PUBLIC_EXACT = new Set([
   '/login-verify.html',
   '/logo.png',
   '/favicon.ico',
+  '/favicon.svg',
+  '/favicon-32.png',
+  '/apple-touch-icon.png',
 ]);
 
 const PUBLIC_PREFIXES = ['/css/', '/icons/', '/js/login.js'];
