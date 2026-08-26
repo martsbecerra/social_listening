@@ -433,18 +433,21 @@ async function runMonitoringCycle() {
   const newPosts = [];
   let metricsRefreshedFree = 0;
   for (const post of seenInThisRun.values()) {
-    if (db.isKnownPost(post.id)) {
+    // Por id o por url: si Apify cambia el campo con el que armamos el id,
+    // la URL sigue siendo la misma pieza y no hay que re-clasificarla.
+    const existingId = db.findExistingPostId(post.id, post.url);
+    if (existingId) {
       // Ya lo conocíamos: no hace falta re-detectarlo ni re-clasificarlo
       // (mismo título, mismo sentimiento). Pero esta misma respuesta de
       // Apify que ya se pagó trae sus likes/comments ACTUALES — aprovecharla
       // para refrescar la fila sale gratis, en vez de descartarla acá y que
       // src/metricsRefresh.js tenga que volver a pedirle esta cuenta a
       // Apify más tarde.
-      const refresh = db.applyMetricsRefresh(post.id, { likes: post.likes, comments: post.comments });
+      const refresh = db.applyMetricsRefresh(existingId, { likes: post.likes, comments: post.comments });
       if (refresh) {
         metricsRefreshedFree += 1;
-        checkAndLogJump({ account: refresh.account, id: post.id, postedAt: refresh.postedAt, metric: 'comentarios', previous: refresh.previousComments, current: refresh.comments });
-        checkAndLogJump({ account: refresh.account, id: post.id, postedAt: refresh.postedAt, metric: 'likes', previous: refresh.previousLikes, current: refresh.likes });
+        checkAndLogJump({ account: refresh.account, id: existingId, postedAt: refresh.postedAt, metric: 'comentarios', previous: refresh.previousComments, current: refresh.comments });
+        checkAndLogJump({ account: refresh.account, id: existingId, postedAt: refresh.postedAt, metric: 'likes', previous: refresh.previousLikes, current: refresh.likes });
       }
       continue;
     }
@@ -464,7 +467,16 @@ async function runMonitoringCycle() {
       followers: post.account ? db.getAccountFollowers(post.account, 'instagram') : null,
     };
 
-    db.saveDetectedPost(postWithClassification);
+    const inserted = db.saveDetectedPost(postWithClassification);
+    if (!inserted) {
+      // Carrera con otro ciclo: entre el findExisting y el INSERT el otro
+      // proceso ya lo guardó. No es un posteo nuevo para notificar.
+      const racedId = db.findExistingPostId(post.id, post.url);
+      if (racedId) {
+        db.applyMetricsRefresh(racedId, { likes: post.likes, comments: post.comments });
+      }
+      continue;
+    }
     newPosts.push(postWithClassification);
   }
 

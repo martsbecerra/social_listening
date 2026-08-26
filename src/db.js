@@ -80,10 +80,18 @@ if (!existingColumns.includes('metrics_updated_at')) {
 // vacío, no hace falta guardarlo como migración "de una sola vez".
 db.exec('UPDATE detected_posts SET likes = NULL WHERE likes < 0');
 db.exec('UPDATE detected_posts SET comments = NULL WHERE comments < 0');
+// Misma pieza de Instagram = misma URL. Si Apify cambia cuál campo usa
+// normalizeMonitorPost para armar el id (raw.id vs shortCode), sin este
+// índice se insertaría una segunda fila y se re-notificaría.
+db.exec('CREATE UNIQUE INDEX IF NOT EXISTS detected_posts_url_unique ON detected_posts(url)');
 
 const isKnownPostStmt = db.prepare('SELECT 1 FROM detected_posts WHERE id = ?');
+const getPostIdByUrlStmt = db.prepare('SELECT id FROM detected_posts WHERE url = ?');
+// OR IGNORE: un segundo ciclo en paralelo (cron + "Actualizar ahora") no
+// puede tirar abajo toda la corrida con UNIQUE constraint failed. Si el
+// posteo ya está, changes === 0 y el llamador lo trata como conocido.
 const insertPostStmt = db.prepare(`
-  INSERT INTO detected_posts
+  INSERT OR IGNORE INTO detected_posts
     (id, account, url, caption, matched_reason, likes, comments, posted_at, detected_at, notified, title, sentiment, post_type, followers)
   VALUES
     (@id, @account, @url, @caption, @matchedReason, @likes, @comments, @postedAt, @detectedAt, 0, @title, @sentiment, @postType, @followers)
@@ -391,8 +399,17 @@ const claimMagicLinkStmt = db.prepare(`
 `);
 const getMagicLinkStmt = db.prepare('SELECT email FROM magic_links WHERE token_hash = ?');
 
-function isKnownPost(id) {
-  return Boolean(isKnownPostStmt.get(id));
+function findExistingPostId(id, url) {
+  if (id && isKnownPostStmt.get(id)) return id;
+  if (url) {
+    const row = getPostIdByUrlStmt.get(url);
+    if (row) return row.id;
+  }
+  return null;
+}
+
+function isKnownPost(id, url) {
+  return findExistingPostId(id, url) != null;
 }
 
 // Defensa en profundidad: además de la limpieza del centinela -1 en el
@@ -403,8 +420,12 @@ function rejectNegative(value) {
   return typeof value === 'number' && value < 0 ? null : value;
 }
 
+/**
+ * @returns {boolean} true si se insertó una fila nueva. false si ya existía
+ * (mismo id o misma url) — no tira UNIQUE.
+ */
 function saveDetectedPost(post) {
-  insertPostStmt.run({
+  const result = insertPostStmt.run({
     id: post.id,
     account: post.account || null,
     url: post.url,
@@ -419,6 +440,7 @@ function saveDetectedPost(post) {
     postType: post.postType || null,
     followers: post.followers ?? null,
   });
+  return result.changes > 0;
 }
 
 function markNotified(id) {
@@ -846,6 +868,7 @@ function claimMagicLink(tokenHash, nowIso) {
 }
 
 module.exports = {
+  findExistingPostId,
   isKnownPost,
   saveDetectedPost,
   markNotified,
