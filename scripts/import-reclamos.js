@@ -406,18 +406,43 @@ async function main() {
   }
 
   // --- 6. Subcategorías (LLM) ---
-  console.log('Asignando subcategorías...');
-  const { subcategorias, usage: uSub, llamadas: llSub } = await asignarSubcategorias(
-    seleccionadas.map((p) => ({
-      categoria: p.categoria,
-      texto: p.texto,
-      direccionDetectada: (p.ubicacion && p.ubicacion.direccion) || p.pista,
-    }))
+  //
+  // Sólo para las filas con dirección accionable. Una fila sin ubicación no va
+  // a llegar nunca al mapa, así que afinarle el segundo nivel de clasificación
+  // es trabajo que no se usa — y son la mayoría del archivo.
+  //
+  // Las que SÍ tienen dirección pero USIG no resolvió van igual: son reclamos
+  // válidos y recuperables si más adelante mejora el geocoding, y ahí la
+  // subcategoría ya va a estar.
+  const paraSubcategoria = seleccionadas.filter((p) => p.ubicacion && p.ubicacion.direccion);
+  const sinSubcategoria = seleccionadas.length - paraSubcategoria.length;
+
+  console.log(
+    `Asignando subcategorías a ${paraSubcategoria.length} filas con dirección` +
+    `${sinSubcategoria > 0 ? ` (${sinSubcategoria} sin ubicación se saltean)` : ''}...`
   );
-  usage = sumarUsage(usage, uSub);
-  seleccionadas.forEach((p, i) => {
-    p.subcategoria = subcategorias[i] || '';
+
+  seleccionadas.forEach((p) => {
+    p.subcategoria = '';
   });
+
+  let uSub = null;
+  let llSub = 0;
+  if (paraSubcategoria.length > 0) {
+    const r = await asignarSubcategorias(
+      paraSubcategoria.map((p) => ({
+        categoria: p.categoria,
+        texto: p.texto,
+        direccionDetectada: p.ubicacion.direccion,
+      }))
+    );
+    uSub = r.usage;
+    llSub = r.llamadas;
+    usage = sumarUsage(usage, uSub);
+    paraSubcategoria.forEach((p, i) => {
+      p.subcategoria = r.subcategorias[i] || '';
+    });
+  }
 
   // --- 7. Geocodificar ---
   //
