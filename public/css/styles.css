@@ -2545,6 +2545,102 @@ pre.report {
   line-height: 1;
   box-shadow: var(--shadow-sm);
 }
+
+/* Pin de precisión aproximada: el punto es el centroide de un lugar con nombre
+   ("Plaza Italia"), no una altura. El borde punteado lo dice sin necesidad de
+   abrir el popup — un pin sólido ahí estaría fingiendo una precisión que no hay. */
+.claims-pin.is-aproximada {
+  border-style: dashed;
+  border-width: 2px;
+}
+
+/* --------------------------------------------------------------------------
+   Colores por categoría del mapa.
+
+   Doce y no más: con 26 categorías no existen 26 colores que el ojo separe.
+   Pasando los diez, comparar dos pines se vuelve adivinanza. Las 12 más
+   frecuentes se llevan un color; el resto va al gris, que además comunica
+   "esto es la cola larga" mejor que un color casi repetido.
+
+   Salen de la paleta del sistema (jade, barro, coral, ámbar) más análogos en
+   la misma familia de saturación, alternando claros y oscuros para que dos
+   vecinos en la leyenda nunca se parezcan.
+   -------------------------------------------------------------------------- */
+:root {
+  --cat-1: #12805f;  /* jade medio */
+  --cat-2: #c4522c;  /* coral */
+  --cat-3: #2f6f9e;  /* azul apagado */
+  --cat-4: #8a5a10;  /* ámbar oscuro */
+  --cat-5: #6b4c8f;  /* violeta apagado */
+  --cat-6: #63c7a2;  /* jade claro */
+  --cat-7: #a8324f;  /* borravino */
+  --cat-8: #4f7a3a;  /* verde oliva */
+  --cat-9: #b07d2b;  /* mostaza */
+  --cat-10: #3f6f6a; /* petróleo */
+  --cat-11: #8e5b4a; /* terracota */
+  --cat-12: #5a6b8c; /* azul grisáceo */
+  --cat-otras: #8a8178; /* gris barro: la cola larga */
+}
+
+/* Leyenda de categorías presentes en la vista actual. */
+.claims-leyenda {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  align-items: center;
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper);
+  font-size: 12.5px;
+}
+.claims-leyenda:empty {
+  display: none;
+}
+.claims-leyenda-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--clay-700);
+  white-space: nowrap;
+}
+.claims-leyenda-punto {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+.claims-leyenda-n {
+  color: var(--clay-500);
+  font-variant-numeric: tabular-nums;
+}
+/* Desglose de categorias dentro del popup de un pin agrupado. */
+.claims-popup-desglose {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 0 0 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+.claims-popup-nota {
+  margin: 0 0 8px;
+  color: var(--clay-500);
+  font-size: 11.5px;
+  font-style: italic;
+}
+.claims-popup-sub {
+  color: var(--clay-500);
+  font-size: 11.5px;
+  margin: 2px 0 0;
+}
+.claims-leyenda-nota {
+  width: 100%;
+  color: var(--clay-500);
+  font-size: 11.5px;
+}
 #claims-map.is-empty {
   visibility: hidden;
 }

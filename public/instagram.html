@@ -264,6 +264,9 @@
       <div class="card claims-filters-card">
         <div class="claims-filters-row">
           <div id="claimsCategoriaSelect"></div>
+          <!-- Dependiente del anterior: se puebla con las subcategorías de las
+               categorías seleccionadas (ver rebuildSubcategoriaFilter). -->
+          <div id="claimsSubcategoriaSelect"></div>
           <div id="claimsEstadoSelect"></div>
           <select id="claimsBarrio">
             <option value="">Barrio</option>
@@ -283,6 +286,8 @@
           <button type="button" id="claimsClearBtn" class="btn-small btn-clear">Limpiar</button>
           <button type="button" id="claimsDownloadCsvBtn" class="btn-small btn-copy claims-download-btn">Descargar CSV</button>
         </div>
+        <!-- Colores de las categorías presentes en la vista actual. -->
+        <div id="claimsLeyenda" class="claims-leyenda"></div>
       </div>
 
       <p id="claimsMapError" class="error hidden"></p>

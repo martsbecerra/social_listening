@@ -25,6 +25,63 @@ let estadoMultiSelect = null;
 let openFilterPanel = null;
 let searchDebounceTimer = null;
 let pinSteps = null;
+// Árbol categoría -> subcategorías y conteo global, ambos del servidor.
+let subcategoriasPorCategoria = {};
+let conteoPorCategoria = {};
+let allSubcategorias = [];
+let selectedSubcategorias = new Set();
+let subcategoriaMultiSelect = null;
+
+// -------------------------------------------------------------------------
+// Colores por categoría
+//
+// Doce colores y no más: con 26 categorías no existen 26 tonos que el ojo
+// separe de un vistazo. Pasando los diez, comparar dos pines se vuelve
+// adivinanza. Entonces:
+//   - Las 12 categorías más frecuentes DE TODA LA BASE se llevan un color fijo.
+//     Fijo importa: si el ranking se recalculara con lo filtrado, los pines
+//     cambiarían de color al mover un filtro y no se podría comparar nada.
+//   - El resto va al gris, que además comunica "cola larga" mejor que un color
+//     casi repetido.
+//   - Excepción: si el filtro deja 12 o menos categorías seleccionadas, ahí sí
+//     cada una toma color propio, porque ya no hay ambigüedad posible.
+// -------------------------------------------------------------------------
+
+const MAX_COLORES = 12;
+const COLOR_OTRAS = '--cat-otras';
+
+/** categoría canónica -> nombre de la variable CSS con su color */
+let paletaCategorias = new Map();
+
+function rankingCategorias() {
+  return Object.entries(conteoPorCategoria)
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'es'))
+    .map(([nombre]) => nombre);
+}
+
+/**
+ * Recalcula qué categoría lleva qué color. Se llama al cargar datos y cada vez
+ * que cambia la selección de categorías.
+ */
+function recalcularPaleta() {
+  const conColorPropio =
+    selectedCategorias.size > 0 && selectedCategorias.size <= MAX_COLORES
+      ? [...selectedCategorias].sort((a, b) => a.localeCompare(b, 'es'))
+      : rankingCategorias().slice(0, MAX_COLORES);
+
+  paletaCategorias = new Map();
+  conColorPropio.forEach((cat, i) => {
+    paletaCategorias.set(cat, `--cat-${i + 1}`);
+  });
+}
+
+function colorDeCategoria(categoria) {
+  return cssVar(paletaCategorias.get(categoria) || COLOR_OTRAS);
+}
+
+function tieneColorPropio(categoria) {
+  return paletaCategorias.has(categoria);
+}
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -62,6 +119,13 @@ function ensureClaimsMap() {
 function currentFilters() {
   return {
     categoria: [...selectedCategorias],
+    // Sólo se manda si el usuario recortó algo: con todas seleccionadas el
+    // filtro no aporta y además dejaría afuera las filas con subcategoría
+    // vacía, que son reclamos válidos.
+    subcategoria:
+      selectedSubcategorias.size > 0 && selectedSubcategorias.size < allSubcategorias.length
+        ? [...selectedSubcategorias]
+        : [],
     estado: [...selectedEstados],
     barrio: document.getElementById('claimsBarrio')?.value || '',
     comuna: document.getElementById('claimsComuna')?.value || '',
@@ -74,6 +138,7 @@ function currentFilters() {
 function isDefaultFilters(f) {
   return (
     f.categoria.length === allCategorias.length &&
+    f.subcategoria.length === 0 &&
     f.estado.length === allEstados.length &&
     !f.barrio &&
     !f.comuna &&
@@ -88,6 +153,10 @@ function buildQueryString(f) {
   if (f.categoria.length > 0 && f.categoria.length < allCategorias.length) {
     params.set('categoria', f.categoria.join(','));
   }
+  // currentFilters ya devuelve [] cuando están todas seleccionadas.
+  if (f.subcategoria.length > 0) {
+    params.set('subcategoria', f.subcategoria.join(','));
+  }
   if (f.estado.length > 0 && f.estado.length < allEstados.length) {
     params.set('estado', f.estado.join(','));
   }
@@ -101,6 +170,10 @@ function buildQueryString(f) {
 
 async function applyFiltersAndReload() {
   const errorEl = document.getElementById('claimsMapError');
+
+  // La paleta se recalcula ANTES de pedir datos: si el filtro dejó 12 o menos
+  // categorías, cada una pasa a tener color propio.
+  recalcularPaleta();
 
   // "Ninguna" categoría/estado tildado: no hay nada que mostrar, no hace
   // falta pegarle al servidor.
@@ -230,6 +303,8 @@ function createFilterMultiSelect({ containerId, label, options, selectedSet }) {
       if (checkbox.checked) selectedSet.add(value);
       else selectedSet.delete(value);
       updateLabel();
+      // Tocar categorías repuebla el filtro de subcategoría: es dependiente.
+      if (containerId === 'claimsCategoriaSelect') rebuildSubcategoriaFilter();
       applyFiltersAndReload();
     });
     optLabel.append(checkbox, document.createTextNode(value));
@@ -303,13 +378,72 @@ function clusterVisible() {
     }
     groups.get(key).reclamos.push(row);
   }
-  return [...groups.values()];
+  const lista = [...groups.values()];
+  // Categoría con la que se pinta el pin: la más frecuente del punto. El
+  // desempate por nombre mantiene el color estable entre renders.
+  for (const g of lista) {
+    g.categoriaDominante = categoriaCounts(g.reclamos)[0][0];
+  }
+  return lista;
 }
 
 function categoriaCounts(reclamos) {
   const counts = new Map();
   for (const row of reclamos) counts.set(row.categoria, (counts.get(row.categoria) || 0) + 1);
   return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'es'));
+}
+
+/**
+ * Leyenda de las categorías presentes en la vista actual, no de las 26.
+ * Mostrar categorías que no están en pantalla sería ruido, y ocultar las que
+ * sí están dejaría pines sin explicar.
+ */
+function renderLeyenda(groups) {
+  const cont = document.getElementById('claimsLeyenda');
+  if (!cont) return;
+  cont.innerHTML = '';
+
+  const presentes = new Map();
+  for (const g of groups) {
+    for (const [cat, n] of categoriaCounts(g.reclamos)) {
+      presentes.set(cat, (presentes.get(cat) || 0) + n);
+    }
+  }
+  if (presentes.size === 0) return;
+
+  const ordenadas = [...presentes.entries()].sort(
+    (a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'es')
+  );
+
+  let hayGrises = false;
+  for (const [cat, n] of ordenadas) {
+    if (!tieneColorPropio(cat)) hayGrises = true;
+    const item = document.createElement('span');
+    item.className = 'claims-leyenda-item';
+
+    const punto = document.createElement('span');
+    punto.className = 'claims-leyenda-punto';
+    punto.style.background = colorDeCategoria(cat);
+
+    const nombre = document.createElement('span');
+    nombre.textContent = cat;
+
+    const cuenta = document.createElement('span');
+    cuenta.className = 'claims-leyenda-n';
+    cuenta.textContent = `(${n})`;
+
+    item.append(punto, nombre, cuenta);
+    cont.appendChild(item);
+  }
+
+  if (hayGrises) {
+    const nota = document.createElement('span');
+    nota.className = 'claims-leyenda-nota';
+    nota.textContent =
+      `En gris, las categorías fuera de las ${MAX_COLORES} más frecuentes. ` +
+      'Filtrá a 12 o menos para que cada una tome su propio color.';
+    cont.appendChild(nota);
+  }
 }
 
 function tooltipHtml(group) {
@@ -330,20 +464,47 @@ function estadoSelectHtml(reclamo) {
 }
 
 function popupHtml(group) {
+  // Desglose por categoría del punto. El pin sólo puede mostrar un color (el de
+  // la categoría dominante), así que acá va la composición completa — si no, un
+  // punto con 3 categorías se leería como si fuera de una sola.
+  const cuentas = categoriaCounts(group.reclamos);
+  const desglose =
+    cuentas.length > 1
+      ? `<div class="claims-popup-desglose">${cuentas
+          .map(
+            ([cat, n]) =>
+              `<span class="claims-leyenda-item"><span class="claims-leyenda-punto" style="background:${colorDeCategoria(
+                cat
+              )}"></span>${escapeHtml(cat)} <span class="claims-leyenda-n">(${n})</span></span>`
+          )
+          .join('')}</div>`
+      : '';
+
+  const aproximado = group.reclamos.every((r) => r.precision === 'aproximada');
+  const avisoPrecision = aproximado
+    ? '<div class="claims-popup-nota">Ubicación aproximada: es un lugar con nombre, no una altura exacta.</div>'
+    : '';
+
   const items = group.reclamos
     .map((r) => {
       const user = escapeHtml(r.autor || 'desconocido');
       const comment = escapeHtml(r.textoOriginal || '');
       const url = r.postUrl || r.commentUrl || '#';
+      const sub = r.subcategoria
+        ? `<div class="claims-popup-sub">${escapeHtml(r.subcategoria)}</div>`
+        : '';
       return `<div class="claims-popup-item">
-        <div class="claims-popup-user">@${user} · <span class="claims-tema-pill" style="background:var(--jade-500);color:#fff">${escapeHtml(r.categoria)}</span></div>
+        <div class="claims-popup-user">@${user} · <span class="claims-tema-pill" style="background:${colorDeCategoria(
+          r.categoria
+        )};color:#fff">${escapeHtml(r.categoria)}</span></div>
+        ${sub}
         <div class="claims-popup-comment">${comment}</div>
         <a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">Ver posteo</a>
         ${estadoSelectHtml(r)}
       </div>`;
     })
     .join('');
-  return `<div class="claims-popup"><h2>${escapeHtml(group.address)}</h2>${items}</div>`;
+  return `<div class="claims-popup"><h2>${escapeHtml(group.address)}</h2>${desglose}${avisoPrecision}${items}</div>`;
 }
 
 function getPinSteps() {
@@ -408,18 +569,33 @@ function renderMarkers() {
     const count = group.reclamos.length;
     const diameter = pinDiameter(count);
     const radius = diameter / 2;
-    const theme = pinTheme(count);
+
+    // Un pin agrupa varios reclamos de la MISMA dirección, que pueden ser de
+    // categorías distintas. Se pinta con la más frecuente del punto; el
+    // desglose completo va en el popup, para no perder esa información.
+    const color = colorDeCategoria(group.categoriaDominante);
+    // Blanco sobre estos tonos: todos son medios u oscuros, ninguno claro.
+    const texto = '#ffffff';
+    // Si TODOS los reclamos del punto son aproximados, el pin va punteado. Con
+    // uno solo exacto ya hay una ubicación precisa ahí y el pin va sólido.
+    const aproximado = group.reclamos.every((r) => r.precision === 'aproximada');
+
     const icon = L.divIcon({
       className: 'claims-pin-wrap',
       iconSize: [diameter, diameter],
       iconAnchor: [radius, radius],
-      html: `<div class="claims-pin" style="width:${diameter}px;height:${diameter}px;background:${theme.bg};border-color:${theme.bg};color:${theme.text};font-size:${diameter >= 48 ? 15 : diameter >= 36 ? 13 : 11}px">${count}</div>`,
+      html:
+        `<div class="claims-pin${aproximado ? ' is-aproximada' : ''}" ` +
+        `style="width:${diameter}px;height:${diameter}px;background:${color};border-color:${aproximado ? texto : color};color:${texto};` +
+        `font-size:${diameter >= 48 ? 15 : diameter >= 36 ? 13 : 11}px">${count}</div>`,
     });
     const marker = L.marker([group.lat, group.lng], { icon });
     marker.bindTooltip(tooltipHtml(group), { sticky: true, opacity: 0.95 });
     marker.bindPopup(popupHtml(group), { maxWidth: 360, maxHeight: 340 });
     claimsLayer.addLayer(marker);
   }
+
+  renderLeyenda(groups);
 
   if (groups.length > 0) {
     const bounds = L.latLngBounds(groups.map((g) => [g.lat, g.lng]));
@@ -469,6 +645,36 @@ function wireGlobalPopupHandlers() {
 // Carga inicial + descarga de CSV
 // -------------------------------------------------------------------------
 
+/**
+ * El filtro de subcategoría depende del de categoría: se puebla sólo con las
+ * subcategorías de las categorías seleccionadas. Con las 26 marcadas serían 85
+ * opciones, una lista imposible de usar; y ofrecer subcategorías de categorías
+ * que el usuario filtró afuera devolvería siempre cero resultados.
+ *
+ * Se llama al cargar y cada vez que cambia la selección de categorías.
+ */
+function rebuildSubcategoriaFilter() {
+  const cats = selectedCategorias.size > 0 ? [...selectedCategorias] : allCategorias;
+
+  const subs = new Set();
+  for (const c of cats) {
+    for (const s of subcategoriasPorCategoria[c] || []) subs.add(s);
+  }
+  allSubcategorias = [...subs].sort((a, b) => a.localeCompare(b, 'es'));
+
+  // Se conserva lo que el usuario ya había elegido y sigue siendo válido; el
+  // resto se descarta solo, sin dejar un filtro activo invisible.
+  const previas = [...selectedSubcategorias].filter((s) => subs.has(s));
+  selectedSubcategorias = new Set(previas.length > 0 ? previas : allSubcategorias);
+
+  subcategoriaMultiSelect = createFilterMultiSelect({
+    containerId: 'claimsSubcategoriaSelect',
+    label: 'Subcategoría',
+    options: allSubcategorias,
+    selectedSet: selectedSubcategorias,
+  });
+}
+
 async function refreshClaimsMap() {
   const errorEl = document.getElementById('claimsMapError');
   if (errorEl) {
@@ -483,9 +689,13 @@ async function refreshClaimsMap() {
 
     allCategorias = Array.isArray(data.categorias) ? data.categorias : [];
     allEstados = Array.isArray(data.estados) ? data.estados : [];
+    subcategoriasPorCategoria = data.subcategoriasPorCategoria || {};
+    conteoPorCategoria = data.conteoPorCategoria || {};
     selectedCategorias = new Set(allCategorias);
     selectedEstados = new Set(allEstados);
     rawReclamos = Array.isArray(data.reclamos) ? data.reclamos : [];
+
+    recalcularPaleta();
 
     closeOpenFilterPanel();
     categoriaMultiSelect = createFilterMultiSelect({
@@ -500,6 +710,7 @@ async function refreshClaimsMap() {
       options: allEstados,
       selectedSet: selectedEstados,
     });
+    rebuildSubcategoriaFilter();
     populateBarrioComunaOptions(rawReclamos);
     resetOtherFilters();
 
@@ -528,6 +739,8 @@ document.getElementById('claimsBuscar')?.addEventListener('input', () => {
 document.getElementById('claimsClearBtn')?.addEventListener('click', () => {
   categoriaMultiSelect?.selectAll();
   estadoMultiSelect?.selectAll();
+  rebuildSubcategoriaFilter();
+  subcategoriaMultiSelect?.selectAll();
   resetOtherFilters();
   applyFiltersAndReload();
 });

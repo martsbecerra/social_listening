@@ -30,6 +30,7 @@ const { startScheduler, runCycleAndNotify, getCronExpression, getLastRunAt, esti
 const { processPendingReclamosInBackground } = require('./src/geoWorker');
 const accountStats = require('./src/accountStats');
 const { CATEGORIAS_RECLAMO, ESTADOS_RECLAMO, isValidEstado } = require('./src/categoriaReclamo');
+const { subcategoriasDe } = require('./src/categoriasConfig');
 
 const app = express();
 
@@ -328,6 +329,7 @@ function parseReclamosFilters(query) {
   };
   return {
     categoria: toList(query.categoria),
+    subcategoria: toList(query.subcategoria),
     estado: toList(query.estado),
     barrio: query.barrio || undefined,
     comuna: query.comuna || undefined,
@@ -339,7 +341,20 @@ function parseReclamosFilters(query) {
 
 app.get('/api/reclamos', (req, res) => {
   const reclamos = db.listReclamosFiltered(parseReclamosFilters(req.query));
-  res.json({ categorias: CATEGORIAS_RECLAMO, estados: ESTADOS_RECLAMO, reclamos });
+  res.json({
+    categorias: CATEGORIAS_RECLAMO,
+    estados: ESTADOS_RECLAMO,
+    // Árbol categoría -> subcategorías, para poblar el filtro dependiente.
+    subcategoriasPorCategoria: Object.fromEntries(
+      CATEGORIAS_RECLAMO.map((c) => [c, subcategoriasDe(c)])
+    ),
+    // Conteo por categoría sobre TODA la base, no sobre lo filtrado: el mapa
+    // asigna sus 12 colores a las categorías más frecuentes, y ese ranking no
+    // puede cambiar cada vez que el usuario toca un filtro — los pines
+    // cambiarían de color solos.
+    conteoPorCategoria: db.contarReclamosPorCategoria(),
+    reclamos,
+  });
 });
 
 // Edita solo el estado del reclamo (Pendiente | En tratamiento | Resuelto | Desestimado).

@@ -546,6 +546,42 @@ inicial cae dentro del tramo mencionado.
 > (`ws.usig.buenosaires.gob.ar/geocoder/2.2/reversegeocoding`), que dado un
 > punto devuelve la puerta y la esquina más cercanas con calle y altura.
 
+### Colores del mapa
+
+**Doce colores, no veintiséis.** Con 26 categorías no existen 26 tonos que el
+ojo separe de un vistazo: pasando los diez, comparar dos pines se vuelve
+adivinanza. Entonces:
+
+- Las **12 categorías más frecuentes de toda la base** se llevan un color fijo.
+  Que salga del total y no de lo filtrado es deliberado: si el ranking se
+  recalculara con cada filtro, los pines cambiarían de color solos y no se
+  podría comparar nada entre dos vistas.
+- El resto va al **gris**, que además comunica "cola larga" mejor que un color
+  casi repetido. La leyenda lo aclara.
+- **Excepción:** si el filtro deja 12 o menos categorías seleccionadas, cada una
+  toma color propio — ya no hay ambigüedad posible.
+
+Los colores salen de la paleta del sistema (jade, barro, coral, ámbar) más
+análogos en la misma saturación, alternando claros y oscuros para que dos
+vecinos en la leyenda no se parezcan. Están en `:root` como `--cat-1` … `--cat-12`
+y `--cat-otras`.
+
+**La leyenda muestra sólo las categorías presentes en la vista actual**, con su
+conteo. Listar las 26 sería ruido; ocultar alguna dejaría pines sin explicar.
+
+**Un pin agrupa reclamos de una misma dirección**, que pueden ser de categorías
+distintas. Se pinta con la **más frecuente de ese punto**, y el popup muestra el
+desglose completo — si no, un punto con tres categorías se leería como si fuera
+de una sola.
+
+**Pin de borde punteado**: todos los reclamos de ese punto tienen
+`precision = 'aproximada'` (un lugar con nombre, no una altura). Con uno solo
+exacto el pin va sólido, porque ahí sí hay una ubicación precisa.
+
+El filtro de **subcategoría depende del de categoría**: se puebla sólo con las
+subcategorías de las categorías seleccionadas. Con las 26 marcadas serían 85
+opciones, una lista imposible de usar.
+
 ### Los estados de `geo_status`
 
 Cada reclamo guarda en qué terminó su geocodificación:

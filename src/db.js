@@ -715,6 +715,19 @@ function deleteReclamosPorOrigen(origen) {
   return db.prepare('DELETE FROM reclamos WHERE import_origen = ?').run(origen).changes;
 }
 
+/**
+ * Conteo por categoría sobre toda la tabla (sin filtros, salvo la exclusión de
+ * fuera_caba que aplica siempre). Lo usa el mapa para decidir a qué categorías
+ * les toca color propio: ese ranking tiene que salir del total y no de lo que
+ * el usuario esté filtrando, o los pines cambiarían de color al mover un filtro.
+ */
+function contarReclamosPorCategoria() {
+  const filas = db
+    .prepare("SELECT categoria, COUNT(*) AS total FROM reclamos WHERE geo_status IS NOT 'fuera_caba' GROUP BY categoria")
+    .all();
+  return Object.fromEntries(filas.map((f) => [f.categoria, f.total]));
+}
+
 function updateEstado(id, estado) {
   updateEstadoStmt.run(estado, id);
 }
@@ -976,6 +989,7 @@ module.exports = {
   applyMetricsRefresh,
   upsertReclamo,
   listReclamosFiltered,
+  contarReclamosPorCategoria,
   listReclamosPorOrigen,
   deleteReclamosPorOrigen,
   updateEstado,
