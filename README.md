@@ -358,6 +358,55 @@ El costo por análisis es bajo: son unos pocos miles de tokens de entrada
 > `c_likes`, `c_retweets`, `c_replies`, `reclamo_reiterado`, `sentimiento`):
 > ésas **se descartan a propósito** al importar y no hay intención de guardarlas.
 
+### Categorías y subcategorías de reclamos
+
+El esquema es de **dos niveles**: categoría (26) + subcategoría (85). Vive en
+**`config/categorias-reclamos.json`**, no en el código — lo define el cliente y
+va a cambiar. El archivo fuente es [`design/CATEGORIAS.pdf`](design/CATEGORIAS.pdf).
+
+Para agregar, sacar o renombrar una categoría **alcanza con editar ese JSON**.
+No hay que tocar código ni migrar la base, porque:
+
+- `categoria` y `subcategoria` **no tienen `CHECK`** en la tabla. SQLite no sabe
+  alterar un `CHECK`: si la lista estuviera en el esquema, cada cambio del
+  cliente obligaría a reconstruir la tabla.
+- La validación vive en `src/categoriasConfig.js`, y todo lo que se guarda pasa
+  por `normalizeClasificacion()`, llamada desde `db.upsertReclamo()`.
+
+`estado`, `plataforma` y `geo_status` **sí** conservan su `CHECK`: son listas
+cortas, estables y definidas por el equipo, no por el cliente.
+
+Reglas de validación, en orden:
+
+| Caso | Resultado |
+|---|---|
+| Par (categoría, subcategoría) válido | Se guarda tal cual |
+| Difiere en mayúsculas o acentos | Se resuelve al texto canónico |
+| Categoría del esquema viejo | Se traduce por alias (tabla en `categoriasConfig.js`) |
+| Subcategoría que no pertenece a esa categoría | Categoría + **subcategoría vacía** |
+| Categoría inexistente | **`Coyuntura / Otros`** |
+
+Todo ajuste se loguea con el id de la fila, para poder rastrearlo.
+
+> **Por qué los alias son una tabla explícita y no una normalización.** El
+> archivo histórico trae `"Recuperción de Propiedes "` — dos typos y un espacio
+> final — que plegado da `recupercion de propiedes`, distinto de
+> `recuperacion de propiedades`. Trim + minúsculas + sin acentos **no** las une:
+> el error está en las letras. Por eso los dos textos crudos están mapeados a
+> mano a `Seguridad`.
+
+#### Migrar reclamos del esquema viejo
+
+`scripts/migrate-categorias.js` traduce las filas que quedaron con las 9
+categorías viejas. Guarda el estado anterior en la tabla `categorias_backup`,
+así el revert no depende de acordarse del mapeo:
+
+- `node scripts/migrate-categorias.js --dry-run` — muestra qué haría
+- `node scripts/migrate-categorias.js` — migra
+- `node scripts/migrate-categorias.js --revert` — vuelve atrás
+
+Es idempotente: correrlo dos veces no duplica ni rompe nada.
+
 ### Los estados de `geo_status`
 
 Cada reclamo guarda en qué terminó su geocodificación:
