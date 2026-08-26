@@ -28,28 +28,36 @@ const MAX_TOKENS = 1500;
 // empieza a perder la correspondencia por índice.
 const CHUNK_SIZE = 25;
 
+// Se pide el NÚMERO de la subcategoría, no su texto. Copiar textos largos y
+// parecidos entre sí ("Reclamos por falta de limpieza y recolección de
+// residuos" vs "Quejas por falta de limpieza en la vía pública...") hace que
+// el modelo cambie una palabra al transcribir y la validación lo rechace, aun
+// habiendo elegido bien. Con un número no hay transcripción posible: o el
+// índice existe o no. Además baja los tokens de salida.
 const SYSTEM_PROMPT = `Sos un clasificador de reclamos vecinales de la Ciudad de Buenos Aires.
-Cada reclamo YA tiene asignada su categoría. Tu única tarea es elegir la SUBCATEGORÍA que le corresponde, de la lista cerrada de esa categoría.
+Cada reclamo YA tiene asignada su categoría. Tu única tarea es elegir la SUBCATEGORÍA que le corresponde, de la lista numerada de esa categoría.
 
 Reglas:
-- Elegí una subcategoría de la lista de SU categoría, copiada TAL CUAL (mismas mayúsculas, acentos y paréntesis). No la reformules ni la acortes.
-- Si ninguna subcategoría de esa categoría describe el reclamo, devolvé "" (string vacío). Es una respuesta válida y preferible a forzar una que no corresponde.
-- No inventes subcategorías ni uses las de otra categoría.
+- Devolvé el NÚMERO de la subcategoría dentro de la lista de SU categoría.
+- Si ninguna subcategoría de esa categoría describe el reclamo, devolvé 0. Es una respuesta válida y preferible a forzar una que no corresponde.
+- No uses números de otra categoría ni inventes opciones.
 
 Respondé SOLO un JSON, sin texto adicional ni markdown, con esta forma exacta:
-{"asignaciones": [{"i": 1, "subcategoria": "..."}, {"i": 2, "subcategoria": ""}]}
+{"asignaciones": [{"i": 1, "sub": 3}, {"i": 2, "sub": 0}]}
 Devolvé un elemento por cada reclamo numerado, con su mismo número en "i".`;
 
 /**
- * Arma el bloque de opciones: sólo las sublistas de las categorías presentes.
+ * Arma el bloque de opciones: sólo las sublistas de las categorías presentes,
+ * numeradas desde 1 dentro de cada categoría.
  * @param {string[]} categorias nombres canónicos, sin repetir
  */
 function buildOpciones(categorias) {
   return categorias
     .map((cat) => {
       const subs = subcategoriasDe(cat);
-      const items = subs.length > 0 ? subs.map((s) => `  - ${s}`).join('\n') : '  (sin subcategorías)';
-      return `Categoría "${cat}":\n${items}`;
+      const items =
+        subs.length > 0 ? subs.map((s, i) => `  ${i + 1}. ${s}`).join('\n') : '  (sin subcategorías)';
+      return `Categoría "${cat}":\n${items}\n  0. ninguna de las anteriores`;
     })
     .join('\n\n');
 }
@@ -143,17 +151,27 @@ async function asignarSubcategorias(reclamos) {
         const pos = Number(a && a.i) - 1;
         if (!Number.isInteger(pos) || pos < 0 || pos >= loteIdx.length) continue;
         const idxReal = loteIdx[pos];
+        const cat = resolveCategoria(reclamos[idxReal].categoria);
+        const subs = subcategoriasDe(cat);
+
+        // Camino normal: el número de la opción.
+        const n = Number(a.sub);
+        if (Number.isInteger(n)) {
+          if (n === 0) continue; // "ninguna", respuesta válida.
+          if (n >= 1 && n <= subs.length) {
+            resultado[idxReal] = subs[n - 1];
+            continue;
+          }
+          console.warn(`[subcategoria] índice ${n} fuera de rango para "${cat}" — queda vacía.`);
+          continue;
+        }
+
+        // Tolerancia: si igual mandó el texto, se intenta resolver.
         const propuesta = a.subcategoria == null ? '' : String(a.subcategoria).trim();
         if (!propuesta) continue;
-
-        const canonica = resolveSubcategoria(reclamos[idxReal].categoria, propuesta);
-        if (canonica) {
-          resultado[idxReal] = canonica;
-        } else {
-          console.warn(
-            `[subcategoria] "${propuesta}" no pertenece a "${reclamos[idxReal].categoria}" — queda vacía.`
-          );
-        }
+        const canonica = resolveSubcategoria(cat, propuesta);
+        if (canonica) resultado[idxReal] = canonica;
+        else console.warn(`[subcategoria] "${propuesta}" no pertenece a "${cat}" — queda vacía.`);
       }
     } catch (err) {
       // Un lote que falla deja sus reclamos sin subcategoría, pero el resto

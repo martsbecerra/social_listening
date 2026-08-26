@@ -135,6 +135,7 @@ db.exec(`
     texto_original TEXT NOT NULL,
     categoria TEXT NOT NULL,
     subcategoria TEXT,
+    precision_fecha TEXT,
     direccion_detectada TEXT,
     direccion_normalizada TEXT,
     calle TEXT,
@@ -162,6 +163,13 @@ const reclamosColumns = db.prepare('PRAGMA table_info(reclamos)').all().map((c) 
 if (!reclamosColumns.includes('subcategoria')) {
   db.exec('ALTER TABLE reclamos ADD COLUMN subcategoria TEXT');
 }
+// Con qué precisión se conoce `fecha`. Los archivos importados a veces traen
+// sólo el mes ("ABRIL"): se guarda el día 1, pero marcado como 'mes' para no
+// hacer pasar por exacta una fecha que no lo es. 'exacta' cuando vino día y
+// hora; NULL en las filas viejas y en las que no tienen fecha.
+if (!reclamosColumns.includes('precision_fecha')) {
+  db.exec('ALTER TABLE reclamos ADD COLUMN precision_fecha TEXT');
+}
 
 const reclamosDdl =
   db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'reclamos'").get()?.sql || '';
@@ -184,6 +192,7 @@ if (/CHECK\s*\(\s*categoria\s+IN/i.test(reclamosDdl)) {
         texto_original TEXT NOT NULL,
         categoria TEXT NOT NULL,
         subcategoria TEXT,
+    precision_fecha TEXT,
         direccion_detectada TEXT,
         direccion_normalizada TEXT,
         calle TEXT,
@@ -201,7 +210,7 @@ if (/CHECK\s*\(\s*categoria\s+IN/i.test(reclamosDdl)) {
     db.exec(`
       INSERT INTO reclamos_nueva
       SELECT id, comentario_id, plataforma, post_url, comment_url, autor, fecha, detected_at,
-             texto_original, categoria, subcategoria, direccion_detectada, direccion_normalizada,
+             texto_original, categoria, subcategoria, precision_fecha, direccion_detectada, direccion_normalizada,
              calle, altura, cruce, x, y, comuna, barrio, precision, geo_status, estado
       FROM reclamos
     `);
@@ -372,12 +381,12 @@ const applyMetricsRefreshStmt = db.prepare(
 const upsertReclamoStmt = db.prepare(`
   INSERT INTO reclamos (
     id, comentario_id, plataforma, post_url, comment_url, autor, fecha,
-    detected_at, texto_original, categoria, subcategoria, direccion_detectada,
+    detected_at, texto_original, categoria, subcategoria, precision_fecha, direccion_detectada,
     direccion_normalizada, calle, altura, cruce, x, y, comuna, barrio,
     precision, geo_status, estado
   ) VALUES (
     @id, @comentarioId, @plataforma, @postUrl, @commentUrl, @autor, @fecha,
-    @detectedAt, @textoOriginal, @categoria, @subcategoria, @direccionDetectada,
+    @detectedAt, @textoOriginal, @categoria, @subcategoria, @precisionFecha, @direccionDetectada,
     @direccionNormalizada, @calle, @altura, @cruce, @x, @y, @comuna, @barrio,
     @precision, @geoStatus, @estado
   )
@@ -392,6 +401,7 @@ const upsertReclamoStmt = db.prepare(`
     texto_original = excluded.texto_original,
     categoria = excluded.categoria,
     subcategoria = excluded.subcategoria,
+    precision_fecha = excluded.precision_fecha,
     direccion_detectada = excluded.direccion_detectada,
     direccion_normalizada = excluded.direccion_normalizada,
     calle = excluded.calle,
@@ -548,6 +558,7 @@ function mapReclamoRow(row) {
     textoOriginal: row.texto_original,
     categoria: row.categoria,
     subcategoria: row.subcategoria,
+    precisionFecha: row.precision_fecha,
     direccionDetectada: row.direccion_detectada,
     direccionNormalizada: row.direccion_normalizada,
     calle: row.calle,
@@ -590,6 +601,7 @@ function upsertReclamo(reclamo) {
     textoOriginal: reclamo.textoOriginal,
     categoria,
     subcategoria: subcategoria || null,
+    precisionFecha: reclamo.precisionFecha || null,
     direccionDetectada: reclamo.direccionDetectada || null,
     direccionNormalizada: reclamo.direccionNormalizada || null,
     calle: reclamo.calle || null,

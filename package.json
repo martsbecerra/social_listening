@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "stop": "node scripts/stop-server.js",
-    "import-reclamos-excel": "node scripts/import-reclamos-excel.js"
+    "import-reclamos": "node scripts/import-reclamos.js"
   },
   "engines": {
     "node": ">=22.5.0"

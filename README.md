@@ -407,6 +407,55 @@ así el revert no depende de acordarse del mapeo:
 
 Es idempotente: correrlo dos veces no duplica ni rompe nada.
 
+### Importar reclamos desde Excel o CSV
+
+```
+node scripts/import-reclamos.js data/import/<archivo> [--dry-run] [--limit N] [--si]
+```
+
+- `--dry-run` procesa todo y muestra el resultado **sin escribir en la base**.
+- `--limit N` procesa sólo las primeras N filas (para probar barato).
+- `--si` saltea la confirmación (para correr desatendido).
+- `--map campo=Columna` fuerza el mapeo de una columna.
+
+Antes de llamar al LLM muestra el **costo estimado** y pide confirmación.
+
+**Detección de columnas.** Busca por nombre tolerando variantes
+(`texto|comentario|contenido|mensaje|hit_sentence`, `fecha|date|mes`,
+`autor|usuario|cuenta`, `link|url|enlace`, más `direccion`, `categoria`,
+`x`, `y`, `comuna`). Si falta alguna obligatoria, **lista las que encontró y
+pide el mapeo**, sin escribir nada.
+
+**Qué hace con cada fila:**
+
+| Problema del archivo | Qué hace el importador |
+|---|---|
+| Texto en mojibake (`QuÃ©`) | Lo repara. Si más del 10% no es reparable, **aborta**: texto corrupto clasifica mal y queda mal para siempre |
+| Coordenadas sin punto decimal | Prueba el valor tal cual; si no cae en CABA, inserta el decimal; si tampoco, descarta y manda a USIG |
+| Categorías viejas o con typos | Las traduce por la tabla de alias de `categoriasConfig` |
+| Fecha con sólo el mes (`ABRIL`) | Guarda el día 1 y marca `precision_fecha = 'mes'` |
+| Fecha completa | `precision_fecha = 'exacta'` |
+| Columna `direccion` poco confiable | La usa como **pista**; manda el texto y deja que el LLM decida |
+
+**Las filas sin ubicación accionable NO se descartan**: entran con
+`geo_status = 'sin_direccion'`. Sirven para estadística aunque no vayan al mapa.
+La dirección original del archivo se guarda igual en `direccion_detectada`,
+aunque el modelo la descarte, para poder auditar si el criterio está
+descartando de más.
+
+> **Por qué la columna `direccion` es una pista y no la verdad.** En el
+> histórico de X, esa columna salió de un extractor ingenuo: "hasta las **18h**"
+> produjo *"Carreras, Santiago de las 18"*, "antes de las **7am**" produjo
+> *"...de las 7"*, y "mi hijo vive en **España**" produjo *"España Av."*. En el
+> 28% de las filas el nombre de calle **no aparece en ningún lado del texto**, y
+> 178 filas comparten la misma calle inventada por la frase "las N". Importarla
+> tal cual llenaría el mapa de pines precisos en lugares equivocados.
+
+**Idempotencia y dedupe.** La clave es **link + dirección + categoría**, no sólo
+el link: un mismo tuit puede citar varias direcciones, y también aparecer dos
+veces con categorías distintas (un texto puede tocar higiene y seguridad a la
+vez). Correr el importador dos veces hace upsert, no duplica.
+
 ### Qué ubicación es "accionable"
 
 Un reclamo entra al mapa sólo si el comentario menciona un lugar al que se
