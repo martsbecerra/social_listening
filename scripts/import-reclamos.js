@@ -429,7 +429,13 @@ async function main() {
     const direccionDetectada = p.ubicacion.direccion || p.pista || null;
     const g = p.geo;
 
-    const id = construirId(p.link, p.ubicacion.direccion || p.pista, p.categoria, p.indice);
+    // El id usa la dirección DEL ARCHIVO, no la que extrae el LLM. La del LLM
+    // varía entre corridas ("Fonrouge 1775 PB dpto 2" una vez, "Fonrouge 1775"
+    // la siguiente) y eso generaba un id distinto para la misma fila: al
+    // reimportar aparecían duplicados en vez de un upsert. La del archivo es
+    // estable, y además es la que distingue los 241 links repetidos, que es
+    // para lo que existe esta clave.
+    const id = construirId(p.link, p.pista, p.categoria, p.indice);
     if (porId.has(id)) {
       duplicadosEnArchivo += 1;
       continue;
