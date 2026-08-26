@@ -358,6 +358,45 @@ El costo por análisis es bajo: son unos pocos miles de tokens de entrada
 > `c_likes`, `c_retweets`, `c_replies`, `reclamo_reiterado`, `sentimiento`):
 > ésas **se descartan a propósito** al importar y no hay intención de guardarlas.
 
+### Los estados de `geo_status`
+
+Cada reclamo guarda en qué terminó su geocodificación:
+
+| `geo_status` | Qué significa | ¿Aparece en el mapa? |
+|---|---|---|
+| `pendiente` | Detectado, todavía sin geocodificar | No (hasta que corra el worker) |
+| `ok` | Resuelto dentro de CABA, con comuna y barrio | **Sí**, con pin |
+| `sin_direccion` | No había dirección, o USIG no la encontró en ningún lado | No (queda en la lista, sin pin) |
+| `fuera_caba` | Dirección real, pero de otro partido | No — se excluye siempre |
+| `invalida` | El texto no parece una dirección (`addressClean.js`) | No |
+
+`fuera_caba` **nunca se muestra ni se exporta**, pase el filtro que pase
+(`listReclamosFiltered`). Queda guardado sólo para poder auditar de dónde
+vienen las direcciones de afuera, con la dirección normalizada del partido que
+la reconoció.
+
+Cómo se distingue `fuera_caba` de `sin_direccion`: USIG es un servicio
+exclusivo de CABA y `geocode.js` le agrega `, CABA` a la consulta para evitar
+ambigüedades entre partidos. Con ese sufijo, una dirección de Avellaneda y una
+dirección inventada devuelven lo mismo — cero resultados. Por eso, cuando CABA
+no la reconoce, se hace una **segunda consulta sin el sufijo**: si USIG la
+ubica en otro `cod_partido`, es `fuera_caba`; si no la ubica en ningún lado, es
+`sin_direccion`. Esa segunda consulta corre sólo en el camino de fallo y queda
+cacheada, así que no agrega tráfico al caso normal.
+
+> **Nota si venís de una versión anterior.** Hasta este cambio, las direcciones
+> de otros partidos se guardaban como `sin_direccion` y la señal se perdía. Las
+> entradas `not_found` que ya estuvieran en `geocode_cache` seguirían
+> devolviendo el estado viejo, así que hay que borrarlas una vez para que se
+> reevalúen:
+>
+> ```sql
+> DELETE FROM geocode_cache WHERE status = 'not_found';
+> ```
+>
+> Ya se corrió sobre `data/monitoring.db`. Sólo hace falta repetirlo en otra
+> copia de la base que venga de antes del cambio.
+
 ---
 
 ## 🛟 Manejo de errores

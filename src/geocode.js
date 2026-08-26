@@ -34,13 +34,19 @@ async function fetchWithTimeout(url, timeoutMs) {
   }
 }
 
-/** GET a USIG con reintentos + backoff exponencial. Lanza si se agotan los intentos. */
-async function requestUsig(direccionLimpia) {
+/**
+ * GET a USIG con reintentos + backoff exponencial. Lanza si se agotan los intentos.
+ * @param {string} direccionLimpia
+ * @param {{ calificarCaba?: boolean }} [opts] `calificarCaba: false` consulta la
+ *   dirección tal cual, sin forzar CABA — se usa sólo para averiguar A QUÉ
+ *   partido pertenece una dirección que CABA no reconoció (ver geocodeAddress).
+ */
+async function requestUsig(direccionLimpia, { calificarCaba = true } = {}) {
   const url = new URL(USIG_URL);
   // Sin calificar "CABA", USIG devuelve un resultado ambiguo por partido
   // (Escobar, Ezeiza, Moreno, Pilar, Quilmes...) y ninguno trae coordenadas
   // hasta que la dirección resuelve a un único partido.
-  url.searchParams.set('direccion', `${direccionLimpia}, CABA`);
+  url.searchParams.set('direccion', calificarCaba ? `${direccionLimpia}, CABA` : direccionLimpia);
 
   let lastErr;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
@@ -65,13 +71,35 @@ async function requestUsig(direccionLimpia) {
 }
 
 /**
+ * Segunda consulta, sin forzar CABA, para saber si una dirección que CABA no
+ * reconoció pertenece a otro partido. Sólo corre en el camino de fallo (que
+ * además queda cacheado), así que no agrega tráfico al caso normal.
+ * @returns {Promise<{ direccion: string, partido: string } | null>}
+ */
+async function buscarEnOtroPartido(direccionLimpia) {
+  // Un fallo transitorio acá se propaga como transitorio: preferimos
+  // reintentar en la próxima corrida antes que cachear un 'sin_direccion'
+  // que quizá era un fuera_caba.
+  const data = await requestUsig(direccionLimpia, { calificarCaba: false });
+
+  const hits = (data && Array.isArray(data.direccionesNormalizadas) && data.direccionesNormalizadas) || [];
+  const afuera = hits.find((h) => h && h.cod_partido && h.cod_partido !== 'caba');
+  if (!afuera) return null;
+
+  return {
+    direccion: afuera.direccion || direccionLimpia,
+    partido: afuera.cod_partido,
+  };
+}
+
+/**
  * Geocodifica una dirección ya detectada (por Claude o por el import de
  * Excel) contra USIG, con caché por dirección limpia.
  * @param {string} direccionDetectada
  * @returns {Promise<{
  *   direccionNormalizada: string|null, calle: string|null, altura: number|null,
  *   cruce: string|null, x: number|null, y: number|null, precision: string|null,
- *   geoStatus: 'ok'|'sin_direccion'|'invalida'
+ *   geoStatus: 'ok'|'sin_direccion'|'invalida'|'fuera_caba'
  * }>}
  */
 async function geocodeAddress(direccionDetectada) {
@@ -93,6 +121,10 @@ async function geocodeAddress(direccionDetectada) {
   const cacheKey = buildCacheKey(limpia);
   const cached = db.getGeocodeCache(cacheKey);
   if (cached) {
+    // 'fuera_caba' se cachea igual que los demás: una dirección de otro
+    // partido no cambia de partido, no hay por qué volver a preguntar.
+    const geoStatus =
+      cached.status === 'ok' ? 'ok' : cached.status === 'fuera_caba' ? 'fuera_caba' : 'sin_direccion';
     return {
       direccionNormalizada: cached.displayName,
       calle: cached.calle,
@@ -100,8 +132,8 @@ async function geocodeAddress(direccionDetectada) {
       cruce: cached.cruce,
       x: cached.lng, // geocode_cache guarda X (longitud) en la columna lng.
       y: cached.lat, // e Y (latitud) en lat: mismo sentido geográfico real.
-      precision: 'exacta',
-      geoStatus: cached.status === 'ok' ? 'ok' : 'sin_direccion',
+      precision: geoStatus === 'ok' ? 'exacta' : null,
+      geoStatus,
     };
   }
 
@@ -121,13 +153,46 @@ async function geocodeAddress(direccionDetectada) {
   const hits = (data && Array.isArray(data.direccionesNormalizadas) && data.direccionesNormalizadas) || [];
   const hit = hits.find((h) => h && h.coordenadas && h.cod_partido === 'caba') || null;
   if (!hit) {
+    // CABA no la reconoció. Antes se devolvía 'sin_direccion' acá y se perdía
+    // una distinción importante: "el comentario no traía dirección" y "la
+    // dirección es de otro municipio" quedaban idénticas, así que no había
+    // forma de ver que el geocoding estaba trayendo cosas de afuera.
+    // Consultamos de nuevo SIN forzar CABA: si USIG la ubica en otro partido,
+    // es fuera_caba; si no la ubica en ningún lado, sí es sin_direccion.
+    const afuera = await buscarEnOtroPartido(limpia);
+    const ahora = new Date().toISOString();
+
+    if (afuera) {
+      db.setGeocodeCache({
+        queryKey: cacheKey,
+        lat: null,
+        lng: null,
+        // Guardamos la dirección tal como la ve el otro partido: es el rastro
+        // que sirve para auditar de dónde vienen. No se filtra a la UI —
+        // listReclamosFiltered excluye siempre los fuera_caba.
+        displayName: afuera.direccion,
+        status: 'fuera_caba',
+        fetchedAt: ahora,
+      });
+      return {
+        direccionNormalizada: afuera.direccion,
+        calle: null,
+        altura: null,
+        cruce: null,
+        x: null,
+        y: null,
+        precision: null,
+        geoStatus: 'fuera_caba',
+      };
+    }
+
     db.setGeocodeCache({
       queryKey: cacheKey,
       lat: null,
       lng: null,
       displayName: null,
       status: 'not_found',
-      fetchedAt: new Date().toISOString(),
+      fetchedAt: ahora,
     });
     return {
       direccionNormalizada: null,
