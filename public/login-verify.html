@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Iniciar sesión — Social Listening App</title>
+  <title>Confirmar acceso — Social Listening App</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link
@@ -32,17 +32,13 @@
 
     <div class="auth-form">
       <div class="auth-inner">
-        <h2 class="auth-title display">Entrar</h2>
-        <p class="auth-note">Te mandamos un link a tu email institucional. No hace falta contraseña.</p>
+        <h2 class="auth-title display">Confirmar acceso</h2>
+        <p class="auth-note login-verify-copy">Hacé clic para entrar. Este paso evita que un filtro de correo use el link por vos.</p>
 
-        <form id="loginForm" novalidate>
-          <div class="field">
-            <label class="tag" for="loginEmail">Email</label>
-            <input type="email" id="loginEmail" name="email" placeholder="nombre@buenosaires.gob.ar" autocomplete="username" required />
-          </div>
-
-          <button type="submit" class="login-submit" id="loginSubmit">Enviarme el link</button>
-          <p id="loginStatus" class="login-status" role="status"></p>
+        <form id="verifyForm" method="POST" action="/api/auth/verify">
+          <input type="hidden" name="token" id="tokenInput" />
+          <button type="submit" class="login-submit" id="verifySubmit">Entrar</button>
+          <p id="verifyStatus" class="login-status is-error" role="status"></p>
         </form>
 
         <p class="auth-foot tag">Acceso restringido</p>
@@ -61,8 +57,27 @@
   </footer>
 
   <script src="js/meter.js"></script>
-  <script src="js/login.js"></script>
   <script src="js/footer.js"></script>
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('token') || '';
+    const tokenInput = document.getElementById('tokenInput');
+    const form = document.getElementById('verifyForm');
+    const statusEl = document.getElementById('verifyStatus');
+    const submitBtn = document.getElementById('verifySubmit');
+
+    tokenInput.value = token;
+    if (!token) {
+      submitBtn.disabled = true;
+      statusEl.textContent = 'Falta el token. Pedí un link nuevo desde la página de inicio.';
+    }
+
+    form.addEventListener('submit', () => {
+      if (!tokenInput.value) {
+        statusEl.textContent = 'Falta el token. Pedí un link nuevo desde la página de inicio.';
+      }
+    });
+  </script>
 </body>
 
 </html>

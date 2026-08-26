@@ -4,14 +4,22 @@
   "description": "App web para analizar el sentimiento de comentarios de publicaciones de Instagram usando Apify + Claude",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "stop": "node scripts/stop-server.js",
+    "import-reclamos-excel": "node scripts/import-reclamos-excel.js"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22.5.0"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.68.0",
+    "@anthropic-ai/sdk": "^0.112.3",
+    "@stackline/xlsx": "^1.0.6",
+    "@turf/boolean-point-in-polygon": "^7.2.0",
+    "@turf/helpers": "^7.2.0",
+    "cookie": "^0.7.2",
     "dotenv": "^16.4.5",
-    "express": "^4.21.2"
+    "express": "^4.21.2",
+    "node-cron": "^4.6.0",
+    "nodemailer": "^9.0.5"
   }
 }

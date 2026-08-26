@@ -1,0 +1,198 @@
+// ==========================================================================
+// metricsRefresh.js
+// --------------------------------------------------------------------------
+// Refresca likes/comments de posteos YA detectados — nunca re-detecta, nunca
+// re-clasifica sentimiento/relevancia (misma fila, mismo id, mismo título).
+//
+// Agrupado por cuenta, no por posteo: Apify cobra por resultado devuelto, y
+// pedir "los últimos N posteos" de una cuenta trae la misma cantidad de
+// resultados sin importar a cuántos de esos posteos les tocaba refrescar.
+// Una sola llamada por cuenta cubre todos sus posteos pendientes, de
+// cualquier tramo, aunque solo uno haya disparado la inclusión de la cuenta.
+//
+// Tres tramos por antigüedad (ver posted_at):
+//   - Caliente (< REFRESH_HOT_HOURS): sin cadencia propia, el cron de 4hs
+//     que llama a refreshPostMetrics ya es la cadencia.
+//   - Tibio (REFRESH_HOT_HOURS a REFRESH_WARM_DAYS): gateado dos veces —
+//     a nivel de tramo (no se evalúa nada si no pasó REFRESH_WARM_EVERY_HOURS
+//     desde el último pase, marca persistida en refresh_state) y a nivel de
+//     posteo (metrics_updated_at contra esa misma cadencia).
+//   - Frío (REFRESH_WARM_DAYS a REFRESH_COLD_MAX_DAYS): barrido semanal,
+//     gateado solo a nivel de tramo (refresh_state, REFRESH_COLD_EVERY_DAYS).
+//     Más viejo que REFRESH_COLD_MAX_DAYS: congelado, ninguna consulta lo toca.
+//
+// runMonitoringCycle (monitor.js) ya refresca gratis los posteos conocidos
+// que aparecen en su propio scraping — las cuentas trackeadas que acaba de
+// consultar se excluyen acá vía skipAccounts, para no pagarlas dos veces.
+// ==========================================================================
+
+const db = require('./db');
+const monitor = require('./monitor');
+const { BENCHMARK_POST_LIMIT } = require('./accountStats');
+const { isQuotaExceededError } = require('./apify');
+const { checkAndLogJump } = require('./viralJumpDetector');
+
+const REFRESH_HOT_HOURS = Number(process.env.REFRESH_HOT_HOURS) || 48;
+const REFRESH_WARM_DAYS = Number(process.env.REFRESH_WARM_DAYS) || 7;
+const REFRESH_WARM_EVERY_HOURS = Number(process.env.REFRESH_WARM_EVERY_HOURS) || 24;
+const REFRESH_COLD_EVERY_DAYS = Number(process.env.REFRESH_COLD_EVERY_DAYS) || 7;
+const REFRESH_COLD_MAX_DAYS = Number(process.env.REFRESH_COLD_MAX_DAYS) || 60;
+const MAX_ACCOUNTS_PER_REFRESH = Number(process.env.MAX_ACCOUNTS_PER_REFRESH) || 30;
+
+const HOUR_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * HOUR_MS;
+
+function hoursAgoIso(hours, now) {
+  return new Date(now - hours * HOUR_MS).toISOString();
+}
+function daysAgoIso(days, now) {
+  return new Date(now - days * DAY_MS).toISOString();
+}
+
+function sumPostCount(rows) {
+  return rows.reduce((sum, r) => sum + r.postCount, 0);
+}
+
+/**
+ * Refresca likes/comments de los posteos guardados que les toca según su
+ * antigüedad, sin volver a pedirle Apify a las cuentas que el propio ciclo
+ * de monitoreo ya consultó en esta misma corrida (skipAccounts). Nunca tira
+ * — si Apify devuelve cuota agotada, corta y vuelve normalmente.
+ *
+ * @param {{ skipAccounts?: string[] }} [options]
+ */
+async function refreshPostMetrics({ skipAccounts = [] } = {}) {
+  const now = Date.now();
+  const nowIso = new Date(now).toISOString();
+  const skipSet = new Set(skipAccounts.map((a) => a.toLowerCase()));
+
+  const hotSinceIso = hoursAgoIso(REFRESH_HOT_HOURS, now);
+  const warmMaxAgeIso = daysAgoIso(REFRESH_WARM_DAYS, now);
+  const coldMaxAgeIso = daysAgoIso(REFRESH_COLD_MAX_DAYS, now);
+
+  // Caliente: siempre, sin gate propio.
+  const hotAccounts = db.listAccountsDueForRefresh({ sinceIso: hotSinceIso, untilIso: nowIso, cadenceIso: null });
+
+  // Tibio: gate de tramo (marca persistida) antes de siquiera consultar.
+  const warmLastPassAt = db.getRefreshState('warm_last_pass_at');
+  const warmDue = !warmLastPassAt || now - new Date(warmLastPassAt).getTime() >= REFRESH_WARM_EVERY_HOURS * HOUR_MS;
+  const warmAccounts = warmDue
+    ? db.listAccountsDueForRefresh({
+        sinceIso: warmMaxAgeIso,
+        untilIso: hotSinceIso,
+        cadenceIso: hoursAgoIso(REFRESH_WARM_EVERY_HOURS, now),
+      })
+    : [];
+
+  // Frío: mismo mecanismo, cadencia semanal, sin gate por posteo (todo el
+  // tramo ya está gateado a nivel semana).
+  const coldLastPassAt = db.getRefreshState('cold_last_pass_at');
+  const coldDue = !coldLastPassAt || now - new Date(coldLastPassAt).getTime() >= REFRESH_COLD_EVERY_DAYS * DAY_MS;
+  const coldAccounts = coldDue
+    ? db.listAccountsDueForRefresh({ sinceIso: coldMaxAgeIso, untilIso: warmMaxAgeIso, cadenceIso: null })
+    : [];
+
+  const hotCount = sumPostCount(hotAccounts);
+  const warmCount = sumPostCount(warmAccounts);
+  const coldCount = sumPostCount(coldAccounts);
+
+  // Unión por cuenta (puede tener posteos en más de un tramo a la vez —
+  // se scrapea una sola vez igual, cubre todos). Se excluyen acá las que
+  // el ciclo de monitoreo ya consultó en esta misma corrida.
+  const byAccount = new Map();
+  for (const row of [...hotAccounts, ...warmAccounts, ...coldAccounts]) {
+    if (skipSet.has(row.account.toLowerCase())) continue;
+    const prev = byAccount.get(row.account);
+    if (!prev || row.mostRecentPostedAt > prev) byAccount.set(row.account, row.mostRecentPostedAt);
+  }
+  const prioritized = [...byAccount.entries()]
+    .sort((a, b) => (b[1] > a[1] ? 1 : b[1] < a[1] ? -1 : 0))
+    .slice(0, MAX_ACCOUNTS_PER_REFRESH)
+    .map(([account]) => account);
+
+  let accountsChecked = 0;
+  let apifyResultsConsumed = 0;
+  let rowsUpdated = 0;
+  let postsMatched = 0;
+  let jumpsDetected = 0;
+  let quotaExceeded = false;
+
+  for (const account of prioritized) {
+    let posts;
+    try {
+      posts = await monitor.scrapeAccount(account, { resultsLimit: BENCHMARK_POST_LIMIT, lookback: undefined });
+    } catch (err) {
+      if (isQuotaExceededError(err)) {
+        console.log(`[metricsRefresh] Cuota de Apify agotada, cortando la corrida en @${account}.`);
+        quotaExceeded = true;
+        break;
+      }
+      console.error(`[metricsRefresh] No se pudo refrescar @${account}:`, err.message);
+      continue;
+    }
+    accountsChecked += 1;
+    apifyResultsConsumed += posts.length;
+
+    for (const post of posts) {
+      const result = db.applyMetricsRefresh(post.id, { likes: post.likes, comments: post.comments });
+      if (!result) continue; // no estaba guardado -> no corresponde tocarlo (eso es cosa de runMonitoringCycle)
+      postsMatched += 1;
+      if (result.changed) rowsUpdated += 1;
+
+      if (
+        checkAndLogJump({ account: result.account, id: post.id, postedAt: result.postedAt, metric: 'comentarios', previous: result.previousComments, current: result.comments })
+      ) jumpsDetected += 1;
+      if (
+        checkAndLogJump({ account: result.account, id: post.id, postedAt: result.postedAt, metric: 'likes', previous: result.previousLikes, current: result.likes })
+      ) jumpsDetected += 1;
+    }
+  }
+
+  // Las marcas de pase NO se avanzan si se cortó por cuota — mejor
+  // reintentar antes en el próximo ciclo que esperar el intervalo completo
+  // de nuevo. Si terminó normal (con o sin cuentas que quedaron afuera por
+  // el tope), sí se avanzan: esas cuentas vuelven a competir por prioridad
+  // en el próximo pase, ya no dentro de este.
+  if (!quotaExceeded) {
+    if (warmDue) db.setRefreshState('warm_last_pass_at', nowIso);
+    if (coldDue) db.setRefreshState('cold_last_pass_at', nowIso);
+  }
+
+  console.log(
+    `[metricsRefresh] ${hotCount} posteos en tramo caliente, ${warmCount} en tibio, ${coldCount} en frío, ` +
+      `${accountsChecked} cuentas consultadas, ${apifyResultsConsumed} resultados de Apify, ` +
+      `${rowsUpdated} filas actualizadas, ${jumpsDetected} saltos detectados`
+  );
+
+  // Falla silenciosa: si se consultaron cuentas de verdad pero ni un solo
+  // posteo de la respuesta matcheó contra detected_posts, lo más probable
+  // es que los ids no coincidan (ver README) — no un problema de que
+  // "nada cambió" (eso es normal y no ameritaría este aviso).
+  if (accountsChecked > 0 && postsMatched === 0 && !quotaExceeded) {
+    console.log(
+      `[metricsRefresh] ATENCIÓN: ${accountsChecked} cuentas consultadas, 0 filas actualizadas. ` +
+        `Revisar que los ids del scraping coincidan con los guardados.`
+    );
+  }
+
+  return {
+    hotCount,
+    warmCount,
+    coldCount,
+    accountsChecked,
+    apifyResultsConsumed,
+    rowsUpdated,
+    jumpsDetected,
+    quotaExceeded,
+  };
+}
+
+module.exports = {
+  refreshPostMetrics,
+  REFRESH_HOT_HOURS,
+  REFRESH_WARM_DAYS,
+  REFRESH_WARM_EVERY_HOURS,
+  REFRESH_COLD_EVERY_DAYS,
+  REFRESH_COLD_MAX_DAYS,
+  MAX_ACCOUNTS_PER_REFRESH,
+};

@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Relevamiento y caracterización de cuentas digitales – JM</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --jade-900:#04342C; --jade-800:#085041; --jade-700:#0F6E56; --jade-500:#1D9E75;
+  --jade-300:#5DCAA5; --jade-200:#9FE1CB; --jade-100:#E1F5EE; --jade-50:#F2FAF7;
+  --coral-700:#712B13; --coral-600:#993C1D; --coral-500:#D85A30; --coral-200:#F5C4B3; --coral-100:#FAECE7;
+  --ink:#17211E; --ink-2:#4E5D58; --ink-3:#8A9691;
+  --paper:#FDFEFD; --line:#E3EAE7; --sand:#F1EFE8;
+  --amber-700:#854F0B; --amber-100:#FAEEDA;
+}
+*{box-sizing:border-box; margin:0; padding:0;}
+html{scroll-behavior:smooth;}
+body{
+  background:linear-gradient(175deg, #FAFDFB 0%, #F1F9F5 38%, #E9F4EE 100%);
+  background-attachment:fixed;
+  color:var(--ink); font-family:'Inter',system-ui,sans-serif; font-size:15px; line-height:1.6; -webkit-font-smoothing:antialiased;
+}
+::selection{background:var(--jade-200);}
+a{color:var(--jade-700);}
+.mono{font-family:'IBM Plex Mono',monospace;}
+.wrap{max-width:1120px; margin:0 auto; padding:0 clamp(14px,4vw,32px);}
+
+/* ===== Header ===== */
+.hero{
+  background:linear-gradient(135deg,var(--jade-900) 0%,var(--jade-700) 55%,var(--jade-500) 100%);
+  color:#fff; position:relative; overflow:hidden;
+  padding:clamp(28px,6vw,52px) 0 clamp(56px,8vw,74px);
+}
+.hero::before{
+  content:""; position:absolute; right:-80px; top:-120px; width:420px; height:420px; border-radius:50%;
+  background:radial-gradient(circle, rgba(159,225,203,.28), transparent 70%);
+}
+.hero::after{
+  content:""; position:absolute; left:-60px; bottom:-160px; width:300px; height:300px; border-radius:50%;
+  background:radial-gradient(circle, rgba(255,255,255,.10), transparent 70%);
+}
+.hero .wrap{position:relative; z-index:1;}
+.eyebrow{font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:.2em; text-transform:uppercase; color:var(--jade-200); margin-bottom:10px;}
+.hero h1{
+  font-family:'Archivo',sans-serif; font-weight:700; font-size:clamp(24px,4.5vw,38px);
+  line-height:1.15; letter-spacing:-.01em; max-width:760px;
+}
+.badges{display:flex; gap:8px; flex-wrap:wrap; margin-top:18px;}
+.badge{
+  font-size:12px; color:var(--jade-100); background:rgba(255,255,255,.13);
+  border:1px solid rgba(255,255,255,.28); border-radius:999px; padding:5px 14px; backdrop-filter:blur(2px);
+}
+
+/* ===== KPIs ===== */
+.kpis{
+  display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:14px;
+  margin-top:-42px; position:relative; z-index:2;
+}
+.kpi{
+  border-radius:14px; padding:18px 20px; background:#fff;
+  border:1px solid var(--line); box-shadow:0 6px 22px rgba(8,80,65,.08);
+}
+.kpi.jade{background:linear-gradient(160deg,#fff, var(--jade-100)); border-color:var(--jade-200);}
+.kpi .label{font-size:11.5px; text-transform:uppercase; letter-spacing:.07em; color:var(--ink-2); font-weight:500;}
+.kpi.jade .label{color:var(--jade-700);}
+.kpi .value{font-family:'Archivo',sans-serif; font-weight:700; font-size:34px; line-height:1.1; margin-top:6px; color:var(--ink);}
+.kpi.jade .value{color:var(--jade-900);}
+.kpi .value small{font-family:'Inter'; font-size:14px; font-weight:500; color:var(--jade-500);}
+.kpi .spark{height:4px; border-radius:2px; margin-top:12px;}
+.kpi .spark.pos{background:linear-gradient(90deg,var(--jade-500),var(--jade-300));}
+.kpi .spark.neg{background:linear-gradient(90deg,var(--coral-500),#F0997B); width:35%;}
+.kpi .value.pos{color:var(--jade-700);}
+.kpi .value.neg{color:var(--coral-600);}
+
+/* ===== Sections ===== */
+.section{margin-top:clamp(34px,6vw,52px);}
+.section h2{
+  font-family:'Archivo',sans-serif; font-weight:600; font-size:clamp(18px,2.6vw,22px);
+  letter-spacing:-.005em; color:var(--jade-900); display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+}
+.section .lede{font-size:13.5px; color:var(--ink-2); margin-top:6px; max-width:680px;}
+.count-pill{
+  font-family:'Inter'; font-size:11.5px; font-weight:500; border-radius:999px; padding:4px 12px;
+  background:linear-gradient(135deg,var(--coral-100),var(--coral-200)); color:var(--coral-700);
+}
+
+/* Cobertura */
+.cov-grid{display:grid; grid-template-columns:1.5fr 1fr; gap:24px; margin-top:22px; align-items:start;}
+@media(max-width:820px){ .cov-grid{grid-template-columns:1fr;} }
+.panel{background:#fff; border:1px solid var(--line); border-radius:14px; padding:22px; box-shadow:0 3px 14px rgba(8,80,65,.05);}
+.panel h3{font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--ink-2); font-weight:600; margin-bottom:18px;}
+.net-row{display:grid; grid-template-columns:96px 1fr 96px; gap:12px; align-items:center; margin-bottom:13px;}
+.net-row:last-of-type{margin-bottom:0;}
+.net-name{font-size:13.5px; font-weight:600; color:var(--jade-900); display:flex; align-items:center; gap:7px;}
+.net-track{height:18px; border-radius:9px; background:#E4E6E3; border:1px solid #D6D9D5; overflow:hidden; display:flex; box-shadow:inset 0 1px 2px rgba(0,0,0,.04);}
+.seg-si{background:linear-gradient(90deg,var(--jade-700),var(--jade-500)); height:100%;}
+.seg-neg{background:linear-gradient(90deg,var(--coral-500),#F0997B); height:100%;}
+.seg-pend{background:repeating-linear-gradient(45deg,#C9CBC8 0 6px,#E2E4E1 6px 12px); height:100%;}
+.net-count{font-size:12px; color:var(--ink-3); text-align:right;}
+.net-count.warn{color:var(--amber-700);}
+.legend{display:flex; gap:16px; flex-wrap:wrap; margin-top:16px; font-size:12px; color:var(--ink-3);}
+.legend .dot{display:inline-block; width:9px; height:9px; border-radius:3px; margin-right:6px; vertical-align:-1px;}
+.donut-box{display:flex; flex-direction:column; align-items:center; gap:14px;}
+.donut-legend{display:flex; flex-direction:column; gap:8px; font-size:13px; width:100%;}
+.donut-legend .row{display:flex; justify-content:space-between; align-items:center;}
+.donut-legend .row b{font-family:'IBM Plex Mono',monospace; font-weight:500;}
+
+/* Críticas */
+.neg-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:12px; margin-top:20px;}
+.neg-card{
+  background:#fff; border:1px solid var(--line); border-left:3px solid var(--coral-500);
+  border-radius:0 12px 12px 0; padding:15px 17px; transition:box-shadow .2s, transform .2s;
+}
+.neg-card:hover{box-shadow:0 6px 18px rgba(153,60,29,.10); transform:translateY(-1px);}
+.neg-card .who{font-size:13.5px; font-weight:600; color:var(--jade-900); display:flex; justify-content:space-between; gap:8px; align-items:baseline;}
+.neg-card .who .net{font-size:10.5px; font-weight:500; color:var(--ink-3); text-transform:uppercase; letter-spacing:.06em;}
+.neg-card p{font-size:12.5px; color:var(--ink-2); margin-top:6px; line-height:1.55;}
+
+/* ===== Filtros ===== */
+.filters{
+  position:sticky; top:0; z-index:30; margin-top:22px;
+  background:rgba(253,254,253,.92); backdrop-filter:blur(8px);
+  border:1px solid var(--line); border-radius:14px; padding:14px 16px;
+  display:flex; gap:10px; flex-wrap:wrap; align-items:center;
+  box-shadow:0 4px 16px rgba(8,80,65,.05);
+}
+.filters select, .filters input[type=search]{
+  font-family:'Inter'; font-size:13.5px; color:var(--ink);
+  border:1px solid var(--line); border-radius:9px; padding:9px 12px; background:#fff; outline:none;
+  transition:border-color .15s, box-shadow .15s;
+}
+.filters select:focus, .filters input:focus{border-color:var(--jade-500); box-shadow:0 0 0 3px var(--jade-100);}
+.filters input[type=search]{flex:1; min-width:170px;}
+.chk{
+  display:flex; align-items:center; gap:8px; font-size:13.5px; color:var(--ink); cursor:pointer;
+  border:1px solid var(--line); border-radius:9px; padding:9px 12px; background:#fff; user-select:none;
+  transition:border-color .15s, background .15s;
+}
+.chk input{accent-color:var(--jade-700); width:15px; height:15px; cursor:pointer;}
+.chk.on{background:var(--jade-100); border-color:var(--jade-300); color:var(--jade-900); font-weight:500;}
+.f-count{font-size:12.5px; color:var(--ink-3); margin-left:auto; white-space:nowrap;}
+.f-count b{color:var(--jade-800); font-weight:600;}
+.f-clear{
+  font-size:12.5px; color:var(--jade-700); background:none; border:none; cursor:pointer;
+  text-decoration:underline; text-underline-offset:3px; padding:4px;
+}
+
+/* ===== Tabla ===== */
+.table-wrap{margin-top:16px; background:#fff; border:1px solid var(--line); border-radius:14px; overflow:hidden;}
+table{width:100%; border-collapse:collapse;}
+thead th{
+  font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--ink-2); font-weight:600;
+  text-align:left; padding:13px 16px; background:var(--jade-50); border-bottom:1px solid var(--line);
+}
+tbody td{padding:13px 16px; border-bottom:1px solid var(--line); vertical-align:top; font-size:13.5px;}
+tbody tr.main{cursor:pointer; transition:background .12s;}
+tbody tr.main:hover{background:var(--jade-50);}
+tbody tr:last-child td{border-bottom:none;}
+.acc{font-weight:600; color:var(--jade-900); white-space:nowrap;}
+.acc a{color:inherit; text-decoration:none;}
+.acc a:hover{text-decoration:underline; text-underline-offset:3px;}
+.net-tag{font-size:11px; font-weight:500; color:var(--ink-2); display:inline-flex; align-items:center; gap:6px;}
+.net-ic{width:8px; height:8px; border-radius:2px; display:inline-block;}
+.pill{font-size:11.5px; font-weight:500; border-radius:999px; padding:3px 11px; white-space:nowrap;}
+.pill.si{background:var(--jade-100); color:var(--jade-800);}
+.pill.no{background:var(--sand); color:var(--ink-2);}
+.pill.sd{background:var(--amber-100); color:var(--amber-700);}
+.pill.pos{background:var(--jade-100); color:var(--jade-800);}
+.pill.neg{background:var(--coral-100); color:var(--coral-700);}
+.pill.mix{background:linear-gradient(90deg,var(--jade-100),var(--coral-100)); color:var(--ink);}
+.pill.none{background:var(--sand); color:var(--ink-3);}
+.desc{color:var(--ink-2); font-size:13px; line-height:1.55; max-width:520px;}
+tr.detail td{background:var(--jade-50); padding:16px 20px;}
+@keyframes rowFlash{0%{background:var(--jade-100);}100%{background:transparent;}}
+tr.flash{animation:rowFlash 1.6s ease-out;}
+.detail-block{font-size:13px; line-height:1.6;}
+.detail-block h4{font-size:11px; text-transform:uppercase; letter-spacing:.07em; margin:10px 0 4px; font-weight:600;}
+.detail-block h4.p{color:var(--jade-700);} .detail-block h4.n{color:var(--coral-600);}
+.detail-block a{word-break:break-all; font-size:12.5px;}
+.post-chip{
+  font-size:11px; font-weight:500; color:var(--jade-700); background:var(--jade-50);
+  border:1px solid var(--jade-200); border-radius:999px; padding:2px 9px; white-space:nowrap;
+  display:inline-block; margin-left:8px; vertical-align:1px;
+}
+.post-links{display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;}
+.post-btn{
+  font-size:12px; font-weight:500; color:var(--jade-800); background:#fff;
+  border:1px solid var(--jade-300); border-radius:9px; padding:6px 12px; text-decoration:none;
+  transition:background .15s, box-shadow .15s; display:inline-flex; align-items:center; gap:5px;
+}
+.post-btn:hover{background:var(--jade-100); box-shadow:0 2px 8px rgba(15,110,86,.12);}
+.post-btn.n{color:var(--coral-700); border-color:var(--coral-200);}
+.post-btn.n:hover{background:var(--coral-100); box-shadow:0 2px 8px rgba(153,60,29,.10);}
+.chev{color:var(--ink-3); font-size:11px; transition:transform .2s; display:inline-block;}
+tr.open .chev{transform:rotate(90deg);}
+.empty{padding:44px 20px; text-align:center; color:var(--ink-3); font-size:14px;}
+.empty b{color:var(--jade-800);}
+.more-wrap{padding:18px; text-align:center; border-top:1px solid var(--line); background:linear-gradient(180deg,#fff,var(--jade-50));}
+.more-btn{
+  font-family:'Inter'; font-size:13.5px; font-weight:500; color:var(--jade-800);
+  background:#fff; border:1px solid var(--jade-300); border-radius:999px; padding:10px 26px; cursor:pointer;
+  transition:background .15s, box-shadow .15s;
+}
+.more-btn:hover{background:var(--jade-100); box-shadow:0 3px 10px rgba(15,110,86,.14);}
+.more-hint{font-size:11.5px; color:var(--ink-3); margin-top:8px;}
+.list-end{padding:14px; text-align:center; font-size:12px; color:var(--ink-3); border-top:1px solid var(--line);}
+
+/* ===== Footer ===== */
+footer{
+  margin-top:clamp(40px,7vw,64px); padding:26px 0 34px; border-top:1px solid var(--line);
+  font-size:12.5px; color:var(--ink-3); display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap;
+}
+footer .brand{display:flex; align-items:center; gap:9px;}
+footer .mark{width:10px; height:10px; border-radius:3px; background:linear-gradient(135deg,var(--jade-700),var(--jade-300));}
+
+/* ===== Mobile: tabla como tarjetas ===== */
+@media(max-width:720px){
+  thead{display:none;}
+  table, tbody, tr, td{display:block; width:100%;}
+  tbody tr.main{border-bottom:1px solid var(--line); padding:6px 0;}
+  tbody td{border:none; padding:5px 16px;}
+  tbody td[data-l]::before{content:attr(data-l); display:block; font-size:10.5px; text-transform:uppercase; letter-spacing:.07em; color:var(--ink-3); margin-bottom:2px;}
+  .desc{max-width:none;}
+  tr.detail td{padding:14px 16px;}
+  .filters{border-radius:0 0 14px 14px; margin-left:calc(-1*clamp(14px,4vw,32px)); margin-right:calc(-1*clamp(14px,4vw,32px)); border-left:none; border-right:none;}
+}
+@media (prefers-reduced-motion: reduce){
+  *{transition:none !important; animation:none !important;}
+  html{scroll-behavior:auto;}
+}
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <p class="eyebrow">Monitoreo de redes · Jun–Ago 2026</p>
+    <h1>Relevamiento y caracterización de cuentas digitales – JM</h1>
+    <div class="badges">
+      <span class="badge" id="b-plat">5 plataformas</span>
+      <span class="badge" id="b-total">141 cuentas</span>
+      <span class="badge">Ecosistema liberal y PRO</span>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <div class="kpis" id="kpis"></div>
+
+  <section class="section">
+    <h2>Cobertura por plataforma</h2>
+    <p class="lede">Cuentas que mencionan a JM sobre el total relevado en cada red.</p>
+    <div class="cov-grid">
+      <div class="panel">
+        <h3>Menciones sobre total relevado</h3>
+        <div id="netBars"></div>
+        <div class="legend">
+          <span><span class="dot" style="background:var(--jade-500)"></span>Menciona a JM</span>
+          <span><span class="dot" style="background:var(--coral-500)"></span>Con mención negativa</span>
+          <span><span class="dot" style="background:#E4E6E3; border:1px solid #D6D9D5;"></span>Sin mención</span>
+        </div>
+      </div>
+      <div class="panel donut-box">
+        <h3 style="align-self:flex-start;">Tono de las menciones</h3>
+        <svg id="donut" width="170" height="170" viewBox="0 0 170 170" role="img" aria-label="Distribución del tono de las menciones"></svg>
+        <div class="donut-legend" id="donutLegend"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2>Menciones negativas <span class="count-pill" id="negCount"></span></h2>
+    <p class="lede">Las cuentas con al menos una publicación negativa en el período. Tocá cualquier tarjeta para ir al detalle.</p>
+    <div class="neg-grid" id="negGrid"></div>
+  </section>
+
+  <section class="section" id="detalle">
+    <h2>Detalle de cuentas</h2>
+    <p class="lede">Tocá una fila para ver la descripción completa y los links a las publicaciones registradas.</p>
+
+    <div class="filters">
+      <select id="fRed" aria-label="Filtrar por red"><option value="">Todas las redes</option></select>
+      <label class="chk" id="chkWrap"><input type="checkbox" id="fMenciona">Mencionan a JM</label>
+      <select id="fTono" aria-label="Filtrar por tono">
+        <option value="">Todos los tonos</option>
+        <option value="pos">Positivo</option>
+        <option value="neg">Negativo</option>
+        <option value="mix">Positivo y crítico</option>
+        <option value="none">Sin mención</option>
+      </select>
+      <input type="search" id="fBusca" placeholder="Buscar cuenta o descripción…" aria-label="Buscar">
+      <span class="f-count" id="fCount"></span>
+      <button class="f-clear" id="fClear" type="button">Limpiar</button>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Red</th><th>Cuenta</th><th>¿Menciona?</th><th>Tono</th><th>Descripción</th><th></th></tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+      <div class="empty" id="empty" style="display:none;">Sin resultados para esta combinación de filtros.<br><b>Probá limpiar alguno.</b></div>
+      <div class="more-wrap" id="moreWrap" style="display:none;">
+        <button class="more-btn" id="moreBtn" type="button">Ver más cuentas</button>
+        <div class="more-hint" id="moreHint"></div>
+      </div>
+      <div class="list-end" id="listEnd" style="display:none;">— Fin del listado —</div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap" style="display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; width:100%;">
+    <span class="brand"><span class="mark"></span>Panel generado a partir del Excel de relevamiento de cuentas</span>
+    <span class="mono" id="footDate"></span>
+  </div>
+</footer>
+
+<script id="raw-data" type="application/json">[{"red": "INSTAGRAM", "cuenta": "liberalismo.noticias", "link": "https://www.instagram.com/liberalismo.noticias/", "fecha_creacion": "2023-05-01", "verificada": null, "descripcion": "Cuenta de noticias a nivel general y a favor del gobierno nacional.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "INSTAGRAM", "cuenta": "Coherenciaporfavor", "link": "https://www.instagram.com/porfavorcoherencia/", "fecha_creacion": "2020-04-01", "verificada": null, "descripcion": "Cuenta que difunde recortes de noticias, videos y declaraciones de periodistas, políticos o influencers que apuntan a criticar al kirchnerismo y resaltar los logros del Gobierno nacional. Publica contenido diariamente.", "menciona": "si", "pos_flag": "si", "pos_detalle": "Suele publicar videos de JM, principalmente sobre anuncios de seguridad, operativos y prioridad porteña.\nhttps://www.instagram.com/porfavorcoherencia/reel/DZIEjaBlaEF/\nhttps://www.instagram.com/porfavorcoherencia/reel/DZIMTjzkj3-/ \nhttps://www.instagram.com/porfavorcoherencia/reel/DZV7DRSFFrC/ \nhttps://www.instagram.com/porfavorcoherencia/reel/DZYmLfKiQ-5/ \nhttps://www.instagram.com/porfavorcoherencia/reel/DZcTuBPgch0/ \nhttps://www.instagram.com/porfavorcoherencia/reel/DZppjHdoO1c/ \nhttps://www.instagram.com/porfavorcoherencia/reel/DZuvjjejGD9/ \nhttps://www.instagram.com/porfavorcoherencia/reel/DZzw9XVjgnb/ \nhttps://www.instagram.com/porfavorcoherencia/reel/DaK4DzWCoFO/ \nhttps://www.instagram.com/porfavorcoherencia/reel/Daxul6AEaaW/", "neg_flag": "no", "neg_detalle": null}, {"red": "INSTAGRAM", "cuenta": "zurdodetectado", "link": "https://www.instagram.com/zurdodetectado", "fecha_creacion": "2019-01-01", "verificada": null, "descripcion": "Cuenta que difunde noticias, declaraciones de politicos, periodistas e influencers que apuntan al kirchenerismo y resaltan logros del gobierno nacional.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "INSTAGRAM", "cuenta": "augustogrinner", "link": "https://www.instagram.com/augustogrinner", "fecha_creacion": "2020-06-01", "verificada": "2026-03-01", "descripcion": "Periodista que difunde, principalmente, logros del gobierno nacional y críticas al kirchenerismo.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "INSTAGRAM", "cuenta": "danannimal", "link": "https://www.instagram.com/danannimal", "fecha_creacion": "2020-11-01", "verificada": "2024-08-01", "descripcion": "Emmanuel Danann, influencer y creador de contenido argentino identificado con el espacio libertario, con fuerte presencia en redes sociales y contenidos de opinión política y actualidad.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "INSTAGRAM", "cuenta": "IndignadoXD_", "link": "https://www.instagram.com/IndignadoXD_", "fecha_creacion": "2021-07-01", "verificada": null, "descripcion": "Cuenta de contenido político y de actualidad, anti kirchnerista y crítica hacia distintos dirigentes políticos. Publica principalmente videos, noticias y opiniones sobre coyuntura nacional, con un tono confrontativo, irónico y provocador.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "INSTAGRAM", "cuenta": "IndignadoXD", "link": "https://www.instagram.com/IndignadoXD", "fecha_creacion": "2018-02-01", "verificada": "2026-06-01", "descripcion": "Publica contenidos de coyuntura, video de periodistas, políticos e influencers. Publica contenido diarimente citicando al kirchnerismo y dano valor a los logros del gobierno nacional.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "INSTAGRAM", "cuenta": "data24comar", "link": "https://www.instagram.com/data24comar", "fecha_creacion": "2020-03-01", "verificada": null, "descripcion": "Medio digital de noticias y opinión, con una línea editorial cercana al espacio liberal.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "INSTAGRAM", "cuenta": "herrero_liberal", "link": "https://www.instagram.com/herrero_liberal", "fecha_creacion": "2022-09-01", "verificada": "2026-07-01", "descripcion": "Cuenta que difunde recortes de noticias, videos y declaraciones de periodistas, políticos o influencers que apuntan a criticar al kirchnerismo y resaltar los logros del Gobierno nacional. Publica contenido diariamente", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "INSTAGRAM", "cuenta": "enelojodelpoder", "link": "https://www.instagram.com/enelojodelpoder", "fecha_creacion": "2023-08-01", "verificada": "2024-08-01", "descripcion": "Creador de contenido que difunde recortes de periodistas, noticias de politica argentina, destaca logros del gobierno nacional y critica al kirchnerismo. Publica contenido diariamente.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "INSTAGRAM", "cuenta": "hombregrisxd", "link": "https://www.instagram.com/hombregrisxd", "fecha_creacion": "2022-05-01", "verificada": null, "descripcion": "Influencer liberal publica y comparte contenido sobre política, economía y coyuntura nacional, con un tono informal, irónico y confrontativo", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "INSTAGRAM", "cuenta": "elprestook", "link": "https://www.instagram.com/elprestook", "fecha_creacion": "2015-01-01", "verificada": "2019-07-01", "descripcion": "Periodista y director de Data24 publica recortes de su stream hablando sobre la política argentina.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "INSTAGRAM", "cuenta": "alvarozicarelli", "link": "https://www.instagram.com/alvarozicarelli", "fecha_creacion": "2017-04-01", "verificada": "2020-09-01", "descripcion": "Alvaro Zicarelli difunde recortes de su streaming, principalmente, videos de politica argentina y algunos recortes sobre noticias de actualidad.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": "Dedica un posteo a la noticia sobre la licitación de la boveda en el cementerio de Recoleta."}, {"red": "INSTAGRAM", "cuenta": "marianoperez_23", "link": "https://www.instagram.com/marianoperez_23", "fecha_creacion": "2015-05-01", "verificada": "2025-01-01", "descripcion": "Periodista liberal publica contenidos sobre los logros del gobierno nacional y critica al kirchnerismo.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "INSTAGRAM", "cuenta": "mateconmote", "link": "https://www.instagram.com/mateconmote", "fecha_creacion": "2017-08-01", "verificada": null, "descripcion": "Cuenta de Instagram orientada a la publicación de contenido relacionado con actualidad y política. Tiene tendencia anti kircherista", "menciona": "no", "pos_flag": "no", "pos_detalle": "El único posteo del periodo vinculado a la ciudad es uno en el que critica a personas que causaron disturbios en el obelisco luego de la final https://www.instagram.com/mateconmote/reel/Da__TcwDUgW/", "neg_flag": "no", "neg_detalle": null}, {"red": "INSTAGRAM", "cuenta": "Break Point", "link": "https://www.instagram.com/breakpointmp/", "fecha_creacion": "2020-07-01", "verificada": null, "descripcion": "Cuenta que brinda información y opnion de la actualidad. Es afín al liberalismo.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "INSTAGRAM", "cuenta": "alefanntino", "link": "https://www.instagram.com/alefanntino", "fecha_creacion": "2022-03-01", "verificada": null, "descripcion": "Cuenta fan que republica el contenido de Alejandro Fantino. Su contenido es anti kirchnerista", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "INSTAGRAM", "cuenta": "fantinoarg", "link": "https://www.instagram.com/fantinoarg", "fecha_creacion": "2022-09-01", "verificada": null, "descripcion": "Cuenta fan que republica el contenido de Alejandro Fantino. Su contenido es anti kirchnerista", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "INSTAGRAM", "cuenta": "fantinofan", "link": "https://www.instagram.com/fantinofan", "fecha_creacion": "2022-09-01", "verificada": null, "descripcion": "Cuenta fan que republica el contenido de Alejandro Fantino. Su contenido es anti kirchnerista", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "INSTAGRAM", "cuenta": "eduardofeinmann", "link": "https://www.instagram.com/eduardofeinmann", "fecha_creacion": "2018-09-01", "verificada": "2021-07-01", "descripcion": "Cuenta del periodista y analista político Eduardo Feinmann. Publica principalmente contenido de actualidad política y nacional. Difunde principalmente cortos sobre sus programas de radios y de TV.", "menciona": "no", "pos_flag": "si", "pos_detalle": "Se hace mención a la desregulación de la VTV", "neg_flag": "no", "neg_detalle": null}, {"red": "INSTAGRAM", "cuenta": "jonatanvialletn", "link": "https://www.instagram.com/jonatanvialletn", "fecha_creacion": "2018-04-01", "verificada": null, "descripcion": "Cuenta del periodista Jonathan Viale. Difuden noticias de actualidad y cortos sobre sus programas de TV. Antikircherista", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "INSTAGRAM", "cuenta": "antonniolaje", "link": "https://www.instagram.com/antonniolaje", "fecha_creacion": "2024-09-01", "verificada": null, "descripcion": "Su última publicación fue en octubre del 2015", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "INSTAGRAM", "cuenta": "eduardo_feiman_", "link": "https://www.instagram.com/eduardo_feiman_", "fecha_creacion": null, "verificada": null, "descripcion": "no disponible", "menciona": null, "pos_flag": null, "pos_detalle": null, "neg_flag": null, "neg_detalle": null}, {"red": "INSTAGRAM", "cuenta": "peladotrebucq", "link": "https://www.instagram.com/peladotrebucq", "fecha_creacion": "2023-12-01", "verificada": null, "descripcion": "Cuenta fan periodista Esteban Trebuq.  Su contenido es anti kirchnerista", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "INSTAGRAM", "cuenta": "antoniolaje.ar", "link": "https://www.instagram.com/antoniolaje.ar", "fecha_creacion": "2017-06-01", "verificada": null, "descripcion": "Cuenta fan de Antonio Laje. Publica videos con marca de agua propia de la cuenta de editoriales del periodista y con críticas hacia el kirchnerismo. Es afín a LLA.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "INSTAGRAM", "cuenta": "antoniolajexd", "link": "https://www.instagram.com/antoniolajexd", "fecha_creacion": "2024-07-01", "verificada": null, "descripcion": "Cuenta fan de Antonio Laje. Publica videos con marca de agua propia de la cuenta de editoriales del periodista y con críticas hacia el kirchnerismo. Es afín a LLA.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "INSTAGRAM", "cuenta": "El Pelado Trebucq", "link": "https://www.instagram.com/ElPeladoTrebucq", "fecha_creacion": "2023-02-01", "verificada": null, "descripcion": "Cuenta fan de Esteban Trebucq. Publica videos sobre editoriales del periodista y criticando al kirchnerismo. Afín a LLA.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "INSTAGRAM", "cuenta": "peladodelatv", "link": "https://www.instagram.com/peladodelatv", "fecha_creacion": "2021-10-01", "verificada": null, "descripcion": "Cuenta fan de Esteban Trebucq. Publica videos sobre editoriales del periodista y criticando al kirchnerismo. Afín a LLA.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "INSTAGRAM", "cuenta": "edu.feinmann", "link": "https://www.instagram.com/edu.feinmann/", "fecha_creacion": "2020-09-01", "verificada": null, "descripcion": "Cuenta fan de Eduardo Feinmann. Publica videos sobre editoriales y entrevistas del periodista. Realiza críticas al kirchnerismo. Afín a LLA.", "menciona": "no", "pos_flag": "no", "pos_detalle": "Menciona la vuelta de la F1 a CABA pero no a JM.", "neg_flag": "no", "neg_detalle": null}, {"red": "INSTAGRAM", "cuenta": "feinmannxd", "link": "https://www.instagram.com/feinmannxd", "fecha_creacion": "2021-01-01", "verificada": null, "descripcion": "Cuenta fan de Eduardo Feinmann. Publica videos sobre editoriales y entrevistas del periodista. Realiza críticas al kirchnerismo. Afín a LLA.", "menciona": "no", "pos_flag": "no", "pos_detalle": "Menciona la vuelta de la F1 a CABA pero no a JM.", "neg_flag": "no", "neg_detalle": null}, {"red": "INSTAGRAM", "cuenta": "viale.jony", "link": "https://www.instagram.com/viale.jony", "fecha_creacion": "2022-09-01", "verificada": null, "descripcion": "Cuenta fan de Jonathan Viale. Publica videos sobre editoriales y entrevistas del periodista. Realiza críticas al kirchnerismo. Afín a LLA.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "INSTAGRAM", "cuenta": "joni.viale", "link": "https://www.instagram.com/joni.viale", "fecha_creacion": "2021-03-01", "verificada": null, "descripcion": "Cuenta fan de Jonathan Viale. Publica videos sobre editoriales y entrevistas del periodista. Realiza críticas al kirchnerismo. Afín a LLA.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "INSTAGRAM", "cuenta": "antikmasjuntos", "link": "https://www.instagram.com/antikmasjuntos", "fecha_creacion": "2015-05-01", "verificada": "2025-01-01", "descripcion": "Cuenta anti K que publica videos que contienen críticas hacia el kirchnerismo y apoyando las políticas de Javier Milei y JM.", "menciona": "si", "pos_flag": "si", "pos_detalle": "Menciona la mejora del EP y desalojos desde que se fue HRL.", "neg_flag": "no", "neg_detalle": null}, {"red": "INSTAGRAM", "cuenta": "seguimoscambiando", "link": "https://www.instagram.com/seguimoscambiando", "fecha_creacion": "2019-06-01", "verificada": "2026-06-01", "descripcion": "Cuenta afín al PRO, publica contenido sobre políticas de funcionarios del partido como JM, Nacho Torres y Pullaro.", "menciona": "si", "pos_flag": "si", "pos_detalle": "Menciona el fin del gasto público en medios.", "neg_flag": "no", "neg_detalle": null}, {"red": "INSTAGRAM", "cuenta": "jorgeblackri", "link": "https://www.instagram.com/jorgeblackri", "fecha_creacion": "2023-02-01", "verificada": null, "descripcion": "Cuenta afín al PRO publica contenido sobre la gestion de JM en CABA.", "menciona": "si", "pos_flag": "si", "pos_detalle": "Replica los contenidos de JM. https://www.instagram.com/jorgeblackri", "neg_flag": "no", "neg_detalle": null}, {"red": "INSTAGRAM", "cuenta": "hacer_y_gestionar", "link": "https://www.instagram.com/hacer_y_gestionar", "fecha_creacion": "2020-04-01", "verificada": null, "descripcion": "Cuenta afin al PRO publica contenidos de politica argentina, destaca logros del PRO y de la gestión de JM en la Ciudad.", "menciona": "si", "pos_flag": "si", "pos_detalle": "Declaraciones de JM en La Nación sobre su diferencia con el kirchnerismo y su cercania al gobierno de Milei.", "neg_flag": "no", "neg_detalle": null}, {"red": "TIKTOK", "cuenta": "herreroliberal", "link": "https://www.tiktok.com/@herreroliberal", "fecha_creacion": null, "verificada": null, "descripcion": "Cuenta que difunde recortes de noticias, videos y declaraciones de periodistas, políticos o influencers que apuntan a criticar al kirchnerismo y resaltar los logros del Gobierno nacional. Publica contenido diariamente.", "menciona": "no", "pos_flag": "no", "pos_detalle": "No menciona a JM directo pero publicó un posteo sobre celulares robados el mismo día del anuncio sobre el tema", "neg_flag": "no", "neg_detalle": null}, {"red": "TIKTOK", "cuenta": "enelojodelpoder", "link": "https://www.tiktok.com/@enelojodelpoder", "fecha_creacion": null, "verificada": null, "descripcion": "Cuenta que difunde recortes de noticias, videos y declaraciones de periodistas, políticos o influencers que apuntan a criticar al kirchnerismo y resaltar los logros del Gobierno nacional. Publica contenido diariamente.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "TIKTOK", "cuenta": "tv_publica_libertaria", "link": "https://www.tiktok.com/@tv_publica_libertaria", "fecha_creacion": null, "verificada": null, "descripcion": "No publica contenido desde marzo 2026.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "TIKTOK", "cuenta": "Coherencia por favor", "link": "https://www.tiktok.com/@Coherenciaporfavor", "fecha_creacion": null, "verificada": null, "descripcion": "Desde junio, unicamente publicó videos del Mundial.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "TIKTOK", "cuenta": "elpresto.ok", "link": "https://www.tiktok.com/@elpresto.ok", "fecha_creacion": null, "verificada": null, "descripcion": "Cuenta que publica videos de la politica argnetina sin distinción de partido político.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "TIKTOK", "cuenta": "Break Point", "link": "https://www.tiktok.com/@breakpointmp", "fecha_creacion": null, "verificada": null, "descripcion": "Cuenta que publica contenido en apoyo al gobierno nacional con críticas al kirchnerismo.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "TIKTOK", "cuenta": "danannoficial", "link": "https://www.tiktok.com/@danannoficial", "fecha_creacion": null, "verificada": null, "descripcion": "Desde junio, unicamente publicó 4 videos sobre el Mundial.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "TIKTOK", "cuenta": "mateconmoteok", "link": null, "fecha_creacion": null, "verificada": null, "descripcion": "no disponible", "menciona": null, "pos_flag": null, "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "TIKTOK", "cuenta": "indignadoxd_", "link": "https://www.tiktok.com/@indignadoxd_", "fecha_creacion": null, "verificada": null, "descripcion": "Cuenta que publica contenido criticando al kirchnerismo. No solo publica contenido político sino tambien curiosidades o del mundo del espectáculo.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "TIKTOK", "cuenta": "alefantiino", "link": "https://www.tiktok.com/@alefantiino", "fecha_creacion": null, "verificada": null, "descripcion": "Cuenta fan de Alejandro Fantino que publica contenido de sus editoriales y entrevistas con políticos u otras personalidades.No solo sube contenido político sino también de fútbol. Afín a LLA.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "TIKTOK", "cuenta": "jonatanvialetn", "link": "https://www.tiktok.com/@jonatanvialetn", "fecha_creacion": null, "verificada": null, "descripcion": "Cuenta fan de Jonathan Viale que difunde las editoriales del periodista sobre política. Critica al kirchnerismo y es afin a LLA.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "TIKTOK", "cuenta": "peladotrebucq", "link": "https://www.tiktok.com/@peladotrebucq", "fecha_creacion": null, "verificada": null, "descripcion": "Cuenta fan de Esteban Trebucq que publica contenido vinculado a Dante Gebel. Comienza todos los videos con un hook de Trebucq aunque la propia nota no sea de él.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "TIKTOK", "cuenta": "elpeladotrebucq", "link": "https://www.tiktok.com/@elpeladotrebucq", "fecha_creacion": null, "verificada": null, "descripcion": "Cuenta fan de Esteban Trebucq que difunde las editoriales y las entrevistas del periodista sobre política. Critica al kirchnerismo y es afin a LLA.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "TIKTOK", "cuenta": "antonniolaje", "link": "https://www.tiktok.com/@antonniolaje", "fecha_creacion": null, "verificada": null, "descripcion": "Cuenta fan de Antonio Laje que difunde las editoriales y las entrevistas del periodista sobre política. Critica al kirchnerismo y es afin a LLA.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "TWITTER", "cuenta": "Coherencia por favor", "link": "https://x.com/CoherenciaFavor", "fecha_creacion": "2021-02-01", "verificada": "2026-03-01", "descripcion": "Cuenta que difunde recortes de noticias, videos y declaraciones de periodistas, políticos o influencers que apuntan a criticar al kirchnerismo y resaltar los logros del Gobierno nacional. Publica contenido diariamente.", "menciona": "si", "pos_flag": "si", "pos_detalle": "Realizó un posteo difundiendo el discurso de JM durante la entrega de reconocimientos a Comisarios.", "neg_flag": "no", "neg_detalle": null}, {"red": "TWITTER", "cuenta": "fanaticliberal_", "link": "https://x.com/fanaticliberal_", "fecha_creacion": "2024-07-01", "verificada": "2024-11-01", "descripcion": "Cuenta que difunde noticias y videos virales que apuntan a criticar al kirchnerismo y resaltar los logros del Gobierno nacional y porteño. Realizó varios posteos en las últimas semanas.", "menciona": "si", "pos_flag": "si", "pos_detalle": "Realizó posteos difundiendo medidas de JM en CABA, así como RTs a posteos de JM y respuestas de apoyo a los mismos.", "neg_flag": "no", "neg_detalle": null}, {"red": "TWITTER", "cuenta": "Libernoticia", "link": "https://x.com/Libernoticia", "fecha_creacion": "2024-08-01", "verificada": "2024-11-01", "descripcion": "Cuenta que difunde noticias a favor del Gobierno nacional y porteño. Realiza varios posteos diarios.", "menciona": "si", "pos_flag": "si", "pos_detalle": "Realizó posteos difundiendo medidas y declaraciones de JM en CABA, así como RTs y QTs a posteos de JM y respuestas de apoyo a los mismos", "neg_flag": "no", "neg_detalle": null}, {"red": "TWITTER", "cuenta": "Tv_Libertaria", "link": "https://x.com/Tv_Libertaria", "fecha_creacion": "2012-08-01", "verificada": "2024-01-01", "descripcion": "Cuenta que difunde noticias, declaraciones y videos virales a favor del Gobierno nacional y porteño, así como en contra de PBA y de gobiernos socialistas en otros países. Realiza varios posteos diarios.", "menciona": "si", "pos_flag": "si", "pos_detalle": "Realizó posteos difundiendo medidas y declaraciones de JM en CABA. Además, realizó RTs y QTs a posteos de JM y respuestas de apoyo a los mismos.", "neg_flag": "no", "neg_detalle": null}, {"red": "TWITTER", "cuenta": "argensherlock", "link": "https://x.com/argensherlock", "fecha_creacion": "2024-11-01", "verificada": null, "descripcion": "Realiza posteos opinando sobre declaraciones de políticos, videos, fotos, encuestas electorales o acontecimientos vinculados a la política. En el 2026 solo realizó dos publicaciones.", "menciona": "si", "pos_flag": "si", "pos_detalle": "Realizó 1 RT a posteo de influencer en apoyo a posteo de JM.", "neg_flag": "no", "neg_detalle": null}, {"red": "TWITTER", "cuenta": "Argenpoirot", "link": "https://x.com/Argenpoirot", "fecha_creacion": "2022-09-01", "verificada": "2026-05-01", "descripcion": "Cuenta que realiza posteos opinando sobre videos e imágenes virales, noticias y declaraciones de famosos y políticos.\nSi bien su contenido no es puramente político, sus críticas están orientadas al kircherismo y, en algunos casos, al Gobierno nacional. Por otro lado, apoya los hechos y declaraciones vinculados al GCBA y JM.", "menciona": "si", "pos_flag": "si", "pos_detalle": "Realizó posteos difundiendo medidas y declaraciones de JM en CABA. Además, realizó RTs y QTs a posteos de JM y respuestas de apoyo a los mismos.", "neg_flag": "no", "neg_detalle": null}, {"red": "TWITTER", "cuenta": "Buni", "link": "https://x.com/therealbuni", "fecha_creacion": "2019-08-01", "verificada": "2024-11-01", "descripcion": "Cuenta que difunde videos virales, memes y noticias destinadas a cuestionar al socialismo/izquierda nacional e internacional, y a destacar los logros del Gobierno nacional. Realiza posteos diarios.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "TWITTER", "cuenta": "Croata", "link": null, "fecha_creacion": null, "verificada": null, "descripcion": null, "menciona": null, "pos_flag": null, "pos_detalle": null, "neg_flag": null, "neg_detalle": null}, {"red": "TWITTER", "cuenta": "Pulpo Liberal", "link": "https://x.com/pulpoliberal", "fecha_creacion": "2024-01-01", "verificada": null, "descripcion": "Cuenta que difunde y opina sobre videos y noticias, con críticas a políticos peronistas y a Martín Menem. Realiza pocos posteos propios.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "TWITTER", "cuenta": "alzicarelli", "link": "https://x.com/alzicarelli", "fecha_creacion": "2010-09-01", "verificada": "2025-01-01", "descripcion": "Analista internacional que difunde su opinión sobre noticias y declaraciones de políticos o periodistas.", "menciona": "si", "pos_flag": "si", "pos_detalle": "Realizó RTs a posteos de JM y a noticias y RTs a posteos de influencers vinculadas a JM y PDLC.", "neg_flag": "no", "neg_detalle": null}, {"red": "TWITTER", "cuenta": "DanannOficial", "link": "https://x.com/DanannOficial", "fecha_creacion": "2013-01-01", "verificada": "2025-04-01", "descripcion": "Emmanuel Danann, influencer y creador de contenido argentino identificado con el espacio libertario, con fuerte presencia en redes sociales y contenidos de opinión política y actualidad.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "TWITTER", "cuenta": "augustogrinner", "link": "https://x.com/augustogrinner", "fecha_creacion": "2020-03-01", "verificada": "2026-01-01", "descripcion": "Augusto Grinner, conocido en redes como “De Peroncho” difunde contenido político y de actualidad. Además es un influencer, periodista y consultor liberal argentino, vinculado inicialmente a La Libertad Avanza y al entorno de Javier Milei.", "menciona": "si", "pos_flag": "no", "pos_detalle": null, "neg_flag": "si", "neg_detalle": "Se registra comentario crítico hacia JM, vinculado con la intención de diferenciarlo de LLA."}, {"red": "TWITTER", "cuenta": "Data24comar", "link": "https://x.com/Data24comar", "fecha_creacion": "2016-02-01", "verificada": "2024-09-01", "descripcion": "Medio digital de noticias y opinión, con una línea editorial cercana al espacio liberal.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "TWITTER", "cuenta": "HombreGris_OK", "link": "https://x.com/HombreGris_OK", "fecha_creacion": "2023-06-01", "verificada": null, "descripcion": "Cuenta de opinión política y actualidad, con una clara orientación. Publica y comparte contenido sobre política, economía y coyuntura nacional, con un tono informal, irónico y confrontativo. Presenta un nivel de actividad elevado", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "TWITTER", "cuenta": "indignadoxd_", "link": "https://x.com/indignadoxd", "fecha_creacion": "2020-02-01", "verificada": "2025-09-01", "descripcion": "Cuenta de contenido político y de actualidad, anti kirchnerista y crítica hacia distintos dirigentes políticos. Publica principalmente videos, noticias y opiniones sobre coyuntura nacional, con un tono confrontativo, irónico y provocador.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "TWITTER", "cuenta": "enelojodelpoder", "link": "https://x.com/enelojodelpoder", "fecha_creacion": "2018-02-01", "verificada": "2024-08-01", "descripcion": "Cuenta libertaria, dedicada principalmente a difundir contenido relacionado con Javier Milei y su gestión. Comparte noticias, declaraciones, discursos, medidas de gobierno y publicaciones de apoyo al Presidente. También postea sobre actualidad.", "menciona": "si", "pos_flag": "no", "pos_detalle": null, "neg_flag": "si", "neg_detalle": "Se registran dos posteos críticos hacia JM: uno, en tono irónico, sobre un operativo de PDLC y otro, en reclamo de mayores medidas de seguridad tras la muerte de un comisario en el Conurbano."}, {"red": "TWITTER", "cuenta": "HerreroLiberal", "link": "https://x.com/HerreroLiberal", "fecha_creacion": "2023-07-01", "verificada": "2024-11-01", "descripcion": "Cuenta de perfil liberal que difunde principalmente contenido político y económico, con foco en Javier Milei y su gestión", "menciona": "si", "pos_flag": "si", "pos_detalle": "Apoyo a JM tras su posteo en homenaje al comisario asesinado en el Conurbano.", "neg_flag": "no", "neg_detalle": null}, {"red": "TWITTER", "cuenta": "BalboaMilei", "link": "https://x.com/BalboaMilei", "fecha_creacion": "2023-12-01", "verificada": "2024-11-01", "descripcion": "Cuenta de perfil libertario y afín al oficialismo, que difunde principalmente contenido de apoyo a Javier Milei. Parte de su contenido también se registra apoyo a Jorge Macri. Presenta una actividad frecuente.", "menciona": "si", "pos_flag": "si", "pos_detalle": "El usuario difunde y expresa su apoyo a JM difundiendo sus publicaciones e implementación de sus medidas.", "neg_flag": "no", "neg_detalle": null}, {"red": "TWITTER", "cuenta": "Trumperizar", "link": "https://x.com/Trumperizar", "fecha_creacion": "2020-06-01", "verificada": "2024-01-01", "descripcion": "Perfil libertario y militante, enfocada en difundir contenido favorable a Javier Milei y crítico del kirchnerismo y la oposición. Expresa su apoyo hacia JM. Además difunde memes, videos, noticias y opiniones políticas, con un tono confrontativo e irónico. Presenta un nivel de actividad elevado y un alto nivel de interacción", "menciona": "si", "pos_flag": "si", "pos_detalle": "El usuario respalda a JM al compartir contenido sobre su gestión y mostrar una postura favorable hacia las medidas impulsadas por el Gobierno.", "neg_flag": "no", "neg_detalle": null}, {"red": "TWITTER", "cuenta": "Kuke_cj", "link": "https://x.com/Kuke_cj", "fecha_creacion": "2023-04-01", "verificada": null, "descripcion": "Cuenta principalmente dedicada a contenido futbolístico, con foco marcado en Boca Juniors. Publica opiniones  videos y comentarios sobre partidos, jugadores y la actualidad del club, especialmente críticas hacia la gestión de Juan Román Riquelme.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "TWITTER", "cuenta": "Fran_Casaretto_", "link": "https://x.com/Fran_Casaretto_", "fecha_creacion": "2021-01-01", "verificada": "2023-04-01", "descripcion": "La cuenta se centra principalmente en contenidos políticos, con una postura favorable a Javier Milei y a JM.\nDe manera ocasional, difunde videos sobre hechos curiosos de Argentina y el mundo.", "menciona": "si", "pos_flag": "si", "pos_detalle": "Apoya a JM en sus declaraciones contra AK y sus políticas respecto de los desalojos y trapitos.", "neg_flag": "no", "neg_detalle": null}, {"red": "TWITTER", "cuenta": "KillerPlanero", "link": "https://x.com/Nahirgzl", "fecha_creacion": "2025-02-01", "verificada": null, "descripcion": "La cuenta cambió su nombre de usuario de KillerPlanero a Nahirgzl. Actualmente, centra sus publicaciones en temas vinculados a la provincia de Santa Fe y expresa apoyo a Maximiliano Pullaro.", "menciona": "si", "pos_flag": "si", "pos_detalle": "El usuario comenta los posteos de JM en apoyo a sus políticas.", "neg_flag": null, "neg_detalle": null}, {"red": "TWITTER", "cuenta": "MateconMote", "link": "https://x.com/MateconMote", "fecha_creacion": "2017-08-01", "verificada": "2023-11-01", "descripcion": "La cuenta suele postear videos realizando distintos análisis en materia de política y economía nacional e internacional.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "TWITTER", "cuenta": "BreakPointMP", "link": "https://x.com/BreakPointMP", "fecha_creacion": "2021-09-01", "verificada": "2025-02-01", "descripcion": "Es una cuenta afín a LLA que suele publicar videos de editoriales de distintos periodistas como Jonathan Viale, Eduardo Feinmann, entre otros.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "TWITTER", "cuenta": "elangelgris666", "link": "https://x.com/elangelgris666", "fecha_creacion": "2025-03-01", "verificada": null, "descripcion": "El usuario postea únicamente sobre política, realizando críticas hacia el kirchnerismo y muestra su apoyo a las políticas de JM.", "menciona": "si", "pos_flag": "si", "pos_detalle": "El usuario apoya a JM, criticando también al kirchnerismo.", "neg_flag": "no", "neg_detalle": null}, {"red": "TWITTER", "cuenta": "gonziver", "link": "https://x.com/gonziver", "fecha_creacion": "2009-11-01", "verificada": "2024-11-01", "descripcion": "Influencer afín al PRO que suele realizar posteos apoyando a JM como al partido. Es una cuenta muy activa y posee una alta influencia debido a la viralidad de algunos de sus posteos.", "menciona": "si", "pos_flag": "si", "pos_detalle": "Apoya constantemente a JM, logrando realizar posteos virales.", "neg_flag": "no", "neg_detalle": null}, {"red": "TWITTER", "cuenta": "flandivar", "link": "https://x.com/flandivar", "fecha_creacion": "2010-10-01", "verificada": "2023-08-01", "descripcion": "Influencer afín al PRO que suele realizar posteos en apoyo a JM. Posee mucha actividad. \nAdemás, postea sobre otros temas ajenos a la política.", "menciona": "si", "pos_flag": "si", "pos_detalle": "Apoya constantemente a JM realizando QTs y RTs a sus posteos.", "neg_flag": "no", "neg_detalle": null}, {"red": "TWITTER", "cuenta": "Jackes_is_back", "link": "https://x.com/Jackes_is_back", "fecha_creacion": "2023-03-01", "verificada": "2024-10-01", "descripcion": "Influencer afín al PRO que suele realizar posteos apoyando a JM como al PRO. Es una cuenta muy activa y posee una alta influencia debido a la viralidad de algunos de sus posteos", "menciona": "si", "pos_flag": "si", "pos_detalle": "Apoya constantemente a JM, logrando realizar posteos virales.", "neg_flag": "no", "neg_detalle": null}, {"red": "TWITTER", "cuenta": "ChilbitaSoyYO", "link": "https://x.com/ChilbitaSoyYO", "fecha_creacion": "2019-03-01", "verificada": null, "descripcion": "Influencer afín al PRO que suele realizar posteos en apoyo a JM. Todo su contenido es político criticando a LLA y al kirchnerismo.", "menciona": "si", "pos_flag": "si", "pos_detalle": "Apoya constantemente a JM interactuando con sus posteos y con otros influencers afines al PRO.", "neg_flag": "no", "neg_detalle": null}, {"red": "TWITTER", "cuenta": "pissanoEmi2", "link": "https://x.com/pissanoEmi2", "fecha_creacion": "2019-09-01", "verificada": "2023-08-01", "descripcion": "Influencer afín al PRO que realiza posteos apoyando a JM y a MM. Todos sus contenidos se vinculan con política nacional.", "menciona": "si", "pos_flag": "si", "pos_detalle": "Apoya constantemente a JM y a MM.", "neg_flag": "no", "neg_detalle": null}, {"red": "TWITTER", "cuenta": "ChauOperetaK", "link": "https://x.com/ChauOperetaK", "fecha_creacion": "2018-05-01", "verificada": null, "descripcion": "Cuenta vinculada al apoyo de referentes del PRO. Su foco principal es contrarrestar la narrativa de la oposición promoviendo las medidas de JM, Bullrich y el PRO. Se destaca el apoyo a posteos sobre la seguridad y la \"ley y orden\" en la Ciudad.", "menciona": "si", "pos_flag": "si", "pos_detalle": "Realizó posteos difundiendo medidas y declaraciones de JM en la Ciudad. Además, realizó RTs y QTs a posteos de JM en apoyo a los mismos.", "neg_flag": "no", "neg_detalle": null}, {"red": "TWITTER", "cuenta": "DeloElmo", "link": "https://x.com/DeloElmo", "fecha_creacion": "2012-07-01", "verificada": "2023-08-01", "descripcion": "Cuenta dedicada a la opinión política y la coyuntura nacional con un tono irónico. Su contenido se centra en la crítica al kirchnerismo o gobiernos peronistas, la ironía sobre la coyuntura nacional y el apoyo a medidas vinculadas a la gestión de JM en CABA", "menciona": "si", "pos_flag": "si", "pos_detalle": "Difundió medidas y declaraciones de JM en la Ciudad, apoyando sus publicaciones mediante RTs y QTs. A su vez, incluyó contenido con tono irónico mencionando a JM.", "neg_flag": "no", "neg_detalle": null}, {"red": "TWITTER", "cuenta": "vulgarcite", "link": "https://x.com/vulgarcite", "fecha_creacion": "2013-03-01", "verificada": "2023-12-01", "descripcion": "Cuenta vinculada a la opinión, el humor y contenido viral. Realiza posteos críticos hacia el kirchnerismo y en apoyo a las medidas de seguridad en CABA", "menciona": "si", "pos_flag": "si", "pos_detalle": "Difundió medidas y declaraciones de JM en la Ciudad, apoyando sus publicaciones mediante RTs y QTs. A su vez, realizó comparaciones entre CABA y PBA, señalando la falta de gestión en esta última.", "neg_flag": "no", "neg_detalle": null}, {"red": "TWITTER", "cuenta": "danilerer", "link": "https://x.com/danilerer", "fecha_creacion": "2019-07-01", "verificada": "2023-07-01", "descripcion": "Cuenta vinculada al análisis político nacional e internacional. Su perfil centra un tono crítico hacia la corrupción y hechos judeofobos. A su vez, se destaca el apoyo a la gestión de JM en la Ciudad.", "menciona": "si", "pos_flag": "si", "pos_detalle": "Difundió medidas y declaraciones de JM en la Ciudad, apoyando sus publicaciones mediante RTs y QTs.", "neg_flag": "no", "neg_detalle": null}, {"red": "TWITTER", "cuenta": "Ojo_Kritico", "link": "https://x.com/Ojo_Kritico", "fecha_creacion": "2012-10-01", "verificada": "2024-09-01", "descripcion": "Cuenta vinculada al análisis y opinión de la actualidad centrada en la inseguridad, el delito y la justicia, con apoyo a las medidas relacionadas con temas de seguridad en la gestión de JM.", "menciona": "si", "pos_flag": "si", "pos_detalle": "Difundió medidas y declaraciones de JM en la Ciudad, apoyando sus publicaciones mediante QTs. A su vez, realizó críticas hacia la gestión de HRL en la Ciudad y de AK en PBA.", "neg_flag": "no", "neg_detalle": null}, {"red": "TWITTER", "cuenta": "LordMurielo", "link": "https://x.com/LordMurielo", "fecha_creacion": "2016-03-01", "verificada": "2024-12-01", "descripcion": "La cuenta funciona como una amplificadora del descontento social, con lenguaje informal sobre la coyuntura política nacional y contra el kirchnerismo. A su vez, se destaca el apoyo a la gestión de JM en materia de seguridad", "menciona": "si", "pos_flag": "si", "pos_detalle": "Difundió medidas y declaraciones de JM en la Ciudad, apoyando sus publicaciones mediante RTs y QTs.", "neg_flag": "no", "neg_detalle": null}, {"red": "TWITTER", "cuenta": "LaBugsBunnyIA", "link": "https://x.com/LaBugsBunnyIA", "fecha_creacion": "2019-11-01", "verificada": "2025-05-01", "descripcion": "Cuenta creadora de contenido gráfico y memes orientados a la política argentina. Su tono es irónico y antikirchnerista.", "menciona": "si", "pos_flag": "si", "pos_detalle": "Difundió medidas y declaraciones de JM en la Ciudad, apoyando sus publicaciones mediante RTs y QTs. A su vez, se destacan críticas a políticos opositores.", "neg_flag": "no", "neg_detalle": null}, {"red": "TWITTER", "cuenta": "WalhallaMann", "link": "https://x.com/WalhallaMann", "fecha_creacion": "2010-09-01", "verificada": "2023-04-01", "descripcion": "La cuenta combina una militancia de derecha con el emprendimiento personal. Su perfil suele posicionarse a favor de Javier Milei y en contra del kirchnerismo, el progresismo y la izquierda.", "menciona": "si", "pos_flag": "si", "pos_detalle": "Difundió medidas y declaraciones de JM en la Ciudad, apoyando sus publicaciones mediante RTs y QTs.", "neg_flag": "no", "neg_detalle": null}, {"red": "TWITTER", "cuenta": "RevistaMadridOK", "link": "https://x.com/RevistaMadridOK", "fecha_creacion": "2024-08-01", "verificada": null, "descripcion": "La cuenta funciona como la extensión editorial de @LaBugsBunnyIA, adaptando su contenido al formato de una revista satírica mediante videos narrados y editados. Actualmente, el perfil se encuentra en etapa de crecimiento.", "menciona": "si", "pos_flag": "si", "pos_detalle": "Se registran RTs a posteos de JM.", "neg_flag": "no", "neg_detalle": null}, {"red": "TWITTER", "cuenta": "Macri con Bigotes", "link": "https://x.com/macriconbigotes", "fecha_creacion": "2009-04-01", "verificada": null, "descripcion": "Hasta mediados de julio de 2025, la cuenta mantenía un perfil vinculado al PRO y a la gestión del JM en la Ciudad; sin embargo, a partir del día 17 de dicho mes no registra nueva actividad.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "TWITTER", "cuenta": "Winston_Dunhill", "link": "https://x.com/Winston_Dunhill", "fecha_creacion": "2013-01-01", "verificada": "2025-01-01", "descripcion": "Cuenta que realiza posteos opinando sobre cuestiones políticas y difunde noticias con críticas al peronismo y al Gobierno nacional. Históricamente fue una cuenta que mostraba apoyo al PRO.", "menciona": "si", "pos_flag": "no", "pos_detalle": null, "neg_flag": "si", "neg_detalle": "Respuesta crítica a posteo de JM sobre el festejo del 4 de julio."}, {"red": "TWITTER", "cuenta": "spitta1969", "link": "https://x.com/spitta1969", "fecha_creacion": "2011-02-01", "verificada": "2026-07-01", "descripcion": "Cuenta de perfil político y de divulgación científica, perteneciente a Sandra Pitta, farmacéutica y biotecnóloga. Mantiene una postura marcadamente antikirchnerista y cercana al PRO, expresando también apoyo a la gestión del GCBA. Publica sobre actualidad política, ciencia y coyuntura nacional, con un tono directo y crítico. Presenta un nivel de actividad frecuente.", "menciona": "si", "pos_flag": "si", "pos_detalle": "El usuario difunde, comenta y apoya las medidas de JM en forma constante.", "neg_flag": "no", "neg_detalle": null}, {"red": "TWITTER", "cuenta": "JereRodriguezOK", "link": "https://x.com/JereRodriguezOK", "fecha_creacion": "2013-11-01", "verificada": "2024-02-01", "descripcion": "Cuenta que difunde noticias políticas con críticas a la izquierda, el peronismo y algunos miembros de LLA. Realiza varios posteos diarios.", "menciona": "si", "pos_flag": "no", "pos_detalle": null, "neg_flag": "si", "neg_detalle": "Realizó posteos con críticas a la Justicia de CABA y a JM, vinculándolo con Cristian Ritondo."}, {"red": "TWITTER", "cuenta": "KingOfPeronia2", "link": "https://x.com/KingOfPeronia2", "fecha_creacion": "2025-01-01", "verificada": "2026-08-01", "descripcion": "Cuenta afín al PRO y marcadamente antiperonista, que expresa su apoyo a Mauricio Macri y, en algunas publicaciones, también a Javier Milei. Pública sobre política y actualidad nacional, con un tono crítico e irónico. Presenta una actividad frecuente.", "menciona": "si", "pos_flag": "si", "pos_detalle": "El usuario mantiene una postura de apoyo constante hacia JM, difundiendo y comentando sus publicaciones así como también defendiéndolo en posteos de otros usuarios.", "neg_flag": "no", "neg_detalle": null}, {"red": "TWITTER", "cuenta": "car03_ant", "link": "https://x.com/car03_ant", "fecha_creacion": "2014-02-01", "verificada": null, "descripcion": "Perfil político, marcadamente anti kirchnerista y crítica del gobierno de Javier Milei. Expresa afinidad con sectores del PRO y la oposición no peronista. Expresó su apoyo a PB en el 2023. No posee una actividad continúa", "menciona": "si", "pos_flag": "si", "pos_detalle": "En el  período analizado solo se registran RTs hacia los influencers afines a JM.", "neg_flag": "no", "neg_detalle": null}, {"red": "TWITTER", "cuenta": "peponila", "link": "https://x.com/peponila", "fecha_creacion": "2010-09-01", "verificada": "2023-06-01", "descripcion": "Periodista que realiza posteos con información, opinión y difundiendo noticias, con críticas al Gobierno nacional.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "TWITTER", "cuenta": "ElCara333_", "link": "https://x.com/ElCara333_", "fecha_creacion": "2015-11-01", "verificada": null, "descripcion": "Cuenta que difunde principalmente contenido vinculado a Mauricio Macri o al periodista Diego Sehinkman. Publica posteos esporádicamente.", "menciona": "si", "pos_flag": "si", "pos_detalle": "Realizó un RT y respuestas a posteos de JM, así como un QT a un posteo de influencer afín al PRO.", "neg_flag": null, "neg_detalle": null}, {"red": "TWITTER", "cuenta": "gabrielaneme", "link": "https://x.com/gabrielaneme", "fecha_creacion": "2013-09-01", "verificada": "2024-10-01", "descripcion": "Cuenta de Gabriela Neme, política y abogada de la provincia de Formosa que forma parte del espacio La Libertad Avanza (LLA) dirigente y abogada de Formosa. Publica principalmente sobre actualidad política provincial, denuncias contra el oficialismo formoseño, reclamos ciudadanos y temas vinculados con transparencia y derechos.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "TWITTER", "cuenta": "ChinoSchvartz", "link": "https://x.com/ChinoSchvartz", "fecha_creacion": "2019-10-01", "verificada": null, "descripcion": "Cuenta que difunde notas de La Nación y Clarín sobre política y economía.", "menciona": "si", "pos_flag": "si", "pos_detalle": "Realizó RTs a posteos de JM y de influencers afines, así como un QT a un posteo de JM.", "neg_flag": "no", "neg_detalle": null}, {"red": "TWITTER", "cuenta": "CharlyMB_Ok", "link": "https://x.com/CharlyMB_Ok", "fecha_creacion": "2021-09-01", "verificada": null, "descripcion": "Cuenta de perfil político y crítico, que aborda la actualidad nacional y cuestiona a distintos sectores y dirigentes, entre ellos Javier Milei, el kirchnerismo, Maximiliano Pullaro y Jorge Macri.", "menciona": "si", "pos_flag": "no", "pos_detalle": null, "neg_flag": "si", "neg_detalle": "El usuario crítica a JM, principalmente por su vinculación con LLA y por los festejos realizados en torno al 4 de julio."}, {"red": "TWITTER", "cuenta": "DoloresMitre", "link": "https://x.com/DoloresMitre", "fecha_creacion": "2009-09-01", "verificada": "2023-08-01", "descripcion": "Dolores Mitre forma parte del área de Prensa y RRPP de La Nación. Su contenido aborda principalmente temas de política, economía y seguridad, con una línea antikirchnerista y expresiones de apoyo a la gestión del GCBA y a JM. Presenta una actividad frecuente.", "menciona": "si", "pos_flag": "si", "pos_detalle": "La cuenta presenta apoyo a JM mediante difusión y comentarios.", "neg_flag": "no", "neg_detalle": null}, {"red": "TWITTER", "cuenta": "Un Hombre Alado", "link": "https://x.com/JuanchiLamas_", "fecha_creacion": "2018-07-01", "verificada": null, "descripcion": "Cuenta que realiza posteos sobre fútbol y memes de forma diaria.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "TWITTER", "cuenta": "sangarciacorre", "link": "https://x.com/sangarciacorre", "fecha_creacion": "2010-04-01", "verificada": "2023-08-01", "descripcion": "La cuenta postea principalmente sobre cine, difundiendo los diversos cursos que otorga el autor.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "TWITTER", "cuenta": "Serjavojeda", "link": "https://x.com/Serjavojeda", "fecha_creacion": "2022-10-01", "verificada": null, "descripcion": "Cuenta que difunde noticias, videos e imágenes a modo de meme, todo en tono político y con críticas al kirchnerismo y LLA", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "TWITTER", "cuenta": "felipelahiteau", "link": "https://x.com/felipelahiteau", "fecha_creacion": "2009-09-01", "verificada": "2024-07-01", "descripcion": "Cuenta que publica principalmente memes, videos y contenido político. Expresa apoyo al PRO y mantiene una postura marcadamente antikirchnerista. Presenta un tono informal y crítico, con actividad frecuente.", "menciona": "si", "pos_flag": "si", "pos_detalle": "Se registra apoyo a JM mediante publicaciones, RTs, y QTs.", "neg_flag": "no", "neg_detalle": null}, {"red": "TWITTER", "cuenta": "ElCipayo", "link": "https://x.com/ElCipayo", "fecha_creacion": "2012-02-01", "verificada": null, "descripcion": "El contenido de la cuenta suele estar vinculado con política nacional e internacional, realizando críticas al kirchnerismo.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "TWITTER", "cuenta": "loderaulo", "link": "https://x.com/loderaulo", "fecha_creacion": "2019-05-01", "verificada": "2026-04-01", "descripcion": "Cuenta que realiza posteos irónicos y críticos a cuestiones vinculadas con el Gobierno nacional. Realiza muchos posteos diarios. Históricamente fue una cuenta antikirchnerista", "menciona": "si", "pos_flag": "no", "pos_detalle": null, "neg_flag": "si", "neg_detalle": "Realizó posteos y QTs con críticas a JM."}, {"red": "TWITTER", "cuenta": "MabelPajarita", "link": "https://x.com/MabelPajarita", "fecha_creacion": "2019-06-01", "verificada": null, "descripcion": "Cuenta afín al PRO que centra sus publicaciones en contenidos políticos y expresa una postura crítica hacia el kirchnerismo", "menciona": "si", "pos_flag": "si", "pos_detalle": "La mención positiva del usuario corresponde a la defensa de MM por la correspondencia de la obra del soterramiento del Sarmiento.", "neg_flag": null, "neg_detalle": null}, {"red": "TWITTER", "cuenta": "hamaxx1", "link": "https://x.com/hamaxx1", "fecha_creacion": "2011-09-01", "verificada": null, "descripcion": "Cuenta que difunde noticias y memes con críticas al peronismo y a LLA. Realiza varios posteos diarios.", "menciona": "si", "pos_flag": "si", "pos_detalle": "Realizó RTs a los posteos de JM", "neg_flag": "si", "neg_detalle": "Realizó posteos cuestionando a JM por una posible alianza con Pilar Ramírez."}, {"red": "TWITTER", "cuenta": "chubutizar", "link": "https://x.com/chubutizar", "fecha_creacion": "2025-01-01", "verificada": null, "descripcion": "Cuenta vinculada a la militancia del PRO chubutense, con postura crítica hacia el kirchnerismo. El último posteo de la cuenta fue a principios de julio de 2026.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "YOUTUBE", "cuenta": "herreroliberal", "link": "https://www.youtube.com/@herreroliberal", "fecha_creacion": "2020-06-01", "verificada": null, "descripcion": "Canal de actualidad política argentina con debates, entrevistas y análisis político, a partir de una mirada liberal y afín al Gobierno.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "YOUTUBE", "cuenta": "ElPrestoOk", "link": "https://www.youtube.com/@ElPrestoOk", "fecha_creacion": "2011-03-01", "verificada": null, "descripcion": "Canal periodístico que analiza casos políticos e históricos", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": null, "neg_detalle": null}, {"red": "YOUTUBE", "cuenta": "DanannOficial", "link": "https://www.youtube.com/DanannOficial", "fecha_creacion": "2016-12-01", "verificada": null, "descripcion": "Canal de Emmanuel Danann dedicado al análisis de la actualidad, la crítica social y el debate público a través de sketches, entrevistas callejeras, parodias y reacciones. Se destaca video dedicado a las declaraciones de CM sobre ESI", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "YOUTUBE", "cuenta": "BreakPointMP", "link": "https://www.youtube.com/channel/UC_49ElhhVd1BO7MsdBPm77Q", "fecha_creacion": "2013-11-01", "verificada": null, "descripcion": "Canal de información y entrevistas sobre política y liberalismo internacional conducido por Mariano Pérez.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "YOUTUBE", "cuenta": "MateconMote", "link": "https://www.youtube.com/MateconMote", "fecha_creacion": "2017-09-01", "verificada": null, "descripcion": "Canal de entrevistas y análisis de actualidad y política internacional con tendencia anti socialista.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "YOUTUBE", "cuenta": "Augusto Grinner (De Peroncho)", "link": "https://www.youtube.com/@AugustoGrinner", "fecha_creacion": "2019-11-01", "verificada": null, "descripcion": "Canal de Augusto Grinner con entrevistas y análisis político con tendencia anti peronista. no sube contenido hace dos meses", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "YOUTUBE", "cuenta": "Enelojodelpoder2.0", "link": "https://www.youtube.com/@Enelojodelpoder2.0", "fecha_creacion": "2024-01-01", "verificada": null, "descripcion": "Canal de información y noticias con opinión liberal.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "YOUTUBE", "cuenta": "Mariano Pérez", "link": "https://www.youtube.com/channel/UCAxj3RlGEHevtDuC7tbmE5w", "fecha_creacion": "2025-12-01", "verificada": null, "descripcion": "Cuenta de influencer liberal que publica contenido en apoyo a las políticas de Javier Milei, resube entrevistas que da y realiza críticas al kirchnerismo.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "YOUTUBE", "cuenta": "Break Point", "link": "https://www.youtube.com/channel/UCGohsup7v73jNra9TkqDjLA", "fecha_creacion": "2022-10-01", "verificada": null, "descripcion": "Canal de información que pertenece al influencer liberal Mariano Pérez. Publica editoriales de periodistas que apoyan a LLA y critican al kirchnerismo.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "YOUTUBE", "cuenta": "alvarozicarelli2858", "link": "https://www.youtube.com/@alvarozicarelli2858", "fecha_creacion": "2018-02-01", "verificada": null, "descripcion": "Analista político que sube contenido sobre historia y temas de coyuntura nacional.", "menciona": "si", "pos_flag": "no", "pos_detalle": null, "neg_flag": "si", "neg_detalle": "Publicó contenido sobre el proyecto de cafetería en el cementerio de la recoleta"}, {"red": "YOUTUBE", "cuenta": "EduardoFeinnman", "link": "https://www.youtube.com/@EduardoFeinnman", "fecha_creacion": "2023-02-01", "verificada": null, "descripcion": "Publica shorts de editoriales y entrevistas del periodista.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "YOUTUBE", "cuenta": "PeladoTrebucq", "link": "https://www.youtube.com/@PeladoTrebucq", "fecha_creacion": "2024-08-01", "verificada": null, "descripcion": "Cuenta no oficial de Esteban Trabucq sobre coyuntura política, con críticas hacia el kirchnerismo y apoyo al Gobierno nacional.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "YOUTUBE", "cuenta": "AntonnioLaje", "link": "https://www.youtube.com/@AntonnioLaje", "fecha_creacion": "2024-09-01", "verificada": null, "descripcion": "Cuenta extraoficial de Antonio Laje sobre coyuntura política, con apoyo al Gobierno nacional y críticas a gobernadores peronistas.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "YOUTUBE", "cuenta": "JonatanVialeTN", "link": "https://www.youtube.com/@jonatanvialetn/", "fecha_creacion": "2024-08-01", "verificada": null, "descripcion": "Página Extraoficial de Jonatan Viale sobre coyuntura política, con apoyo al Gobierno nacional y críticas al kirchnerismo.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "YOUTUBE", "cuenta": "jorgeblackri", "link": "https://www.youtube.com/@jorgeblackri", "fecha_creacion": "2024-07-01", "verificada": null, "descripcion": "Cuenta afín al PRO publica contenido sobre la gestion de JM en CABA.", "menciona": "si", "pos_flag": "si", "pos_detalle": "Difunde medidas implementadas por JM en la Ciudad.", "neg_flag": "no", "neg_detalle": null}, {"red": "FACEBOOK", "cuenta": "Coherencia por favor", "link": "https://www.facebook.com/coherenciaporfavor", "fecha_creacion": "2016-09-01", "verificada": null, "descripcion": "Cuenta que difunde recortes de noticias, videos y declaraciones de periodistas, políticos o influencers que apuntan a criticar al kirchnerismo y resaltar los logros del Gobierno nacional. Publica contenido diariamente. A su vez, replica medidas implementadas en CABA.", "menciona": "si", "pos_flag": "si", "pos_detalle": "Difunde la presencia de JM en la entrega de el mayor rango de la PDLC a Comisarios Generales de CABA.", "neg_flag": "no", "neg_detalle": null}, {"red": "FACEBOOK", "cuenta": "AleFantino", "link": "https://www.facebook.com/alefantino", "fecha_creacion": "2012-02-01", "verificada": null, "descripcion": "No se registran posteos recientes.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "FACEBOOK", "cuenta": "En el Ojo del Poder", "link": "https://www.facebook.com/profile.php?id=61557812711223&sk=about", "fecha_creacion": "2024-04-01", "verificada": null, "descripcion": "Cuenta que difunde recortes de periodistas y noticias de politica argentina, destacando logros del gobierno nacional.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "FACEBOOK", "cuenta": "Herrero Liberal", "link": "https://www.facebook.com/herreriamati", "fecha_creacion": "2017-03-01", "verificada": null, "descripcion": "Cuenta que realiza análisis de noticias, videos y declaraciones de política nacional e internacional con una opinión liberal.", "menciona": "no", "pos_flag": "si", "pos_detalle": "Posteo con mención a operativo de la PDLC", "neg_flag": "no", "neg_detalle": null}, {"red": "FACEBOOK", "cuenta": "El Presto", "link": "https://www.facebook.com/elprestoOk", "fecha_creacion": "2014-06-01", "verificada": null, "descripcion": "Cuenta periodística de entrevistas y análisis de casos políticos.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "FACEBOOK", "cuenta": "Data24comar", "link": "https://www.facebook.com/data24comar", "fecha_creacion": "2015-12-01", "verificada": null, "descripcion": "Cuenta periodística que difunde noticias y analiza casos políticos nacionales.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "FACEBOOK", "cuenta": "Augusto Grinner (De Peroncho)", "link": "https://www.facebook.com/dongrinner", "fecha_creacion": "2008-10-01", "verificada": null, "descripcion": "Cuenta personal de Augusto Grinner con publicaciones sobre su vida privada.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "FACEBOOK", "cuenta": "Mate Con Mote", "link": "https://www.facebook.com/mateconmote", "fecha_creacion": "2017-08-01", "verificada": null, "descripcion": "Cuenta orientada a la publicación de contenido relacionado con actualidad y política nacional e internacional. Tiene tendencia anti socialista.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "FACEBOOK", "cuenta": "Alvaro Zicarelli", "link": "https://www.facebook.com/alzicarelli", "fecha_creacion": "2017-02-01", "verificada": null, "descripcion": "Analista político que difunde noticias, videos y declaraciones tanto de periodistas como propias, en materia política.", "menciona": "si", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": "Posteo difundiendo debate en Radio Con Vos sobre la licitación de una bóveda en el Cementerio de Recoleta."}, {"red": "FACEBOOK", "cuenta": "Danann", "link": "https://www.facebook.com/manudanann", "fecha_creacion": "2008-09-01", "verificada": null, "descripcion": "Emmanuel Danann (cuyo nombre real es Manuel Jorge Gorostiaga) es un influencer, youtuber y activista político argentino de ideología libertaria. Última públicación fue el 25 julio.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "FACEBOOK", "cuenta": "IndignadoXD", "link": "https://www.facebook.com/indignadoxd", "fecha_creacion": "2021-08-01", "verificada": null, "descripcion": "Publica contenidos de coyuntura, video de periodistas, políticos e influencers. Publica contenido diarimente citicando al kirchnerismo y dano valor a los logros del gobierno nacional.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "FACEBOOK", "cuenta": "Eduardofeinmann", "link": "https://www.facebook.com/EduardoFeinnman", "fecha_creacion": "2024-02-01", "verificada": null, "descripcion": "Cuenta del periodista y analista político Eduardo Feinmann. Publica principalmente contenido de actualidad política y nacional. Difunde principalmente cortos sobre sus programas de radios y de TV.", "menciona": "si", "pos_flag": "si", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "FACEBOOK", "cuenta": "Elpeladotrebucq", "link": "https://www.facebook.com/ElPeladoTrebucq", "fecha_creacion": "2024-02-01", "verificada": null, "descripcion": "Cuenta extraoficial del periodista Esteban Trebuq.", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "FACEBOOK", "cuenta": "antonniolaje", "link": "https://www.facebook.com/lajeantonio", "fecha_creacion": "2015-03-01", "verificada": null, "descripcion": "No publica desde 2020", "menciona": "no", "pos_flag": "no", "pos_detalle": null, "neg_flag": "no", "neg_detalle": null}, {"red": "FACEBOOK", "cuenta": "Jorgeblackri", "link": "https://www.facebook.com/jorgeblackri", "fecha_creacion": "2024-08-01", "verificada": null, "descripcion": "Cuenta a fin al PRO y a la gestión de JM. Su última públicación fue el 14 de julio.", "menciona": "si", "pos_flag": "si", "pos_detalle": "Difuden todas las actividades de JM.", "neg_flag": "no", "neg_detalle": null}]</script>
+<script>
+const RAW = JSON.parse(document.getElementById('raw-data').textContent);
+const norm = s => (s||'').toString().trim().toLowerCase();
+const NET_COLORS = {TWITTER:'#378ADD', INSTAGRAM:'#D4537E', TIKTOK:'#0F6E56', FACEBOOK:'#534AB7', YOUTUBE:'#D85A30'};
+const NET_LABEL = {TWITTER:'Twitter/X', INSTAGRAM:'Instagram', TIKTOK:'TikTok', FACEBOOK:'Facebook', YOUTUBE:'YouTube'};
+
+const data = RAW.filter(r=>['si','no'].includes(norm(r.menciona))).map((r,i)=>{
+  const m = norm(r.menciona), p = norm(r.pos_flag)==='si', n = norm(r.neg_flag)==='si';
+  let tono = 'none';
+  if(p&&n) tono='mix'; else if(p) tono='pos'; else if(n) tono='neg';
+  return {...r, i, m, tono, known: true};
+});
+
+const total = data.length;
+const mencionan = data.filter(d=>d.m==='si').length;
+const positivas = data.filter(d=>d.tono==='pos'||d.tono==='mix').length;
+const negativas = data.filter(d=>d.tono==='neg'||d.tono==='mix').length;
+const sinDato = data.filter(d=>!d.known).length;
+const analizadas = total - sinDato;
+
+/* KPIs con conteo animado */
+const kpis = [
+  {label:'Cuentas relevadas', v:total, cls:'jade'},
+  {label:'Mencionan a JM', v:mencionan, cls:'jade', suf:` <small>· ${Math.round(mencionan/total*100)}%</small>`},
+  {label:'Tono positivo', v:positivas, cls:'', vcls:'pos', spark:'pos'},
+  {label:'Tono negativo', v:negativas, cls:'', vcls:'neg', spark:'neg'},
+];
+document.getElementById('kpis').innerHTML = kpis.map((k,ix)=>`
+  <div class="kpi ${k.cls}">
+    <div class="label">${k.label}</div>
+    <div class="value ${k.vcls||''}"><span data-count="${k.v}" id="cnt${ix}">0</span>${k.suf||''}</div>
+    ${k.spark?`<div class="spark ${k.spark}"></div>`:''}
+  </div>`).join('');
+
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+document.querySelectorAll('[data-count]').forEach(el=>{
+  const target = +el.dataset.count;
+  if(reduceMotion){ el.textContent = target; return; }
+  const t0 = performance.now(), dur = 800;
+  const tick = t => {
+    const k = Math.min(1,(t-t0)/dur), e = 1-Math.pow(1-k,3);
+    el.textContent = Math.round(target*e);
+    if(k<1) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+});
+
+/* Barras por red */
+const redes = [...new Set(data.map(d=>d.red))];
+document.getElementById('netBars').innerHTML = redes
+  .sort((a,b)=>data.filter(d=>d.red===b).length - data.filter(d=>d.red===a).length)
+  .map(red=>{
+    const rows = data.filter(d=>d.red===red);
+    const n = rows.length;
+    const si = rows.filter(d=>d.m==='si').length;
+    const neg = rows.filter(d=>d.tono==='neg').length;
+    const pend = rows.filter(d=>!d.known).length;
+    const pct = x => (x/n*100).toFixed(1);
+    const siNeg = rows.filter(d=>d.m==='si'&&d.tono==='neg').length;
+    return `<div class="net-row">
+      <span class="net-name"><span class="net-ic" style="background:${NET_COLORS[red]||'#888'}"></span>${NET_LABEL[red]||red}</span>
+      <div class="net-track">
+        <div class="seg-si" style="width:${pct(si-siNeg)}%"></div>
+        <div class="seg-neg" style="width:${pct(neg)}%"></div>
+      </div>
+      <span class="net-count">${si} / ${n}</span>
+    </div>`;
+  }).join('');
+
+/* Donut SVG */
+(function(){
+  const soloPos = data.filter(d=>d.tono==='pos').length;
+  const soloNeg = data.filter(d=>d.tono==='neg').length;
+  const mix = data.filter(d=>d.tono==='mix').length;
+  const resto = analizadas - soloPos - soloNeg - mix;
+  const parts = [
+    {v:soloPos, c:'#1D9E75', l:'Positivas'},
+    {v:mix, c:'#EF9F27', l:'Positivas y negativas'},
+    {v:soloNeg, c:'#D85A30', l:'Negativas'},
+    {v:resto, c:'#E0E2DF', l:'Sin mención'},
+  ].filter(p=>p.v>0);
+  const C=85, R=64, SW=22, circ=2*Math.PI*R;
+  let off=0, svg='';
+  parts.forEach(p=>{
+    const frac=p.v/analizadas;
+    svg += `<circle cx="${C}" cy="${C}" r="${R}" fill="none" stroke="${p.c}" stroke-width="${SW}"
+      stroke-dasharray="${(frac*circ).toFixed(1)} ${circ}" stroke-dashoffset="${(-off*circ).toFixed(1)}"
+      transform="rotate(-90 ${C} ${C})" stroke-linecap="butt"/>`;
+    off+=frac;
+  });
+  svg += `<text x="${C}" y="${C-4}" text-anchor="middle" font-family="Archivo,sans-serif" font-weight="700" font-size="30" fill="#04342C">${mencionan}</text>
+    <text x="${C}" y="${C+16}" text-anchor="middle" font-family="Inter,sans-serif" font-size="10.5" fill="#4E5D58">mencionan a JM</text>`;
+  document.getElementById('donut').innerHTML = svg;
+  document.getElementById('donutLegend').innerHTML = parts.map(p=>
+    `<div class="row"><span><span class="dot" style="display:inline-block;width:9px;height:9px;border-radius:3px;background:${p.c};margin-right:7px;"></span>${p.l}</span><b>${p.v}</b></div>`).join('');
+})();
+
+/* Tarjetas críticas */
+const negRows = data.filter(d=>d.tono==='neg'||d.tono==='mix');
+document.getElementById('negCount').textContent = `${negRows.length} cuentas`;
+document.getElementById('negGrid').innerHTML = negRows.map(d=>`
+  <div class="neg-card" data-goto="${d.i}" role="button" tabindex="0">
+    <div class="who"><span>@${d.cuenta}</span><span class="net">${NET_LABEL[d.red]||d.red}</span></div>
+    <p>${(d.neg_detalle||'').split('\n')[0] || 'Publicación negativa registrada en el período.'}</p>
+  </div>`).join('');
+
+/* Filtros + tabla */
+const selRed = document.getElementById('fRed');
+redes.forEach(r=>{ const o=document.createElement('option'); o.value=r; o.textContent=NET_LABEL[r]||r; selRed.appendChild(o); });
+
+const fMen = document.getElementById('fMenciona'), fTono = document.getElementById('fTono'),
+      fBusca = document.getElementById('fBusca'), tbody = document.getElementById('tbody'),
+      empty = document.getElementById('empty'), fCount = document.getElementById('fCount'),
+      chkWrap = document.getElementById('chkWrap');
+
+function pillM(d){
+  if(!d.known) return '<span class="pill sd">no disponible</span>';
+  return d.m==='si' ? '<span class="pill si">sí</span>' : '<span class="pill no">no</span>';
+}
+function pillT(d){
+  if(!d.known) return '<span class="pill sd">—</span>';
+  return {pos:'<span class="pill pos">positivo</span>', neg:'<span class="pill neg">negativo</span>',
+          mix:'<span class="pill mix">pos + negativo</span>', none:'<span class="pill none">—</span>'}[d.tono];
+}
+function splitLinks(t){
+  const urls = (t||'').match(/https?:\/\/[^\s]+/g) || [];
+  const texto = (t||'').replace(/https?:\/\/[^\s]+/g,'').replace(/\n+/g,' ').trim();
+  return {texto, urls};
+}
+function postCount(d){
+  const a = splitLinks(d.pos_detalle).urls.length + splitLinks(d.neg_detalle).urls.length;
+  return a;
+}
+function renderDetail(t, cls){
+  const {texto, urls} = splitLinks(t);
+  let h = texto ? `<div>${texto}</div>` : '';
+  if(urls.length) h += `<div class="post-links">` + urls.map((u,i)=>
+    `<a class="post-btn ${cls}" href="${u}" target="_blank" rel="noopener">Posteo ${i+1} ↗</a>`).join('') + `</div>`;
+  return h;
+}
+function rowsHTML(list){
+  return list.map(d=>{
+    const desc = d.descripcion || '<em style="color:var(--ink-3)">Sin descripción cargada.</em>';
+    const short = d.descripcion && d.descripcion.length>150 ? d.descripcion.slice(0,150)+'…' : desc;
+    const hasDetail = d.pos_detalle || d.neg_detalle || (d.descripcion && d.descripcion.length>150);
+    return `<tr class="main" data-i="${d.i}">
+      <td data-l="Red"><span class="net-tag"><span class="net-ic" style="background:${NET_COLORS[d.red]||'#888'}"></span>${NET_LABEL[d.red]||d.red}</span></td>
+      <td data-l="Cuenta" class="acc">${d.link?`<a href="${d.link}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${d.cuenta}</a>`:d.cuenta}</td>
+      <td data-l="¿Menciona?">${pillM(d)}</td>
+      <td data-l="Tono">${pillT(d)}</td>
+      <td class="desc">${short}</td>
+      <td>${hasDetail?'<span class="chev">▶</span>':''}</td>
+    </tr>`;
+  }).join('');
+}
+const PAGE = 25;
+let shown = PAGE, currentList = [];
+const moreWrap = document.getElementById('moreWrap'), moreBtn = document.getElementById('moreBtn'),
+      moreHint = document.getElementById('moreHint'), listEnd = document.getElementById('listEnd');
+
+function renderList(){
+  const slice = currentList.slice(0, shown);
+  tbody.innerHTML = rowsHTML(slice);
+  empty.style.display = currentList.length ? 'none' : 'block';
+  const hasMore = currentList.length > shown;
+  moreWrap.style.display = hasMore ? 'block' : 'none';
+  listEnd.style.display = (!hasMore && currentList.length > PAGE) ? 'block' : 'none';
+  moreHint.textContent = hasMore ? `Mostrando ${slice.length} de ${currentList.length}` : '';
+  fCount.innerHTML = `<b>${currentList.length}</b> de ${total} cuentas`;
+}
+function applyFilters(){
+  chkWrap.classList.toggle('on', fMen.checked);
+  const red = selRed.value, tono = fTono.value, q = norm(fBusca.value);
+  currentList = data.filter(d=>{
+    if(red && d.red!==red) return false;
+    if(fMen.checked && d.m!=='si') return false;
+    if(tono){
+      if(tono==='pos' && !(d.tono==='pos'||d.tono==='mix')) return false;
+      if(tono==='neg' && !(d.tono==='neg'||d.tono==='mix')) return false;
+      if(tono==='mix' && d.tono!=='mix') return false;
+      if(tono==='none' && !(d.known && d.tono==='none')) return false;
+    }
+    if(q && !(norm(d.cuenta).includes(q) || norm(d.descripcion).includes(q))) return false;
+    return true;
+  });
+  shown = PAGE;
+  renderList();
+}
+function showMore(){ shown += PAGE; renderList(); }
+moreBtn.addEventListener('click', showMore);
+const esMobile = matchMedia('(max-width: 720px)').matches;
+if(esMobile && 'IntersectionObserver' in window){
+  new IntersectionObserver(entries=>{
+    if(entries[0].isIntersecting && moreWrap.style.display !== 'none') showMore();
+  }, {rootMargin:'120px'}).observe(moreWrap);
+}
+[selRed,fTono].forEach(el=>el.addEventListener('change',applyFilters));
+fMen.addEventListener('change',applyFilters);
+fBusca.addEventListener('input',applyFilters);
+document.getElementById('fClear').addEventListener('click',()=>{
+  selRed.value=''; fTono.value=''; fMen.checked=false; fBusca.value=''; applyFilters();
+});
+
+/* Expandir detalle */
+tbody.addEventListener('click', e=>{
+  const tr = e.target.closest('tr.main'); if(!tr) return;
+  const d = data[+tr.dataset.i];
+  const next = tr.nextElementSibling;
+  if(next && next.classList.contains('detail')){ next.remove(); tr.classList.remove('open'); return; }
+  document.querySelectorAll('tr.detail').forEach(x=>x.remove());
+  document.querySelectorAll('tr.open').forEach(x=>x.classList.remove('open'));
+  let html = '<div class="detail-block">';
+  if(d.descripcion) html += `<div>${d.descripcion}</div>`;
+  if(d.pos_detalle) html += `<h4 class="p">Menciones positivas</h4>${renderDetail(d.pos_detalle,'')}`;
+  if(d.neg_detalle) html += `<h4 class="n">Menciones negativas</h4>${renderDetail(d.neg_detalle,'n')}`;
+  if(!d.descripcion && !d.pos_detalle && !d.neg_detalle) html += '<em style="color:var(--ink-3)">Sin información adicional cargada para esta cuenta.</em>';
+  html += '</div>';
+  const det = document.createElement('tr');
+  det.className='detail';
+  det.innerHTML = `<td colspan="6">${html}</td>`;
+  tr.after(det); tr.classList.add('open');
+});
+
+/* Tarjetas críticas → scroll a la fila */
+document.getElementById('negGrid').addEventListener('click', e=>{
+  const card = e.target.closest('.neg-card'); if(!card) return;
+  const idx = +card.dataset.goto;
+  selRed.value=''; fTono.value=''; fMen.checked=false; fBusca.value='';
+  applyFilters();
+  const pos = currentList.findIndex(d=>d.i===idx);
+  if(pos >= shown){ shown = Math.ceil((pos+1)/PAGE)*PAGE; renderList(); }
+  const tr = tbody.querySelector(`tr[data-i="${idx}"]`);
+  if(!tr) return;
+  tr.click();
+  tr.classList.add('flash');
+  requestAnimationFrame(()=>{
+    tr.scrollIntoView({behavior: reduceMotion?'auto':'smooth', block:'center'});
+  });
+});
+
+document.getElementById('b-total').textContent = `${total} cuentas`;
+document.getElementById('b-plat').textContent = `${redes.length} plataformas`;
+document.getElementById('footDate').textContent = 'Actualizado: agosto 2026';
+applyFilters();
+</script>
+</body>
+</html>

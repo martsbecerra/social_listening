@@ -1,0 +1,2695 @@
+:root {
+  /* — Jade: la marca y la señal — */
+  --jade-950: #032a23;
+  --jade-900: #06382e;
+  --jade-700: #0b5947;
+  --jade-500: #12805f;
+  --jade-400: #2aa57c;
+  --jade-300: #63c7a2;
+  --jade-150: #c8e8da;
+  --jade-100: #e3f2ea;
+  --jade-50: #f1f9f5;
+
+  /* — Barro: estructura, texto, calidez — */
+  --clay-900: #2a211c;
+  --clay-700: #5b4638;
+  --clay-500: #8a6a52;
+  --clay-200: #ded3c6;
+  --clay-100: #f0e9df;
+
+  /* — Coral: solo alerta / negativo — */
+  --coral-700: #8e3418;
+  --coral-500: #c4522c;
+  --coral-100: #fae7df;
+
+  --amber-700: #8a5a10;
+  --amber-100: #fbf0d9;
+
+  --paper: #fcfdfb;
+  --line: #e4ebe7;
+
+  --shadow-sm:
+    0 1px 2px rgba(6, 56, 46, 0.05), 0 2px 8px rgba(6, 56, 46, 0.04);
+  --shadow-md:
+    0 2px 4px rgba(6, 56, 46, 0.05), 0 12px 32px rgba(6, 56, 46, 0.09);
+  --shadow-lg:
+    0 4px 8px rgba(6, 56, 46, 0.06), 0 24px 60px rgba(6, 56, 46, 0.13);
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  font-family: "Instrument Sans", system-ui, -apple-system, Segoe UI, Roboto,
+    sans-serif;
+  background: linear-gradient(180deg, var(--jade-50) 0%, var(--paper) 320px);
+  color: var(--clay-900);
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+::selection {
+  background: var(--jade-150);
+  color: var(--jade-950);
+}
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+a {
+  color: inherit;
+}
+:focus-visible {
+  outline: 2px solid var(--jade-400);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Utilitarias                                                         */
+/* ------------------------------------------------------------------ */
+.display {
+  font-family: "Bricolage Grotesque", sans-serif;
+  letter-spacing: -0.02em;
+}
+.mono {
+  font-family: "DM Mono", monospace;
+}
+.tag {
+  font-family: "DM Mono", monospace;
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+/* !important a propósito: varios componentes (.user-dropdown, .tab-panel,
+   .plat-state, etc.) definen su propio "display" más abajo en este archivo,
+   y con la misma especificidad ganaría el que aparece último en la hoja —
+   sin esto, ".hidden" dejaría de esconder esos elementos según dónde caiga
+   su propia regla, en vez de depender solo de si la clase está puesta. */
+.hidden {
+  display: none !important;
+}
+
+/* ══════════════════════════════════════════════════════════
+   EL MEDIDOR — elemento firma
+   Barras de amplitud. Vivas = hay señal. Planas = no hay.
+   ══════════════════════════════════════════════════════════ */
+.meter {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--bar-gap, 3px);
+  height: var(--meter-h, 28px);
+}
+.meter i {
+  display: block;
+  width: var(--bar-w, 3px);
+  height: 100%;
+  border-radius: 99px;
+  background: var(--bar-color, var(--jade-400));
+  transform: scaleY(0.18);
+  transform-origin: bottom;
+  animation: pulse var(--dur, 1.6s) var(--delay, 0s) ease-in-out infinite;
+}
+@keyframes pulse {
+  0%,
+  100% {
+    transform: scaleY(0.18);
+  }
+  50% {
+    transform: scaleY(var(--peak, 0.9));
+  }
+}
+.meter.flat i {
+  animation: none;
+  transform: scaleY(0.14);
+  background: var(--clay-200);
+}
+
+/* ══════════════════════════════════════════════════════════
+   MARCA
+   ══════════════════════════════════════════════════════════ */
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 11px;
+  text-decoration: none;
+}
+.brand .meter {
+  --meter-h: 26px;
+  --bar-w: 3.5px;
+  --bar-gap: 3px;
+}
+.brand-name {
+  font-family: "Bricolage Grotesque", sans-serif;
+  font-size: 17px;
+  letter-spacing: -0.025em;
+  color: var(--jade-900);
+  line-height: 1;
+  white-space: nowrap;
+}
+.brand-name b {
+  font-weight: 700;
+}
+.brand-name span {
+  font-weight: 500;
+  color: var(--jade-500);
+}
+
+/* ══════════════════════════════════════════════════════════
+   FOOTER — eco de la cabecera en versión clara, fluye al final
+   del contenido (no sticky/fijo)
+   ══════════════════════════════════════════════════════════ */
+.foot {
+  position: relative;
+  overflow: hidden;
+  margin-top: auto;
+  background:
+    radial-gradient(80% 180% at 92% 100%, rgba(42, 165, 124, 0.14) 0%, transparent 60%),
+    radial-gradient(60% 140% at 6% 0%, rgba(138, 106, 82, 0.09) 0%, transparent 58%),
+    linear-gradient(170deg, var(--jade-50) 0%, var(--clay-100) 100%);
+  border-top: 1px solid var(--jade-150);
+}
+.foot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(90deg, rgba(6, 56, 46, 0.022) 0 1px, transparent 1px 5px);
+  mask-image: linear-gradient(to right, transparent, #000 45%, transparent);
+}
+.foot-in {
+  position: relative;
+  z-index: 2;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 38px clamp(18px, 4vw, 40px) 28px;
+}
+.foot-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) repeat(2, minmax(0, 1fr));
+  gap: 32px;
+}
+.foot h4 {
+  color: var(--jade-700);
+  margin-bottom: 12px;
+}
+.foot-lead {
+  margin-top: 14px;
+  font-size: 13.5px;
+  color: var(--clay-700);
+  max-width: 38ch;
+  line-height: 1.6;
+}
+.foot-lead b {
+  color: var(--jade-900);
+  font-weight: 600;
+}
+.stat-row {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.stat {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  font-size: 13px;
+  color: var(--clay-500);
+}
+.stat b {
+  font-family: "DM Mono", monospace;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--jade-900);
+}
+.foot-links {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13.5px;
+}
+.foot-links a {
+  color: var(--clay-700);
+  text-decoration: none;
+  width: fit-content;
+  transition: color 0.16s;
+}
+.foot-links a:hover {
+  color: var(--jade-700);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.foot-rule {
+  margin: 26px 0 0;
+  height: 1px;
+  background: linear-gradient(90deg, var(--jade-150), transparent);
+}
+.foot-base {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding-top: 16px;
+  color: var(--clay-500);
+}
+.pulse-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--clay-500);
+}
+.pulse-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 99px;
+  background: var(--jade-400);
+  animation: blink 2.2s ease-in-out infinite;
+}
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@media (max-width: 760px) {
+  .foot-grid {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+}
+
+/* Pie mínimo del login: una sola franja fina (wordmark + año), sin las
+   columnas/regla/estado del pie completo — reusa el fondo de .foot (mismo
+   degradé y trama), solo cambia el contenido interno. */
+.foot-mini-in {
+  position: relative;
+  z-index: 2;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 14px clamp(18px, 4vw, 40px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.foot-mini-in .brand {
+  gap: 7px;
+}
+.foot-mini-in .brand .meter {
+  --meter-h: 14px;
+  --bar-w: 2px;
+  --bar-gap: 2px;
+}
+.foot-mini-in .brand-name {
+  font-size: 12.5px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Header                                                              */
+/* ------------------------------------------------------------------ */
+.topbar {
+  position: sticky;
+  top: 0;
+  /* visible: el menú de usuario cuelga debajo del badge. Los degradés
+     del fondo ya se recortan solos (background-clip); no hace falta
+     overflow:hidden acá. */
+  overflow: visible;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 15px clamp(18px, 4vw, 40px);
+  color: #fff;
+  /* Degradé jade oscuro: sigue siendo opaco (sin alpha en la base lineal),
+     Leaflet en el mapa de reclamos queda con z-index bajo (ver más abajo)
+     pero igual necesita un fondo sólido para no transparentarse por debajo
+     al hacer scroll dentro del mapa. */
+  background:
+    radial-gradient(90% 220% at 8% 0%, rgba(42, 165, 124, 0.34) 0%, transparent 60%),
+    linear-gradient(120deg, var(--jade-900) 0%, var(--jade-950) 70%, #02201b 100%);
+  border-bottom: 1px solid var(--line);
+  /* Por encima de ".tabs" (también sticky, z-index 90) y muy por encima de
+     Leaflet (paneles/controles forzados a z-index 1 más abajo). */
+  z-index: 100;
+}
+/* Trama de escaneo, igual criterio que .top::after de la referencia. */
+.topbar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.032) 0 1px, transparent 1px 5px);
+  mask-image: linear-gradient(to right, transparent, #000 40%, transparent);
+}
+.topbar > * {
+  position: relative;
+  z-index: 2;
+}
+.dashboard-topbar {
+  justify-content: space-between;
+}
+.topbar .brand-name {
+  color: #fff;
+}
+.topbar .brand-name span {
+  color: var(--jade-300);
+}
+
+.crumb {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.crumb-sep {
+  color: rgba(255, 255, 255, 0.26);
+}
+.crumb-here {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 14px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.93);
+}
+.crumb-here svg {
+  width: 17px;
+  height: 17px;
+}
+
+.topbar-user {
+  position: relative;
+}
+.user-btn {
+  width: auto;
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 13px 6px 7px;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 99px;
+  font-size: 13.5px;
+  color: rgba(255, 255, 255, 0.92);
+  box-shadow: none;
+  transition:
+    background 0.16s,
+    border-color 0.16s;
+}
+.user-btn:hover {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+.avatar {
+  width: 25px;
+  height: 25px;
+  border-radius: 99px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  background: linear-gradient(135deg, var(--jade-400), var(--jade-300));
+  color: var(--jade-950);
+  font-size: 10.5px;
+  font-weight: 700;
+}
+.avatar svg {
+  width: 13px;
+  height: 13px;
+}
+.user-dropdown {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px;
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: var(--shadow-md);
+  z-index: 110;
+}
+.user-dropdown span {
+  color: var(--clay-500);
+  font-size: 13px;
+}
+.user-dropdown button {
+  width: auto;
+  margin: 0;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--clay-500);
+  box-shadow: none;
+}
+.user-dropdown button:hover:not(:disabled) {
+  border-color: var(--clay-200);
+  background: var(--clay-100);
+}
+
+/* ------------------------------------------------------------------ */
+/* Tabs                                                                 */
+/* ------------------------------------------------------------------ */
+.tabs {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 clamp(18px, 4vw, 40px);
+  background: var(--paper);
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  z-index: 90;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar {
+  display: none;
+}
+.tabs-group {
+  display: flex;
+  gap: 4px;
+}
+.tab-btn {
+  position: relative;
+  width: auto;
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  padding: 15px 16px 14px;
+  background: none;
+  border: none;
+  border-bottom: none;
+  border-radius: 0;
+  cursor: pointer;
+  font-size: 14.5px;
+  font-weight: 500;
+  color: var(--clay-500);
+  transition: color 0.16s;
+}
+.tab-btn:hover:not(:disabled) {
+  background: none;
+  color: var(--jade-700);
+}
+.tab-btn::after {
+  content: "";
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--jade-500), var(--jade-300));
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.28s cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+.tab-btn.active {
+  color: var(--jade-950);
+  font-weight: 600;
+  border-bottom-color: transparent;
+}
+.tab-btn.active::after {
+  transform: scaleX(1);
+}
+.tab-btn .meter {
+  --meter-h: 13px;
+  --bar-w: 2px;
+  --bar-gap: 2px;
+  opacity: 0.35;
+  transition: opacity 0.2s;
+}
+.tab-btn.active .meter {
+  opacity: 1;
+}
+
+/* Ícono de cada solapa: los tres animan siempre, no solo el activo (el
+   medidor de "Monitoreo" ya lo hacía — sus barras corren siempre, .active
+   solo le sube la opacidad). Duraciones a propósito distintas (3s / medidor
+   variable / 2.6s) para que no se sincronicen entre sí. */
+.glyph {
+  width: 17px;
+  height: 17px;
+  flex: none;
+  color: var(--jade-400);
+}
+.tab-btn.active .glyph {
+  color: var(--jade-500);
+}
+
+/* Análisis — la línea de tendencia se dibuja de menor a mayor y el punto la sigue */
+.glyph-an .trend {
+  stroke-dasharray: 26;
+  stroke-dashoffset: 26;
+  animation: draw 3s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+.glyph-an .head {
+  opacity: 0;
+  animation: headMove 3s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+@keyframes draw {
+  0% {
+    stroke-dashoffset: 26;
+  }
+  55% {
+    stroke-dashoffset: 0;
+  }
+  85% {
+    stroke-dashoffset: 0;
+  }
+  100% {
+    stroke-dashoffset: 26;
+  }
+}
+@keyframes headMove {
+  0% {
+    opacity: 0;
+    transform: translate(-8px, 6px);
+  }
+  12% {
+    opacity: 1;
+  }
+  55% {
+    opacity: 1;
+    transform: translate(0, 0);
+  }
+  85% {
+    opacity: 1;
+    transform: translate(0, 0);
+  }
+  92%,
+  100% {
+    opacity: 0;
+    transform: translate(0, 0);
+  }
+}
+
+/* Mapa de reclamos — pin fijo con onda de radar que se expande */
+.glyph-mp .ping {
+  transform-origin: 12px 10px;
+  animation: ping 2.6s cubic-bezier(0.2, 0.7, 0.3, 1) infinite;
+}
+@keyframes ping {
+  0% {
+    transform: scale(0.3);
+    opacity: 0.85;
+  }
+  70% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+
+.tab-panel {
+  padding: clamp(26px, 4vw, 40px) clamp(18px, 4vw, 40px) 72px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.tab-panel:not(.hidden) {
+  animation: fade 0.3s ease;
+}
+@keyframes fade {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+/* El desplegable nativo de "Filas por página" lo abre el navegador según
+   cuánto espacio vea libre debajo — si el footer de la tabla queda pegado
+   al final de la página, lo abre hacia arriba y tapa las últimas filas. Le
+   damos aire de sobra debajo para que el navegador prefiera abrirlo hacia
+   abajo. (No es controlable por z-index: el popup de un <select> nativo lo
+   pinta el navegador en una capa aparte, no el DOM/CSS de la página.) */
+#tab-monitoring.tab-panel {
+  padding-bottom: 260px;
+}
+/* monitoring.js arma la tabla de Tabulator una sola vez al cargar la
+   página (loadPosts()), y esta solapa puede estar oculta en ese momento
+   si no es la que arranca activa. layout:'fitColumns' necesita el ancho
+   real del contenedor para repartir las columnas: con display:none ese
+   ancho es 0 y la tabla queda sin filas, sin ningún evento después que la
+   fuerce a recalcular (acá no hay redraw() al cambiar de solapa, a
+   diferencia del mapa de reclamos que sí llama invalidateSize()). Se la
+   mantiene en el layout pero invisible (position:absolute + fuera de la
+   vista + visibility:hidden) en vez de display:none, así Tabulator
+   siempre mide un ancho real. */
+#tab-monitoring.tab-panel.hidden {
+  display: flex !important;
+  position: absolute !important;
+  inset: 0 !important;
+  /* Su tabla de Tabulator (100+ filas) es más alta que este panel de 100vh
+     y sin esto el desborde queda "visible" (default) — no se ve porque
+     visibility:hidden lo oculta, pero igual infla el scrollHeight del
+     documento entero, en cualquier solapa, no solo esta. */
+  overflow: hidden !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  z-index: -1 !important;
+}
+
+/* ------------------------------------------------------------------ */
+/* Layout general / tarjetas (compartido entre las solapas)            */
+/* ------------------------------------------------------------------ */
+.container {
+  width: 100%;
+  max-width: 620px;
+}
+.container-wide {
+  width: 100%;
+  max-width: 1240px;
+}
+.panel-eyebrow {
+  color: var(--jade-500);
+  margin-bottom: 0;
+}
+h1 {
+  margin: 10px 0 4px;
+  font-family: "Bricolage Grotesque", sans-serif;
+  font-size: clamp(23px, 3vw, 30px);
+  font-weight: 600;
+  color: var(--jade-950);
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+  text-align: left;
+}
+p.sub {
+  margin-top: 0;
+  color: var(--clay-500);
+  font-size: 14.5px;
+  text-align: left;
+  max-width: 56ch;
+}
+#tab-analysis h1,
+#tab-analysis p.sub,
+#tab-analysis .panel-eyebrow {
+  text-align: center;
+  margin-inline: auto;
+}
+.card {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow-sm);
+  padding: 22px;
+  margin-top: 16px;
+}
+label {
+  display: block;
+  font-family: "DM Mono", monospace;
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--clay-700);
+  margin-bottom: 8px;
+}
+input[type="text"],
+input[type="password"],
+input[type="email"] {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--clay-900);
+  font-size: 14.5px;
+  transition:
+    border-color 0.16s,
+    box-shadow 0.16s;
+}
+input[type="text"]::placeholder,
+input[type="password"]::placeholder,
+input[type="email"]::placeholder {
+  color: #afbab4;
+}
+input[type="text"]:focus,
+input[type="password"]:focus,
+input[type="email"]:focus {
+  outline: none;
+  border-color: var(--jade-400);
+  box-shadow: 0 0 0 3.5px var(--jade-100);
+  background: #fff;
+}
+button {
+  margin-top: 12px;
+  width: 100%;
+  padding: 13px 20px;
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--jade-700), var(--jade-500));
+  color: #fff;
+  font-family: "Instrument Sans", sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition:
+    transform 0.14s,
+    box-shadow 0.18s,
+    filter 0.18s;
+}
+button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(11, 89, 71, 0.26);
+  filter: saturate(1.08);
+}
+button:active:not(:disabled) {
+  transform: translateY(0);
+}
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ------------------------------------------------------------------ */
+/* Estado de carga (spinner + texto + barra de progreso)                */
+/* ------------------------------------------------------------------ */
+.status {
+  margin-top: 16px;
+  color: var(--clay-500);
+}
+.status-text {
+  transition: opacity 0.25s ease;
+}
+.spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--jade-150);
+  border-top-color: var(--jade-500);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  vertical-align: middle;
+  margin-right: 8px;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.progress-track {
+  margin-top: 10px;
+  width: 100%;
+  height: 8px;
+  background: var(--jade-50);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.progress-fill {
+  position: relative;
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--jade-700), var(--jade-400));
+  border-radius: 999px;
+  transition: width 0.35s ease;
+  overflow: hidden;
+}
+.progress-fill::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.55),
+    transparent
+  );
+  animation: shimmer 1.3s infinite;
+}
+@keyframes shimmer {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+.error {
+  margin-top: 16px;
+  color: var(--coral-700);
+  background: var(--coral-100);
+  border: 1px solid #f2d2c5;
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+.result-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  gap: 8px;
+}
+.result-header span {
+  color: var(--clay-500);
+  font-size: 0.85rem;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.btn-small {
+  width: auto;
+  margin: 0;
+  padding: 8px 14px;
+  font-size: 0.85rem;
+  box-shadow: none;
+}
+.btn-copy {
+  background: #fff;
+  border: 1px solid var(--jade-150);
+  color: var(--jade-700);
+}
+.btn-copy:hover:not(:disabled) {
+  background: var(--jade-50);
+  transform: none;
+  box-shadow: 0 2px 8px rgba(11, 89, 71, 0.1);
+  filter: none;
+}
+.btn-whatsapp {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #25d366;
+  padding: 8px 10px;
+}
+.btn-whatsapp:hover:not(:disabled) {
+  background: #1ebe57;
+}
+.btn-whatsapp-icon {
+  display: block;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+.btn-clear {
+  background: #fff;
+  border: 1px solid var(--line);
+  color: var(--clay-500);
+  box-shadow: none;
+}
+.btn-clear:hover:not(:disabled) {
+  border-color: var(--coral-500);
+  color: var(--coral-700);
+  background: var(--coral-100);
+  transform: none;
+  box-shadow: none;
+  filter: none;
+}
+pre.report {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  font-family: "Instrument Sans", system-ui, sans-serif;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  margin: 0;
+  color: var(--clay-900);
+}
+
+/* ------------------------------------------------------------------ */
+/* Monitoreo en vivo — calcado de design/monitoreo.html                */
+/* ------------------------------------------------------------------ */
+.muted {
+  color: var(--clay-500);
+  font-size: 0.85rem;
+}
+.btn {
+  padding: 11px 20px;
+  cursor: pointer;
+  font-size: 14.5px;
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(135deg, var(--jade-700), var(--jade-500));
+  border: none;
+  border-radius: 10px;
+  box-shadow: var(--shadow-sm);
+  transition:
+    transform 0.14s,
+    box-shadow 0.18s,
+    filter 0.18s;
+  white-space: nowrap;
+  width: auto;
+  margin: 0;
+}
+.btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(11, 89, 71, 0.26);
+  filter: saturate(1.08);
+}
+.btn-ghost {
+  padding: 8px 14px;
+  cursor: pointer;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--jade-700);
+  background: #fff;
+  border: 1px solid var(--jade-150);
+  border-radius: 9px;
+  transition:
+    background 0.16s,
+    box-shadow 0.16s;
+  white-space: nowrap;
+  width: auto;
+  margin: 0;
+}
+.btn-ghost:hover {
+  background: var(--jade-50);
+  box-shadow: 0 2px 8px rgba(11, 89, 71, 0.1);
+  transform: none;
+}
+
+/* Config: visible, en dos columnas compactas. .card ya da fondo/borde/radio/
+   sombra — acá se le saca el padding:22px/margin-top:16px por defecto,
+   porque .config maneja el suyo propio por columna (como en la referencia). */
+.card.config {
+  padding: 0;
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+.config > div {
+  padding: 18px 20px;
+  min-width: 0;
+}
+.config > div:first-child {
+  border-right: 1px solid var(--line);
+}
+@media (max-width: 860px) {
+  .card.config {
+    grid-template-columns: 1fr;
+  }
+  .config > div:first-child {
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+  }
+}
+.config h3 {
+  color: var(--clay-500);
+  margin-bottom: 10px;
+}
+.add-row {
+  display: flex;
+  gap: 7px;
+}
+.add-row input {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 9px 12px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  font-size: 13.5px;
+  transition:
+    border-color 0.16s,
+    box-shadow 0.16s;
+}
+.add-row input:focus {
+  outline: none;
+  border-color: var(--jade-400);
+  box-shadow: 0 0 0 3.5px var(--jade-100);
+  background: #fff;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 5px 4px 11px;
+  background: var(--jade-50);
+  border: 1px solid var(--jade-150);
+  border-radius: 99px;
+  font-size: 12.5px;
+  color: var(--jade-900);
+}
+.chip.kw {
+  background: var(--clay-100);
+  border-color: var(--clay-200);
+  color: var(--clay-700);
+}
+.chip button {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  background: none;
+  border: none;
+  border-radius: 99px;
+  color: var(--clay-500);
+  font-size: 10px;
+  line-height: 1;
+  box-shadow: none;
+  transition:
+    background 0.14s,
+    color 0.14s;
+}
+.chip button:hover {
+  background: var(--coral-100);
+  color: var(--coral-700);
+  transform: none;
+  box-shadow: none;
+}
+.chip-more {
+  background: none;
+  border: 1px dashed var(--clay-200);
+  color: var(--clay-500);
+  cursor: pointer;
+  padding: 4px 11px;
+  border-radius: 99px;
+  font-size: 12.5px;
+  width: auto;
+  margin: 0;
+  box-shadow: none;
+}
+.chip-more:hover {
+  border-color: var(--jade-300);
+  color: var(--jade-700);
+  transform: none;
+  box-shadow: none;
+}
+
+/* Barra fina de acción, sin la card gigante vacía que había antes. */
+.runbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin: 26px 0;
+}
+.live {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 13px;
+  color: var(--clay-500);
+}
+.live .meter {
+  --meter-h: 15px;
+  --bar-w: 2.5px;
+  --bar-gap: 2.5px;
+}
+.live b {
+  color: var(--jade-900);
+  font-weight: 600;
+}
+
+/* Tarjetas destacadas */
+.sec-head {
+  display: flex;
+  align-items: baseline;
+  gap: 11px;
+  margin-bottom: 13px;
+}
+.sec-head h2 {
+  font-family: "Bricolage Grotesque", sans-serif;
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--jade-950);
+  letter-spacing: -0.02em;
+}
+.sec-head span {
+  font-size: 13px;
+  color: var(--clay-500);
+}
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 13px;
+  margin-bottom: 30px;
+}
+.hl {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 15px 16px 15px 19px;
+  cursor: pointer;
+  text-align: left;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--clay-200);
+  border-radius: 12px;
+  box-shadow: var(--shadow-sm);
+  transition:
+    transform 0.18s cubic-bezier(0.2, 0.7, 0.3, 1),
+    box-shadow 0.2s,
+    border-color 0.2s;
+  width: 100%;
+  margin: 0;
+}
+.hl:hover,
+.hl:focus-visible {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-md);
+}
+.hl.pos {
+  border-left-color: var(--jade-400);
+}
+.hl.neu {
+  border-left-color: var(--amber-700);
+}
+.hl.neg {
+  border-left-color: var(--coral-500);
+}
+.hl-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.hl-acc {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--jade-900);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hl-plat {
+  font-family: "DM Mono", monospace;
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--clay-500);
+  flex: none;
+}
+.hl-title {
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--clay-900);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.hl-metric {
+  margin-top: auto;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  font-size: 12.5px;
+  color: var(--clay-500);
+}
+.hl-metric b {
+  font-family: "DM Mono", monospace;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--jade-700);
+}
+
+/* Filtros: sticky debajo de .topbar + .tabs (que ya son sticky top:0 en la
+   app — la referencia es un archivo suelto sin esa cabecera, ahí sí puede
+   ir top:0). Alto real medido en el navegador: topbar + tabs. */
+.filters {
+  position: sticky;
+  /* Solo el alto de .topbar (70px, medido en vivo): .tabs es sticky top:0
+     con menor z-index que .topbar (ambos preexistentes, no se tocan acá),
+     así que al scrollear queda tapado detrás de .topbar bastante antes de
+     que esta barra necesite pegarse — reservarle su alto además dejaría un
+     hueco vacío. No top:0 como en la referencia (que no tiene esa cabecera). */
+  top: 70px;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  padding: 0;
+  margin-bottom: 16px;
+  overflow: hidden;
+  background: rgba(252, 253, 251, 0.93);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 4px 16px rgba(6, 56, 46, 0.05);
+}
+.filters select,
+.filters input[type="search"],
+.filters input[type="date"] {
+  font-family: "Instrument Sans", sans-serif;
+  font-size: 13.5px;
+  color: var(--clay-900);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 9px 12px;
+  background: #fff;
+  outline: none;
+  margin: 0;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s,
+    background 0.15s;
+}
+/* appearance:none + flechita propia (mismo mecanismo — y el mismo path SVG
+   de flechita — que ya usa .sentiment-select más abajo), para que el
+   indicador de los <select> nativos de esta barra sea IDÉNTICO al de
+   .acc-select-btn (el dropdown de Cuenta armado a mano): un <select> sin
+   esto se apoya en la flechita que dibuja el navegador, que no es la misma
+   forma/tamaño que un ícono nuestro — quedan visualmente distintos aunque
+   el resto del control sea igual. */
+.filters select,
+.acc-select-btn {
+  cursor: pointer;
+  width: auto;
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 30px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath fill='%238a6a52' d='M1 1l5 5 5-5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 10px 7px;
+}
+.filters select:hover,
+.acc-select-btn:hover {
+  border-color: var(--jade-150);
+}
+.filters select:focus,
+.filters input:focus {
+  border-color: var(--jade-400);
+  box-shadow: 0 0 0 3px var(--jade-100);
+}
+.filters select.on,
+.filters input[type="date"].on,
+.acc-select-btn.on {
+  background-color: var(--jade-50);
+  border-color: var(--jade-300);
+  color: var(--jade-900);
+  font-weight: 500;
+}
+.filters input[type="search"] {
+  flex: 1;
+  min-width: 190px;
+  background: var(--paper);
+}
+.filters input[type="search"]:focus {
+  background: #fff;
+}
+/* Dropdown de Cuenta a medida (no un <select> nativo): con ~70 opciones el
+   navegador puede abrir un <select> real hacia arriba si no hay espacio
+   debajo, y eso no se puede forzar por CSS. Este panel se ancla siempre
+   hacia abajo del botón. Mismo look que los <select> de al lado. */
+.acc-select {
+  position: relative;
+}
+.acc-select-btn {
+  display: inline-flex;
+  align-items: center;
+  width: auto;
+  cursor: pointer;
+  font-family: "Instrument Sans", sans-serif;
+  font-size: 13.5px;
+  font-weight: 400;
+  color: var(--clay-900);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  /* padding-right en 30px explícito, no heredado del padding-right:30px de
+     la regla compartida de arriba: esta regla es un shorthand "padding" más
+     abajo en el archivo, y un shorthand posterior gana sobre un longhand
+     anterior con la misma especificidad — probado en vivo, con "padding:
+     9px 12px" acá el botón de Cuenta quedaba con solo 12px y la flechita
+     pisada por el texto. Mismo motivo para background-color en vez de
+     background: el shorthand "background" resetea la imagen a "none". */
+  padding: 9px 30px 9px 12px;
+  background-color: #fff;
+  outline: none;
+  margin: 0;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s,
+    background 0.15s;
+}
+.acc-select-btn:focus-visible {
+  border-color: var(--jade-400);
+  box-shadow: 0 0 0 3px var(--jade-100);
+}
+/* position:fixed, no absolute: .filters tiene overflow:hidden (a propósito,
+   para las esquinas redondeadas de la barra) y recortaba el panel al ser
+   descendiente suyo. Un <select> nativo escapa esto porque el navegador
+   pinta su popup fuera del DOM; este panel, al ser un div común, tiene que
+   escapar el contenedor de verdad — se reubica en document.body al abrirse
+   (ensureAccPanelInBody) y top/left se calculan en JS desde el botón. */
+.acc-select-panel {
+  position: fixed;
+  z-index: 150;
+  min-width: 220px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow-md);
+  padding: 6px;
+}
+.acc-select-option {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-weight: 400;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-family: "Instrument Sans", sans-serif;
+  font-size: 13.5px;
+  color: var(--clay-900);
+}
+.acc-select-option:hover {
+  background: var(--jade-50);
+}
+.acc-select-option.sel {
+  color: var(--jade-900);
+  font-weight: 600;
+  background: var(--jade-50);
+}
+.frow {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+  padding: 12px 15px;
+}
+.frow + .frow {
+  border-top: 1px solid var(--line);
+  background: rgba(241, 249, 245, 0.55);
+}
+.frow-lbl {
+  color: var(--clay-500);
+  flex: none;
+  width: 62px;
+}
+.chk {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  color: var(--clay-900);
+  cursor: pointer;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 9px 12px;
+  background: #fff;
+  user-select: none;
+  white-space: nowrap;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+  margin-bottom: 0;
+  font-family: "Instrument Sans", sans-serif;
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
+}
+.chk input {
+  accent-color: var(--jade-500);
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+}
+.chk.on {
+  background: var(--jade-50);
+  border-color: var(--jade-300);
+  color: var(--jade-900);
+  font-weight: 500;
+}
+.f-count {
+  font-size: 12.5px;
+  color: var(--clay-500);
+  margin-left: auto;
+  white-space: nowrap;
+}
+.f-count b {
+  color: var(--jade-900);
+  font-weight: 600;
+  font-family: "DM Mono", monospace;
+}
+.f-clear {
+  font-size: 12.5px;
+  color: var(--jade-700);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  padding: 4px 2px;
+  width: auto;
+  margin: 0;
+  box-shadow: none;
+}
+.f-clear:hover {
+  transform: none;
+}
+.f-clear:disabled {
+  color: var(--clay-200);
+  cursor: default;
+  text-decoration: none;
+  /* Pisa el button:disabled{opacity:.6} global: la referencia atenúa este
+     botón solo con el color, no con opacidad extra. */
+  opacity: 1;
+}
+
+/* Tabla: .card ya da fondo/borde/radio/sombra, acá se le saca el padding
+   por defecto para que la tabla quede al ras. */
+.card.tbl-wrap {
+  padding: 0;
+  margin-top: 0;
+  overflow: hidden;
+}
+.c-chev {
+  width: 34px;
+}
+.chev {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  color: var(--clay-500);
+  transition:
+    transform 0.2s,
+    color 0.16s;
+}
+.chev svg {
+  width: 13px;
+  height: 13px;
+}
+.tabulator-row.on .chev {
+  transform: rotate(90deg);
+  color: var(--jade-700);
+}
+.c-acc {
+  font-weight: 600;
+  color: var(--jade-900);
+  text-decoration: none;
+}
+.c-acc:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.c-title {
+  display: block;
+  max-width: 290px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--clay-900);
+}
+.c-num {
+  font-family: "DM Mono", monospace;
+  font-size: 13px;
+  color: var(--clay-700);
+}
+.c-date {
+  font-family: "DM Mono", monospace;
+  font-size: 12.5px;
+  color: var(--clay-500);
+}
+/* Columna por la que se está ordenando (JS le pone .act al header exacto
+   vía column.getElement()) — mismo "thead th.act{color:jade-700}" que la
+   referencia. */
+.tabulator .tabulator-col.act .tabulator-col-title {
+  color: var(--jade-700);
+}
+
+/* Panel desplegable de la fila (título completo, caption, benchmark, links,
+   fecha/hora) — calcado de .dt en la referencia. */
+.dt {
+  padding: 18px 22px 20px 47px;
+  animation: dtOpen 0.18s ease;
+}
+@keyframes dtOpen {
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.dt h4 {
+  font-family: "Bricolage Grotesque", sans-serif;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--jade-950);
+  letter-spacing: -0.02em;
+  margin-bottom: 9px;
+}
+.dt-cap {
+  font-size: 14px;
+  line-height: 1.62;
+  color: var(--clay-700);
+  max-width: 78ch;
+  white-space: pre-line;
+}
+.dt-bench {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 26px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--jade-150);
+}
+.bn {
+  font-size: 13.5px;
+  color: var(--clay-500);
+}
+.bn strong {
+  font-weight: 600;
+}
+.bn .v {
+  font-family: "DM Mono", monospace;
+}
+/* Niveles: alto en jade (mucha interacción, no es "malo"), normal en clay,
+   bajo en clay atenuado — nunca coral, coral es solo para alertas. */
+.bn.alto strong {
+  color: var(--jade-700);
+}
+.bn.normal strong {
+  color: var(--clay-700);
+}
+.bn.bajo strong {
+  color: var(--clay-500);
+}
+.bn.sinref {
+  color: var(--clay-500);
+  font-style: italic;
+}
+.dt-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 15px;
+}
+.dt-links a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 12.5px;
+  color: var(--clay-700);
+  text-decoration: none;
+  transition: all 0.16s;
+}
+.dt-links a:hover {
+  border-color: var(--jade-300);
+  color: var(--jade-700);
+  background: var(--jade-50);
+}
+.dt-meta {
+  margin-top: 12px;
+  font-size: 12.5px;
+  color: var(--clay-500);
+  font-family: "DM Mono", monospace;
+}
+
+@keyframes flash {
+  0%,
+  100% {
+    background: transparent;
+  }
+  25%,
+  60% {
+    background: var(--jade-100);
+  }
+}
+.tabulator-row.flash {
+  animation: flash 1.1s ease;
+}
+
+.badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+}
+.badge-yes {
+  background: var(--jade-100);
+  color: var(--jade-700);
+}
+.badge-no {
+  background: var(--clay-100);
+  color: var(--clay-500);
+}
+.badge-positivo {
+  background: var(--jade-100);
+  color: var(--jade-700);
+}
+.badge-neutral {
+  background: var(--amber-100);
+  color: var(--amber-700);
+}
+.badge-negativo {
+  background: var(--coral-100);
+  color: var(--coral-700);
+}
+
+/* Sentimiento: pastilla + marca de forma (accesible sin color), la forma
+   se resuelve con un segundo background-image (mismo mecanismo que la
+   flechita nativa de abajo) en vez de ::before — un <select> nativo no
+   pinta pseudo-elementos en Chrome, así que ::before quedaría vacío ahí. */
+.sentiment-select {
+  width: auto;
+  margin: 0;
+  padding: 4px 24px 4px 24px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background-repeat: no-repeat, no-repeat;
+  background-position:
+    right 8px center,
+    11px center;
+  background-size:
+    8px 5px,
+    9px 9px;
+  transition: box-shadow 0.16s;
+}
+.sentiment-select:hover {
+  box-shadow: 0 1px 6px rgba(6, 56, 46, 0.12);
+}
+.sentiment-select.sentiment-positivo {
+  background-color: var(--jade-100);
+  color: var(--jade-700);
+  border-color: var(--jade-150);
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath fill='%230b5947' d='M1 1l5 5 5-5'/%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 9'%3E%3Ccircle cx='4.5' cy='4.5' r='4.5' fill='%2312805f'/%3E%3C/svg%3E");
+}
+.sentiment-select.sentiment-neutral {
+  background-color: var(--amber-100);
+  color: var(--amber-700);
+  border-color: #efdfc0;
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath fill='%238a5a10' d='M1 1l5 5 5-5'/%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 9'%3E%3Crect x='0' y='3' width='9' height='3' rx='1.5' fill='%238a5a10'/%3E%3C/svg%3E");
+}
+.sentiment-select.sentiment-negativo {
+  background-color: var(--coral-100);
+  color: var(--coral-700);
+  border-color: #f2d2c5;
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath fill='%238e3418' d='M1 1l5 5 5-5'/%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 9'%3E%3Cpolygon points='4.5,0 9,9 0,9' fill='%23c4522c'/%3E%3C/svg%3E");
+}
+/* Estado "sin clasificar": el clasificador no pudo evaluar el posteo (ver
+   src/classifier.js). Gris y con borde punteado a propósito — tiene que
+   leerse como "falta un dato", no como una cuarta categoría de sentimiento. */
+.sentiment-select.sentiment-sin_clasificar {
+  background-color: var(--clay-100, #f0eeea);
+  color: var(--clay-700, #6b6560);
+  border-color: var(--clay-300, #cfc9c2);
+  border-style: dashed;
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath fill='%236b6560' d='M1 1l5 5 5-5'/%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 9'%3E%3Ccircle cx='4.5' cy='4.5' r='4' fill='none' stroke='%236b6560' stroke-width='1' stroke-dasharray='2 1.6'/%3E%3C/svg%3E");
+}
+.sentiment-select option {
+  background: #fff;
+  color: var(--clay-900);
+}
+
+/* Botón de ícono del prototipo aprobado (design/plataforma.html: .ico/.ico.del),
+   nunca portado a la app — acá achicado (24px/13px svg) para la fila de la tabla. */
+.ico {
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  vertical-align: middle;
+  cursor: pointer;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--clay-500);
+  box-shadow: none;
+  transition:
+    background 0.14s,
+    color 0.14s,
+    border-color 0.14s;
+}
+.ico svg {
+  width: 13px;
+  height: 13px;
+}
+.ico.del:hover {
+  background: var(--coral-100);
+  color: var(--coral-700);
+  border-color: #f2d2c5;
+  transform: none;
+  box-shadow: none;
+  filter: none;
+}
+
+/* ------------------------------------------------------------------ */
+/* Modales (confirmar borrado / ver todas las keywords)                 */
+/* ------------------------------------------------------------------ */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(6, 56, 46, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 16px;
+}
+/* Especificidad más alta que ".hidden" solo, para que gane sin importar el
+   orden en la hoja de estilos (acá "display:flex" y "display:none" compiten
+   con la misma especificidad si no se hace esto). */
+.modal-overlay.hidden {
+  display: none;
+}
+.modal-box {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow-lg);
+  padding: 22px;
+  width: 100%;
+  max-width: 380px;
+}
+.modal-box-wide {
+  max-width: 640px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+.modal-box p {
+  margin: 0 0 16px;
+  color: var(--clay-900);
+}
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.modal-actions button {
+  width: auto;
+  margin: 0;
+}
+.modal-actions .btn-clear {
+  background: #fff;
+}
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+}
+.modal-header p {
+  margin: 0;
+  font-weight: 600;
+  color: var(--jade-950);
+}
+.modal-header button {
+  width: auto;
+  margin: 0;
+}
+
+/* ══════════════════════════════════════════════════════════
+   1 · INGRESO (index.html)
+   ══════════════════════════════════════════════════════════ */
+/* Login: panel jade + formulario + franja de pie tienen que entrar en
+   100vh sin scroll (en una pantalla razonable). ".auth" necesita
+   min-height:0 para poder achicarse dentro de ".login-page" con altura fija
+   — sin esto, un hijo flex no se reduce por debajo de la altura de su
+   contenido aunque el padre sea más chico. Por debajo de 600px de alto
+   (pantallas muy bajas) se cae al comportamiento normal (scroll), para no
+   recortar el formulario. */
+@media (min-height: 600px) {
+  body.login-page {
+    height: 100vh;
+    overflow: hidden;
+  }
+}
+.auth {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+}
+.auth-stage {
+  position: relative;
+  overflow: hidden;
+  padding: clamp(32px, 4vw, 56px);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  background:
+    radial-gradient(
+      120% 90% at 12% 8%,
+      rgba(42, 165, 124, 0.3) 0%,
+      transparent 55%
+    ),
+    radial-gradient(
+      90% 80% at 92% 96%,
+      rgba(11, 89, 71, 0.75) 0%,
+      transparent 60%
+    ),
+    linear-gradient(158deg, var(--jade-900) 0%, var(--jade-950) 62%, #02201b 100%);
+  color: #fff;
+}
+.auth-stage::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.028) 0 1px,
+    transparent 1px 5px
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    #000 30%,
+    #000 70%,
+    transparent
+  );
+}
+.auth-stage > * {
+  position: relative;
+  z-index: 2;
+}
+.auth-stage .brand-name {
+  color: #fff;
+}
+.auth-stage .brand-name span {
+  color: var(--jade-300);
+}
+.stage-mid {
+  padding: clamp(28px, 5vw, 44px) 0;
+}
+.stage-eyebrow {
+  color: var(--jade-300);
+  margin-bottom: 16px;
+}
+.stage-line {
+  font-family: "Bricolage Grotesque", sans-serif;
+  font-weight: 600;
+  font-size: clamp(26px, 3.4vw, 38px);
+  line-height: 1.14;
+  letter-spacing: -0.03em;
+  max-width: 15ch;
+  margin: 0;
+  text-align: left;
+  color: #fff;
+}
+.stage-line em {
+  font-style: normal;
+  color: var(--jade-300);
+}
+.stage-sub {
+  margin-top: 16px;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.62);
+  max-width: 34ch;
+  line-height: 1.6;
+}
+.stage-meter {
+  --meter-h: 88px;
+  --bar-w: 6px;
+  --bar-gap: 6px;
+  --bar-color: rgba(99, 199, 162, 0.5);
+  opacity: 0.85;
+}
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: clamp(32px, 5vw, 72px);
+  background: var(--paper);
+}
+.auth-inner {
+  width: 100%;
+  max-width: 360px;
+  margin: 0 auto;
+}
+.auth-title {
+  font-size: 26px;
+  font-weight: 600;
+  color: var(--jade-950);
+  letter-spacing: -0.025em;
+}
+.auth-note {
+  margin-top: 8px;
+  font-size: 13.5px;
+  color: var(--clay-500);
+}
+.field {
+  margin-top: 22px;
+}
+.field label {
+  display: block;
+  margin-bottom: 7px;
+  color: var(--clay-700);
+}
+.field input {
+  margin: 0;
+}
+.login-verify-copy {
+  margin: 0 0 8px;
+  color: var(--clay-500);
+  font-size: 0.95rem;
+  line-height: 1.4;
+}
+.login-submit {
+  display: block;
+  width: 100%;
+  margin-top: 26px;
+  padding: 13px 20px;
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--jade-700), var(--jade-500));
+  color: #fff;
+  font-family: "Instrument Sans", sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  font-family: inherit;
+  text-align: center;
+  text-decoration: none;
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  transition:
+    transform 0.14s,
+    box-shadow 0.18s,
+    filter 0.18s;
+}
+.login-submit:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(11, 89, 71, 0.26);
+  filter: saturate(1.08);
+}
+.login-submit:active {
+  transform: translateY(0);
+}
+.auth-foot {
+  margin-top: 26px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+  color: var(--clay-500);
+}
+@media (max-width: 840px) {
+  .auth {
+    grid-template-columns: 1fr;
+  }
+  .auth-stage {
+    padding: 30px 24px 34px;
+  }
+  .stage-meter {
+    --meter-h: 52px;
+  }
+}
+.login-submit:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+.login-status {
+  margin: 12px 0 0;
+  min-height: 1.2em;
+  font-size: 0.9rem;
+  color: var(--clay-500);
+  line-height: 1.4;
+}
+.login-status.is-error {
+  color: var(--coral-500);
+}
+
+/* ══════════════════════════════════════════════════════════
+   2 · DASHBOARD DE PLATAFORMAS
+   ══════════════════════════════════════════════════════════ */
+.dashboard-main {
+  flex: 1;
+  padding: clamp(30px, 5vw, 54px) clamp(18px, 4vw, 40px) 72px;
+  /* Sin .tabs de por medio, el jade de .topbar quedaría pegado directo al
+     contenido — un respiro corto para que la transición no se vea cortada. */
+  background: linear-gradient(180deg, var(--jade-50) 0%, var(--paper) 140px);
+}
+.dash-shell {
+  max-width: 1080px;
+  margin: 0 auto;
+}
+.head-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+.head-row h1 {
+  margin-top: 11px;
+  font-size: clamp(25px, 3.4vw, 33px);
+}
+.head-row p {
+  margin-top: 9px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(212px, 1fr));
+  gap: 16px;
+  margin-top: clamp(26px, 4vw, 38px);
+}
+.plat {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 22px 22px 0;
+  min-height: 212px;
+  text-decoration: none;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: var(--shadow-sm);
+  color: var(--clay-900);
+  transition:
+    transform 0.2s cubic-bezier(0.2, 0.7, 0.3, 1),
+    box-shadow 0.22s,
+    border-color 0.2s;
+}
+.plat:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--jade-150);
+}
+.plat::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 3px;
+  width: 0;
+  background: linear-gradient(90deg, var(--jade-500), var(--jade-300));
+  transition: width 0.34s cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+.plat:hover::before {
+  width: 100%;
+}
+.plat-glyph {
+  width: 30px;
+  height: 30px;
+  color: var(--jade-900);
+  transition: color 0.2s;
+}
+.plat-glyph svg,
+.plat-glyph path {
+  fill: currentColor;
+}
+.plat:hover .plat-glyph {
+  color: var(--jade-500);
+}
+.plat-name {
+  margin-top: auto;
+  font-family: "Bricolage Grotesque", sans-serif;
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--jade-950);
+}
+.plat-state {
+  margin-top: 3px;
+  font-size: 12.5px;
+  color: var(--clay-500);
+}
+.plat-state b {
+  color: var(--jade-500);
+  font-weight: 600;
+}
+.plat-signal {
+  margin: 16px -22px 0;
+  padding: 13px 22px;
+  height: 56px;
+  display: flex;
+  align-items: flex-end;
+  background: linear-gradient(180deg, var(--jade-50), #fff);
+  border-top: 1px solid var(--line);
+}
+.plat-signal .meter {
+  --meter-h: 26px;
+  --bar-w: 3px;
+  --bar-gap: 3px;
+  width: 100%;
+}
+.plat-signal .meter i {
+  flex: 0 0 auto;
+}
+.plat:hover .plat-signal .meter i {
+  animation-duration: 0.85s;
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.grid > * {
+  animation: rise 0.5s cubic-bezier(0.2, 0.7, 0.3, 1) backwards;
+}
+.grid > *:nth-child(1) {
+  animation-delay: 0.04s;
+}
+.grid > *:nth-child(2) {
+  animation-delay: 0.1s;
+}
+.grid > *:nth-child(3) {
+  animation-delay: 0.16s;
+}
+.grid > *:nth-child(4) {
+  animation-delay: 0.22s;
+}
+
+/* ------------------------------------------------------------------ */
+/* Tabulator (tabla de "Monitoreo en vivo") — sobrescribe el tema claro  */
+/* que trae por defecto, para que quede acorde al sistema jade/barro.   */
+/* ------------------------------------------------------------------ */
+.tabulator {
+  background: transparent;
+  border: none;
+  color: var(--clay-900);
+  font-family: "Instrument Sans", sans-serif;
+  font-size: 14px;
+}
+.tabulator .tabulator-header {
+  background: var(--jade-50);
+  border-bottom: 1px solid var(--line);
+  color: var(--clay-700);
+}
+.tabulator .tabulator-header .tabulator-col {
+  background: transparent;
+  border-right: none;
+  padding: 2px 0;
+}
+.tabulator .tabulator-header .tabulator-col-content {
+  padding: 11px 14px;
+}
+.tabulator .tabulator-header .tabulator-col-title {
+  font-family: "DM Mono", monospace;
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--clay-500);
+}
+.tabulator .tabulator-header .tabulator-col-sorter .tabulator-arrow {
+  border-bottom-color: var(--clay-200);
+}
+.tabulator .tabulator-col[aria-sort="asc"] .tabulator-arrow,
+.tabulator .tabulator-col[aria-sort="desc"] .tabulator-arrow {
+  border-bottom-color: var(--jade-500);
+}
+.tabulator .tabulator-header .tabulator-col.tabulator-sortable:hover,
+.tabulator .tabulator-header .tabulator-col.tabulator-sortable:focus-within {
+  background: var(--jade-100);
+}
+.tabulator .tabulator-header .tabulator-header-filter input,
+.tabulator .tabulator-header .tabulator-header-filter select {
+  width: 100%;
+  padding: 6px 9px;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--clay-900);
+  font-size: 12.5px;
+  font-family: "Instrument Sans", sans-serif;
+  transition:
+    border-color 0.16s,
+    box-shadow 0.16s;
+}
+.tabulator .tabulator-header .tabulator-header-filter input:focus,
+.tabulator .tabulator-header .tabulator-header-filter select:focus {
+  outline: none;
+  border-color: var(--jade-400);
+  box-shadow: 0 0 0 3px var(--jade-100);
+}
+.tabulator .tabulator-header .tabulator-header-filter select option {
+  background: #fff;
+  color: var(--clay-900);
+}
+.tabulator .tabulator-tableholder {
+  background: #fff;
+}
+.tabulator-row {
+  background: #fff;
+  border-bottom: 1px solid var(--line);
+  color: var(--clay-900);
+  transition: background 0.13s;
+}
+.tabulator-row.tabulator-row-even {
+  background: #fff;
+}
+.tabulator-row.tabulator-selectable:hover,
+.tabulator-row:hover {
+  background: var(--jade-50);
+}
+.tabulator-row.tabulator-row-even.tabulator-selectable:hover,
+.tabulator-row.tabulator-row-even:hover {
+  background: var(--jade-50);
+}
+.tabulator-row.tabulator-selected,
+.tabulator-row.tabulator-selectable.tabulator-selected:hover {
+  background: var(--jade-100);
+}
+.tabulator-row .tabulator-cell {
+  border-right: none;
+  padding: 11px 13px;
+  color: var(--clay-900);
+}
+.tabulator .tabulator-footer {
+  background: transparent;
+  border-top: 1px solid var(--line);
+  color: var(--clay-500);
+  padding-top: 12px;
+  position: relative;
+  z-index: 1;
+}
+/* El paginador (selector de tamaño + First/Prev/números/Next/Last) trae su
+   propio layout con el label "Filas por página" flotado aparte del resto de
+   los controles — se lo neutraliza para armar una sola fila centrada. */
+.tabulator .tabulator-footer .tabulator-paginator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  width: 100%;
+  float: none;
+}
+.tabulator .tabulator-footer .tabulator-paginator label {
+  float: none;
+  margin: 0;
+  color: var(--clay-500);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
+}
+.tabulator .tabulator-footer .tabulator-page {
+  /* La regla global "button { width: 100%; margin-top: 12px; }" del resto
+     de la app se les pega si no se pisan estas dos propiedades acá. */
+  width: auto;
+  margin: 0 2px;
+  padding: 5px 10px;
+  background: #fff;
+  border: 1px solid var(--line);
+  color: var(--clay-700);
+  border-radius: 7px;
+  box-shadow: none;
+  font-size: 13px;
+  font-weight: 500;
+}
+.tabulator .tabulator-footer .tabulator-page:hover:not(:disabled) {
+  background: var(--jade-50);
+  transform: none;
+  box-shadow: none;
+  filter: none;
+}
+.tabulator .tabulator-footer .tabulator-page.active {
+  background: var(--jade-500);
+  border-color: var(--jade-500);
+  color: #fff;
+}
+.tabulator .tabulator-footer .tabulator-page-size {
+  background: #fff;
+  border: 1px solid var(--line);
+  color: var(--clay-900);
+  border-radius: 7px;
+}
+.tabulator .tabulator-placeholder {
+  color: var(--clay-500);
+}
+.tabulator .tabulator-loader {
+  background: #fff;
+  color: var(--clay-500);
+}
+/* Tabulator inserta un "agarre" para redimensionar columnas después de
+   cada celda (incluida la última, al final de cada fila) — nunca lo
+   ofrecimos como función, así que lo sacamos del todo en vez de dejarlo
+   ahí sin usar. */
+.tabulator .tabulator-col-resize-handle {
+  display: none !important;
+}
+
+/* ------------------------------------------------------------------ */
+/* Mapa de reclamos                                                    */
+/* ------------------------------------------------------------------ */
+/* Leaflet le pone z-index ~1000 a sus panes/controles por defecto, muy por
+   encima de .topbar (100) y .tabs (90): al scrollear DENTRO del mapa,
+   tapaba el header. Se lo baja acá en vez de seguir subiendo el header a
+   números cada vez más arbitrarios. */
+.leaflet-pane,
+.leaflet-top,
+.leaflet-bottom,
+.leaflet-control {
+  z-index: 1 !important;
+}
+.claims-filters-card {
+  padding: 16px 18px;
+}
+.claims-filters-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+/* Mismo alto (38px) para todos los controles de la fila — selects, fechas,
+   buscador, el botón cerrado de los multi-select y Limpiar/Descargar CSV —
+   así quedan alineados aunque cada uno tenga su propio font/padding base. */
+.claims-filters-row select,
+.claims-filters-row input[type="date"],
+.claims-filters-row input[type="text"],
+.claims-filter-select-btn,
+.claims-filters-row .btn-small {
+  height: 38px;
+  margin: 0;
+  padding: 0 10px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--clay-900);
+  font-size: 13.5px;
+  box-shadow: none;
+  transition:
+    border-color 0.16s,
+    box-shadow 0.16s;
+}
+/* Barrio/Comuna: sin esto se estiran al nombre más largo ("Villa Santa
+   Rita") y no entran los nueve controles en una fila; el nativo trunca con
+   ellipsis solo, no hace falta manejarlo a mano. */
+#claimsBarrio {
+  width: 128px;
+}
+#claimsComuna {
+  width: 108px;
+}
+.claims-filters-row select:focus,
+.claims-filters-row input:focus,
+.claims-filter-select-btn:focus-visible {
+  outline: none;
+  border-color: var(--jade-400);
+  box-shadow: 0 0 0 3.5px var(--jade-100);
+  background: #fff;
+}
+.claims-search {
+  flex: 1 1 140px;
+  width: auto;
+}
+.claims-download-btn {
+  white-space: nowrap;
+}
+
+/* Multi-select desplegable (categoría / estado): botón cerrado + panel
+   flotante con checkboxes. Mismo mecanismo de apertura/cierre que el
+   dropdown de usuario del header (main.js: toggle de .hidden + click
+   afuera). */
+.claims-filter-select {
+  position: relative;
+}
+.claims-filter-select-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: auto;
+  cursor: pointer;
+  font-family: "Instrument Sans", sans-serif;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.claims-filter-select-btn::after {
+  content: "▾";
+  font-size: 10px;
+  color: var(--clay-500);
+}
+.claims-filter-select-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 5;
+  min-width: 240px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow-md);
+  padding: 10px;
+}
+.claims-filter-select-actions {
+  display: flex;
+  gap: 6px;
+  padding-bottom: 8px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+}
+.claims-filter-select-actions button {
+  width: auto;
+  margin: 0;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  color: var(--clay-700);
+  border-radius: 7px;
+  box-shadow: none;
+}
+.claims-filter-select-actions button:hover:not(:disabled) {
+  background: var(--jade-50);
+  border-color: var(--jade-150);
+  transform: none;
+  box-shadow: none;
+}
+.claims-filter-select-option {
+  /* Pisa el <label> global (mayúsculas, DM Mono, letter-spacing) pensado
+     para rótulos de formulario — acá es un ítem de lista normal. */
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 0;
+  padding: 7px 8px;
+  border-radius: 8px;
+  font-family: "Instrument Sans", sans-serif;
+  font-size: 13.5px;
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--clay-900);
+  cursor: pointer;
+}
+.claims-filter-select-option:hover {
+  background: var(--jade-50);
+}
+.claims-filter-select-option input[type="checkbox"] {
+  accent-color: var(--jade-500);
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+}
+.claims-tema-pill {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 12.5px;
+}
+
+.claims-map-card {
+  position: relative;
+  padding: 0;
+  overflow: hidden;
+  min-height: 480px;
+}
+#claims-map {
+  height: 520px;
+  width: 100%;
+  background: var(--jade-50);
+}
+.leaflet-div-icon.claims-pin-wrap {
+  background: transparent;
+  border: none;
+}
+.claims-pin {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 2px solid;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: var(--shadow-sm);
+}
+#claims-map.is-empty {
+  visibility: hidden;
+}
+.claims-map-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin: 0;
+  padding: 24px;
+  text-align: center;
+  color: var(--clay-500);
+  background: #fff;
+}
+.claims-map-empty .meter {
+  --meter-h: 34px;
+  --bar-w: 4px;
+  --bar-gap: 4px;
+  --bar-color: var(--clay-200);
+  opacity: 0.8;
+}
+.claims-map-empty h3 {
+  margin: 0;
+  font-family: "Bricolage Grotesque", sans-serif;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--jade-900);
+}
+.claims-map-empty p {
+  margin: 0;
+  font-size: 14px;
+  max-width: 40ch;
+}
+.claims-map-empty.hidden {
+  display: none;
+}
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+  background: #fff;
+  color: var(--clay-900);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-md);
+}
+.leaflet-popup-content {
+  margin: 12px 14px;
+  font-size: 0.85rem;
+}
+.claims-popup h2,
+.claims-popup h3 {
+  margin: 0 0 8px;
+  font-size: 0.95rem;
+  color: var(--jade-950);
+}
+.claims-popup h3 {
+  margin-top: 12px;
+}
+.claims-popup-item {
+  margin-bottom: 10px;
+}
+.claims-popup-user {
+  font-weight: 600;
+  color: var(--jade-900);
+}
+.claims-popup-comment {
+  white-space: pre-wrap;
+  margin: 4px 0 6px;
+  color: var(--clay-900);
+}
+.claims-popup a {
+  color: var(--jade-700);
+}
+.claims-popup-estado {
+  margin: 0;
+  padding: 5px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--clay-900);
+  font-size: 12.5px;
+}
+
+/* ══════════════════════════════════════════════════════════ */
+@media (max-width: 380px) {
+  .card,
+  .modal-box {
+    padding: 16px;
+  }
+  .actions {
+    gap: 6px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+  .meter i {
+    transform: scaleY(0.52);
+  }
+  .meter.flat i {
+    transform: scaleY(0.14);
+  }
+  .tab-btn.active::after {
+    transform: scaleX(1);
+  }
+  .glyph-an .trend {
+    stroke-dashoffset: 0;
+  }
+  .glyph-an .head {
+    opacity: 1;
+    transform: none;
+  }
+  .glyph-mp .ping {
+    opacity: 0.35;
+    transform: scale(1);
+  }
+}

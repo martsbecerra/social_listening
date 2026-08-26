@@ -4,6 +4,10 @@ node_modules/
 # Variables de entorno con secretos (¡nunca subir!)
 .env
 
+# Datos locales: SQLite del monitoreo, registro de account-types, etc.
+# (ver data/account-types.example.json si hace falta una plantilla)
+data/
+
 # Logs
 *.log
 npm-debug.log*
@@ -11,3 +15,9 @@ npm-debug.log*
 # Sistema operativo
 .DS_Store
 Thumbs.db
+
+# Allowlist de login (el .example.txt sí se versiona)
+config/allowed-emails.txt
+
+# Agent / SDD infrastructure (skill registry)
+.atl/
