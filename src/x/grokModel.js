@@ -2,14 +2,14 @@
 // grokModel.js — Modelo Grok SOLO para X (OpenRouter). No pisa Instagram.
 // ==========================================================================
 
-const DEFAULT_OPENROUTER_X_MODEL = 'x-ai/grok-4.6';
-const DEFAULT_XAI_MODEL = 'grok-4.6';
+const DEFAULT_OPENROUTER_X_MODEL = 'x-ai/grok-4.3';
+const DEFAULT_XAI_MODEL = 'grok-4.3';
 
 function rawXModel() {
   return (process.env.OPENROUTER_X_MODEL || process.env.XAI_MODEL || '').trim();
 }
 
-/** Slug OpenRouter, p. ej. x-ai/grok-4.6 */
+/** Slug OpenRouter, p. ej. x-ai/grok-4.3 */
 function getOpenRouterXModel() {
   const raw = rawXModel();
   if (!raw) return DEFAULT_OPENROUTER_X_MODEL;

@@ -220,13 +220,13 @@ describe('x-platform parse/kpis/url', { concurrency: false }, () => {
     try {
       const cfg = getFetchConfig();
       assert.equal(cfg.backend, 'openrouter');
-      assert.equal(cfg.model, 'x-ai/grok-4.6');
-      process.env.XAI_MODEL = 'grok-4.6';
+      assert.equal(cfg.model, 'x-ai/grok-4.3');
+      process.env.XAI_MODEL = 'grok-4.3';
+      assert.equal(openRouterGrokModel(), 'x-ai/grok-4.3');
+      process.env.XAI_MODEL = 'x-ai/grok-4.6';
       assert.equal(openRouterGrokModel(), 'x-ai/grok-4.6');
-      process.env.XAI_MODEL = 'x-ai/grok-4.1-fast';
-      assert.equal(openRouterGrokModel(), 'x-ai/grok-4.1-fast');
-      process.env.OPENROUTER_X_MODEL = 'grok-4';
-      assert.equal(openRouterGrokModel(), 'x-ai/grok-4');
+      process.env.OPENROUTER_X_MODEL = 'grok-4.3';
+      assert.equal(openRouterGrokModel(), 'x-ai/grok-4.3');
     } finally {
       if (prevOr == null) delete process.env.OPENROUTER_API_KEY;
       else process.env.OPENROUTER_API_KEY = prevOr;

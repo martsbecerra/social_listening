@@ -8,7 +8,7 @@ Grok **no** redacta el WhatsApp. El Prompt Grok se parte en: (1) instrucciones d
 
 ## Architecture Decisions
 
-- **Fetch y clasificación de X = Grok vía OpenRouter.** Misma `OPENROUTER_API_KEY`, modelo `OPENROUTER_X_MODEL` (default `x-ai/grok-4.6`). El fetch usa `openrouter:web_search` (X Search nativo). La clasificación fuerza `provider: 'openrouter'` + ese modelo y no lee `LLM_PROVIDER` / `CLAUDE_MODEL` / `OPENROUTER_MODEL`. Instagram no se toca. Respaldo de fetch: `XAI_API_KEY` + `x_search` si no hay clave de OpenRouter. Si Grok no soporta `json_schema`, se reintenta con `json_object`.
+- **Fetch y clasificación de X = Grok vía OpenRouter.** Misma `OPENROUTER_API_KEY`, modelo `OPENROUTER_X_MODEL` (default `x-ai/grok-4.3`). El fetch usa `openrouter:web_search` (X Search nativo). La clasificación fuerza `provider: 'openrouter'` + ese modelo y no lee `LLM_PROVIDER` / `CLAUDE_MODEL` / `OPENROUTER_MODEL`. Instagram no se toca. Respaldo de fetch: `XAI_API_KEY` + `x_search` si no hay clave de OpenRouter. Si Grok no soporta `json_schema`, se reintenta con `json_object`.
 - **Schema opcional** en `requestStructuredAnalysis`. Default = Instagram. X pasa el suyo. Evita duplicar proveedores.
 - **`OPENROUTER_API_KEY` no aborta el boot por X.** Instagram tiene que seguir levantando. El 502 de `/api/x/analyze` explica si no hay ni OpenRouter ni `XAI_API_KEY`.
 - **Padrón en SQLite, no JSON.** El usuario pidió ingerir los dos CSV y guardarlos en DB. `lista` deja lugar a oposición/periodistas después.
@@ -36,12 +36,12 @@ URL X
 
 Preferencia: OpenRouter Chat Completions (`OPENROUTER_API_KEY`)
 
-- model: `OPENROUTER_X_MODEL` o `XAI_MODEL` o `x-ai/grok-4.6`
+- model: `OPENROUTER_X_MODEL` o `XAI_MODEL` o `x-ai/grok-4.3`
 - tools: `[{ type: "openrouter:web_search" }]` (en Grok esto activa X Search nativo)
 
 Respaldo: POST `https://api.x.ai/v1/responses` si no hay clave de OpenRouter
 
-- model: `XAI_MODEL` o `grok-4.6`
+- model: `XAI_MODEL` o `grok-4.3`
 - tools: `[{ type: "x_search" }]`
 - input: pedir JSON del hilo (post + replies + QTs), no el reporte
 

@@ -269,7 +269,7 @@ Abrí `.env` y pegá:
 - **OpenRouter:** `LLM_PROVIDER=openrouter`, `OPENROUTER_API_KEY` → https://openrouter.ai/settings/keys
   (los modelos ya vienen con default equivalente al de Anthropic, no hace falta setearlos).
   La misma clave sirve para **traer y clasificar X con Grok** (`OPENROUTER_X_MODEL`,
-  default `x-ai/grok-4.6`). Instagram no usa ese modelo.
+  default `x-ai/grok-4.3`). Instagram no usa ese modelo.
 - `XAI_API_KEY` → opcional; solo si no usás OpenRouter y querés pegarle directo a https://console.x.ai/
 - `SMTP_USER` / `SMTP_PASS` → tu Gmail y una
   ["contraseña de aplicación"](https://myaccount.google.com/apppasswords)
