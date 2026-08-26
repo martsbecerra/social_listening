@@ -351,15 +351,39 @@ async function evaluateRelevance(post, keywords) {
 
   const literalMatch = textIncludesAny(text, keywords);
   if (literalMatch) {
-    const { title, sentiment } = await classifyPost(post.caption);
-    const matchedReason = post.sourceType === 'account'
+    // La relevancia acá NO depende del LLM: ya matcheó una palabra clave. Si
+    // el clasificador falla, el posteo entra igual, sin título ni sentimiento.
+    const { title, sentiment, unclassified } = await classifyPost(post.caption);
+    const base = post.sourceType === 'account'
       ? `Cuenta trackeada: @${post.account} (coincidencia: "${literalMatch}")`
       : `Coincidencia con palabra clave: "${literalMatch}"`;
-    return { relevant: true, title, sentiment, matchedReason };
+    return {
+      relevant: true,
+      title,
+      sentiment,
+      unclassified,
+      matchedReason: unclassified ? `${base} — sin clasificar` : base,
+    };
   }
 
   const result = await classifyRelevance(post.caption);
   if (!result.relevant) return { relevant: false };
+
+  // Sin palabra clave literal y con el clasificador caído no sabemos si es
+  // relevante. Se guarda igual, marcado, para que alguien lo revise: un falso
+  // positivo se ve y se borra; uno descartado en silencio no vuelve nunca.
+  if (result.unclassified) {
+    const origen = post.sourceType === 'account'
+      ? `Cuenta trackeada: @${post.account}`
+      : 'Hashtag monitoreado';
+    return {
+      relevant: true,
+      title: null,
+      sentiment: null,
+      unclassified: true,
+      matchedReason: `${origen} — sin clasificar (falló el clasificador, relevancia sin verificar)`,
+    };
+  }
 
   const matchedReason = post.sourceType === 'account'
     ? `Cuenta trackeada: @${post.account} (relacionado por contenido)`
@@ -463,11 +487,27 @@ async function runMonitoringCycle() {
  */
 async function backfillClassification() {
   const pending = db.listUnclassified();
+  let classified = 0;
+  let stillPending = 0;
+
   for (const row of pending) {
-    const { title, sentiment } = await classifyPost(row.caption);
+    const { title, sentiment, unclassified } = await classifyPost(row.caption);
+    if (unclassified) {
+      // Sigue fallando: no pisamos la fila con los mismos nulls, queda
+      // pendiente para el próximo intento.
+      stillPending++;
+      continue;
+    }
     db.updateClassification(row.id, { title, sentiment });
+    classified++;
   }
-  return { classified: pending.length };
+
+  if (stillPending > 0) {
+    console.warn(
+      `[monitor] backfill: ${stillPending} posteo(s) siguen sin clasificar (el clasificador falló). Se reintentan en la próxima corrida.`
+    );
+  }
+  return { classified, stillPending };
 }
 
 module.exports = {

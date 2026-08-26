@@ -1,20 +1,30 @@
 // ==========================================================================
 // classifier.js
 // --------------------------------------------------------------------------
-// Dos tareas, ambas con Claude Haiku (barato y rápido, no hace falta Sonnet
-// para esto):
+// Dos tareas, ambas con el modelo clasificador del proveedor activo (barato y
+// rápido, no hace falta el modelo de análisis para esto — ver
+// getClassifierModel en src/llm/providerConfig.js):
 //   1. classifyPost: título + sentimiento de un posteo que YA se sabe que es
 //      relevante (coincidió con una palabra clave, o es de una cuenta
 //      trackeada sin caption para analizar).
 //   2. classifyRelevance: para posteos que NO coincidieron con ninguna
-//      palabra clave literal — le pregunta a Claude si el contenido igual
+//      palabra clave literal — le pregunta al modelo si el contenido igual
 //      habla del Jefe de Gobierno porteño o de su gestión (detección
 //      semántica), para no depender solo del matching de texto exacto.
+//
+// Pasa por src/llm/, nunca por el SDK de un proveedor: cambiar LLM_PROVIDER
+// tiene que migrar el monitoreo igual que el análisis de publicación.
+//
+// SOBRE LOS FALLOS: antes, cualquier error devolvía un resultado inventado
+// (neutral / relevant:false). Eso hacía que una API caída se viera igual que
+// "no hay nada relevante": el monitoreo descartaba posteos válidos sin que
+// nadie se enterara. Ahora un fallo devuelve unclassified:true y el posteo se
+// guarda igual, con title/sentiment en null → la UI lo muestra como
+// "(sin clasificar)" y backfillClassification lo reintenta después. Preferimos
+// ruido visible a pérdida silenciosa.
 // ==========================================================================
 
-const Anthropic = require('@anthropic-ai/sdk');
-
-const client = new Anthropic();
+const { requestText } = require('./llm');
 
 const VALID_SENTIMENTS = ['positivo', 'neutral', 'negativo'];
 
@@ -36,40 +46,49 @@ function extractJson(text) {
 }
 
 /**
- * Clasifica un caption. Si Claude falla o responde algo inesperado, cae en
- * un resultado neutral por defecto en vez de romper el ciclo de monitoreo.
+ * Resultado cuando no se pudo clasificar (API caída, respuesta ilegible).
+ * title y sentiment van en null a propósito: es lo que hace que el posteo
+ * aparezca como "(sin clasificar)" en la tabla y que listUnclassified() lo
+ * agarre en el próximo backfill (su criterio es title IS NULL).
+ */
+function unclassifiedResult(extra = {}) {
+  return { title: null, sentiment: null, unclassified: true, ...extra };
+}
+
+/** Log uniforme, distinguiendo el tipo de fallo para poder diagnosticar. */
+function logClassifierFailure(tarea, err) {
+  const motivo = err.isApiFailure ? 'falló la API del LLM' : 'respuesta ilegible del modelo';
+  console.error(
+    `Clasificador (${tarea}): ${motivo} — el posteo se guarda SIN CLASIFICAR ` +
+    `y se reintenta en el próximo backfill. Detalle: ${err.message}`
+  );
+}
+
+/**
+ * Clasifica un caption. Si el LLM falla o responde algo inesperado, devuelve
+ * unclassified:true en vez de inventar un "neutral".
  */
 async function classifyPost(caption) {
-  const fallback = {
-    title: (caption || '').slice(0, 60) || 'Sin descripción',
-    sentiment: 'neutral',
-  };
-
-  if (!caption || !caption.trim()) return fallback;
+  if (!caption || !caption.trim()) {
+    return { title: 'Sin descripción', sentiment: 'neutral' };
+  }
 
   try {
-    const model = process.env.CLASSIFIER_MODEL || 'claude-haiku-4-5';
-    const message = await client.messages.create({
-      model,
-      max_tokens: 200,
+    const { text } = await requestText({
       system: SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: caption.slice(0, 2000) }],
+      userPrompt: caption.slice(0, 2000),
+      maxTokens: 200,
     });
 
-    const text = message.content
-      .filter((block) => block.type === 'text')
-      .map((block) => block.text)
-      .join('\n')
-      .trim();
-
     const parsed = JSON.parse(extractJson(text));
-    const sentiment = VALID_SENTIMENTS.includes(parsed.sentiment) ? parsed.sentiment : 'neutral';
-    const title = typeof parsed.title === 'string' && parsed.title.trim() ? parsed.title.trim() : fallback.title;
+    const title = typeof parsed.title === 'string' && parsed.title.trim() ? parsed.title.trim() : null;
+    if (!title) throw new Error('el modelo no devolvió un título usable');
 
+    const sentiment = VALID_SENTIMENTS.includes(parsed.sentiment) ? parsed.sentiment : 'neutral';
     return { title, sentiment };
   } catch (err) {
-    console.error('Clasificador: no se pudo clasificar el posteo, uso neutral por defecto:', err.message);
-    return fallback;
+    logClassifierFailure('título + sentimiento', err);
+    return unclassifiedResult();
   }
 }
 
@@ -85,40 +104,45 @@ Respondé SOLO un JSON, sin texto adicional, sin markdown, con exactamente este 
 - "sentiment": solo importa si relevant es true — cómo lo retrata ("positivo", "negativo", o "neutral" ante la duda).`;
 
 /**
- * Para posteos SIN coincidencia literal de palabra clave: le pregunta a
- * Claude si el contenido igual se relaciona con el tema (para no perderse
- * menciones indirectas). Ante cualquier duda o falla, es conservador y
- * devuelve relevant: false — mejor no traer algo dudoso a que se llene la
- * tabla de ruido.
+ * Para posteos SIN coincidencia literal de palabra clave: le pregunta al
+ * modelo si el contenido igual se relaciona con el tema (para no perderse
+ * menciones indirectas).
+ *
+ * Un `relevant: false` del modelo SÍ descarta el posteo: esa es su función y
+ * es una respuesta legítima. Lo que ya no descarta nada es un FALLO: ante un
+ * error se devuelve relevant:true + unclassified:true, para que el posteo
+ * quede guardado y visible y alguien pueda mirarlo. Puede traer ruido; el
+ * ruido se ve y se borra, un posteo perdido no.
  */
 async function classifyRelevance(caption) {
-  const fallback = { relevant: false, title: (caption || '').slice(0, 60) || 'Sin descripción', sentiment: 'neutral' };
-
-  if (!caption || !caption.trim()) return fallback;
+  if (!caption || !caption.trim()) {
+    return { relevant: false, title: 'Sin descripción', sentiment: 'neutral' };
+  }
 
   try {
-    const model = process.env.CLASSIFIER_MODEL || 'claude-haiku-4-5';
-    const message = await client.messages.create({
-      model,
-      max_tokens: 200,
+    const { text } = await requestText({
       system: RELEVANCE_SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: caption.slice(0, 2000) }],
+      userPrompt: caption.slice(0, 2000),
+      maxTokens: 200,
     });
 
-    const text = message.content
-      .filter((block) => block.type === 'text')
-      .map((block) => block.text)
-      .join('\n')
-      .trim();
-
     const parsed = JSON.parse(extractJson(text));
-    const sentiment = VALID_SENTIMENTS.includes(parsed.sentiment) ? parsed.sentiment : 'neutral';
-    const title = typeof parsed.title === 'string' && parsed.title.trim() ? parsed.title.trim() : fallback.title;
+    if (typeof parsed.relevant !== 'boolean') {
+      throw new Error('el modelo no devolvió un campo "relevant" booleano');
+    }
+    if (!parsed.relevant) return { relevant: false };
 
-    return { relevant: Boolean(parsed.relevant), title, sentiment };
+    const title = typeof parsed.title === 'string' && parsed.title.trim() ? parsed.title.trim() : null;
+    const sentiment = VALID_SENTIMENTS.includes(parsed.sentiment) ? parsed.sentiment : 'neutral';
+
+    // Dijo que es relevante pero no dio título: sirve como hallazgo, no como
+    // clasificación — se guarda para reintentar el título después.
+    if (!title) return unclassifiedResult({ relevant: true });
+
+    return { relevant: true, title, sentiment };
   } catch (err) {
-    console.error('Clasificador: no se pudo evaluar relevancia, se descarta por las dudas:', err.message);
-    return fallback;
+    logClassifierFailure('relevancia', err);
+    return unclassifiedResult({ relevant: true });
   }
 }
 

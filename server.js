@@ -17,7 +17,13 @@ const path = require('path');
 const { scrapeInstagram } = require('./src/apify');
 const { analyzeComments } = require('./src/analyzeComments');
 const { resolveMaxCommentsLimit } = require('./src/commentSample');
-const { getLlmProvider, requiredLlmEnvKeys, getProviderLabel } = require('./src/llm/providerConfig');
+const {
+  getLlmProvider,
+  requiredLlmEnvKeys,
+  getProviderLabel,
+  getAnalysisModel,
+  getClassifierModel,
+} = require('./src/llm/providerConfig');
 const db = require('./src/db');
 const monitor = require('./src/monitor');
 const { startScheduler, runCycleAndNotify, getCronExpression, getLastRunAt, estimateRunsPerDay, getNextRunAt } = require('./src/scheduler');
@@ -40,20 +46,41 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // --------------------------------------------------------------------------
-// Chequeo inicial: avisamos si faltan las claves para que no falle "en silencio".
+// Chequeo inicial. Antes era un console.warn y el server levantaba igual: la
+// falta de una clave se descubría a mitad de un análisis, o peor, como un
+// monitoreo que corría y no encontraba nada. Ahora aborta el arranque: si no
+// están las credenciales, la app no puede hacer su trabajo y conviene saberlo
+// en el segundo 0.
 // --------------------------------------------------------------------------
 function checkEnv() {
+  let claimsLlm;
+  try {
+    claimsLlm = requiredLlmEnvKeys();
+  } catch (err) {
+    // LLM_PROVIDER con un valor que no entendemos (ver providerConfig.js).
+    abortarArranque([err.message]);
+    return;
+  }
+
   const faltantes = [];
   if (!process.env.APIFY_API_TOKEN) faltantes.push('APIFY_API_TOKEN');
-  for (const key of requiredLlmEnvKeys()) {
+  for (const key of claimsLlm) {
     if (!process.env[key]) faltantes.push(key);
   }
+
   if (faltantes.length > 0) {
-    console.warn(
-      `\n⚠️  ATENCIÓN: faltan estas variables en el archivo .env: ${faltantes.join(', ')}` +
-      `\n    Copiá ".env.example" como ".env" y completá tus claves.\n`
-    );
+    const provider = getLlmProvider();
+    abortarArranque([
+      `Faltan estas variables en el archivo .env: ${faltantes.join(', ')}`,
+      `LLM_PROVIDER está en "${provider}", que necesita: ${claimsLlm.join(', ')}.`,
+      'Copiá ".env.example" como ".env" y completá tus claves.',
+    ]);
   }
+}
+
+function abortarArranque(lineas) {
+  console.error(`\n❌ No se puede arrancar:\n${lineas.map((l) => `    ${l}`).join('\n')}\n`);
+  process.exit(1);
 }
 
 // --------------------------------------------------------------------------
@@ -368,6 +395,8 @@ const server = app.listen(PORT, () => {
   const provider = getLlmProvider();
   console.log(`\n✅ Servidor listo en http://localhost:${PORT}`);
   console.log(`   Proveedor LLM: ${getProviderLabel(provider)} (${provider})`);
+  console.log(`   Modelo análisis: ${getAnalysisModel(provider)}`);
+  console.log(`   Modelo clasificador: ${getClassifierModel(provider)}`);
   console.log(
     `   Límites: COMMENTS_LIMIT (Apify)=${process.env.COMMENTS_LIMIT || 100}, COMMENTS_ANALYSIS_LIMIT (LLM)=${resolveMaxCommentsLimit()}\n`
   );

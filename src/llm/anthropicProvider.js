@@ -1,17 +1,22 @@
 // ==========================================================================
-// anthropicProvider.js — Structured Outputs vía API de Anthropic.
+// anthropicProvider.js — API de Anthropic (SDK oficial).
+// --------------------------------------------------------------------------
+// Dos modos de uso, en espejo con openrouterProvider.js:
+//   - requestStructuredAnalysis: Structured Outputs (análisis de post)
+//   - requestText:               texto plano (clasificador del monitoreo)
 // ==========================================================================
 
 const Anthropic = require('@anthropic-ai/sdk');
 const { jsonSchemaOutputFormat } = require('@anthropic-ai/sdk/helpers/json-schema');
 const { ANALYSIS_JSON_SCHEMA } = require('../analysisSchema');
 const { addTokenUsage, fromAnthropicUsage } = require('./usage');
+const { getAnalysisModel, getClassifierModel } = require('./providerConfig');
 
 const client = new Anthropic();
 const STRUCTURED_OUTPUT_MAX_ATTEMPTS = 2;
 
 async function requestStructuredAnalysis({ system, userPrompt }) {
-  const model = process.env.CLAUDE_MODEL || 'claude-sonnet-5';
+  const model = getAnalysisModel('anthropic');
 
   const requestParams = {
     model,
@@ -52,9 +57,41 @@ async function requestStructuredAnalysis({ system, userPrompt }) {
   throw e;
 }
 
+/**
+ * Texto plano, sin schema — lo que necesita el clasificador del monitoreo.
+ * No reintenta ni traga errores: quien llama decide qué hacer (ver
+ * src/classifier.js).
+ * @returns {Promise<{ text: string, usage: import('./usage').TokenUsage | null }>}
+ */
+async function requestText({ system, userPrompt, maxTokens = 200 }) {
+  const model = getClassifierModel('anthropic');
+
+  let message;
+  try {
+    message = await client.messages.create({
+      model,
+      max_tokens: maxTokens,
+      system,
+      messages: [{ role: 'user', content: userPrompt }],
+    });
+  } catch (err) {
+    throw mapAnthropicError(err);
+  }
+
+  const text = message.content
+    .filter((block) => block.type === 'text')
+    .map((block) => block.text)
+    .join('\n')
+    .trim();
+
+  return { text, usage: fromAnthropicUsage(message.usage) };
+}
+
 function mapAnthropicError(err) {
   console.error('Error llamando a Claude:', err);
   const e = new Error(`Claude falló: ${err.message}`);
+  e.isApiFailure = true;
+  e.status = err.status;
   const mensajeApi = err.error?.error?.message || '';
   if (err.status === 401) {
     e.userMessage = 'La clave de Anthropic (ANTHROPIC_API_KEY) es inválida. Revisá el archivo .env.';
@@ -71,4 +108,4 @@ function mapAnthropicError(err) {
   return e;
 }
 
-module.exports = { requestStructuredAnalysis };
+module.exports = { requestStructuredAnalysis, requestText };

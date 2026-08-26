@@ -1732,6 +1732,18 @@ pre.report {
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath fill='%238e3418' d='M1 1l5 5 5-5'/%3E%3C/svg%3E"),
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 9'%3E%3Cpolygon points='4.5,0 9,9 0,9' fill='%23c4522c'/%3E%3C/svg%3E");
 }
+/* Estado "sin clasificar": el clasificador no pudo evaluar el posteo (ver
+   src/classifier.js). Gris y con borde punteado a propósito — tiene que
+   leerse como "falta un dato", no como una cuarta categoría de sentimiento. */
+.sentiment-select.sentiment-sin_clasificar {
+  background-color: var(--clay-100, #f0eeea);
+  color: var(--clay-700, #6b6560);
+  border-color: var(--clay-300, #cfc9c2);
+  border-style: dashed;
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath fill='%236b6560' d='M1 1l5 5 5-5'/%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 9'%3E%3Ccircle cx='4.5' cy='4.5' r='4' fill='none' stroke='%236b6560' stroke-width='1' stroke-dasharray='2 1.6'/%3E%3C/svg%3E");
+}
 .sentiment-select option {
   background: #fff;
   color: var(--clay-900);

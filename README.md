@@ -235,7 +235,8 @@ Abrí `.env` y pegá:
 
 - `APIFY_API_TOKEN` → https://console.apify.com/account/integrations
 - **Anthropic (default):** `LLM_PROVIDER=anthropic`, `ANTHROPIC_API_KEY` → https://console.anthropic.com/settings/keys
-- **OpenRouter:** `LLM_PROVIDER=openrouter`, `OPENROUTER_API_KEY` → https://openrouter.ai/settings/keys y `OPENROUTER_MODEL` (p. ej. `openai/gpt-4.1`)
+- **OpenRouter:** `LLM_PROVIDER=openrouter`, `OPENROUTER_API_KEY` → https://openrouter.ai/settings/keys
+  (los modelos ya vienen con default equivalente al de Anthropic, no hace falta setearlos)
 - `SMTP_USER` / `SMTP_PASS` → tu Gmail y una
   ["contraseña de aplicación"](https://myaccount.google.com/apppasswords)
   (necesarias solo para las alertas del monitoreo)
@@ -306,21 +307,42 @@ comentarios totales, reproducciones, autor). Corren **en paralelo**, así que ca
 no suma tiempo. Además, en la corrida de comentarios activamos `addParentData`
 como respaldo por si la de `posts` no trajera datos.
 
-### ¿Qué modelo usa el análisis?
+### ¿Qué modelo usa cada tarea?
 
-Depende de `LLM_PROVIDER` en `.env` (default **`anthropic`**).
+Hay **dos** tareas con LLM, y cada una tiene su modelo:
 
-**Anthropic:** por defecto **`claude-sonnet-5`** (`CLAUDE_MODEL`).
+| Tarea | Dónde | `anthropic` | `openrouter` |
+|---|---|---|---|
+| Análisis de publicación | `src/llm/` | `claude-sonnet-5` | `anthropic/claude-sonnet-5` |
+| Relevancia + sentimiento del monitoreo | `src/classifier.js` | `claude-haiku-4-5` | `anthropic/claude-haiku-4.5` |
 
-- Si querés priorizar costo: `CLAUDE_MODEL=claude-haiku-4-5`.
-- Si querés máxima calidad: `CLAUDE_MODEL=claude-opus-4-8`.
+Son **los mismos dos modelos** en ambos proveedores: OpenRouter sólo cambia el
+formato del id (prefijo del proveedor y punto en la versión). Cambiar
+`LLM_PROVIDER` no cambia qué modelo se usa en cada tarea.
 
-**OpenRouter:** default **`openai/gpt-4.1`** (`OPENROUTER_MODEL`). Elegí un modelo que soporte `json_schema` (GPT-4.1, Gemini 2.5 Pro, etc.).
+Para pisarlos: `CLAUDE_MODEL` / `CLASSIFIER_MODEL` con `anthropic`, y
+`OPENROUTER_MODEL` / `OPENROUTER_CLASSIFIER_MODEL` con `openrouter`. Si elegís
+otro modelo para el análisis, tiene que soportar structured outputs —
+verificalo en https://openrouter.ai/models (debe listar `structured_outputs`).
 
-Al arrancar, el servidor imprime qué proveedor está activo.
+`LLM_PROVIDER` sólo acepta `anthropic` u `openrouter`: cualquier otro valor
+aborta el arranque en vez de caer en un default silencioso. Lo mismo si falta
+la clave del proveedor elegido. Al arrancar, el servidor imprime el proveedor
+activo y los dos modelos.
+
+`OPENROUTER_BASE_URL` (default `https://openrouter.ai/api/v1`) permite apuntar
+a cualquier gateway compatible con OpenAI, no sólo a OpenRouter.
 
 El costo por análisis es bajo: son unos pocos miles de tokens de entrada
 (comentarios) y ~2-3 mil de salida (el reporte).
+
+> **Pendiente — costo estimado en la UI con OpenRouter.**
+> `finalizeLlmUsage` (`src/llm/estimateCost.js`) sólo aplica la tabla de
+> tarifas cuando el proveedor es `anthropic`. Con `openrouter` el costo sale
+> del campo `cost` que devuelve la API; si esa respuesta no lo trae, la UI
+> muestra el costo vacío en vez de estimarlo. Workaround: setear
+> `LLM_INPUT_USD_PER_MTOK` / `LLM_OUTPUT_USD_PER_MTOK` en `.env`, que tienen
+> prioridad sobre todo lo demás. Queda para resolver aparte.
 
 ---
 
@@ -333,6 +355,31 @@ La app muestra mensajes claros cuando:
 - Apify falla, se demora demasiado o alcanzó su límite de uso.
 - La publicación no tiene comentarios extraíbles.
 - El LLM falla o alcanzó su límite de uso.
+
+Si faltan credenciales, el servidor **no levanta**: aborta con el detalle de
+qué variable falta. Antes era un `console.warn` y el problema aparecía a mitad
+de un análisis.
+
+### Cuando falla el clasificador del monitoreo
+
+Antes, cualquier error del clasificador devolvía un resultado inventado
+(`neutral`, o `relevant: false`). Eso hacía que una API caída se viera igual
+que "no hay nada relevante": el monitoreo **descartaba posteos válidos en
+silencio**, y sólo quedaba rastro en la consola.
+
+Ahora un fallo no descarta nada. El posteo se guarda con `title` y `sentiment`
+en `NULL`, y eso significa "sin clasificar":
+
+- En la tabla aparece con la píldora gris **Sin clasificar** (borde punteado) y
+  título `(sin clasificar)`. Hay un filtro `Sin clasificar` para encontrarlos.
+- El sentimiento se puede corregir a mano desde el desplegable de siempre.
+- `backfillClassification()` los reintenta solo: su criterio es `title IS NULL`.
+
+La contrapartida es ruido: un posteo que llegó por hashtag y no se pudo
+evaluar entra igual, con `matched_reason` avisando que la relevancia quedó sin
+verificar. Es a propósito — un falso positivo se ve y se borra, uno descartado
+en silencio no vuelve nunca. Un `relevant: false` legítimo del modelo sí sigue
+descartando: eso es una respuesta, no un fallo.
 
 ---
 

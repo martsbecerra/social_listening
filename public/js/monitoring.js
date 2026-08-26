@@ -190,6 +190,12 @@ function closeKeywordsModal() { keywordsModal.classList.add('hidden'); }
 // --------------------------------------------------------------------
 const SENTIMENT_LABELS = { positivo: 'Positivo', neutral: 'Neutral', negativo: 'Negativo' };
 const SENTIMENT_OPTIONS = ['positivo', 'neutral', 'negativo'];
+// Un posteo guardado con sentiment NULL no es "Neutral": es uno que el
+// clasificador no pudo evaluar (API caída o respuesta ilegible). Se muestra
+// como tal para que se note y se pueda corregir a mano; el backfill lo
+// reintenta solo. Ver src/classifier.js.
+const SENTIMENT_UNSET = 'sin_clasificar';
+const SENTIMENT_UNSET_LABEL = 'Sin clasificar';
 // Igual que MK en la referencia: clase corta por sentimiento, para las
 // tarjetas destacadas y el borde de color.
 const SENTIMENT_SHORT = { positivo: 'pos', neutral: 'neu', negativo: 'neg' };
@@ -222,8 +228,14 @@ async function confirmDelete() {
 async function updateSentiment(id, sentiment, selectEl) {
   // Cambiamos la clase al toque para que el color de la pastilla se
   // actualice ya mismo, sin esperar la respuesta del servidor.
-  SENTIMENT_OPTIONS.forEach((value) => selectEl.classList.remove(`sentiment-${value}`));
+  [...SENTIMENT_OPTIONS, SENTIMENT_UNSET].forEach((value) =>
+    selectEl.classList.remove(`sentiment-${value}`)
+  );
   selectEl.classList.add(`sentiment-${sentiment}`);
+
+  // Ya tiene un sentimiento real: "Sin clasificar" deja de ser una opción.
+  const optUnset = selectEl.querySelector(`option[value="${SENTIMENT_UNSET}"]`);
+  if (optUnset) optUnset.remove();
 
   try {
     const resp = await fetch(`/api/monitoring/posts/${encodeURIComponent(id)}`, {
@@ -556,7 +568,12 @@ function applyFilters() {
   const q = normalizeSearch(qEl.value.trim());
 
   monitoringTable.setFilter((data) => {
-    if (fs && data.sentiment !== fs) return false;
+    // "sin_clasificar" no es un valor guardado: es la ausencia de valor.
+    if (fs === SENTIMENT_UNSET) {
+      if (data.sentiment) return false;
+    } else if (fs && data.sentiment !== fs) {
+      return false;
+    }
     if (fa && data.account !== fa) return false;
     if (fn && data.notified) return false;
     if (fDesde || fHasta) {
@@ -820,9 +837,24 @@ const MONITORING_COLUMNS = [
     headerHozAlign: 'left',
     formatter: (cell) => {
       const id = cell.getRow().getData().id;
-      const sentiment = cell.getValue() || 'neutral';
+      const raw = cell.getValue();
+      const sinClasificar = !raw;
+      const sentiment = sinClasificar ? SENTIMENT_UNSET : raw;
+
       const select = document.createElement('select');
       select.className = `sentiment-select sentiment-${sentiment}`;
+
+      // La opción "Sin clasificar" existe sólo mientras el posteo lo esté: es
+      // un estado del sistema, no algo que se elija a mano. Elegir cualquier
+      // otro valor lo saca de ahí y no se puede volver.
+      if (sinClasificar) {
+        const opt = document.createElement('option');
+        opt.value = SENTIMENT_UNSET;
+        opt.textContent = SENTIMENT_UNSET_LABEL;
+        opt.selected = true;
+        select.appendChild(opt);
+      }
+
       SENTIMENT_OPTIONS.forEach((value) => {
         const opt = document.createElement('option');
         opt.value = value;
@@ -831,7 +863,10 @@ const MONITORING_COLUMNS = [
         select.appendChild(opt);
       });
       select.addEventListener('click', (e) => e.stopPropagation());
-      select.addEventListener('change', () => updateSentiment(id, select.value, select));
+      select.addEventListener('change', () => {
+        if (select.value === SENTIMENT_UNSET) return;
+        updateSentiment(id, select.value, select);
+      });
       return select;
     },
   },
