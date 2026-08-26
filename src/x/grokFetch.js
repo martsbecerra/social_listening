@@ -125,7 +125,7 @@ Devolvé ÚNICAMENTE un JSON válido (sin markdown, sin reporte WhatsApp) con es
 Reglas:
 - Números enteros, sin sufijos K/M.
 - items: solo respuestas DIRECTAS al post o QTs que citan el post original. Prohibido QT de QT.
-- url de cada item debe ser el link real de X.
+- url de cada ítem: https://x.com/{handle}/status/{id} (no t.co ni i/web/status).
 - Si no pudiste leer el post, devolvé post en null.
 - threadComplete=false si el hilo está incompleto.`;
 }
