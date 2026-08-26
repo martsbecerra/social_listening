@@ -30,8 +30,23 @@ const { startScheduler, runCycleAndNotify, getCronExpression, getLastRunAt, esti
 const { processPendingReclamosInBackground } = require('./src/geoWorker');
 const accountStats = require('./src/accountStats');
 const { CATEGORIAS_RECLAMO, ESTADOS_RECLAMO, isValidEstado } = require('./src/categoriaReclamo');
+const { normalizeEmail, isEmailAllowed } = require('./src/auth/allowlist');
+const { issueMagicLink, redeemMagicLink } = require('./src/auth/magicLink');
+const { sendMagicLinkEmail } = require('./src/mailer');
+const {
+  setSessionCookie,
+  clearSessionCookie,
+  isAuthConfigured,
+} = require('./src/auth/session');
+const { isMagicLinkRateLimited } = require('./src/auth/rateLimit');
+const { createAuthGate } = require('./src/auth/gate');
 
 const app = express();
+
+const MAGIC_LINK_GENERIC = {
+  ok: true,
+  message: 'Si el email está autorizado, te mandamos un link. Revisá tu casilla.',
+};
 
 /** Log de alto nivel por tarea del pipeline (no por comentario). */
 function logTask(phase, detail = {}) {
@@ -39,10 +54,24 @@ function logTask(phase, detail = {}) {
   console.log(`[analyze] ${phase}${payload}`);
 }
 
-// Permite leer el cuerpo (body) de las peticiones en formato JSON.
-app.use(express.json());
+function logAuth(phase, detail = {}) {
+  const payload = Object.keys(detail).length ? ` ${JSON.stringify(detail)}` : '';
+  console.log(`[auth] ${phase}${payload}`);
+}
 
-// Sirve los archivos estáticos (la web) desde la carpeta "public".
+if (
+  process.env.TRUST_PROXY === '1' ||
+  process.env.TRUST_PROXY === 'true' ||
+  (process.env.APP_BASE_URL || '').startsWith('https://')
+) {
+  app.set('trust proxy', 1);
+}
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
+
+// El gate va ANTES de los estáticos: si no, dashboard.html se sirve sin cookie.
+app.use(createAuthGate());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // --------------------------------------------------------------------------
@@ -67,6 +96,11 @@ function checkEnv() {
   for (const key of claimsLlm) {
     if (!process.env[key]) faltantes.push(key);
   }
+  if (!process.env.SESSION_SECRET) faltantes.push('SESSION_SECRET');
+  if (!process.env.APP_BASE_URL) faltantes.push('APP_BASE_URL');
+  if (!process.env.SMTP_HOST) faltantes.push('SMTP_HOST');
+  if (!process.env.SMTP_USER) faltantes.push('SMTP_USER');
+  if (!process.env.SMTP_PASS) faltantes.push('SMTP_PASS');
 
   if (faltantes.length > 0) {
     const provider = getLlmProvider();
@@ -97,6 +131,75 @@ function isValidInstagramPostUrl(url) {
     return false;
   }
 }
+
+// --------------------------------------------------------------------------
+// Auth: allowlist + magic link + sesión.
+// --------------------------------------------------------------------------
+app.post('/api/auth/magic-link', async (req, res) => {
+  const email = normalizeEmail(req.body && req.body.email);
+  const ip = req.ip || req.socket.remoteAddress || 'unknown';
+  logAuth('pedido de magic link', { email: email || null });
+
+  if (isMagicLinkRateLimited({ ip, email })) {
+    logAuth('rate limit', { email: email || null });
+    return res.status(429).json({ error: 'Demasiados intentos. Probá en unos minutos.' });
+  }
+
+  if (!isAuthConfigured()) {
+    logAuth('config incompleta', { falta: 'SESSION_SECRET o APP_BASE_URL' });
+    return res.status(503).json({
+      error: 'El login no está configurado. Revisá SESSION_SECRET y APP_BASE_URL.',
+    });
+  }
+
+  if (!email || !isEmailAllowed(email)) {
+    logAuth('email no autorizado o vacío', { email: email || null });
+    return res.json(MAGIC_LINK_GENERIC);
+  }
+
+  try {
+    const { rawToken } = issueMagicLink(email);
+    logAuth('enviando mail', { email, smtp: process.env.SMTP_HOST || null });
+    await sendMagicLinkEmail({ email, rawToken });
+    logAuth('mail enviado', { email });
+  } catch (err) {
+    logAuth('error enviando mail', { email, message: err.message });
+    console.error('[auth] Error enviando magic link:', err.message);
+  }
+
+  return res.json(MAGIC_LINK_GENERIC);
+});
+
+app.post('/api/auth/verify', (req, res) => {
+  const token = (req.body && req.body.token) || '';
+  const result = redeemMagicLink(token);
+  if (!result.ok) {
+    logAuth('verify fallido', { motivo: 'token inválido, usado o expirado' });
+    return res
+      .status(400)
+      .type('html')
+      .send(
+        '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Link inválido</title></head><body>' +
+        '<p>El link expiró o ya fue usado. <a href="/">Pedí uno nuevo</a>.</p></body></html>'
+      );
+  }
+  setSessionCookie(res, result.email);
+  logAuth('sesión iniciada', { email: result.email });
+  return res.redirect(302, '/dashboard.html');
+});
+
+app.get('/api/auth/me', (req, res) => {
+  if (!req.auth) {
+    return res.status(401).json({ error: 'Tenés que iniciar sesión.' });
+  }
+  return res.json({ email: req.auth.email });
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  logAuth('logout', { email: req.auth ? req.auth.email : null });
+  clearSessionCookie(res);
+  return res.status(204).end();
+});
 
 // --------------------------------------------------------------------------
 // Endpoint principal: recibe el link y devuelve el reporte.
@@ -299,6 +402,9 @@ app.post('/api/monitoring/run-now', async (req, res) => {
     const result = await runCycleAndNotify();
     res.json(result);
   } catch (err) {
+    if (err.code === 'CYCLE_IN_PROGRESS') {
+      return res.status(409).json({ error: err.userMessage });
+    }
     console.error('Error en /api/monitoring/run-now:', err);
     res.status(502).json({ error: err.userMessage || 'Falló el ciclo de monitoreo. Revisá la consola del servidor.' });
   }
@@ -398,7 +504,10 @@ const server = app.listen(PORT, () => {
   console.log(`   Modelo análisis: ${getAnalysisModel(provider)}`);
   console.log(`   Modelo clasificador: ${getClassifierModel(provider)}`);
   console.log(
-    `   Límites: COMMENTS_LIMIT (Apify)=${process.env.COMMENTS_LIMIT || 100}, COMMENTS_ANALYSIS_LIMIT (LLM)=${resolveMaxCommentsLimit()}\n`
+    `   Límites: COMMENTS_LIMIT (Apify)=${process.env.COMMENTS_LIMIT || 100}, COMMENTS_ANALYSIS_LIMIT (LLM)=${resolveMaxCommentsLimit()}`
+  );
+  console.log(
+    `   Login: APP_BASE_URL=${process.env.APP_BASE_URL || '(falta)'} | SMTP=${process.env.SMTP_HOST || '(falta SMTP_HOST)'}\n`
   );
 });
 

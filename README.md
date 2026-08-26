@@ -42,23 +42,27 @@ social_listening_app/
 │   ├── reclamosFromAnalysis.js # reclamosGeo de Claude -> filas para la tabla reclamos.
 │   ├── monitor.js            # Detección de posteos nuevos + config de cuentas/keywords.
 │   ├── classifier.js         # Título + sentimiento de cada posteo (Claude Haiku).
-│   ├── mailer.js             # Envío de emails de alerta (Nodemailer).
+│   ├── mailer.js             # Envío de emails (alertas + magic link).
+│   ├── auth/                 # Allowlist, magic link, sesión, rate limit, gate.
 │   ├── notify.js             # Orquesta las notificaciones (email + WhatsApp a futuro).
 │   ├── scheduler.js          # Agenda el monitoreo cada 4hs (node-cron).
 │   └── notifiers/
 │       └── whatsapp.js       # Placeholder para notificación por WhatsApp (no implementado).
 ├── config/
-│   └── monitoring.json       # Cuentas y palabras clave/hashtags a trackear.
+│   ├── monitoring.json       # Cuentas y palabras clave/hashtags a trackear.
+│   └── allowed-emails.example.txt  # Plantilla de emails que pueden entrar.
 ├── data/
 │   ├── monitoring.db         # Base SQLite (se crea sola, no se versiona).
 │   └── geo/                  # Cache en disco de comunas.geojson y barrios.geojson (GCBA).
 ├── public/
-│   ├── index.html            # Login de fachada (sin auth real todavía).
+│   ├── index.html            # Login (pide un magic link por email).
+│   ├── login-verify.html     # Confirma el link (POST, un solo uso).
 │   ├── dashboard.html        # Selector de red social.
 │   ├── instagram.html        # App Instagram: análisis + monitoreo + mapa de reclamos (tabs).
 │   ├── css/styles.css        # Estilos (paleta oscura corporativa).
 │   └── js/
-│       ├── main.js           # Tabs + dropdown de usuario (solo visual).
+│       ├── main.js           # Tabs + dropdown de usuario (sesión / logout).
+│       ├── login.js          # Pedido del magic link.
 │       ├── analysis.js       # Lógica de "Análisis de publicación".
 │       ├── monitoring.js     # Lógica de "Monitoreo en vivo".
 │       └── claimsMap.js      # Mapa de reclamos (Leaflet, agrega en el cliente).
@@ -83,8 +87,24 @@ social_listening_app/
 - **`src/prompt.js`**: contiene la metodología completa de análisis (el
   "system prompt"). Separado para que sea fácil de ajustar.
 - **`public/index.html` + `dashboard.html` + `instagram.html` + `css/` + `js/`**: la
-  interfaz (login → dashboard → app Instagram con tabs), separada en
+  interfaz (login con magic link → dashboard → app Instagram con tabs), separada en
   estructura/estilo/comportamiento.
+
+### Login (allowlist + magic link)
+
+Solo entran emails de la allowlist. El archivo
+`config/allowed-emails.txt` (no se versiona; copiá el `.example.txt`) se puede
+editar a mano, un email por línea. En producción (Railway) usá también
+`ALLOWED_EMAILS` en las variables de entorno: un email entra si está en el
+archivo **o** en el env. Los cambios al archivo aplican en el próximo intento,
+sin reiniciar.
+
+Flujo: la persona pone su email → si está autorizado se manda un link (15 min,
+un solo uso) → abre el mail y hace clic en **Entrar**. La respuesta de la API
+es la misma aunque el email no esté en la lista (no se enumeran los autorizados).
+
+Hace falta `SESSION_SECRET` (string largo aleatorio) y `APP_BASE_URL` (p. ej.
+`http://localhost:3000`). El SMTP es el mismo de las alertas (`SMTP_*`).
 
 ### Monitoreo automático — archivos nuevos explicados
 
@@ -239,8 +259,12 @@ Abrí `.env` y pegá:
   (los modelos ya vienen con default equivalente al de Anthropic, no hace falta setearlos)
 - `SMTP_USER` / `SMTP_PASS` → tu Gmail y una
   ["contraseña de aplicación"](https://myaccount.google.com/apppasswords)
-  (necesarias solo para las alertas del monitoreo)
+  (alertas del monitoreo y magic link de login)
 - `ALERT_EMAIL_TO` → a quién avisar cuando aparezca un posteo relevante
+- `SESSION_SECRET` → firma de la cookie de sesión (obligatorio para entrar)
+- `APP_BASE_URL` → URL pública de la app, sin barra final (el link del mail
+  se arma con esto, no con el header Host)
+- `ALLOWED_EMAILS` → opcional; emails extra separados por coma
 
 El geocoding del mapa de reclamos usa USIG (servicio del GCBA) y no necesita
 ninguna clave.
@@ -259,8 +283,9 @@ Para cortar el proceso (también si quedó huérfano y el puerto 3000 no se libe
 npm run stop
 ```
 
-Abrí esa dirección en el navegador (login de fachada → dashboard → Instagram),
-pegá el link de una publicación y hacé clic en **Analizar publicación**.
+Abrí esa dirección en el navegador, pedí un magic link con un email de la
+allowlist, entrá, y en Instagram pegá el link de una publicación y hacé clic
+en **Analizar publicación**.
 
 ### 5. Reclamos del mapa
 

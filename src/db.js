@@ -10,7 +10,8 @@
 // sincrónica y simple. Todo vive en un único archivo: data/monitoring.db.
 //
 // Guardamos acá cada posteo relevante que detectamos, para no volver a
-// notificarlo dos veces en corridas futuras.
+// notificarlo dos veces en corridas futuras. También los hashes de magic
+// links de login (nunca el token crudo).
 // ==========================================================================
 
 const fs = require('fs');
@@ -79,10 +80,18 @@ if (!existingColumns.includes('metrics_updated_at')) {
 // vacío, no hace falta guardarlo como migración "de una sola vez".
 db.exec('UPDATE detected_posts SET likes = NULL WHERE likes < 0');
 db.exec('UPDATE detected_posts SET comments = NULL WHERE comments < 0');
+// Misma pieza de Instagram = misma URL. Si Apify cambia cuál campo usa
+// normalizeMonitorPost para armar el id (raw.id vs shortCode), sin este
+// índice se insertaría una segunda fila y se re-notificaría.
+db.exec('CREATE UNIQUE INDEX IF NOT EXISTS detected_posts_url_unique ON detected_posts(url)');
 
 const isKnownPostStmt = db.prepare('SELECT 1 FROM detected_posts WHERE id = ?');
+const getPostIdByUrlStmt = db.prepare('SELECT id FROM detected_posts WHERE url = ?');
+// OR IGNORE: un segundo ciclo en paralelo (cron + "Actualizar ahora") no
+// puede tirar abajo toda la corrida con UNIQUE constraint failed. Si el
+// posteo ya está, changes === 0 y el llamador lo trata como conocido.
 const insertPostStmt = db.prepare(`
-  INSERT INTO detected_posts
+  INSERT OR IGNORE INTO detected_posts
     (id, account, url, caption, matched_reason, likes, comments, posted_at, detected_at, notified, title, sentiment, post_type, followers)
   VALUES
     (@id, @account, @url, @caption, @matchedReason, @likes, @comments, @postedAt, @detectedAt, 0, @title, @sentiment, @postType, @followers)
@@ -368,8 +377,39 @@ const setGeocodeCacheStmt = db.prepare(`
     barrio = excluded.barrio
 `);
 
-function isKnownPost(id) {
-  return Boolean(isKnownPostStmt.get(id));
+db.exec(`
+  CREATE TABLE IF NOT EXISTS magic_links (
+    token_hash TEXT PRIMARY KEY,
+    email TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    used_at TEXT
+  )
+`);
+
+const insertMagicLinkStmt = db.prepare(`
+  INSERT INTO magic_links (token_hash, email, expires_at, used_at)
+  VALUES (@tokenHash, @email, @expiresAt, NULL)
+`);
+const claimMagicLinkStmt = db.prepare(`
+  UPDATE magic_links
+  SET used_at = ?
+  WHERE token_hash = ?
+    AND used_at IS NULL
+    AND expires_at > ?
+`);
+const getMagicLinkStmt = db.prepare('SELECT email FROM magic_links WHERE token_hash = ?');
+
+function findExistingPostId(id, url) {
+  if (id && isKnownPostStmt.get(id)) return id;
+  if (url) {
+    const row = getPostIdByUrlStmt.get(url);
+    if (row) return row.id;
+  }
+  return null;
+}
+
+function isKnownPost(id, url) {
+  return findExistingPostId(id, url) != null;
 }
 
 // Defensa en profundidad: además de la limpieza del centinela -1 en el
@@ -380,8 +420,12 @@ function rejectNegative(value) {
   return typeof value === 'number' && value < 0 ? null : value;
 }
 
+/**
+ * @returns {boolean} true si se insertó una fila nueva. false si ya existía
+ * (mismo id o misma url) — no tira UNIQUE.
+ */
 function saveDetectedPost(post) {
-  insertPostStmt.run({
+  const result = insertPostStmt.run({
     id: post.id,
     account: post.account || null,
     url: post.url,
@@ -396,6 +440,7 @@ function saveDetectedPost(post) {
     postType: post.postType || null,
     followers: post.followers ?? null,
   });
+  return result.changes > 0;
 }
 
 function markNotified(id) {
@@ -807,7 +852,23 @@ function applyMetricsRefresh(id, { likes, comments }) {
   };
 }
 
+function insertMagicLink({ tokenHash, email, expiresAt }) {
+  insertMagicLinkStmt.run({ tokenHash, email, expiresAt });
+}
+
+/**
+ * Marca el token como usado solo si todavía es válido. Devuelve el email
+ * o null si ya se usó, expiró o no existe.
+ */
+function claimMagicLink(tokenHash, nowIso) {
+  const result = claimMagicLinkStmt.run(nowIso, tokenHash, nowIso);
+  if (result.changes === 0) return null;
+  const row = getMagicLinkStmt.get(tokenHash);
+  return row ? { email: row.email } : null;
+}
+
 module.exports = {
+  findExistingPostId,
   isKnownPost,
   saveDetectedPost,
   markNotified,
@@ -840,4 +901,6 @@ module.exports = {
   countReclamos,
   getGeocodeCache,
   setGeocodeCache,
+  insertMagicLink,
+  claimMagicLink,
 };
