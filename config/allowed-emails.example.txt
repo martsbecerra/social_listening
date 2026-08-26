@@ -1,0 +1,7 @@
+# Copiá este archivo como allowed-emails.txt (en esta misma carpeta)
+# y poné un email por línea. No se versiona el .txt real.
+#
+# También podés listar emails en ALLOWED_EMAILS del .env
+# (separados por coma). Un email entra si está en el archivo o en el env.
+
+# ana@buenosaires.gob.ar

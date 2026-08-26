@@ -17,9 +17,14 @@ function providerModule(provider) {
   return provider === 'openrouter' ? openrouter : anthropic;
 }
 
-async function requestStructuredAnalysis({ system, userPrompt }) {
+async function requestStructuredAnalysis({ system, userPrompt, schema, schemaName }) {
   const provider = getLlmProvider();
-  const result = await providerModule(provider).requestStructuredAnalysis({ system, userPrompt });
+  const result = await providerModule(provider).requestStructuredAnalysis({
+    system,
+    userPrompt,
+    schema,
+    schemaName,
+  });
   result.usage = finalizeLlmUsage(result.usage, {
     provider,
     model: getAnalysisModel(provider),

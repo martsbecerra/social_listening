@@ -15,7 +15,7 @@ const { getAnalysisModel, getClassifierModel } = require('./providerConfig');
 const client = new Anthropic();
 const STRUCTURED_OUTPUT_MAX_ATTEMPTS = 2;
 
-async function requestStructuredAnalysis({ system, userPrompt }) {
+async function requestStructuredAnalysis({ system, userPrompt, schema }) {
   const model = getAnalysisModel('anthropic');
 
   const requestParams = {
@@ -24,7 +24,7 @@ async function requestStructuredAnalysis({ system, userPrompt }) {
     system,
     messages: [{ role: 'user', content: userPrompt }],
     output_config: {
-      format: jsonSchemaOutputFormat(ANALYSIS_JSON_SCHEMA),
+      format: jsonSchemaOutputFormat(schema || ANALYSIS_JSON_SCHEMA),
     },
   };
 

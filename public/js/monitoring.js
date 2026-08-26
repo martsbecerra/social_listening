@@ -13,9 +13,9 @@ const keywordErrorEl = document.getElementById('keywordError');
 const keywordsModal = document.getElementById('keywordsModal');
 const keywordsModalCloseBtn = document.getElementById('keywordsModalCloseBtn');
 
-const deleteModal = document.getElementById('deleteModal');
-const deleteCancelBtn = document.getElementById('deleteCancelBtn');
-const deleteConfirmBtn = document.getElementById('deleteConfirmBtn');
+const ignoreModal = document.getElementById('ignoreModal');
+const ignoreCancelBtn = document.getElementById('ignoreCancelBtn');
+const ignoreConfirmBtn = document.getElementById('ignoreConfirmBtn');
 
 const runNowBtn = document.getElementById('runNowBtn');
 const monitoringStatusCard = document.getElementById('monitoringStatusCard');
@@ -31,13 +31,9 @@ const cardsEl = document.getElementById('cards');
 const fSentEl = document.getElementById('fSent');
 const fAccBtnEl = document.getElementById('fAccBtn');
 const fAccPanelEl = document.getElementById('fAccPanel');
-const fNotiEl = document.getElementById('fNoti');
-const chkWrapEl = document.getElementById('chkWrap');
 const fDesdeEl = document.getElementById('fDesde');
 const fHastaEl = document.getElementById('fHasta');
 const qEl = document.getElementById('q');
-const sortSelects = [...document.querySelectorAll('.srt')];
-const sLikesEl = document.getElementById('sLikes');
 const nEl = document.getElementById('n');
 const mEl = document.getElementById('m');
 const monitoringClearBtn = document.getElementById('clear');
@@ -46,7 +42,7 @@ const KEYWORDS_PREVIEW_COUNT = 2;
 // Todo de una sola vez: el orden/filtro/paginación ahora los maneja
 // Tabulator del lado del cliente, así que no paginamos contra el backend.
 const FETCH_ALL_PAGE_SIZE = 5000;
-let pendingDeleteId = null;
+let pendingIgnoreId = null;
 
 // -------------------------------------------------------------------------
 // Config: cuentas trackeadas / palabras clave (visible arriba, sin modal).
@@ -200,29 +196,32 @@ const SENTIMENT_UNSET_LABEL = 'Sin clasificar';
 // tarjetas destacadas y el borde de color.
 const SENTIMENT_SHORT = { positivo: 'pos', neutral: 'neu', negativo: 'neg' };
 
-function openDeleteModal(id) {
-  pendingDeleteId = id;
-  deleteModal.classList.remove('hidden');
+function openIgnoreModal(id) {
+  pendingIgnoreId = id;
+  ignoreModal.classList.remove('hidden');
 }
 
-function closeDeleteModal() {
-  pendingDeleteId = null;
-  deleteModal.classList.add('hidden');
+function closeIgnoreModal() {
+  pendingIgnoreId = null;
+  ignoreModal.classList.add('hidden');
 }
 
-async function confirmDelete() {
-  if (!pendingDeleteId) return;
-  const id = pendingDeleteId;
+async function confirmIgnore() {
+  if (!pendingIgnoreId) return;
+  const id = pendingIgnoreId;
   try {
-    await fetch(`/api/monitoring/posts/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    const resp = await fetch(`/api/monitoring/posts/${encodeURIComponent(id)}/ignore`, { method: 'POST' });
+    if (!resp.ok) throw new Error('No se pudo ignorar.');
     if (monitoringTable) {
+      if (expandedRowId === id) expandedRowId = null;
       monitoringTable.deleteRow(id);
       updateCounts();
+      renderHighlightCards(monitoringTable.getData());
     }
   } catch (err) {
-    console.error('Error borrando el registro:', err);
+    console.error('Error ignorando el registro:', err);
   }
-  closeDeleteModal();
+  closeIgnoreModal();
 }
 
 async function updateSentiment(id, sentiment, selectEl) {
@@ -501,21 +500,9 @@ async function highlightGoToRow(id) {
 }
 
 // -------------------------------------------------------------------------
-// Filtros + orden (barra "Filtrar" / "Ordenar"): selects nativos, igual que
-// design/monitoreo.html — sin desplegables a medida.
+// Filtros (barra "Filtrar"). El orden se elige cliqueando el header de
+// cada columna — flechas asc/desc de Tabulator, no una fila "Ordenar".
 // -------------------------------------------------------------------------
-// sortField/sortDir en null = sin orden forzado (orden natural: el que ya
-// trae /api/monitoring/posts, más nuevos primero). Solo el estado inicial
-// de la página fuerza "likes desc" — un select vaciado a mano, o "Limpiar",
-// dejan el orden en null como cualquier otro filtro que se limpia.
-let sortField = 'likes';
-let sortDir = 'desc';
-// Claves cortas de los <option value="l|desc"> (calcadas de la referencia)
-// a los fields reales de Tabulator. El rango de fechas ahora filtra en vez
-// de ordenar (ver fDesde/fHasta), así que ya no hay clave "d" acá.
-const SORT_FIELD_MAP = { l: 'likes', c: 'comments', fol: 'followers' };
-const SORTABLE_FIELDS = ['likes', 'comments', 'followers'];
-
 function normalizeSearch(text) {
   return String(text || '')
     .toLowerCase()
@@ -531,25 +518,14 @@ function isDefaultFilterState() {
   return (
     !fSentEl.value &&
     !fAccValue &&
-    !fNotiEl.checked &&
     !fDesdeEl.value &&
     !fHastaEl.value &&
-    !qEl.value.trim() &&
-    sortField === null
+    !qEl.value.trim()
   );
 }
 
 function updateMonitoringClearButtonState() {
   monitoringClearBtn.disabled = isDefaultFilterState();
-}
-
-function updateSortColumnHighlight() {
-  if (!monitoringTable) return;
-  for (const field of SORTABLE_FIELDS) {
-    const column = monitoringTable.getColumn(field);
-    if (!column) continue;
-    column.getElement().classList.toggle('act', field === sortField);
-  }
 }
 
 function updateCounts() {
@@ -562,7 +538,6 @@ function applyFilters() {
   if (!monitoringTable) return;
   const fs = fSentEl.value;
   const fa = fAccValue;
-  const fn = fNotiEl.checked;
   const fDesde = fDesdeEl.value; // "YYYY-MM-DD" del <input type="date"> o ""
   const fHasta = fHastaEl.value;
   const q = normalizeSearch(qEl.value.trim());
@@ -575,7 +550,6 @@ function applyFilters() {
       return false;
     }
     if (fa && data.account !== fa) return false;
-    if (fn && data.notified) return false;
     if (fDesde || fHasta) {
       if (!data.posted_at) return false;
       const posted = new Date(data.posted_at);
@@ -591,49 +565,12 @@ function applyFilters() {
 
   fSentEl.classList.toggle('on', !!fs);
   fAccBtnEl.classList.toggle('on', !!fa);
-  chkWrapEl.classList.toggle('on', fn);
   fDesdeEl.classList.toggle('on', !!fDesde);
   fHastaEl.classList.toggle('on', !!fHasta);
 
   updateCounts();
   updateMonitoringClearButtonState();
 }
-
-function applySort() {
-  if (!monitoringTable) return;
-  if (sortField) {
-    monitoringTable.setSort(sortField, sortDir);
-  } else {
-    // Ningún select de orden elegido: orden natural (el que ya trae
-    // /api/monitoring/posts), no forzamos ningún campo.
-    monitoringTable.clearSort();
-  }
-  updateSortColumnHighlight();
-  updateCounts();
-  updateMonitoringClearButtonState();
-}
-
-// Un select de orden elegido resetea los otros dos a neutro — solo uno
-// activo a la vez, igual que la referencia. Vaciar el select activo (elegir
-// la opción en blanco) deja el orden en null: no vuelve a imponerse solo,
-// para poder "sacarlo" de verdad desde el propio desplegable.
-sortSelects.forEach((sel) => {
-  sel.addEventListener('change', () => {
-    if (sel.value) {
-      const [key, dir] = sel.value.split('|');
-      sortField = SORT_FIELD_MAP[key];
-      sortDir = dir;
-      sortSelects.forEach((other) => {
-        if (other !== sel) other.value = '';
-      });
-    } else {
-      sortField = null;
-      sortDir = null;
-    }
-    sortSelects.forEach((o) => o.classList.toggle('on', !!o.value));
-    applySort();
-  });
-});
 
 // -------------------------------------------------------------------------
 // Dropdown de Cuenta a medida (botón + panel propio, no un <select> nativo
@@ -727,38 +664,25 @@ function ensureAccountFilterOptions(posts) {
   }
 }
 
-// "Limpiar" resetea TODO a blanco, orden incluido — el mismo tratamiento
-// que el resto de los controles de esta barra. El "Likes desc" solo es el
-// arranque de la página (ver más abajo), no un estado al que este botón
-// vuelva: si fuera así, no habría forma de sacar el orden con "Limpiar"
-// cuando ya se estaba en ese estado.
+// "Limpiar" resetea los filtros a blanco. El orden queda en los headers
+// de la tabla (no es un filtro de esta barra).
 function resetFilters() {
   fSentEl.value = '';
   fAccValue = '';
   fAccBtnEl.textContent = 'Cuenta';
   fAccBtnEl.classList.remove('on');
-  fNotiEl.checked = false;
   fDesdeEl.value = '';
   fHastaEl.value = '';
   fDesdeEl.classList.remove('on');
   fHastaEl.classList.remove('on');
   qEl.value = '';
-  sortSelects.forEach((o) => {
-    o.value = '';
-    o.classList.remove('on');
-  });
-  sortField = null;
-  sortDir = null;
   applyFilters();
-  applySort();
 }
 
-// Estado inicial: Likes de mayor a menor, para que el select ya arranque
-// mostrando "Likes ↓" tildado en vez de en blanco (sortField ya vale
-// 'likes' arriba). Es un default de arranque, no un piso al que "Limpiar"
-// o el propio select tengan que volver.
-sLikesEl.value = 'l|desc';
-sLikesEl.classList.add('on');
+// Par de flechas asc/desc que Tabulator pinta en cada header sortable.
+// El color activo lo decide el CSS según aria-sort del header.
+const SORT_ARROWS =
+  '<span class="sort-ind" aria-hidden="true"><span class="sort-up"></span><span class="sort-down"></span></span>';
 
 const MONITORING_COLUMNS = [
   {
@@ -786,7 +710,6 @@ const MONITORING_COLUMNS = [
   {
     title: 'Cuenta',
     field: 'account',
-    headerSort: false,
     formatter: (cell) => {
       const account = cell.getValue();
       if (!account || account === 'N/D') return 'N/D';
@@ -803,17 +726,16 @@ const MONITORING_COLUMNS = [
   {
     title: 'Seguidores',
     field: 'followers',
-    headerSort: false,
-    width: 100,
+    width: 118,
     hozAlign: 'right',
     headerHozAlign: 'right',
     sorter: 'number',
+    headerSortStartingDir: 'desc',
     formatter: (cell) => `<span class="c-num">${formatFollowers(cell.getValue())}</span>`,
   },
   {
     title: 'Título',
     field: 'title',
-    headerSort: false,
     cssClass: 'c-title-cell',
     // El título completo va en el panel desplegable — acá solo una vista
     // previa recortada con puntos suspensivos (mismo max-width que .c-title
@@ -831,8 +753,7 @@ const MONITORING_COLUMNS = [
   {
     title: 'Sentimiento',
     field: 'sentiment',
-    headerSort: false,
-    width: 140,
+    width: 156,
     hozAlign: 'center',
     headerHozAlign: 'left',
     formatter: (cell) => {
@@ -873,13 +794,13 @@ const MONITORING_COLUMNS = [
   {
     title: 'Fecha',
     field: 'posted_at',
-    headerSort: false,
-    width: 110,
+    width: 118,
     hozAlign: 'center',
     headerHozAlign: 'left',
     // Las fechas se guardan en ISO 8601: ese formato ordena bien como texto
     // plano, sin necesitar un parser de fechas aparte para esta columna.
     sorter: 'string',
+    headerSortStartingDir: 'desc',
     formatter: (cell) => {
       const row = cell.getRow().getData();
       const span = document.createElement('span');
@@ -892,39 +813,22 @@ const MONITORING_COLUMNS = [
   {
     title: 'Likes',
     field: 'likes',
-    headerSort: false,
     width: 100,
     hozAlign: 'right',
     headerHozAlign: 'right',
     sorter: 'number',
+    headerSortStartingDir: 'desc',
     formatter: (cell) => `<span class="c-num">${formatCount(cell.getValue())}</span>`,
   },
   {
-    // Abreviado, igual que la referencia (el select de orden sí dice
-    // "Comentarios" completo).
     title: 'Coment.',
     field: 'comments',
-    headerSort: false,
+    width: 108,
     hozAlign: 'right',
     headerHozAlign: 'right',
     sorter: 'number',
+    headerSortStartingDir: 'desc',
     formatter: (cell) => `<span class="c-num">${formatCount(cell.getValue())}</span>`,
-  },
-  {
-    title: 'Notificado',
-    field: 'notified',
-    headerSort: false,
-    width: 120,
-    hozAlign: 'center',
-    headerHozAlign: 'center',
-    sorter: 'number',
-    formatter: (cell) => {
-      const notified = cell.getValue();
-      const span = document.createElement('span');
-      span.className = notified ? 'badge badge-yes' : 'badge badge-no';
-      span.textContent = notified ? 'Sí' : 'No';
-      return span;
-    },
   },
   {
     title: '',
@@ -936,12 +840,13 @@ const MONITORING_COLUMNS = [
       const id = cell.getRow().getData().id;
       const btn = document.createElement('button');
       btn.className = 'ico del';
-      btn.title = 'Borrar';
+      btn.title = 'Ignorar publicación';
+      btn.setAttribute('aria-label', 'Ignorar publicación');
       btn.innerHTML =
         '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>';
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        openDeleteModal(id);
+        openIgnoreModal(id);
       });
       return btn;
     },
@@ -956,7 +861,6 @@ function ensureMonitoringTable(posts) {
   if (monitoringTable) {
     monitoringTable.setData(posts).then(() => {
       applyFilters();
-      applySort();
     });
     return;
   }
@@ -966,6 +870,9 @@ function ensureMonitoringTable(posts) {
     index: 'id',
     layout: 'fitColumns',
     columns: MONITORING_COLUMNS,
+    headerSortElement: SORT_ARROWS,
+    // Mismo default que tenía el select "Likes ↓": mayor a menor al entrar.
+    initialSort: [{ column: 'likes', dir: 'desc' }],
     rowFormatter: (row) => {
       const data = row.getData();
       const el = row.getElement();
@@ -996,13 +903,12 @@ function ensureMonitoringTable(posts) {
   monitoringTable.on('pageLoaded', updateCounts);
   monitoringTable.on('tableBuilt', () => {
     applyFilters();
-    applySort();
   });
   // rowClick pasado en el constructor no se conecta en esta build de
   // Tabulator 6.3.0 (comprobado en vivo) — .on() después de construir la
   // tabla sí funciona. Clickear en cualquier parte de la fila abre/cierra
   // su detalle (igual que la referencia); los controles interactivos de
-  // adentro (links, borrar, sentimiento) cortan la propagación en su propio
+  // adentro (links, ignorar, sentimiento) cortan la propagación en su propio
   // formatter.
   monitoringTable.on('rowClick', (e, row) => toggleRowExpansion(row));
 }
@@ -1131,13 +1037,12 @@ newKeywordInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') addK
 viewAllKeywordsBtn.addEventListener('click', openKeywordsModal);
 keywordsModalCloseBtn.addEventListener('click', closeKeywordsModal);
 keywordsModal.addEventListener('click', (e) => { if (e.target === keywordsModal) closeKeywordsModal(); });
-deleteCancelBtn.addEventListener('click', closeDeleteModal);
-deleteConfirmBtn.addEventListener('click', confirmDelete);
-deleteModal.addEventListener('click', (e) => { if (e.target === deleteModal) closeDeleteModal(); });
+ignoreCancelBtn.addEventListener('click', closeIgnoreModal);
+ignoreConfirmBtn.addEventListener('click', confirmIgnore);
+ignoreModal.addEventListener('click', (e) => { if (e.target === ignoreModal) closeIgnoreModal(); });
 runNowBtn.addEventListener('click', runNow);
 
 fSentEl.addEventListener('change', applyFilters);
-fNotiEl.addEventListener('change', applyFilters);
 fDesdeEl.addEventListener('change', applyFilters);
 fHastaEl.addEventListener('change', applyFilters);
 qEl.addEventListener('input', applyFilters);

@@ -10,7 +10,10 @@
 // sincrónica y simple. Todo vive en un único archivo: data/monitoring.db.
 //
 // Guardamos acá cada posteo relevante que detectamos, para no volver a
-// notificarlo dos veces en corridas futuras.
+// notificarlo dos veces en corridas futuras. Si se ignora desde la tabla,
+// la fila se queda (ignored=1): sigue bloqueando re-detección, pero ya no
+// aparece en la UI ni en los mails pendientes. También los hashes de magic
+// links de login (nunca el token crudo).
 // ==========================================================================
 
 const fs = require('fs');
@@ -19,9 +22,11 @@ const { DatabaseSync } = require('node:sqlite');
 const { normalizeClasificacion } = require('./categoriasConfig');
 
 const DATA_DIR = path.join(__dirname, '..', 'data');
-const DB_PATH = path.join(DATA_DIR, 'monitoring.db');
+// MONITORING_DB_PATH: solo para tests (tempfile). En runtime normal sigue
+// siendo data/monitoring.db.
+const DB_PATH = process.env.MONITORING_DB_PATH || path.join(DATA_DIR, 'monitoring.db');
 
-fs.mkdirSync(DATA_DIR, { recursive: true });
+fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
 
 const db = new DatabaseSync(DB_PATH);
 db.exec('PRAGMA journal_mode = WAL');
@@ -71,6 +76,15 @@ if (!existingColumns.includes('followers')) {
 if (!existingColumns.includes('metrics_updated_at')) {
   db.exec('ALTER TABLE detected_posts ADD COLUMN metrics_updated_at TEXT');
 }
+// Soft-ignore: la cruz de la tabla no borra la fila. Se queda con
+// ignored=1 para que findExistingPostId / el unique de url sigan
+// bloqueando una re-detección (y un re-mail) en la próxima corrida.
+if (!existingColumns.includes('ignored')) {
+  db.exec('ALTER TABLE detected_posts ADD COLUMN ignored INTEGER NOT NULL DEFAULT 0');
+}
+if (!existingColumns.includes('ignored_at')) {
+  db.exec('ALTER TABLE detected_posts ADD COLUMN ignored_at TEXT');
+}
 // Limpieza de datos: Apify devuelve -1 en likesCount cuando el autor ocultó
 // el contador de "me gusta" (centinela documentado del actor, no un error de
 // parseo) — se guardaba tal cual, como si fuera un valor real. Un posteo sin
@@ -80,23 +94,35 @@ if (!existingColumns.includes('metrics_updated_at')) {
 // vacío, no hace falta guardarlo como migración "de una sola vez".
 db.exec('UPDATE detected_posts SET likes = NULL WHERE likes < 0');
 db.exec('UPDATE detected_posts SET comments = NULL WHERE comments < 0');
+// Misma pieza de Instagram = misma URL. Si Apify cambia cuál campo usa
+// normalizeMonitorPost para armar el id (raw.id vs shortCode), sin este
+// índice se insertaría una segunda fila y se re-notificaría.
+db.exec('CREATE UNIQUE INDEX IF NOT EXISTS detected_posts_url_unique ON detected_posts(url)');
 
 const isKnownPostStmt = db.prepare('SELECT 1 FROM detected_posts WHERE id = ?');
+const getPostIdByUrlStmt = db.prepare('SELECT id FROM detected_posts WHERE url = ?');
+// OR IGNORE: un segundo ciclo en paralelo (cron + "Actualizar ahora") no
+// puede tirar abajo toda la corrida con UNIQUE constraint failed. Si el
+// posteo ya está, changes === 0 y el llamador lo trata como conocido.
 const insertPostStmt = db.prepare(`
-  INSERT INTO detected_posts
+  INSERT OR IGNORE INTO detected_posts
     (id, account, url, caption, matched_reason, likes, comments, posted_at, detected_at, notified, title, sentiment, post_type, followers)
   VALUES
     (@id, @account, @url, @caption, @matchedReason, @likes, @comments, @postedAt, @detectedAt, 0, @title, @sentiment, @postType, @followers)
 `);
 const markNotifiedStmt = db.prepare('UPDATE detected_posts SET notified = 1 WHERE id = ?');
-const countPostsStmt = db.prepare('SELECT COUNT(*) AS total FROM detected_posts');
-const countRecentPostsStmt = db.prepare('SELECT COUNT(*) AS total FROM detected_posts WHERE detected_at >= ?');
-const listPostsPageStmt = db.prepare('SELECT * FROM detected_posts ORDER BY detected_at DESC LIMIT ? OFFSET ?');
-const listUnnotifiedStmt = db.prepare('SELECT * FROM detected_posts WHERE notified = 0 ORDER BY detected_at ASC');
-const listUnclassifiedStmt = db.prepare('SELECT id, caption FROM detected_posts WHERE title IS NULL ORDER BY detected_at ASC');
+const countPostsStmt = db.prepare('SELECT COUNT(*) AS total FROM detected_posts WHERE ignored = 0');
+const countRecentPostsStmt = db.prepare('SELECT COUNT(*) AS total FROM detected_posts WHERE ignored = 0 AND detected_at >= ?');
+const listPostsPageStmt = db.prepare('SELECT * FROM detected_posts WHERE ignored = 0 ORDER BY detected_at DESC LIMIT ? OFFSET ?');
+const listUnnotifiedStmt = db.prepare('SELECT * FROM detected_posts WHERE notified = 0 AND ignored = 0 ORDER BY detected_at ASC');
+const listUnclassifiedStmt = db.prepare('SELECT id, caption FROM detected_posts WHERE title IS NULL AND ignored = 0 ORDER BY detected_at ASC');
 const updateClassificationStmt = db.prepare('UPDATE detected_posts SET title = ?, sentiment = ? WHERE id = ?');
 const updateSentimentStmt = db.prepare('UPDATE detected_posts SET sentiment = ? WHERE id = ?');
-const deletePostStmt = db.prepare('DELETE FROM detected_posts WHERE id = ?');
+// Solo la primera vez: si ya estaba ignorado, ignored_at se conserva.
+const ignorePostStmt = db.prepare(
+  'UPDATE detected_posts SET ignored = 1, ignored_at = ? WHERE id = ? AND ignored = 0'
+);
+const getPostIgnoredAtStmt = db.prepare('SELECT ignored, ignored_at FROM detected_posts WHERE id = ?');
 
 // La forma vieja de `reclamos` (source/username/comment_text/lat/lng/tematica
 // libre) es incompatible con el esquema de categorías cerradas + USIG. La
@@ -255,6 +281,81 @@ db.exec('CREATE INDEX IF NOT EXISTS idx_reclamos_plataforma ON reclamos(platafor
 db.exec('CREATE INDEX IF NOT EXISTS idx_reclamos_fecha ON reclamos(fecha)');
 
 db.exec(`
+  CREATE TABLE IF NOT EXISTS x_influencers (
+    handle TEXT PRIMARY KEY,
+    lista TEXT NOT NULL DEFAULT 'antik-pro',
+    tipo_identidad TEXT NOT NULL CHECK(tipo_identidad IN ('con_identidad','sin_identidad')),
+    seguidores INTEGER,
+    updated_at TEXT NOT NULL
+  )
+`);
+
+const upsertXInfluencerStmt = db.prepare(`
+  INSERT INTO x_influencers (handle, lista, tipo_identidad, seguidores, updated_at)
+  VALUES (@handle, @lista, @tipoIdentidad, @seguidores, @updatedAt)
+  ON CONFLICT(handle) DO UPDATE SET
+    lista = excluded.lista,
+    tipo_identidad = excluded.tipo_identidad,
+    seguidores = excluded.seguidores,
+    updated_at = excluded.updated_at
+`);
+const getXInfluencerStmt = db.prepare('SELECT * FROM x_influencers WHERE handle = ?');
+const listXInfluencersStmt = db.prepare('SELECT * FROM x_influencers ORDER BY handle');
+const countXInfluencersStmt = db.prepare('SELECT COUNT(*) AS total FROM x_influencers');
+
+function upsertXInfluencer(row) {
+  upsertXInfluencerStmt.run({
+    handle: row.handle,
+    lista: row.lista || 'antik-pro',
+    tipoIdentidad: row.tipoIdentidad || 'sin_identidad',
+    seguidores: row.seguidores ?? null,
+    updatedAt: row.updatedAt || new Date().toISOString(),
+  });
+}
+
+function upsertXInfluencers(rows) {
+  const now = new Date().toISOString();
+  const list = rows || [];
+  db.exec('BEGIN');
+  try {
+    for (const row of list) {
+      upsertXInfluencer({ ...row, updatedAt: now });
+    }
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+  return list.length;
+}
+
+function getXInfluencer(handle) {
+  return getXInfluencerStmt.get(handle) || null;
+}
+
+function listXInfluencers() {
+  return listXInfluencersStmt.all();
+}
+
+function countXInfluencers() {
+  return countXInfluencersStmt.get().total;
+}
+
+/** Mapa handle → fila, para el cruce de identidad en el análisis. */
+function getXInfluencerMap() {
+  const map = new Map();
+  for (const row of listXInfluencers()) {
+    map.set(row.handle, {
+      handle: row.handle,
+      lista: row.lista,
+      tipoIdentidad: row.tipo_identidad,
+      seguidores: row.seguidores,
+    });
+  }
+  return map;
+}
+
+db.exec(`
   CREATE TABLE IF NOT EXISTS geocode_cache (
     query_key TEXT PRIMARY KEY,
     lat REAL,
@@ -349,7 +450,7 @@ const getAccountFollowersStmt = db.prepare(
 // trackeadas (config/monitoring.json) con las que ya aparecen en
 // detected_posts (llegaron por hashtag, nunca se trackearon explícitamente).
 const listDistinctPostAccountsStmt = db.prepare(
-  `SELECT DISTINCT account FROM detected_posts WHERE account IS NOT NULL AND account != 'N/D' ORDER BY account`
+  `SELECT DISTINCT account FROM detected_posts WHERE ignored = 0 AND account IS NOT NULL AND account != 'N/D' ORDER BY account`
 );
 // Freshness de TODAS las cuentas de una, no una query por cuenta — con
 // 100-150 cuentas en el universo ampliado, N queries individuales ya no es
@@ -357,7 +458,7 @@ const listDistinctPostAccountsStmt = db.prepare(
 const getAllAccountStatsFreshnessStmt = db.prepare(
   'SELECT account, MAX(computed_at) AS lastComputedAt FROM account_stats WHERE platform = ? GROUP BY account'
 );
-const getPostMetricsStmt = db.prepare('SELECT likes, comments, post_type FROM detected_posts WHERE id = ?');
+const getPostMetricsStmt = db.prepare('SELECT likes, comments, post_type, ignored FROM detected_posts WHERE id = ?');
 const updatePostMetricsStmt = db.prepare(
   'UPDATE detected_posts SET likes = @likes, comments = @comments, post_type = @postType, metrics_updated_at = @metricsUpdatedAt WHERE id = @id'
 );
@@ -389,13 +490,15 @@ const setRefreshStateStmt = db.prepare(`
 const listAccountsDueForRefreshStmt = db.prepare(`
   SELECT account, MAX(posted_at) AS mostRecentPostedAt, COUNT(*) AS postCount
   FROM detected_posts
-  WHERE account IS NOT NULL AND account != 'N/D' AND posted_at IS NOT NULL
+  WHERE ignored = 0 AND account IS NOT NULL AND account != 'N/D' AND posted_at IS NOT NULL
     AND posted_at > @sinceIso AND posted_at <= @untilIso
     AND (@cadenceIso IS NULL OR metrics_updated_at IS NULL OR metrics_updated_at < @cadenceIso)
   GROUP BY account
 `);
 
-const getPostForMetricsRefreshStmt = db.prepare('SELECT likes, comments, account, posted_at FROM detected_posts WHERE id = ?');
+const getPostForMetricsRefreshStmt = db.prepare(
+  'SELECT likes, comments, account, posted_at, ignored FROM detected_posts WHERE id = ?'
+);
 const applyMetricsRefreshStmt = db.prepare(
   'UPDATE detected_posts SET likes = @likes, comments = @comments, metrics_updated_at = @metricsUpdatedAt WHERE id = @id'
 );
@@ -475,8 +578,39 @@ const setGeocodeCacheStmt = db.prepare(`
     barrio = excluded.barrio
 `);
 
-function isKnownPost(id) {
-  return Boolean(isKnownPostStmt.get(id));
+db.exec(`
+  CREATE TABLE IF NOT EXISTS magic_links (
+    token_hash TEXT PRIMARY KEY,
+    email TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    used_at TEXT
+  )
+`);
+
+const insertMagicLinkStmt = db.prepare(`
+  INSERT INTO magic_links (token_hash, email, expires_at, used_at)
+  VALUES (@tokenHash, @email, @expiresAt, NULL)
+`);
+const claimMagicLinkStmt = db.prepare(`
+  UPDATE magic_links
+  SET used_at = ?
+  WHERE token_hash = ?
+    AND used_at IS NULL
+    AND expires_at > ?
+`);
+const getMagicLinkStmt = db.prepare('SELECT email FROM magic_links WHERE token_hash = ?');
+
+function findExistingPostId(id, url) {
+  if (id && isKnownPostStmt.get(id)) return id;
+  if (url) {
+    const row = getPostIdByUrlStmt.get(url);
+    if (row) return row.id;
+  }
+  return null;
+}
+
+function isKnownPost(id, url) {
+  return findExistingPostId(id, url) != null;
 }
 
 // Defensa en profundidad: además de la limpieza del centinela -1 en el
@@ -487,8 +621,12 @@ function rejectNegative(value) {
   return typeof value === 'number' && value < 0 ? null : value;
 }
 
+/**
+ * @returns {boolean} true si se insertó una fila nueva. false si ya existía
+ * (mismo id o misma url) — no tira UNIQUE.
+ */
 function saveDetectedPost(post) {
-  insertPostStmt.run({
+  const result = insertPostStmt.run({
     id: post.id,
     account: post.account || null,
     url: post.url,
@@ -503,6 +641,7 @@ function saveDetectedPost(post) {
     postType: post.postType || null,
     followers: post.followers ?? null,
   });
+  return result.changes > 0;
 }
 
 function markNotified(id) {
@@ -511,7 +650,8 @@ function markNotified(id) {
 
 /**
  * Página de posteos detectados (los más nuevos primero) + el total de filas,
- * para poder armar la paginación en la interfaz.
+ * para poder armar la paginación en la interfaz. Los ignorados no salen:
+ * siguen en la tabla SQLite para el dedupe, pero no en este listado.
  */
 function listDetectedPosts({ page = 1, pageSize = 20 } = {}) {
   const total = countPostsStmt.get().total;
@@ -542,11 +682,20 @@ function updateSentiment(id, sentiment) {
 }
 
 /**
- * Borra un registro puntual de la tabla (ej. un posteo que no sirve, o un
- * "posteo" basura guardado por un bug). No hay deshacer.
+ * Marca un posteo como ignorado (cruz de la tabla de monitoreo). La fila
+ * se queda: findExistingPostId y el unique de url siguen viéndola, así que
+ * la próxima corrida no la re-detecta ni re-notifica. No hay deshacer en
+ * la UI; ignored_at queda para auditoría. Si ya estaba ignorado, no pisa
+ * la fecha original.
  */
-function deletePost(id) {
-  deletePostStmt.run(id);
+function ignorePost(id) {
+  ignorePostStmt.run(new Date().toISOString(), id);
+}
+
+function getPostIgnoreState(id) {
+  const row = getPostIgnoredAtStmt.get(id);
+  if (!row) return null;
+  return { ignored: row.ignored === 1, ignoredAt: row.ignored_at || null };
 }
 
 /**
@@ -601,7 +750,7 @@ function mapReclamoRow(row) {
 /**
  * Alta o actualización de un reclamo (análisis en vivo o import de Excel).
  * `id` y `comentarioId` los arma el llamador (ver src/reclamosFromAnalysis.js
- * y scripts/import-reclamos-excel.js) para poder deduplicar entre corridas.
+ * y scripts/import-reclamos.js) para poder deduplicar entre corridas.
  */
 function upsertReclamo(reclamo) {
   // Última barrera: nada entra a la tabla sin pasar por la lista cerrada de
@@ -879,11 +1028,12 @@ function getAllAccountStatsFreshness(platform) {
  * post_type SOLO se completa si faltaba (existing.post_type es NULL) —
  * nunca se pisa un valor ya conocido, a diferencia de likes/comments que sí
  * son métricas vivas y se actualizan siempre que cambien.
- * @returns {boolean} true si se escribió un cambio real.
+ * @returns {boolean} true si se escribió un cambio real. false si el id no
+ * existe, está ignorado, o las métricas no cambiaron.
  */
 function updatePostMetricsIfChanged(id, { likes, comments, postType }) {
   const existing = getPostMetricsStmt.get(id);
-  if (!existing) return false;
+  if (!existing || existing.ignored) return false;
   const cleanLikes = rejectNegative(likes ?? null);
   const cleanComments = rejectNegative(comments ?? null);
   const nextPostType = existing.post_type != null ? existing.post_type : postType || null;
@@ -935,11 +1085,12 @@ function listAccountsDueForRefresh({ sinceIso, untilIso, cadenceIso = null }) {
  * y parecer eternamente pendiente.
  * @returns {{changed: boolean, account: string, postedAt: string,
  *   previousLikes: number|null, previousComments: number|null,
- *   likes: number|null, comments: number|null}|null} null si el id no está guardado.
+ *   likes: number|null, comments: number|null}|null} null si el id no está
+ *   guardado o está ignorado (no se escriben métricas de un ignorado).
  */
 function applyMetricsRefresh(id, { likes, comments }) {
   const existing = getPostForMetricsRefreshStmt.get(id);
-  if (!existing) return null;
+  if (!existing || existing.ignored) return null;
   const cleanLikes = rejectNegative(likes ?? null);
   const cleanComments = rejectNegative(comments ?? null);
   const changed = existing.likes !== cleanLikes || existing.comments !== cleanComments;
@@ -962,7 +1113,23 @@ function applyMetricsRefresh(id, { likes, comments }) {
   };
 }
 
+function insertMagicLink({ tokenHash, email, expiresAt }) {
+  insertMagicLinkStmt.run({ tokenHash, email, expiresAt });
+}
+
+/**
+ * Marca el token como usado solo si todavía es válido. Devuelve el email
+ * o null si ya se usó, expiró o no existe.
+ */
+function claimMagicLink(tokenHash, nowIso) {
+  const result = claimMagicLinkStmt.run(nowIso, tokenHash, nowIso);
+  if (result.changes === 0) return null;
+  const row = getMagicLinkStmt.get(tokenHash);
+  return row ? { email: row.email } : null;
+}
+
 module.exports = {
+  findExistingPostId,
   isKnownPost,
   saveDetectedPost,
   markNotified,
@@ -972,7 +1139,8 @@ module.exports = {
   listUnclassified,
   updateClassification,
   updateSentiment,
-  deletePost,
+  ignorePost,
+  getPostIgnoreState,
   upsertAccountStats,
   getAccountStats,
   getAccountStatsFreshness,
@@ -998,4 +1166,12 @@ module.exports = {
   countReclamos,
   getGeocodeCache,
   setGeocodeCache,
+  insertMagicLink,
+  claimMagicLink,
+  upsertXInfluencer,
+  upsertXInfluencers,
+  getXInfluencer,
+  listXInfluencers,
+  countXInfluencers,
+  getXInfluencerMap,
 };

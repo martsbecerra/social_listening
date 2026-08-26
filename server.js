@@ -3,9 +3,7 @@
 // --------------------------------------------------------------------------
 // Punto de entrada de la aplicación. Levanta un servidor web con Express que:
 //   1) Sirve la página web (public/index.html).
-//   2) Expone un endpoint /api/analyze que recibe el link de Instagram,
-//      llama a Apify (extraer datos) y a Claude (analizarlos), y devuelve
-//      el reporte.
+//   2) Expone /api/analyze (Instagram + Apify) y /api/x/analyze (X + Grok).
 // ==========================================================================
 
 // dotenv carga las variables del archivo .env a process.env (APIFY_API_TOKEN, etc.)
@@ -17,6 +15,10 @@ const path = require('path');
 const { scrapeInstagram } = require('./src/apify');
 const { analyzeComments } = require('./src/analyzeComments');
 const { resolveMaxCommentsLimit } = require('./src/commentSample');
+const { isValidXPostUrl } = require('./src/x/url');
+const { fetchXThread, getModel: getXaiModel, getFetchBackend } = require('./src/x/grokFetch');
+const { analyzeXThread } = require('./src/x/analyze');
+const { seedXInfluencersIfEmpty } = require('./src/x/influencers');
 const {
   getLlmProvider,
   requiredLlmEnvKeys,
@@ -31,8 +33,23 @@ const { processPendingReclamosInBackground } = require('./src/geoWorker');
 const accountStats = require('./src/accountStats');
 const { CATEGORIAS_RECLAMO, ESTADOS_RECLAMO, isValidEstado } = require('./src/categoriaReclamo');
 const { subcategoriasDe } = require('./src/categoriasConfig');
+const { normalizeEmail, isEmailAllowed } = require('./src/auth/allowlist');
+const { issueMagicLink, redeemMagicLink } = require('./src/auth/magicLink');
+const { sendMagicLinkEmail } = require('./src/mailer');
+const {
+  setSessionCookie,
+  clearSessionCookie,
+  isAuthConfigured,
+} = require('./src/auth/session');
+const { isMagicLinkRateLimited } = require('./src/auth/rateLimit');
+const { createAuthGate } = require('./src/auth/gate');
 
 const app = express();
+
+const MAGIC_LINK_GENERIC = {
+  ok: true,
+  message: 'Si el email está autorizado, te mandamos un link. Revisá tu casilla.',
+};
 
 /** Log de alto nivel por tarea del pipeline (no por comentario). */
 function logTask(phase, detail = {}) {
@@ -40,10 +57,24 @@ function logTask(phase, detail = {}) {
   console.log(`[analyze] ${phase}${payload}`);
 }
 
-// Permite leer el cuerpo (body) de las peticiones en formato JSON.
-app.use(express.json());
+function logAuth(phase, detail = {}) {
+  const payload = Object.keys(detail).length ? ` ${JSON.stringify(detail)}` : '';
+  console.log(`[auth] ${phase}${payload}`);
+}
 
-// Sirve los archivos estáticos (la web) desde la carpeta "public".
+if (
+  process.env.TRUST_PROXY === '1' ||
+  process.env.TRUST_PROXY === 'true' ||
+  (process.env.APP_BASE_URL || '').startsWith('https://')
+) {
+  app.set('trust proxy', 1);
+}
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
+
+// El gate va ANTES de los estáticos: si no, dashboard.html se sirve sin cookie.
+app.use(createAuthGate());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // --------------------------------------------------------------------------
@@ -68,6 +99,11 @@ function checkEnv() {
   for (const key of claimsLlm) {
     if (!process.env[key]) faltantes.push(key);
   }
+  if (!process.env.SESSION_SECRET) faltantes.push('SESSION_SECRET');
+  if (!process.env.APP_BASE_URL) faltantes.push('APP_BASE_URL');
+  if (!process.env.SMTP_HOST) faltantes.push('SMTP_HOST');
+  if (!process.env.SMTP_USER) faltantes.push('SMTP_USER');
+  if (!process.env.SMTP_PASS) faltantes.push('SMTP_PASS');
 
   if (faltantes.length > 0) {
     const provider = getLlmProvider();
@@ -98,6 +134,75 @@ function isValidInstagramPostUrl(url) {
     return false;
   }
 }
+
+// --------------------------------------------------------------------------
+// Auth: allowlist + magic link + sesión.
+// --------------------------------------------------------------------------
+app.post('/api/auth/magic-link', async (req, res) => {
+  const email = normalizeEmail(req.body && req.body.email);
+  const ip = req.ip || req.socket.remoteAddress || 'unknown';
+  logAuth('pedido de magic link', { email: email || null });
+
+  if (isMagicLinkRateLimited({ ip, email })) {
+    logAuth('rate limit', { email: email || null });
+    return res.status(429).json({ error: 'Demasiados intentos. Probá en unos minutos.' });
+  }
+
+  if (!isAuthConfigured()) {
+    logAuth('config incompleta', { falta: 'SESSION_SECRET o APP_BASE_URL' });
+    return res.status(503).json({
+      error: 'El login no está configurado. Revisá SESSION_SECRET y APP_BASE_URL.',
+    });
+  }
+
+  if (!email || !isEmailAllowed(email)) {
+    logAuth('email no autorizado o vacío', { email: email || null });
+    return res.json(MAGIC_LINK_GENERIC);
+  }
+
+  try {
+    const { rawToken } = issueMagicLink(email);
+    logAuth('enviando mail', { email, smtp: process.env.SMTP_HOST || null });
+    await sendMagicLinkEmail({ email, rawToken });
+    logAuth('mail enviado', { email });
+  } catch (err) {
+    logAuth('error enviando mail', { email, message: err.message });
+    console.error('[auth] Error enviando magic link:', err.message);
+  }
+
+  return res.json(MAGIC_LINK_GENERIC);
+});
+
+app.post('/api/auth/verify', (req, res) => {
+  const token = (req.body && req.body.token) || '';
+  const result = redeemMagicLink(token);
+  if (!result.ok) {
+    logAuth('verify fallido', { motivo: 'token inválido, usado o expirado' });
+    return res
+      .status(400)
+      .type('html')
+      .send(
+        '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Link inválido</title></head><body>' +
+        '<p>El link expiró o ya fue usado. <a href="/">Pedí uno nuevo</a>.</p></body></html>'
+      );
+  }
+  setSessionCookie(res, result.email);
+  logAuth('sesión iniciada', { email: result.email });
+  return res.redirect(302, '/dashboard.html');
+});
+
+app.get('/api/auth/me', (req, res) => {
+  if (!req.auth) {
+    return res.status(401).json({ error: 'Tenés que iniciar sesión.' });
+  }
+  return res.json({ email: req.auth.email });
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  logAuth('logout', { email: req.auth ? req.auth.email : null });
+  clearSessionCookie(res);
+  return res.status(204).end();
+});
 
 // --------------------------------------------------------------------------
 // Endpoint principal: recibe el link y devuelve el reporte.
@@ -195,6 +300,92 @@ app.post('/api/analyze', async (req, res) => {
   }
 });
 
+function logXTask(phase, detail = {}) {
+  const payload = Object.keys(detail).length ? ` ${JSON.stringify(detail)}` : '';
+  console.log(`[analyze-x] ${phase}${payload}`);
+}
+
+app.post('/api/x/analyze', async (req, res) => {
+  const { url } = req.body || {};
+  const startedAt = Date.now();
+
+  if (!isValidXPostUrl(url)) {
+    logXTask('validación fallida', { url: url || null });
+    return res.status(400).json({
+      error: 'Ingresá un link válido de una publicación de X (por ejemplo: https://x.com/usuario/status/1234567890).',
+    });
+  }
+
+  logXTask('inicio', { url });
+
+  try {
+    logXTask('extracción Grok iniciada');
+    const fetchStartedAt = Date.now();
+    const { post, items, usage: grokUsage, threadComplete } = await fetchXThread(url);
+    logXTask('extracción Grok completada', {
+      ms: Date.now() - fetchStartedAt,
+      items: items?.length ?? 0,
+      cuenta: post?.authorHandle ?? post?.username ?? null,
+      threadComplete: threadComplete !== false,
+      grokTokens: grokUsage ?? null,
+    });
+
+    const influencerMap = db.getXInfluencerMap();
+    logXTask('análisis LLM iniciado', {
+      proveedor: getLlmProvider(),
+      items: items.length,
+      padron: influencerMap.size,
+    });
+    const analysisStartedAt = Date.now();
+    const { report, csv, meta: analysisMeta } = await analyzeXThread({
+      url,
+      post,
+      items,
+      influencerMap,
+    });
+    logXTask('análisis LLM completado', {
+      ms: Date.now() - analysisStartedAt,
+      itemsAnalizados: analysisMeta?.sampleSize ?? items.length,
+      tokens: analysisMeta?.tokenUsage ?? null,
+      llmIntentos: analysisMeta?.llmAttempts ?? null,
+    });
+
+    logXTask('respuesta OK', { msTotal: Date.now() - startedAt });
+
+    res.json({
+      report,
+      csv,
+      meta: {
+        comentariosExtraidos: 1 + items.length,
+        comentariosAnalizados: analysisMeta?.sampleSize ?? 1 + items.length,
+        comentariosUnicos: analysisMeta?.totalComments ?? 1 + items.length,
+        muestraParcial: Boolean(
+          analysisMeta?.sampleSize != null &&
+          analysisMeta?.totalComments != null &&
+          analysisMeta.sampleSize < analysisMeta.totalComments
+        ) || threadComplete === false,
+        tokenUsage: analysisMeta?.tokenUsage ?? null,
+        grokUsage: grokUsage ?? null,
+        llmAttempts: analysisMeta?.llmAttempts ?? null,
+      },
+    });
+
+    processPendingReclamosInBackground();
+    return;
+  } catch (err) {
+    logXTask('error', {
+      msTotal: Date.now() - startedAt,
+      message: err.message,
+      fase: err.userMessage ? 'servicio externo' : 'interno',
+    });
+    console.error('Error en /api/x/analyze:', err);
+    const status = err.statusCode === 422 ? 422 : 502;
+    return res.status(status).json({
+      error: err.userMessage || 'Ocurrió un error al procesar la publicación. Intentá de nuevo en unos minutos.',
+    });
+  }
+});
+
 // --------------------------------------------------------------------------
 // Monitoreo automático: config, tabla de posteos detectados, disparo manual.
 // --------------------------------------------------------------------------
@@ -252,9 +443,10 @@ app.get('/api/footer-stats', (req, res) => {
   });
 });
 
-// Borra un registro puntual de la tabla (ej. algo que no sirve o quedó mal).
-app.delete('/api/monitoring/posts/:id', (req, res) => {
-  db.deletePost(req.params.id);
+// Ignora un registro puntual de la tabla (cruz de la fila). La fila queda
+// en SQLite con ignored=1 para no re-detectarlo; deja de listarse.
+app.post('/api/monitoring/posts/:id/ignore', (req, res) => {
+  db.ignorePost(req.params.id);
   res.json({ ok: true });
 });
 
@@ -300,6 +492,9 @@ app.post('/api/monitoring/run-now', async (req, res) => {
     const result = await runCycleAndNotify();
     res.json(result);
   } catch (err) {
+    if (err.code === 'CYCLE_IN_PROGRESS') {
+      return res.status(409).json({ error: err.userMessage });
+    }
     console.error('Error en /api/monitoring/run-now:', err);
     res.status(502).json({ error: err.userMessage || 'Falló el ciclo de monitoreo. Revisá la consola del servidor.' });
   }
@@ -405,6 +600,14 @@ app.get('/api/reclamos/export.csv', (req, res) => {
 // --------------------------------------------------------------------------
 const PORT = process.env.PORT || 3000;
 checkEnv();
+try {
+  const seed = seedXInfluencersIfEmpty();
+  if (seed.seeded) {
+    console.log(`[x] padrón ANTIK-PRO cargado: ${seed.total} handles`);
+  }
+} catch (err) {
+  console.warn('[x] no se pudo cargar el padrón ANTIK-PRO:', err.message);
+}
 startScheduler();
 const server = app.listen(PORT, () => {
   const provider = getLlmProvider();
@@ -412,8 +615,19 @@ const server = app.listen(PORT, () => {
   console.log(`   Proveedor LLM: ${getProviderLabel(provider)} (${provider})`);
   console.log(`   Modelo análisis: ${getAnalysisModel(provider)}`);
   console.log(`   Modelo clasificador: ${getClassifierModel(provider)}`);
+  const grokBackend = getFetchBackend();
+  const grokHint =
+    grokBackend === 'openrouter'
+      ? 'OpenRouter'
+      : grokBackend === 'xai'
+        ? 'xAI directo'
+        : 'sin clave (OPENROUTER_API_KEY o XAI_API_KEY)';
+  console.log(`   Modelo Grok (X): ${getXaiModel()} · ${grokHint}`);
   console.log(
-    `   Límites: COMMENTS_LIMIT (Apify)=${process.env.COMMENTS_LIMIT || 100}, COMMENTS_ANALYSIS_LIMIT (LLM)=${resolveMaxCommentsLimit()}\n`
+    `   Límites: COMMENTS_LIMIT (Apify)=${process.env.COMMENTS_LIMIT || 100}, COMMENTS_ANALYSIS_LIMIT (LLM)=${resolveMaxCommentsLimit()}`
+  );
+  console.log(
+    `   Login: APP_BASE_URL=${process.env.APP_BASE_URL || '(falta)'} | SMTP=${process.env.SMTP_HOST || '(falta SMTP_HOST)'}\n`
   );
 });
 

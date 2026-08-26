@@ -8,7 +8,9 @@
 // ==========================================================================
 
 const path = require('path');
-const XLSX = require('xlsx');
+// Fork mantenido de SheetJS: `main` migró a este paquete y sacó `xlsx` de las
+// dependencias. La API es la misma (readFile + utils.sheet_to_json).
+const XLSX = require('@stackline/xlsx');
 
 // --------------------------------------------------------------------------
 // Detección de columnas

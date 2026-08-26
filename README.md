@@ -7,10 +7,14 @@ App web que:
    Claude u **OpenRouter**) siguiendo una metodología de análisis político,
    mostrando un **reporte ejecutivo** listo para WhatsApp (solapa "Análisis de
    publicación").
-2. Monitorea automáticamente, cada 4 horas, si aparece algún posteo nuevo de
+2. Recibe el link de una publicación de **X**, trae el hilo con **Grok**
+   (`x_search` de Grok vía OpenRouter, no Apify) y arma el mismo tipo de reporte con la
+   plantilla de X (solapa Análisis en `x.html`). Monitoreo y mapa de X
+   están especificados y se construyen después.
+3. Monitorea automáticamente, cada 4 horas, si aparece algún posteo nuevo de
    las cuentas trackeadas o que mencione las palabras clave/hashtags
-   configurados, y avisa por email (solapa "Monitoreo en vivo").
-3. Muestra la solapa "Mapa de reclamos" (Leaflet): círculos por dirección
+   configurados, y avisa por email (solapa "Monitoreo en vivo" de Instagram).
+4. Muestra la solapa "Mapa de reclamos" (Leaflet): círculos por dirección
    normalizada, con filtros combinables por categoría y subcategoría (esquema
    de dos niveles del cliente, en `config/categorias-reclamos.json`), estado,
    barrio/comuna, rango de fechas y texto libre, más descarga de CSV. Se
@@ -29,6 +33,7 @@ social_listening_app/
 ├── src/
 │   ├── apify.js              # Extrae comentarios y datos del posteo desde Apify.
 │   ├── analyzeComments.js    # Orquestación del análisis (Apify → LLM → reporte).
+│   ├── x/                    # Plataforma X: Grok fetch, KPIs, reporte, padrón.
 │   ├── llm/                  # Proveedores: anthropicProvider, openrouterProvider.
 │   ├── prompt.js             # La metodología de análisis (system prompt).
 │   ├── db.js                 # SQLite: posteos detectados + reclamos del mapa.
@@ -45,25 +50,32 @@ social_listening_app/
 │   ├── reclamosFromAnalysis.js # reclamosGeo de Claude -> filas para la tabla reclamos.
 │   ├── monitor.js            # Detección de posteos nuevos + config de cuentas/keywords.
 │   ├── classifier.js         # Título + sentimiento de cada posteo (Claude Haiku).
-│   ├── mailer.js             # Envío de emails de alerta (Nodemailer).
+│   ├── mailer.js             # Envío de emails (alertas + magic link).
+│   ├── auth/                 # Allowlist, magic link, sesión, rate limit, gate.
 │   ├── notify.js             # Orquesta las notificaciones (email + WhatsApp a futuro).
 │   ├── scheduler.js          # Agenda el monitoreo cada 4hs (node-cron).
 │   └── notifiers/
 │       └── whatsapp.js       # Placeholder para notificación por WhatsApp (no implementado).
 ├── config/
 │   ├── monitoring.json       # Cuentas y palabras clave/hashtags a trackear.
-│   └── categorias-reclamos.json # Categorías y subcategorías del cliente (26/85).
+│   ├── categorias-reclamos.json # Categorías y subcategorías del cliente (26/85).
+│   ├── x-influencers/        # CSV ANTIK-PRO (padrón de actores de X).
+│   └── allowed-emails.example.txt  # Plantilla de emails que pueden entrar.
 ├── data/
 │   ├── monitoring.db         # Base SQLite (se crea sola, no se versiona).
 │   └── geo/                  # Cache en disco de comunas.geojson y barrios.geojson (GCBA).
 ├── public/
-│   ├── index.html            # Login de fachada (sin auth real todavía).
+│   ├── index.html            # Login (pide un magic link por email).
+│   ├── login-verify.html     # Confirma el link (POST, un solo uso).
 │   ├── dashboard.html        # Selector de red social.
 │   ├── instagram.html        # App Instagram: análisis + monitoreo + mapa de reclamos (tabs).
+│   ├── x.html                # App X: análisis (Grok); monitoreo y mapa próximamente.
 │   ├── css/styles.css        # Estilos (paleta oscura corporativa).
 │   └── js/
-│       ├── main.js           # Tabs + dropdown de usuario (solo visual).
-│       ├── analysis.js       # Lógica de "Análisis de publicación".
+│       ├── main.js           # Tabs + dropdown de usuario (sesión / logout).
+│       ├── login.js          # Pedido del magic link.
+│       ├── analysis.js       # Lógica de "Análisis de publicación" (Instagram).
+│       ├── x-analysis.js     # Análisis de publicación de X (`/api/x/analyze`).
 │       ├── monitoring.js     # Lógica de "Monitoreo en vivo".
 │       └── claimsMap.js      # Mapa de reclamos (Leaflet, agrega en el cliente).
 ├── scripts/
@@ -88,8 +100,24 @@ social_listening_app/
 - **`src/prompt.js`**: contiene la metodología completa de análisis (el
   "system prompt"). Separado para que sea fácil de ajustar.
 - **`public/index.html` + `dashboard.html` + `instagram.html` + `css/` + `js/`**: la
-  interfaz (login → dashboard → app Instagram con tabs), separada en
+  interfaz (login con magic link → dashboard → app Instagram con tabs), separada en
   estructura/estilo/comportamiento.
+
+### Login (allowlist + magic link)
+
+Solo entran emails de la allowlist. El archivo
+`config/allowed-emails.txt` (no se versiona; copiá el `.example.txt`) se puede
+editar a mano, un email por línea. En producción (Railway) usá también
+`ALLOWED_EMAILS` en las variables de entorno: un email entra si está en el
+archivo **o** en el env. Los cambios al archivo aplican en el próximo intento,
+sin reiniciar.
+
+Flujo: la persona pone su email → si está autorizado se manda un link (15 min,
+un solo uso) → abre el mail y hace clic en **Entrar**. La respuesta de la API
+es la misma aunque el email no esté en la lista (no se enumeran los autorizados).
+
+Hace falta `SESSION_SECRET` (string largo aleatorio) y `APP_BASE_URL` (p. ej.
+`http://localhost:3000`). El SMTP es el mismo de las alertas (`SMTP_*`).
 
 ### Monitoreo automático — archivos nuevos explicados
 
@@ -116,7 +144,10 @@ social_listening_app/
   Node desde la versión 22.5 — esto evita tener que compilar código nativo
   (que en Windows requiere Visual Studio Build Tools, algo que esta PC no
   tenía instalado). Acá vive la tabla `detected_posts`, que guarda cada
-  posteo relevante ya visto para no volver a notificarlo dos veces.
+  posteo relevante ya visto para no volver a notificarlo dos veces. La cruz
+  de cada fila **ignora** el posteo (la fila queda con `ignored = 1`): deja
+  de verse en la tabla, pero sigue bloqueando una re-detección de la misma
+  URL.
 
 - **`src/monitor.js`**: el detector. Por cada cuenta trackeada, le pide a
   Apify sus posteos más recientes; por cada hashtag trackeado, scrapea esa
@@ -241,11 +272,17 @@ Abrí `.env` y pegá:
 - `APIFY_API_TOKEN` → https://console.apify.com/account/integrations
 - **Anthropic (default):** `LLM_PROVIDER=anthropic`, `ANTHROPIC_API_KEY` → https://console.anthropic.com/settings/keys
 - **OpenRouter:** `LLM_PROVIDER=openrouter`, `OPENROUTER_API_KEY` → https://openrouter.ai/settings/keys
-  (los modelos ya vienen con default equivalente al de Anthropic, no hace falta setearlos)
+  (los modelos ya vienen con default equivalente al de Anthropic, no hace falta setearlos).
+  La misma clave sirve para **traer el hilo de X con Grok** (X Search nativo).
+- `XAI_API_KEY` → opcional; solo si no usás OpenRouter y querés pegarle directo a https://console.x.ai/
 - `SMTP_USER` / `SMTP_PASS` → tu Gmail y una
   ["contraseña de aplicación"](https://myaccount.google.com/apppasswords)
-  (necesarias solo para las alertas del monitoreo)
+  (alertas del monitoreo y magic link de login)
 - `ALERT_EMAIL_TO` → a quién avisar cuando aparezca un posteo relevante
+- `SESSION_SECRET` → firma de la cookie de sesión (obligatorio para entrar)
+- `APP_BASE_URL` → URL pública de la app, sin barra final (el link del mail
+  se arma con esto, no con el header Host)
+- `ALLOWED_EMAILS` → opcional; emails extra separados por coma
 
 El geocoding del mapa de reclamos usa USIG (servicio del GCBA) y no necesita
 ninguna clave.
@@ -264,8 +301,17 @@ Para cortar el proceso (también si quedó huérfano y el puerto 3000 no se libe
 npm run stop
 ```
 
-Abrí esa dirección en el navegador (login de fachada → dashboard → Instagram),
-pegá el link de una publicación y hacé clic en **Analizar publicación**.
+Abrí esa dirección en el navegador, pedí un magic link con un email de la
+allowlist, entrá, y en Instagram pegá el link de una publicación y hacé clic
+en **Analizar publicación**. En el dashboard, **X** abre el mismo flujo para
+un posteo de x.com (hace falta `OPENROUTER_API_KEY`, la misma de siempre).
+
+El padrón ANTIK-PRO se carga solo al arrancar si la tabla está vacía, desde
+`config/x-influencers/`. Para forzar un reimport:
+
+```powershell
+npm run import-x-influencers
+```
 
 ### 5. Reclamos del mapa
 
@@ -276,18 +322,16 @@ geocodifican con USIG poco después (sin bloquear la respuesta del análisis).
 También corren cada 4hs junto con el cron de monitoreo, por si algo quedó
 pendiente por una falla transitoria de USIG.
 
-Para cargar de una vez un lote de reclamos ya resueltos (Excel con hoja
-"Reclamos" y columnas `direccion`, `comuna`, `barrio`, `link`, `texto`,
-`autor`, `fecha`, `X`, `Y`, entre otras):
+Para cargar un lote desde un Excel o CSV está el **importador genérico**, que
+detecta las columnas solo y no depende del formato de un archivo puntual:
 
 ```powershell
-npm run import-reclamos-excel -- --dry-run "ruta\al\archivo.xlsx"
-npm run import-reclamos-excel -- "ruta\al\archivo.xlsx"
+npm run import-reclamos -- data/import/archivo.xlsx --dry-run --muestra 20
+npm run import-reclamos -- data/import/archivo.xlsx --muestra 20
 ```
 
-`--dry-run` solo imprime un resumen y no toca la DB. El import real es
-idempotente (usa el link de cada fila como id): correrlo dos veces no
-duplica filas.
+Ver **"Importar reclamos desde Excel o CSV"** más abajo para las opciones,
+qué hace con cada fila y cómo revertir una importación.
 
 ---
 

@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Confirmar acceso — Social Listening App</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+  <link rel="icon" href="favicon-32.png" type="image/png" sizes="32x32" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+  <meta name="theme-color" content="#032a23" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=Instrument+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap"
+    rel="stylesheet"
+  />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body class="login-page">
+  <div class="auth">
+    <div class="auth-stage">
+      <div class="brand">
+        <div class="meter" data-meter="5" style="--bar-color:var(--jade-300)"></div>
+        <span class="brand-name"><span>social</span> <b>listening</b></span>
+      </div>
+
+      <div class="stage-mid">
+        <p class="tag stage-eyebrow">Equipo de Monitoreo</p>
+        <h1 class="stage-line">Lo que se dice, <em>cuando se dice</em>.</h1>
+        <p class="stage-sub">Monitoreo de menciones en redes, con lectura de sentimiento y alertas al equipo.</p>
+      </div>
+
+      <div class="meter stage-meter" data-meter="26"></div>
+    </div>
+
+    <div class="auth-form">
+      <div class="auth-inner">
+        <h2 class="auth-title display">Confirmar acceso</h2>
+        <p class="auth-note login-verify-copy">Hacé clic para entrar. Este paso evita que un filtro de correo use el link por vos.</p>
+
+        <form id="verifyForm" method="POST" action="/api/auth/verify">
+          <input type="hidden" name="token" id="tokenInput" />
+          <button type="submit" class="login-submit" id="verifySubmit">Entrar</button>
+          <p id="verifyStatus" class="login-status is-error" role="status"></p>
+        </form>
+
+        <p class="auth-foot tag">Acceso restringido</p>
+      </div>
+    </div>
+  </div>
+
+  <footer class="foot foot-mini">
+    <div class="foot-mini-in">
+      <span class="brand">
+        <span class="meter" data-meter="5"></span>
+        <span class="brand-name"><span>social</span> <b>listening</b></span>
+      </span>
+      <span class="tag" id="footerYear"></span>
+    </div>
+  </footer>
+
+  <script src="js/meter.js"></script>
+  <script src="js/footer.js"></script>
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('token') || '';
+    const tokenInput = document.getElementById('tokenInput');
+    const form = document.getElementById('verifyForm');
+    const statusEl = document.getElementById('verifyStatus');
+    const submitBtn = document.getElementById('verifySubmit');
+
+    tokenInput.value = token;
+    if (!token) {
+      submitBtn.disabled = true;
+      statusEl.textContent = 'Falta el token. Pedí un link nuevo desde la página de inicio.';
+    }
+
+    form.addEventListener('submit', () => {
+      if (!tokenInput.value) {
+        statusEl.textContent = 'Falta el token. Pedí un link nuevo desde la página de inicio.';
+      }
+    });
+  </script>
+</body>
+
+</html>

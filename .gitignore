@@ -16,5 +16,8 @@ npm-debug.log*
 .DS_Store
 Thumbs.db
 
+# Allowlist de login (el .example.txt sí se versiona)
+config/allowed-emails.txt
+
 # Agent / SDD infrastructure (skill registry)
 .atl/
