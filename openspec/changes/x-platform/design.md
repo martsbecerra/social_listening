@@ -8,7 +8,7 @@ Grok **no** redacta el WhatsApp. El Prompt Grok se parte en: (1) instrucciones d
 
 ## Architecture Decisions
 
-- **Fetch = Grok X Search vía OpenRouter, clasificar = LLM_PROVIDER.** OpenRouter, con un modelo `x-ai/grok-*` y `openrouter:web_search`, activa X Search nativo y se cobra en la misma `OPENROUTER_API_KEY`. La API directa de xAI (`XAI_API_KEY` + `x_search`) queda como respaldo si no hay clave de OpenRouter. El stack de structured output de la clasificación no cambia.
+- **Fetch y clasificación de X = Grok vía OpenRouter.** Misma `OPENROUTER_API_KEY`, modelo `OPENROUTER_X_MODEL` (default `x-ai/grok-4.6`). El fetch usa `openrouter:web_search` (X Search nativo). La clasificación fuerza `provider: 'openrouter'` + ese modelo y no lee `LLM_PROVIDER` / `CLAUDE_MODEL` / `OPENROUTER_MODEL`. Instagram no se toca. Respaldo de fetch: `XAI_API_KEY` + `x_search` si no hay clave de OpenRouter. Si Grok no soporta `json_schema`, se reintenta con `json_object`.
 - **Schema opcional** en `requestStructuredAnalysis`. Default = Instagram. X pasa el suyo. Evita duplicar proveedores.
 - **`OPENROUTER_API_KEY` no aborta el boot por X.** Instagram tiene que seguir levantando. El 502 de `/api/x/analyze` explica si no hay ni OpenRouter ni `XAI_API_KEY`.
 - **Padrón en SQLite, no JSON.** El usuario pidió ingerir los dos CSV y guardarlos en DB. `lista` deja lugar a oposición/periodistas después.
@@ -24,7 +24,7 @@ URL X
   → grokFetch (x_search) → JSON { post, items }
   → parse K/M, tirar QT cuyo quotedId ≠ post.id
   → sample (tope COMMENTS_ANALYSIS_LIMIT, prioriza RTs + padrón)
-  → LLM structured (sentiment, accountType, reclamosGeo, insights 3–8)
+  → Grok structured vía OpenRouter (sentiment, accountType, reclamosGeo, insights 3–8)
   → forzar oficial si handle está en x_influencers
   → KPIs independientes (vistas vs interacciones) + sentimiento +5%
   → Top 6 pos/neg por RTs (código; el original puede entrar)
@@ -36,7 +36,7 @@ URL X
 
 Preferencia: OpenRouter Chat Completions (`OPENROUTER_API_KEY`)
 
-- model: `XAI_MODEL` o `x-ai/grok-4.6`
+- model: `OPENROUTER_X_MODEL` o `XAI_MODEL` o `x-ai/grok-4.6`
 - tools: `[{ type: "openrouter:web_search" }]` (en Grok esto activa X Search nativo)
 
 Respaldo: POST `https://api.x.ai/v1/responses` si no hay clave de OpenRouter

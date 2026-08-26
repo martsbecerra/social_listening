@@ -80,10 +80,17 @@ async function postChatCompletion(body) {
   return data;
 }
 
-async function requestStructuredAnalysis({ system, userPrompt, schema, schemaName }) {
-  const model = getAnalysisModel('openrouter');
+async function requestStructuredAnalysis({
+  system,
+  userPrompt,
+  schema,
+  schemaName,
+  model: modelOverride,
+  jsonFallback = false,
+}) {
+  const model = (modelOverride || '').trim() || getAnalysisModel('openrouter');
 
-  const body = {
+  const schemaBody = {
     model,
     max_tokens: 8000,
     messages: [
@@ -100,6 +107,29 @@ async function requestStructuredAnalysis({ system, userPrompt, schema, schemaNam
     },
   };
 
+  const jsonObjectBody = {
+    model,
+    max_tokens: 8000,
+    messages: [
+      { role: 'system', content: system },
+      { role: 'user', content: userPrompt },
+    ],
+    response_format: { type: 'json_object' },
+  };
+
+  try {
+    return await runStructuredAttempts(schemaBody);
+  } catch (err) {
+    const msg = `${err.message || ''} ${err.userMessage || ''}`;
+    if (jsonFallback && /structured|json_schema|response_format/i.test(msg)) {
+      console.warn('OpenRouter json_schema no soportado en este modelo; reintento con json_object.');
+      return runStructuredAttempts(jsonObjectBody);
+    }
+    throw err;
+  }
+}
+
+async function runStructuredAttempts(body) {
   let lastError;
   let usage = null;
   for (let attempt = 1; attempt <= STRUCTURED_OUTPUT_MAX_ATTEMPTS; attempt++) {
@@ -116,13 +146,15 @@ async function requestStructuredAnalysis({ system, userPrompt, schema, schemaNam
       lastError = new Error('contenido vacío o JSON inválido');
     } catch (err) {
       lastError = err;
-      if (err.userMessage) throw err;
+      if (err.userMessage && !/structured|json_schema|response_format/i.test(err.userMessage)) {
+        throw err;
+      }
       console.warn(
         `OpenRouter structured output intento ${attempt}/${STRUCTURED_OUTPUT_MAX_ATTEMPTS} falló:`,
         err.message
       );
       if (attempt === STRUCTURED_OUTPUT_MAX_ATTEMPTS) {
-        throw mapOpenRouterError(lastError);
+        throw err.userMessage ? err : mapOpenRouterError(lastError);
       }
     }
   }
@@ -174,7 +206,21 @@ function parseMessageContent(data) {
   try {
     return JSON.parse(text);
   } catch {
-    return null;
+    const unfenced = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+    try {
+      return JSON.parse(unfenced);
+    } catch {
+      const start = unfenced.indexOf('{');
+      const end = unfenced.lastIndexOf('}');
+      if (start >= 0 && end > start) {
+        try {
+          return JSON.parse(unfenced.slice(start, end + 1));
+        } catch {
+          return null;
+        }
+      }
+      return null;
+    }
   }
 }
 

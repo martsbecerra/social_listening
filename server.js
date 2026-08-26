@@ -330,8 +330,8 @@ app.post('/api/x/analyze', async (req, res) => {
     });
 
     const influencerMap = db.getXInfluencerMap();
-    logXTask('análisis LLM iniciado', {
-      proveedor: getLlmProvider(),
+    logXTask('análisis Grok iniciado', {
+      modelo: getXaiModel(),
       items: items.length,
       padron: influencerMap.size,
     });
@@ -342,7 +342,7 @@ app.post('/api/x/analyze', async (req, res) => {
       items,
       influencerMap,
     });
-    logXTask('análisis LLM completado', {
+    logXTask('análisis Grok completado', {
       ms: Date.now() - analysisStartedAt,
       itemsAnalizados: analysisMeta?.sampleSize ?? items.length,
       tokens: analysisMeta?.tokenUsage ?? null,

@@ -4,6 +4,7 @@
 // Todo el código de la app pasa por acá: nadie más debería importar un
 // proveedor concreto ni el SDK de Anthropic. Dos entradas, una por tarea:
 //   - requestStructuredAnalysis: análisis de comentarios (JSON con schema)
+//     Instagram usa LLM_PROVIDER. X puede forzar provider/model (Grok).
 //   - requestText:               clasificación del monitoreo (texto plano)
 // ==========================================================================
 
@@ -17,17 +18,27 @@ function providerModule(provider) {
   return provider === 'openrouter' ? openrouter : anthropic;
 }
 
-async function requestStructuredAnalysis({ system, userPrompt, schema, schemaName }) {
-  const provider = getLlmProvider();
+async function requestStructuredAnalysis({
+  system,
+  userPrompt,
+  schema,
+  schemaName,
+  provider: providerOverride,
+  model: modelOverride,
+  jsonFallback = false,
+}) {
+  const provider = providerOverride || getLlmProvider();
   const result = await providerModule(provider).requestStructuredAnalysis({
     system,
     userPrompt,
     schema,
     schemaName,
+    model: modelOverride,
+    jsonFallback,
   });
   result.usage = finalizeLlmUsage(result.usage, {
     provider,
-    model: getAnalysisModel(provider),
+    model: modelOverride || getAnalysisModel(provider),
   });
   return result;
 }

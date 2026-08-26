@@ -212,9 +212,11 @@ describe('x-platform parse/kpis/url', { concurrency: false }, () => {
     const prevOr = process.env.OPENROUTER_API_KEY;
     const prevXai = process.env.XAI_API_KEY;
     const prevModel = process.env.XAI_MODEL;
+    const prevXModel = process.env.OPENROUTER_X_MODEL;
     process.env.OPENROUTER_API_KEY = 'or-test';
     delete process.env.XAI_API_KEY;
     delete process.env.XAI_MODEL;
+    delete process.env.OPENROUTER_X_MODEL;
     try {
       const cfg = getFetchConfig();
       assert.equal(cfg.backend, 'openrouter');
@@ -223,6 +225,8 @@ describe('x-platform parse/kpis/url', { concurrency: false }, () => {
       assert.equal(openRouterGrokModel(), 'x-ai/grok-4.6');
       process.env.XAI_MODEL = 'x-ai/grok-4.1-fast';
       assert.equal(openRouterGrokModel(), 'x-ai/grok-4.1-fast');
+      process.env.OPENROUTER_X_MODEL = 'grok-4';
+      assert.equal(openRouterGrokModel(), 'x-ai/grok-4');
     } finally {
       if (prevOr == null) delete process.env.OPENROUTER_API_KEY;
       else process.env.OPENROUTER_API_KEY = prevOr;
@@ -230,6 +234,8 @@ describe('x-platform parse/kpis/url', { concurrency: false }, () => {
       else process.env.XAI_API_KEY = prevXai;
       if (prevModel == null) delete process.env.XAI_MODEL;
       else process.env.XAI_MODEL = prevModel;
+      if (prevXModel == null) delete process.env.OPENROUTER_X_MODEL;
+      else process.env.OPENROUTER_X_MODEL = prevXModel;
     }
   });
 });
