@@ -11,10 +11,13 @@ App web que:
    las cuentas trackeadas o que mencione las palabras clave/hashtags
    configurados, y avisa por email (solapa "Monitoreo en vivo").
 3. Muestra la solapa "Mapa de reclamos" (Leaflet): círculos por dirección
-   normalizada, filtro por temática (etiquetas libres normalizadas) y popup
-   con el comentario. Hoy se alimenta
-   de un seed Brandwatch/X cargado **solo por script CLI**. El writer de
-   Análisis / cron de 4 horas todavía no está implementado.
+   normalizada, con filtros combinables por categoría (lista cerrada de
+   nueve), estado, barrio/comuna, rango de fechas y texto libre, más
+   descarga de CSV. Se alimenta de dos fuentes: el análisis de una
+   publicación (`/api/analyze` guarda reclamos con ubicación en
+   `geo_status = 'pendiente'`; un worker los geocodifica con USIG después,
+   sin bloquear la respuesta) y un import puntual de Excel
+   (`scripts/import-reclamos-excel.js`) para cargar reclamos ya resueltos.
 
 ---
 
@@ -29,9 +32,14 @@ social_listening_app/
 │   ├── llm/                  # Proveedores: anthropicProvider, openrouterProvider.
 │   ├── prompt.js             # La metodología de análisis (system prompt).
 │   ├── db.js                 # SQLite: posteos detectados + reclamos del mapa.
-│   ├── reclamosAddress.js    # Heurística de calle para el seed.
-│   ├── tematica.js           # Normaliza etiquetas libres de temática.
-│   ├── geocode.js            # Nominatim + cache (solo el CLI de import).
+│   ├── reclamosAddress.js    # Obsoleto (heurística del seed viejo); sin uso.
+│   ├── tematica.js           # Normaliza etiquetas libres del CSV de reclamos (legacy).
+│   ├── categoriaReclamo.js   # Categoría (9) y estado (4) cerrados del mapa.
+│   ├── addressClean.js       # Limpieza de direcciones antes de geocodificar (USIG).
+│   ├── geocode.js            # USIG + geocode_cache (lo usa geoWorker.js).
+│   ├── territorios.js        # Comuna/barrio por punto-en-polígono (GeoJSON GCBA).
+│   ├── geoWorker.js          # Geocodifica reclamos 'pendiente' (cron + post-análisis).
+│   ├── reclamosFromAnalysis.js # reclamosGeo de Claude -> filas para la tabla reclamos.
 │   ├── monitor.js            # Detección de posteos nuevos + config de cuentas/keywords.
 │   ├── classifier.js         # Título + sentimiento de cada posteo (Claude Haiku).
 │   ├── mailer.js             # Envío de emails (alertas + magic link).
@@ -45,7 +53,7 @@ social_listening_app/
 │   └── allowed-emails.example.txt  # Plantilla de emails que pueden entrar.
 ├── data/
 │   ├── monitoring.db         # Base SQLite (se crea sola, no se versiona).
-│   └── seeds/brandwatch-x-reclamos.tsv  # Seed local del mapa (gitignored).
+│   └── geo/                  # Cache en disco de comunas.geojson y barrios.geojson (GCBA).
 ├── public/
 │   ├── index.html            # Login (pide un magic link por email).
 │   ├── login-verify.html     # Confirma el link (POST, un solo uso).
@@ -59,7 +67,7 @@ social_listening_app/
 │       ├── monitoring.js     # Lógica de "Monitoreo en vivo".
 │       └── claimsMap.js      # Mapa de reclamos (Leaflet, agrega en el cliente).
 ├── scripts/
-│   ├── import-reclamos-seed.js  # Carga el TSV Brandwatch/X a SQLite (solo CLI).
+│   ├── import-reclamos-excel.js # Carga un Excel de reclamos ya resueltos (solo CLI).
 │   └── stop-server.js           # Mata el proceso que ocupa el puerto (npm run stop).
 ├── .env.example               # Plantilla de las claves (copiala a .env).
 ├── .gitignore                 # Evita subir node_modules, .env y data/.
@@ -247,7 +255,8 @@ Abrí `.env` y pegá:
 
 - `APIFY_API_TOKEN` → https://console.apify.com/account/integrations
 - **Anthropic (default):** `LLM_PROVIDER=anthropic`, `ANTHROPIC_API_KEY` → https://console.anthropic.com/settings/keys
-- **OpenRouter:** `LLM_PROVIDER=openrouter`, `OPENROUTER_API_KEY` → https://openrouter.ai/settings/keys y `OPENROUTER_MODEL` (p. ej. `openai/gpt-4.1`)
+- **OpenRouter:** `LLM_PROVIDER=openrouter`, `OPENROUTER_API_KEY` → https://openrouter.ai/settings/keys
+  (los modelos ya vienen con default equivalente al de Anthropic, no hace falta setearlos)
 - `SMTP_USER` / `SMTP_PASS` → tu Gmail y una
   ["contraseña de aplicación"](https://myaccount.google.com/apppasswords)
   (alertas del monitoreo y magic link de login)
@@ -256,8 +265,9 @@ Abrí `.env` y pegá:
 - `APP_BASE_URL` → URL pública de la app, sin barra final (el link del mail
   se arma con esto, no con el header Host)
 - `ALLOWED_EMAILS` → opcional; emails extra separados por coma
-- `NOMINATIM_USER_AGENT` → identificador de la app (obligatorio solo para el
-  script de import del mapa; Nominatim lo exige)
+
+El geocoding del mapa de reclamos usa USIG (servicio del GCBA) y no necesita
+ninguna clave.
 
 ### 4. Arrancar la app
 
@@ -277,20 +287,27 @@ Abrí esa dirección en el navegador, pedí un magic link con un email de la
 allowlist, entrá, y en Instagram pegá el link de una publicación y hacé clic
 en **Analizar publicación**.
 
-### 5. Cargar el seed del mapa de reclamos (script, no la app)
+### 5. Reclamos del mapa
 
-El mapa **no importa solo**. Copiá el TSV Brandwatch/X (UTF-16) a
-`data/seeds/brandwatch-x-reclamos.tsv` (`data/` no se versiona) y corré:
+El mapa se alimenta solo: cada vez que analizás una publicación
+("Análisis de publicación"), los comentarios con una dirección concreta
+quedan guardados como reclamos en `geo_status = 'pendiente'`, y se
+geocodifican con USIG poco después (sin bloquear la respuesta del análisis).
+También corren cada 4hs junto con el cron de monitoreo, por si algo quedó
+pendiente por una falla transitoria de USIG.
+
+Para cargar de una vez un lote de reclamos ya resueltos (Excel con hoja
+"Reclamos" y columnas `direccion`, `comuna`, `barrio`, `link`, `texto`,
+`autor`, `fecha`, `X`, `Y`, entre otras):
 
 ```powershell
-npm run import-reclamos-seed -- --dry-run data/seeds/brandwatch-x-reclamos.tsv
-npm run import-reclamos-seed -- data/seeds/brandwatch-x-reclamos.tsv
+npm run import-reclamos-excel -- --dry-run "ruta\al\archivo.xlsx"
+npm run import-reclamos-excel -- "ruta\al\archivo.xlsx"
 ```
 
-`--dry-run` lista las direcciones extraídas y **no** toca la DB ni Nominatim.
-El import real geocodifica calles concretas (no City, no “Palermo” de los RT)
-y deja las 1801 filas en `monitoring.db`. Más adelante los reclamos van a
-entrar por otro camino (Análisis / monitoreo); este script es solo el seed.
+`--dry-run` solo imprime un resumen y no toca la DB. El import real es
+idempotente (usa el link de cada fila como id): correrlo dos veces no
+duplica filas.
 
 ---
 
@@ -315,21 +332,42 @@ comentarios totales, reproducciones, autor). Corren **en paralelo**, así que ca
 no suma tiempo. Además, en la corrida de comentarios activamos `addParentData`
 como respaldo por si la de `posts` no trajera datos.
 
-### ¿Qué modelo usa el análisis?
+### ¿Qué modelo usa cada tarea?
 
-Depende de `LLM_PROVIDER` en `.env` (default **`anthropic`**).
+Hay **dos** tareas con LLM, y cada una tiene su modelo:
 
-**Anthropic:** por defecto **`claude-sonnet-5`** (`CLAUDE_MODEL`).
+| Tarea | Dónde | `anthropic` | `openrouter` |
+|---|---|---|---|
+| Análisis de publicación | `src/llm/` | `claude-sonnet-5` | `anthropic/claude-sonnet-5` |
+| Relevancia + sentimiento del monitoreo | `src/classifier.js` | `claude-haiku-4-5` | `anthropic/claude-haiku-4.5` |
 
-- Si querés priorizar costo: `CLAUDE_MODEL=claude-haiku-4-5`.
-- Si querés máxima calidad: `CLAUDE_MODEL=claude-opus-4-8`.
+Son **los mismos dos modelos** en ambos proveedores: OpenRouter sólo cambia el
+formato del id (prefijo del proveedor y punto en la versión). Cambiar
+`LLM_PROVIDER` no cambia qué modelo se usa en cada tarea.
 
-**OpenRouter:** default **`openai/gpt-4.1`** (`OPENROUTER_MODEL`). Elegí un modelo que soporte `json_schema` (GPT-4.1, Gemini 2.5 Pro, etc.).
+Para pisarlos: `CLAUDE_MODEL` / `CLASSIFIER_MODEL` con `anthropic`, y
+`OPENROUTER_MODEL` / `OPENROUTER_CLASSIFIER_MODEL` con `openrouter`. Si elegís
+otro modelo para el análisis, tiene que soportar structured outputs —
+verificalo en https://openrouter.ai/models (debe listar `structured_outputs`).
 
-Al arrancar, el servidor imprime qué proveedor está activo.
+`LLM_PROVIDER` sólo acepta `anthropic` u `openrouter`: cualquier otro valor
+aborta el arranque en vez de caer en un default silencioso. Lo mismo si falta
+la clave del proveedor elegido. Al arrancar, el servidor imprime el proveedor
+activo y los dos modelos.
+
+`OPENROUTER_BASE_URL` (default `https://openrouter.ai/api/v1`) permite apuntar
+a cualquier gateway compatible con OpenAI, no sólo a OpenRouter.
 
 El costo por análisis es bajo: son unos pocos miles de tokens de entrada
 (comentarios) y ~2-3 mil de salida (el reporte).
+
+> **Pendiente — costo estimado en la UI con OpenRouter.**
+> `finalizeLlmUsage` (`src/llm/estimateCost.js`) sólo aplica la tabla de
+> tarifas cuando el proveedor es `anthropic`. Con `openrouter` el costo sale
+> del campo `cost` que devuelve la API; si esa respuesta no lo trae, la UI
+> muestra el costo vacío en vez de estimarlo. Workaround: setear
+> `LLM_INPUT_USD_PER_MTOK` / `LLM_OUTPUT_USD_PER_MTOK` en `.env`, que tienen
+> prioridad sobre todo lo demás. Queda para resolver aparte.
 
 ---
 
@@ -343,6 +381,31 @@ La app muestra mensajes claros cuando:
 - La publicación no tiene comentarios extraíbles.
 - El LLM falla o alcanzó su límite de uso.
 
+Si faltan credenciales, el servidor **no levanta**: aborta con el detalle de
+qué variable falta. Antes era un `console.warn` y el problema aparecía a mitad
+de un análisis.
+
+### Cuando falla el clasificador del monitoreo
+
+Antes, cualquier error del clasificador devolvía un resultado inventado
+(`neutral`, o `relevant: false`). Eso hacía que una API caída se viera igual
+que "no hay nada relevante": el monitoreo **descartaba posteos válidos en
+silencio**, y sólo quedaba rastro en la consola.
+
+Ahora un fallo no descarta nada. El posteo se guarda con `title` y `sentiment`
+en `NULL`, y eso significa "sin clasificar":
+
+- En la tabla aparece con la píldora gris **Sin clasificar** (borde punteado) y
+  título `(sin clasificar)`. Hay un filtro `Sin clasificar` para encontrarlos.
+- El sentimiento se puede corregir a mano desde el desplegable de siempre.
+- `backfillClassification()` los reintenta solo: su criterio es `title IS NULL`.
+
+La contrapartida es ruido: un posteo que llegó por hashtag y no se pudo
+evaluar entra igual, con `matched_reason` avisando que la relevancia quedó sin
+verificar. Es a propósito — un falso positivo se ve y se borra, uno descartado
+en silencio no vuelve nunca. Un `relevant: false` legítimo del modelo sí sigue
+descartando: eso es una respuesta, no un fallo.
+
 ---
 
 ## ⚠️ Nota sobre los nombres de campos de Apify
@@ -352,3 +415,29 @@ variar según la versión. El código en `src/apify.js` intenta varias alternati
 (`ownerUsername`, `owner.is_verified`, `videoPlayCount`/`videoViewCount`, etc.).
 Si algún dato aparece como `N/D`, revisá una corrida real en el panel de Apify
 para ver el nombre exacto del campo y ajustá `normalizePost` / `normalizeComments`.
+
+### ⚠️ Verificar en la primera corrida real: ids del refresco de métricas
+
+`src/metricsRefresh.js` (y el refresco "gratis" que hace `runMonitoringCycle`
+contra posteos ya conocidos) cruzan lo que devuelve `scrapeAccount` contra
+`detected_posts` **por id**. Ese id se arma en `normalizeMonitorPost`
+(`src/monitor.js`) probando alternativas: `pick(raw.id, shortCode, raw.pk)` —
+la primera que venga definida gana.
+
+El riesgo: si en algún momento cambia CUÁL de esas alternativas trae Apify
+para un mismo posteo (por ejemplo, hoy no manda `raw.id` y usa `shortCode`,
+pero en el futuro empieza a mandar `raw.id` también), el id que se arma para
+ese posteo cambia de string — y el cruce por id deja de matchear. No tira
+ningún error: simplemente actualiza 0 filas, en silencio. Es el modo de
+falla más difícil de notar que tiene todo este mecanismo.
+
+Qué revisar en la primera corrida real:
+
+1. Tomá una cuenta trackeada con posteos ya guardados. Compará a mano un
+   `id` que devuelva `scrapeAccount('esa_cuenta', {...})` contra el `id`
+   guardado en `detected_posts` para ese mismo posteo (mismo `shortCode`/URL).
+   Tienen que ser el mismo string exacto.
+2. Mirá la consola durante/después del ciclo: si aparece
+   `[metricsRefresh] ATENCIÓN: N cuentas consultadas, 0 filas actualizadas`,
+   es la señal de que el cruce por id dejó de funcionar — hay que revisar
+   `normalizeMonitorPost` contra la respuesta real del actor.

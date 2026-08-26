@@ -9,6 +9,7 @@
 const { SENTIMENTS, ACCOUNT_TYPES } = require('./analysisSchema');
 const { applyClassificationHeuristics } = require('./classificationHeuristics');
 const { normalizeTematica } = require('./tematica');
+const { normalizeCategoria } = require('./categoriaReclamo');
 
 const SENTIMENT_SET = new Set(SENTIMENTS);
 const ACCOUNT_SET = new Set(ACCOUNT_TYPES);
@@ -35,6 +36,7 @@ function sanitizeReclamosGeo(raw) {
           ? r.direccionNormalizada.trim()
           : 'N/D',
       tematica: normalizeTematica(r.tematica),
+      categoria: normalizeCategoria(r.categoria),
     });
   }
   return out;

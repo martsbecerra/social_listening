@@ -29,6 +29,7 @@ const fs = require('fs');
 const path = require('path');
 const { runActorSync } = require('./apify');
 const { classifyPost, classifyRelevance } = require('./classifier');
+const { checkAndLogJump } = require('./viralJumpDetector');
 const db = require('./db');
 
 const CONFIG_PATH = path.join(__dirname, '..', 'config', 'monitoring.json');
@@ -43,29 +44,40 @@ function normalizeAccount(entry) {
 }
 
 /**
- * config/monitoring.json guarda las keywords agrupadas por categoría
- * (nombre_y_cargo, apodos_observados, etc.) y los hashtags aparte, sin el
- * "#" — eso es solo para que el archivo se pueda leer y mantener a mano.
- * Acá se aplana todo de vuelta a la única lista de strings que espera el
- * resto del código (evaluateRelevance, runMonitoringCycle siguen sin saber
- * que existen categorías; a un hashtag "JorgeMacri" se le vuelve a poner el
- * "#" adelante para que el filter(k => k.startsWith('#')) que ya existía lo
- * siga reconociendo igual que antes). Ver config/README.md.
+ * config/monitoring.json tiene dos formatos posibles:
+ *   - Viejo (anidado): { instagram: { accounts, hashtags, keywords: {categoría: [...]} } }.
+ *     Las keywords venían agrupadas por categoría y los hashtags aparte, sin
+ *     el "#" — solo para que el archivo se pudiera leer y mantener a mano.
+ *   - Actual (plano): { accounts: [...], keywords: [...] } — es lo que
+ *     escribe saveConfig() cada vez que se agrega/saca algo desde la app
+ *     (addAccount/removeAccount/addKeyword/removeKeyword), así que un
+ *     archivo que arrancó anidado termina en este formato apenas se edita
+ *     una vez desde la UI.
+ * Acá se soportan los dos, aplanando el viejo a la misma forma que ya espera
+ * el resto del código (evaluateRelevance, runMonitoringCycle no saben que
+ * existían categorías; a un hashtag "JorgeMacri" se le vuelve a poner el "#"
+ * adelante para que el filter(k => k.startsWith('#')) lo siga reconociendo).
  */
 function loadConfig() {
   const raw = fs.readFileSync(CONFIG_PATH, 'utf8');
   const parsed = JSON.parse(raw);
-  const ig = parsed.instagram || {};
-  const keywordGroups = ig.keywords || {};
 
-  const flatKeywords = [
-    ...Object.values(keywordGroups).flat(),
-    ...(Array.isArray(ig.hashtags) ? ig.hashtags.map((h) => `#${h}`) : []),
-  ];
+  if (parsed.instagram) {
+    const ig = parsed.instagram;
+    const keywordGroups = ig.keywords || {};
+    const flatKeywords = [
+      ...Object.values(keywordGroups).flat(),
+      ...(Array.isArray(ig.hashtags) ? ig.hashtags.map((h) => `#${h}`) : []),
+    ];
+    return {
+      accounts: (Array.isArray(ig.accounts) ? ig.accounts : []).map(normalizeAccount),
+      keywords: flatKeywords,
+    };
+  }
 
   return {
-    accounts: (Array.isArray(ig.accounts) ? ig.accounts : []).map(normalizeAccount),
-    keywords: flatKeywords,
+    accounts: (Array.isArray(parsed.accounts) ? parsed.accounts : []).map(normalizeAccount),
+    keywords: Array.isArray(parsed.keywords) ? parsed.keywords : [],
   };
 }
 
@@ -122,9 +134,23 @@ async function addAccount(account) {
   }
   await validateAccountExists(clean);
   const config = loadConfig();
-  if (!config.accounts.some((a) => a.toLowerCase() === clean.toLowerCase())) {
+  const isNew = !config.accounts.some((a) => a.toLowerCase() === clean.toLowerCase());
+  if (isNew) {
     config.accounts.push(clean);
     saveConfig(config);
+
+    // Sin esto la cuenta queda hasta un mes sin referencia (la cadencia
+    // normal es mensual, ver accountStats.js). Sin "await": no demorar la
+    // respuesta de "agregar cuenta" — ya hace su propio llamado a Apify
+    // arriba (validateAccountExists) y este es un segundo llamado aparte.
+    // require() adentro de la función (no arriba del archivo) para evitar
+    // una dependencia circular: accountStats.js ya importa este módulo para
+    // reusar scrapeAccount/loadConfig.
+    require('./accountStats')
+      .computeAccountStats(clean)
+      .catch((err) => {
+        console.error(`No se pudo calcular el benchmark de @${clean}:`, err.message);
+      });
   }
   return config;
 }
@@ -180,6 +206,40 @@ function textIncludesAny(text, needles) {
  * sourceType indica de dónde salió ('account' o 'hashtag') — se usa más
  * adelante para decidir cómo evaluar la relevancia de un posteo sin caption.
  */
+/**
+ * Tipo de posteo (reel|imagen|carrusel), para el benchmark de
+ * src/accountStats.js. Sin verificar contra una corrida real de Apify
+ * todavía (ver ese archivo) — probamos varios nombres de campo posibles del
+ * actor y si ninguno aparece, devolvemos null (misma filosofía "pick" que ya
+ * usa esta función y normalizePost() en apify.js).
+ */
+function derivePostType(raw) {
+  const productType = String(raw.productType || '').toLowerCase();
+  if (productType === 'clips') return 'reel';
+  if (productType === 'carousel_container') return 'carrusel';
+
+  const type = String(raw.type || '').toLowerCase();
+  if (type === 'sidecar') return 'carrusel';
+  if (type === 'video') return 'reel';
+  if (type === 'image') return 'imagen';
+
+  if (typeof raw.isVideo === 'boolean') return raw.isVideo ? 'reel' : 'imagen';
+
+  return null;
+}
+
+// Apify (apify/instagram-scraper) devuelve -1 en likesCount cuando el autor
+// ocultó el contador de "me gusta" del posteo — no es un dato real, es un
+// centinela de "no disponible" (confirmado: es un comportamiento documentado
+// del actor, no un error de parseo nuestro). Lo tratamos igual que "sin
+// dato" — null, nunca -1 ni 0 — para no inventar un valor ni contaminar la
+// mediana de account_stats. No hay documentación de que commentsCount use el
+// mismo centinela, pero por las dudas (y porque un comentario negativo nunca
+// puede ser real) se aplica el mismo criterio ahí también.
+function nullIfMissingSentinel(value) {
+  return typeof value === 'number' && value < 0 ? null : value;
+}
+
 function normalizeMonitorPost(raw, { account, sourceType }) {
   const pick = (...values) => values.find((v) => v !== undefined && v !== null && v !== '');
   const shortCode = pick(raw.shortCode, raw.code);
@@ -193,9 +253,10 @@ function normalizeMonitorPost(raw, { account, sourceType }) {
     url,
     caption: pick(raw.caption, ''),
     hashtagsText: hashtags,
-    likes: pick(raw.likesCount, null),
-    comments: pick(raw.commentsCount, null),
+    likes: nullIfMissingSentinel(pick(raw.likesCount, null)),
+    comments: nullIfMissingSentinel(pick(raw.commentsCount, null)),
     postedAt: pick(raw.timestamp, null),
+    postType: derivePostType(raw),
     sourceType,
   };
 }
@@ -221,6 +282,37 @@ async function scrapeAccount(username, { resultsLimit, lookback }) {
   return (Array.isArray(items) ? items : [])
     .filter((raw) => !raw.error)
     .map((raw) => normalizeMonitorPost(raw, { account: username, sourceType: 'account' }));
+}
+
+/**
+ * Cantidad de seguidores de una cuenta. Los items de "posts" NO traen este
+ * dato (confirmado contra la doc del actor apify/instagram-scraper: solo
+ * ownerFullName/ownerUsername/ownerId a nivel de posteo) — hace falta una
+ * corrida aparte con resultsType "details" sobre la URL del perfil, que
+ * devuelve followersCount en el nivel superior del item. Se llama desde
+ * accountStats.computeAccountStats, con la misma cadencia que el benchmark
+ * (mensual / cuenta nueva / recálculo forzado) — no en cada corrida de 4hs.
+ *
+ * Nunca tira: sin token de Apify, cuenta privada, actor caído o cualquier
+ * otro error, devuelve null (la columna de seguidores queda en "-", el
+ * resto del ciclo de monitoreo sigue sin verse afectado).
+ * @returns {Promise<number|null>}
+ */
+async function fetchAccountFollowers(username) {
+  try {
+    const items = await runActorSync({
+      directUrls: [`https://www.instagram.com/${username}/`],
+      resultsType: 'details',
+      resultsLimit: 1,
+    });
+    const raw = (Array.isArray(items) && items[0]) || null;
+    if (!raw || raw.error) return null;
+    const value = Number(raw.followersCount);
+    return Number.isFinite(value) ? value : null;
+  } catch (err) {
+    console.error(`No se pudieron traer los seguidores de @${username}:`, err.message);
+    return null;
+  }
 }
 
 async function scrapeHashtag(tag, { resultsLimit }) {
@@ -259,15 +351,39 @@ async function evaluateRelevance(post, keywords) {
 
   const literalMatch = textIncludesAny(text, keywords);
   if (literalMatch) {
-    const { title, sentiment } = await classifyPost(post.caption);
-    const matchedReason = post.sourceType === 'account'
+    // La relevancia acá NO depende del LLM: ya matcheó una palabra clave. Si
+    // el clasificador falla, el posteo entra igual, sin título ni sentimiento.
+    const { title, sentiment, unclassified } = await classifyPost(post.caption);
+    const base = post.sourceType === 'account'
       ? `Cuenta trackeada: @${post.account} (coincidencia: "${literalMatch}")`
       : `Coincidencia con palabra clave: "${literalMatch}"`;
-    return { relevant: true, title, sentiment, matchedReason };
+    return {
+      relevant: true,
+      title,
+      sentiment,
+      unclassified,
+      matchedReason: unclassified ? `${base} — sin clasificar` : base,
+    };
   }
 
   const result = await classifyRelevance(post.caption);
   if (!result.relevant) return { relevant: false };
+
+  // Sin palabra clave literal y con el clasificador caído no sabemos si es
+  // relevante. Se guarda igual, marcado, para que alguien lo revise: un falso
+  // positivo se ve y se borra; uno descartado en silencio no vuelve nunca.
+  if (result.unclassified) {
+    const origen = post.sourceType === 'account'
+      ? `Cuenta trackeada: @${post.account}`
+      : 'Hashtag monitoreado';
+    return {
+      relevant: true,
+      title: null,
+      sentiment: null,
+      unclassified: true,
+      matchedReason: `${origen} — sin clasificar (falló el clasificador, relevancia sin verificar)`,
+    };
+  }
 
   const matchedReason = post.sourceType === 'account'
     ? `Cuenta trackeada: @${post.account} (relacionado por contenido)`
@@ -315,9 +431,23 @@ async function runMonitoringCycle() {
   }
 
   const newPosts = [];
+  let metricsRefreshedFree = 0;
   for (const post of seenInThisRun.values()) {
-    // Evitamos gastar una clasificación en algo que ya conocemos.
-    if (db.isKnownPost(post.id)) continue;
+    if (db.isKnownPost(post.id)) {
+      // Ya lo conocíamos: no hace falta re-detectarlo ni re-clasificarlo
+      // (mismo título, mismo sentimiento). Pero esta misma respuesta de
+      // Apify que ya se pagó trae sus likes/comments ACTUALES — aprovecharla
+      // para refrescar la fila sale gratis, en vez de descartarla acá y que
+      // src/metricsRefresh.js tenga que volver a pedirle esta cuenta a
+      // Apify más tarde.
+      const refresh = db.applyMetricsRefresh(post.id, { likes: post.likes, comments: post.comments });
+      if (refresh) {
+        metricsRefreshedFree += 1;
+        checkAndLogJump({ account: refresh.account, id: post.id, postedAt: refresh.postedAt, metric: 'comentarios', previous: refresh.previousComments, current: refresh.comments });
+        checkAndLogJump({ account: refresh.account, id: post.id, postedAt: refresh.postedAt, metric: 'likes', previous: refresh.previousLikes, current: refresh.likes });
+      }
+      continue;
+    }
 
     const evaluation = await evaluateRelevance(post, plainKeywords);
     if (!evaluation.relevant) continue;
@@ -327,13 +457,26 @@ async function runMonitoringCycle() {
       title: evaluation.title,
       sentiment: evaluation.sentiment,
       matchedReason: evaluation.matchedReason,
+      // Snapshot de la caché (account_followers), no un llamado a Apify acá:
+      // eso encarecería cada corrida de 4hs. Se refresca por afuera, en
+      // accountStats.computeAccountStats. Posts sin cuenta (hashtag) o de
+      // cuentas todavía sin caché quedan null -> "-" en la tabla.
+      followers: post.account ? db.getAccountFollowers(post.account, 'instagram') : null,
     };
 
     db.saveDetectedPost(postWithClassification);
     newPosts.push(postWithClassification);
   }
 
-  return { checked: seenInThisRun.size, newPosts };
+  if (metricsRefreshedFree > 0) {
+    console.log(`[monitor] ${metricsRefreshedFree} posteo(s) ya conocidos refrescados gratis con este mismo ciclo.`);
+  }
+
+  // Cuentas trackeadas cuyo perfil se scrapeó de verdad en este ciclo (no
+  // las de hashtag: ahí solo se pesca el posteo puntual que matcheó, nunca
+  // "los últimos N" de esa cuenta). src/metricsRefresh.js las usa para no
+  // volver a pedirle Apify a una cuenta que ya se acaba de consultar.
+  return { checked: seenInThisRun.size, newPosts, scrapedAccounts: accounts };
 }
 
 /**
@@ -344,11 +487,27 @@ async function runMonitoringCycle() {
  */
 async function backfillClassification() {
   const pending = db.listUnclassified();
+  let classified = 0;
+  let stillPending = 0;
+
   for (const row of pending) {
-    const { title, sentiment } = await classifyPost(row.caption);
+    const { title, sentiment, unclassified } = await classifyPost(row.caption);
+    if (unclassified) {
+      // Sigue fallando: no pisamos la fila con los mismos nulls, queda
+      // pendiente para el próximo intento.
+      stillPending++;
+      continue;
+    }
     db.updateClassification(row.id, { title, sentiment });
+    classified++;
   }
-  return { classified: pending.length };
+
+  if (stillPending > 0) {
+    console.warn(
+      `[monitor] backfill: ${stillPending} posteo(s) siguen sin clasificar (el clasificador falló). Se reintentan en la próxima corrida.`
+    );
+  }
+  return { classified, stillPending };
 }
 
 module.exports = {
@@ -359,4 +518,6 @@ module.exports = {
   removeAccount,
   addKeyword,
   removeKeyword,
+  scrapeAccount,
+  fetchAccountFollowers,
 };

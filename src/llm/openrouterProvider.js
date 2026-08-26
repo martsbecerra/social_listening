@@ -1,34 +1,87 @@
 // ==========================================================================
-// openrouterProvider.js — Chat completions + json_schema (OpenAI-compatible).
+// openrouterProvider.js — Chat completions (API compatible con OpenAI).
+// --------------------------------------------------------------------------
+// OpenRouter no necesita un SDK propio: expone la API de OpenAI. Se usa fetch
+// contra {OPENROUTER_BASE_URL}/chat/completions, así que el mismo código sirve
+// para cualquier gateway compatible cambiando sólo esa variable.
+//
+// Dos modos de uso:
+//   - requestStructuredAnalysis: response_format json_schema (análisis de post)
+//   - requestText:               texto plano (clasificador del monitoreo)
 // ==========================================================================
 
 const { ANALYSIS_JSON_SCHEMA } = require('../analysisSchema');
 const { addTokenUsage, fromOpenRouterUsage } = require('./usage');
+const { getAnalysisModel, getClassifierModel } = require('./providerConfig');
 
-const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
+const DEFAULT_BASE_URL = 'https://openrouter.ai/api/v1';
 const STRUCTURED_OUTPUT_MAX_ATTEMPTS = 2;
 
-async function requestStructuredAnalysis({ system, userPrompt }) {
+// Header opcional pero recomendado por OpenRouter para identificar la app
+// (aparece en los rankings de openrouter.ai). Se puede pisar desde .env.
+const DEFAULT_APP_TITLE = 'Social Listening App';
+
+function getBaseUrl() {
+  const raw = (process.env.OPENROUTER_BASE_URL || '').trim() || DEFAULT_BASE_URL;
+  return raw.replace(/\/+$/, '');
+}
+
+function getChatCompletionsUrl() {
+  return getBaseUrl() + '/chat/completions';
+}
+
+function requireApiKey() {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
     const e = new Error('OPENROUTER_API_KEY no configurada');
+    e.isApiFailure = true;
     e.userMessage =
       'Falta OPENROUTER_API_KEY en .env. Obtené una en https://openrouter.ai/settings/keys o usá LLM_PROVIDER=anthropic.';
     throw e;
   }
+  return apiKey;
+}
 
-  const model = process.env.OPENROUTER_MODEL || 'openai/gpt-4.1';
-
-  const headers = {
+function buildHeaders(apiKey) {
+  const port = process.env.PORT || 3000;
+  return {
     Authorization: `Bearer ${apiKey}`,
     'Content-Type': 'application/json',
+    // La app corre local: el referer honesto es el propio servidor.
+    'HTTP-Referer': (process.env.OPENROUTER_HTTP_REFERER || '').trim() || `http://localhost:${port}`,
+    'X-Title': (process.env.OPENROUTER_APP_NAME || '').trim() || DEFAULT_APP_TITLE,
   };
-  if (process.env.OPENROUTER_HTTP_REFERER) {
-    headers['HTTP-Referer'] = process.env.OPENROUTER_HTTP_REFERER;
+}
+
+/**
+ * Una llamada a /chat/completions. Devuelve el JSON crudo de la respuesta.
+ * Cualquier fallo sale como Error con isApiFailure = true, para que el
+ * clasificador pueda distinguir "no pude hablar con el modelo" de "el modelo
+ * respondió algo que no entiendo".
+ */
+async function postChatCompletion(body) {
+  const apiKey = requireApiKey();
+
+  let res;
+  let data;
+  try {
+    res = await fetch(getChatCompletionsUrl(), {
+      method: 'POST',
+      headers: buildHeaders(apiKey),
+      body: JSON.stringify(body),
+    });
+    data = await res.json().catch(() => ({}));
+  } catch (err) {
+    // Falla de red / DNS / timeout: nunca llegamos a hablar con el modelo.
+    throw mapOpenRouterError(err);
   }
-  if (process.env.OPENROUTER_APP_NAME) {
-    headers['X-Title'] = process.env.OPENROUTER_APP_NAME;
-  }
+
+  if (!res.ok) throw mapOpenRouterHttpError(res.status, data);
+  return data;
+}
+
+async function requestStructuredAnalysis({ system, userPrompt }) {
+  const model = getAnalysisModel('openrouter');
 
   const body = {
     model,
@@ -51,17 +104,7 @@ async function requestStructuredAnalysis({ system, userPrompt }) {
   let usage = null;
   for (let attempt = 1; attempt <= STRUCTURED_OUTPUT_MAX_ATTEMPTS; attempt++) {
     try {
-      const res = await fetch(OPENROUTER_URL, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(body),
-      });
-
-      const data = await res.json().catch(() => ({}));
-
-      if (!res.ok) {
-        throw mapOpenRouterHttpError(res.status, data);
-      }
+      const data = await postChatCompletion(body);
 
       const callUsage = fromOpenRouterUsage(data.usage);
       if (callUsage) usage = usage ? addTokenUsage(usage, callUsage) : callUsage;
@@ -90,22 +133,43 @@ async function requestStructuredAnalysis({ system, userPrompt }) {
   throw e;
 }
 
-function parseMessageContent(data) {
-  const raw = data?.choices?.[0]?.message?.content;
-  if (raw == null) return null;
+/**
+ * Texto plano, sin schema — lo que necesita el clasificador del monitoreo.
+ * No reintenta ni traga errores: quien llama decide qué hacer (ver
+ * src/classifier.js).
+ * @returns {Promise<{ text: string, usage: import('./usage').TokenUsage | null }>}
+ */
+async function requestText({ system, userPrompt, maxTokens = 200 }) {
+  const model = getClassifierModel('openrouter');
 
-  let text;
-  if (typeof raw === 'string') {
-    text = raw.trim();
-  } else if (Array.isArray(raw)) {
-    text = raw
+  const data = await postChatCompletion({
+    model,
+    max_tokens: maxTokens,
+    messages: [
+      { role: 'system', content: system },
+      { role: 'user', content: userPrompt },
+    ],
+  });
+
+  return { text: extractText(data), usage: fromOpenRouterUsage(data.usage) };
+}
+
+/** Aplana el content de la respuesta (string o array de partes) a texto. */
+function extractText(data) {
+  const raw = data?.choices?.[0]?.message?.content;
+  if (raw == null) return '';
+  if (typeof raw === 'string') return raw.trim();
+  if (Array.isArray(raw)) {
+    return raw
       .map((part) => (typeof part === 'string' ? part : part?.text || ''))
       .join('')
       .trim();
-  } else {
-    return null;
   }
+  return '';
+}
 
+function parseMessageContent(data) {
+  const text = extractText(data);
   if (!text) return null;
   try {
     return JSON.parse(text);
@@ -123,6 +187,8 @@ function mapOpenRouterHttpError(status, data) {
 
   console.error('Error llamando a OpenRouter:', status, msg);
   const e = new Error(`OpenRouter falló: ${msg}`);
+  e.isApiFailure = true;
+  e.status = status;
 
   if (status === 401) {
     e.userMessage = 'La clave de OpenRouter (OPENROUTER_API_KEY) es inválida. Revisá el archivo .env.';
@@ -133,7 +199,7 @@ function mapOpenRouterHttpError(status, data) {
     e.userMessage = 'Se alcanzó el límite de uso del modelo por el momento. Esperá unos minutos e intentá de nuevo.';
   } else if (/structured|json_schema|response_format/i.test(msg)) {
     e.userMessage =
-      'El modelo configurado en OPENROUTER_MODEL no soporta salida JSON con schema. Probá openai/gpt-4.1 o google/gemini-2.5-pro.';
+      'El modelo configurado en OPENROUTER_MODEL no soporta salida JSON con schema. Verificá en https://openrouter.ai/models que liste "structured_outputs".';
   } else {
     e.userMessage = 'El servicio de análisis (OpenRouter) falló. Intentá de nuevo en unos minutos.';
   }
@@ -141,11 +207,15 @@ function mapOpenRouterHttpError(status, data) {
 }
 
 function mapOpenRouterError(err) {
-  if (err.userMessage) return err;
+  if (err.userMessage) {
+    err.isApiFailure = true;
+    return err;
+  }
   console.error('Error llamando a OpenRouter:', err);
   const e = new Error(`OpenRouter falló: ${err.message}`);
+  e.isApiFailure = true;
   e.userMessage = 'El servicio de análisis (OpenRouter) falló. Intentá de nuevo en unos minutos.';
   return e;
 }
 
-module.exports = { requestStructuredAnalysis };
+module.exports = { requestStructuredAnalysis, requestText, getBaseUrl };

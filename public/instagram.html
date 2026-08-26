@@ -5,6 +5,12 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Instagram — Social Listening App</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=Instrument+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap"
+    rel="stylesheet"
+  />
   <!-- Tabulator: tabla de "Monitoreo en vivo" (orden/filtro/paginación del
        lado del cliente). Por CDN a propósito, sin build step ni dependencia
        nueva en package.json. -->
@@ -15,30 +21,61 @@
 
 <body>
   <header class="topbar">
-    <a class="topbar-brand" href="dashboard.html" title="Volver al inicio">
-      <img src="logo.png" alt="Social Listening App" />
-    </a>
-  </header>
-
-  <nav class="tabs">
-    <div class="tabs-group">
-      <button class="tab-btn active" data-tab="analysis">Análisis de publicación</button>
-      <button class="tab-btn" data-tab="monitoring">Monitoreo en vivo</button>
-      <button class="tab-btn" data-tab="claims-map">Mapa de reclamos</button>
+    <div class="crumb">
+      <a class="brand" href="dashboard.html">
+        <div class="meter" data-meter="5"></div>
+        <span class="brand-name"><span>social</span> <b>listening</b></span>
+      </a>
+      <span class="crumb-sep">/</span>
+      <span class="crumb-here">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+          <rect x="2.8" y="2.8" width="18.4" height="18.4" rx="5.4" />
+          <circle cx="12" cy="12" r="4.3" />
+          <circle cx="17.3" cy="6.7" r="1.15" fill="currentColor" stroke="none" />
+        </svg>
+        Instagram
+      </span>
     </div>
     <div class="topbar-user">
-      <button class="user-btn" data-dropdown="userDropdown" type="button">👤 ▾</button>
+      <button class="user-btn" data-dropdown="userDropdown" type="button">
+        <span class="avatar"></span>
+        <span class="user-name"></span>
+      </button>
       <div id="userDropdown" class="user-dropdown hidden">
         <span class="user-email"></span>
         <button type="button" class="logout-btn">Cerrar sesión</button>
       </div>
+    </div>
+  </header>
+
+  <nav class="tabs">
+    <div class="tabs-group">
+      <button class="tab-btn active" data-tab="analysis">
+        <svg class="glyph glyph-an" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1"
+          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M3 20h18" stroke-width="1.5" opacity=".3" />
+          <path class="trend" d="M4 16.5 9 12 13 14.5 20 6" />
+          <circle class="head" cx="20" cy="6" r="2.2" fill="currentColor" stroke="none" />
+        </svg>
+        Análisis de publicación
+      </button>
+      <button class="tab-btn" data-tab="monitoring"><div class="meter" data-meter="4"></div>Monitoreo en vivo</button>
+      <button class="tab-btn" data-tab="claims-map">
+        <svg class="glyph glyph-mp" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true">
+          <circle class="ping" cx="12" cy="10" r="7" stroke-width="1.5" />
+          <path d="M12 21s6-5.7 6-10a6 6 0 1 0-12 0c0 4.3 6 10 6 10Z" />
+          <circle cx="12" cy="10.4" r="2.1" fill="currentColor" stroke="none" />
+        </svg>
+        Mapa de reclamos
+      </button>
     </div>
   </nav>
 
   <!-- ===================== Solapa: Análisis de publicación ===================== -->
   <section id="tab-analysis" class="tab-panel">
     <div class="container">
-      <h1>🔍 Análisis de sentimiento en Instagram</h1>
+      <p class="tag panel-eyebrow">Análisis</p>
+      <h1 class="display">Análisis de sentimiento en Instagram</h1>
       <p class="sub">Pegá el link de una publicación y obtené un reporte ejecutivo listo para WhatsApp.</p>
 
       <div class="card">
@@ -86,34 +123,41 @@
   <!-- ===================== Solapa: Monitoreo en vivo ===================== -->
   <section id="tab-monitoring" class="tab-panel hidden">
     <div class="container-wide">
-      <h1>📡 Monitoreo en vivo</h1>
+      <p class="tag panel-eyebrow">Monitoreo</p>
+      <h1 class="display">Monitoreo en vivo</h1>
       <p class="sub">Detección automática de menciones cada 4 horas, con alerta por email.</p>
 
-      <div class="card config-lists">
+      <!-- Config: visible, en dos columnas compactas -->
+      <div class="card config">
         <div>
-          <label for="newAccount">Cuentas trackeadas</label>
-          <div class="config-add-row">
+          <h3 class="tag">Cuentas trackeadas</h3>
+          <div class="add-row">
             <input type="text" id="newAccount" placeholder="usuario (sin @)" autocomplete="off" />
-            <button id="addAccountBtn">Agregar</button>
+            <button id="addAccountBtn" class="btn-ghost">Agregar</button>
           </div>
           <p id="accountError" class="error hidden" style="margin-top:8px;"></p>
-          <ul id="accountList" class="tag-list"></ul>
+          <div id="accountList" class="chips"></div>
         </div>
         <div>
-          <label for="newKeyword">Palabras clave / hashtags</label>
-          <div class="config-add-row">
+          <h3 class="tag">Palabras clave / hashtags</h3>
+          <div class="add-row">
             <input type="text" id="newKeyword" placeholder="Jorge Macri o #JorgeMacri" autocomplete="off" />
-            <button id="addKeywordBtn">Agregar</button>
+            <button id="addKeywordBtn" class="btn-ghost">Agregar</button>
           </div>
           <p id="keywordError" class="error hidden" style="margin-top:8px;"></p>
-          <ul id="keywordListPreview" class="tag-list">
-            <button id="viewAllKeywordsBtn" class="btn-small btn-copy view-all-btn hidden"></button>
-          </ul>
+          <div id="keywordListPreview" class="chips">
+            <button id="viewAllKeywordsBtn" class="chip-more hidden"></button>
+          </div>
         </div>
       </div>
 
-      <div class="card monitoring-toolbar">
-        <button id="runNowBtn">Actualizar ahora</button>
+      <!-- Barra fina de acción -->
+      <div class="runbar">
+        <button id="runNowBtn" class="btn">Actualizar ahora</button>
+        <span class="live">
+          <div class="meter" data-meter="7"></div>
+          <span><b>Escuchando</b> · <span id="monitoringNextRun">próxima corrida –</span></span>
+        </span>
       </div>
 
       <div id="monitoringStatusCard" class="card hidden">
@@ -132,9 +176,79 @@
 
       <p id="monitoringLoadError" class="error hidden"></p>
 
-      <div class="card monitoring-table-card">
+      <!-- Tarjetas destacadas -->
+      <div id="monitoringHighlightsSection" class="hidden">
+        <div class="sec-head">
+          <h2>Se despegaron</h2>
+          <span>Posteos muy por encima del promedio de su propia cuenta</span>
+        </div>
+        <div class="cards" id="cards"></div>
+      </div>
+
+      <!-- Filtros -->
+      <div class="filters">
+        <div class="frow">
+          <span class="frow-lbl tag">Filtrar</span>
+
+          <select id="fSent" aria-label="Filtrar por sentimiento">
+            <option value="">Sentimiento</option>
+            <option value="positivo">Positivo</option>
+            <option value="neutral">Neutral</option>
+            <option value="negativo">Negativo</option>
+            <option value="sin_clasificar">Sin clasificar</option>
+          </select>
+
+          <!-- No es un <select> nativo a propósito: con ~70 opciones (todas
+               las cuentas vistas, no solo las trackeadas) el navegador puede
+               decidir abrir el desplegable hacia arriba si no hay espacio
+               debajo — comportamiento del navegador, no controlable por
+               CSS en un <select> real. Este panel propio sí se puede anclar
+               siempre hacia abajo. -->
+          <div class="acc-select" id="fAccSelect">
+            <button type="button" class="acc-select-btn" id="fAccBtn" aria-haspopup="listbox" aria-expanded="false">
+              Cuenta
+            </button>
+            <div class="acc-select-panel hidden" id="fAccPanel" role="listbox" aria-label="Cuenta"></div>
+          </div>
+
+          <label class="chk" id="chkWrap">
+            <input type="checkbox" id="fNoti" /> Sin notificar
+          </label>
+
+          <input type="date" id="fDesde" aria-label="Fecha desde" />
+          <input type="date" id="fHasta" aria-label="Fecha hasta" />
+
+          <input type="search" id="q" placeholder="Buscar título, cuenta o texto del posteo..." />
+        </div>
+
+        <div class="frow">
+          <span class="frow-lbl tag">Ordenar</span>
+
+          <select class="srt" id="sLikes" aria-label="Ordenar por likes">
+            <option value="">Likes</option>
+            <option value="l|desc">Likes ↓</option>
+            <option value="l|asc">Likes ↑</option>
+          </select>
+
+          <select class="srt" id="sCom" aria-label="Ordenar por comentarios">
+            <option value="">Comentarios</option>
+            <option value="c|desc">Comentarios ↓</option>
+            <option value="c|asc">Comentarios ↑</option>
+          </select>
+
+          <select class="srt" id="sFol" aria-label="Ordenar por seguidores">
+            <option value="">Seguidores</option>
+            <option value="fol|desc">Seguidores ↓</option>
+            <option value="fol|asc">Seguidores ↑</option>
+          </select>
+
+          <span class="f-count">Mostrando <b id="n">0</b> de <b id="m">0</b> posteos</span>
+          <button class="f-clear" id="clear" type="button" disabled>Limpiar</button>
+        </div>
+      </div>
+
+      <div class="card tbl-wrap">
         <div id="monitoringTable"></div>
-        <p id="monitoringResultsCount" class="muted" style="text-align:center; margin-top:8px;"></p>
       </div>
     </div>
   </section>
@@ -142,15 +256,31 @@
   <!-- ===================== Solapa: Mapa de reclamos ===================== -->
   <section id="tab-claims-map" class="tab-panel hidden">
     <div class="container-wide">
-      <h1>📍Mapa de reclamos</h1>
-      <p class="sub">Geolocalización automática de reclamos cada 4 horas.</p>
+      <p class="tag panel-eyebrow">Reclamos</p>
+      <h1 class="display">Mapa de reclamos</h1>
+      <p class="sub">Reclamos con dirección detectados en los comentarios analizados.</p>
 
-      <div class="card claims-chips-card">
-        <h2 class="claims-filter-title">Temáticas</h2>
-        <div class="claims-chips-toolbar">
-          <button type="button" id="claimsSelectAllBtn" class="btn-small btn-copy claims-select-btn">Todas</button>
-          <button type="button" id="claimsSelectNoneBtn" class="btn-small btn-copy claims-select-btn">Ninguna</button>
-          <div id="claimsMapChips" class="claims-chips"></div>
+      <div class="card claims-filters-card">
+        <div class="claims-filters-row">
+          <div id="claimsCategoriaSelect"></div>
+          <div id="claimsEstadoSelect"></div>
+          <select id="claimsBarrio">
+            <option value="">Barrio</option>
+          </select>
+          <select id="claimsComuna">
+            <option value="">Comuna</option>
+          </select>
+          <input type="date" id="claimsDesde" />
+          <input type="date" id="claimsHasta" />
+          <input
+            type="text"
+            id="claimsBuscar"
+            class="claims-search"
+            placeholder="Buscar dirección o texto del comentario…"
+            autocomplete="off"
+          />
+          <button type="button" id="claimsClearBtn" class="btn-small btn-clear">Limpiar</button>
+          <button type="button" id="claimsDownloadCsvBtn" class="btn-small btn-copy claims-download-btn">Descargar CSV</button>
         </div>
       </div>
 
@@ -158,7 +288,11 @@
 
       <div class="card claims-map-card">
         <div id="claims-map"></div>
-        <p id="claimsMapEmpty" class="muted claims-map-empty hidden">Todavía no hay reclamos geolocalizados.</p>
+        <div id="claimsMapEmpty" class="hidden muted claims-map-empty">
+          <div class="meter" data-meter="16"></div>
+          <h3 id="claimsMapEmptyTitle">Todavía no hay reclamos ubicados</h3>
+          <p id="claimsMapEmptyText">Cuando el análisis detecte comentarios con una dirección, van a aparecer acá.</p>
+        </div>
       </div>
     </div>
   </section>
@@ -185,12 +319,55 @@
     </div>
   </div>
 
+  <footer class="foot">
+    <div class="foot-in">
+      <div class="foot-grid">
+        <div>
+          <a class="brand" href="dashboard.html">
+            <div class="meter" data-meter="5"></div>
+            <span class="brand-name"><span>social</span> <b>listening</b></span>
+          </a>
+          <p class="foot-lead">Una herramienta de <b>DGAND</b> para escuchar lo que se dice en redes, medir cómo se dice y convertir los reclamos en un punto del mapa.</p>
+        </div>
+
+        <div>
+          <h4 class="tag">Qué escuchamos</h4>
+          <div class="stat-row">
+            <span class="stat"><b id="footerPlataformas">–</b> plataformas</span>
+            <span class="stat"><b id="footerCorridas">–</b> corridas por día</span>
+            <span class="stat"><b id="footerTematicas">–</b> temáticas de reclamo</span>
+          </div>
+        </div>
+
+        <div>
+          <h4 class="tag">Atajos</h4>
+          <nav class="foot-links">
+            <a href="instagram.html#tab-analysis">Análisis de publicación</a>
+            <a href="instagram.html#tab-monitoring">Monitoreo en vivo</a>
+            <a href="instagram.html#tab-claims-map">Mapa de reclamos</a>
+          </nav>
+        </div>
+      </div>
+
+      <div class="foot-rule"></div>
+      <div class="foot-base">
+        <span class="pulse-line" id="footerPulse">
+          <span class="pulse-dot"></span>
+          <span id="footerPulseText">Escuchando</span>
+        </span>
+        <span class="tag">DGAND · <span id="footerYear"></span></span>
+      </div>
+    </div>
+  </footer>
+
+  <script src="js/meter.js"></script>
   <script src="js/main.js"></script>
   <script src="js/analysis.js"></script>
   <script src="https://unpkg.com/tabulator-tables@6.3.0/dist/js/tabulator.min.js"></script>
   <script src="js/monitoring.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="js/claimsMap.js"></script>
+  <script src="js/footer.js"></script>
 </body>
 
 </html>

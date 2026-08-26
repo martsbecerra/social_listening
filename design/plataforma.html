@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Instagram — Social Listening</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=Instrument+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://unpkg.com/tabulator-tables@6.3.0/dist/css/tabulator.min.css" rel="stylesheet">
+<style>
+:root{
+  --jade-950:#032A23; --jade-900:#06382E; --jade-700:#0B5947; --jade-500:#12805F;
+  --jade-400:#2AA57C; --jade-300:#63C7A2; --jade-150:#C8E8DA; --jade-100:#E3F2EA; --jade-50:#F1F9F5;
+  --clay-900:#2A211C; --clay-700:#5B4638; --clay-500:#8A6A52; --clay-200:#DED3C6; --clay-100:#F0E9DF;
+  --coral-700:#8E3418; --coral-500:#C4522C; --coral-100:#FAE7DF;
+  --amber-700:#8A5A10; --amber-100:#FBF0D9;
+  --paper:#FCFDFB; --line:#E4EBE7;
+  --shadow-sm:0 1px 2px rgba(6,56,46,.05), 0 2px 8px rgba(6,56,46,.04);
+  --shadow-md:0 2px 4px rgba(6,56,46,.05), 0 12px 32px rgba(6,56,46,.09);
+}
+*{box-sizing:border-box; margin:0; padding:0;}
+body{
+  font-family:'Instrument Sans',system-ui,sans-serif; color:var(--clay-900);
+  background:linear-gradient(180deg,var(--jade-50) 0%, var(--paper) 300px);
+  font-size:15px; line-height:1.55; -webkit-font-smoothing:antialiased; min-height:100vh;
+}
+::selection{background:var(--jade-150); color:var(--jade-950);}
+button,input,select{font:inherit; color:inherit;}
+.display{font-family:'Bricolage Grotesque',sans-serif; letter-spacing:-.02em;}
+.tag{font-family:'DM Mono',monospace; font-size:10.5px; font-weight:500; letter-spacing:.18em; text-transform:uppercase;}
+:focus-visible{outline:2px solid var(--jade-400); outline-offset:3px; border-radius:4px;}
+
+/* ── medidor (firma) ── */
+.meter{display:flex; align-items:flex-end; gap:var(--bar-gap,3px); height:var(--meter-h,28px);}
+.meter i{
+  display:block; width:var(--bar-w,3px); height:100%; border-radius:99px;
+  background:var(--bar-color,var(--jade-400)); transform:scaleY(.18); transform-origin:bottom;
+  animation:pulse var(--dur,1.6s) var(--delay,0s) ease-in-out infinite;
+}
+@keyframes pulse{0%,100%{transform:scaleY(.18);} 50%{transform:scaleY(var(--peak,.9));}}
+
+/* ── marca / barra superior ── */
+.brand{display:inline-flex; align-items:center; gap:11px; text-decoration:none;}
+.brand .meter{--meter-h:26px; --bar-w:3.5px;}
+.brand-name{font-family:'Bricolage Grotesque',sans-serif; font-size:17px; letter-spacing:-.025em; color:var(--jade-900); line-height:1;}
+.brand-name b{font-weight:700;} .brand-name span{font-weight:500; color:var(--jade-500);}
+
+.topbar{
+  display:flex; align-items:center; justify-content:space-between; gap:16px;
+  padding:14px clamp(18px,4vw,40px); background:var(--paper); border-bottom:1px solid var(--line);
+}
+.crumb{display:flex; align-items:center; gap:10px;}
+.crumb-sep{color:var(--clay-200);}
+.crumb-here{display:inline-flex; align-items:center; gap:7px; font-size:14px; font-weight:600; color:var(--jade-900);}
+.crumb-here svg{width:17px; height:17px;}
+.user-btn{
+  display:inline-flex; align-items:center; gap:9px; padding:6px 13px 6px 7px; cursor:pointer;
+  background:#fff; border:1px solid var(--line); border-radius:99px; font-size:13.5px; color:var(--clay-700);
+  box-shadow:var(--shadow-sm); transition:border-color .16s, box-shadow .16s;
+}
+.user-btn:hover{border-color:var(--jade-150); box-shadow:0 2px 10px rgba(6,56,46,.08);}
+.avatar{width:25px; height:25px; border-radius:99px; display:grid; place-items:center;
+  background:linear-gradient(135deg,var(--jade-500),var(--jade-300)); color:#fff; font-size:10.5px; font-weight:600;}
+
+/* ── solapas ── */
+.tabs{
+  display:flex; gap:4px; padding:0 clamp(18px,4vw,40px);
+  background:var(--paper); border-bottom:1px solid var(--line);
+  position:sticky; top:0; z-index:20; overflow-x:auto; scrollbar-width:none;
+}
+.tabs::-webkit-scrollbar{display:none;}
+.tab{
+  position:relative; display:inline-flex; align-items:center; gap:8px; white-space:nowrap;
+  padding:14px 16px 13px; background:none; border:none; cursor:pointer;
+  font-size:14.5px; font-weight:500; color:var(--clay-500); transition:color .16s;
+}
+.tab:hover{color:var(--jade-700);}
+.tab::after{
+  content:""; position:absolute; left:16px; right:16px; bottom:-1px; height:2px; border-radius:2px;
+  background:linear-gradient(90deg,var(--jade-500),var(--jade-300));
+  transform:scaleX(0); transform-origin:left; transition:transform .28s cubic-bezier(.2,.7,.3,1);
+}
+.tab.on{color:var(--jade-950); font-weight:600;}
+.tab.on::after{transform:scaleX(1);}
+.tab .meter{--meter-h:11px; --bar-w:2px; --bar-gap:2px; opacity:.35; transition:opacity .2s;}
+.tab.on .meter{opacity:1;}
+
+/* ── layout ── */
+.shell{max-width:1240px; margin:0 auto; padding:clamp(26px,4vw,40px) clamp(18px,4vw,40px) 72px;}
+.panel-head{margin-bottom:24px;}
+.panel-head .tag{color:var(--jade-500);}
+.panel-head h1{margin-top:10px; font-size:clamp(23px,3vw,30px); font-weight:600; color:var(--jade-950); letter-spacing:-.03em;}
+.panel-head p{margin-top:8px; font-size:14.5px; color:var(--clay-500); max-width:56ch;}
+
+.card{background:#fff; border:1px solid var(--line); border-radius:14px; box-shadow:var(--shadow-sm);}
+.card-pad{padding:22px;}
+
+.view{display:none;} .view.on{display:block; animation:fade .3s ease;}
+@keyframes fade{from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:none;}}
+
+/* ── formulario de análisis ── */
+.analyze{max-width:620px; margin:0 auto;}
+.analyze label{display:block; margin-bottom:7px; color:var(--clay-700);}
+.analyze input{
+  width:100%; padding:12px 14px; background:var(--paper); border:1px solid var(--line);
+  border-radius:10px; font-size:14.5px; transition:border-color .16s, box-shadow .16s;
+}
+.analyze input::placeholder{color:#AFBAB4;}
+.analyze input:focus{outline:none; border-color:var(--jade-400); box-shadow:0 0 0 3.5px var(--jade-100); background:#fff;}
+.btn{
+  padding:12px 22px; cursor:pointer; font-size:14.5px; font-weight:600; color:#fff;
+  background:linear-gradient(135deg,var(--jade-700),var(--jade-500)); border:none; border-radius:10px;
+  box-shadow:var(--shadow-sm); transition:transform .14s, box-shadow .18s, filter .18s;
+}
+.btn:hover{transform:translateY(-1px); box-shadow:0 4px 16px rgba(11,89,71,.26); filter:saturate(1.08);}
+.btn:active{transform:translateY(0);}
+.btn-wide{width:100%; margin-top:18px;}
+.btn-ghost{
+  padding:9px 16px; cursor:pointer; font-size:13.5px; font-weight:500; color:var(--jade-700);
+  background:#fff; border:1px solid var(--jade-150); border-radius:9px;
+  transition:background .16s, box-shadow .16s;
+}
+.btn-ghost:hover{background:var(--jade-50); box-shadow:0 2px 8px rgba(11,89,71,.1);}
+
+/* ── configuración del monitoreo ── */
+.config{display:grid; grid-template-columns:1fr 1fr; gap:0; }
+.config > div{padding:22px;}
+.config > div:first-child{border-right:1px solid var(--line);}
+@media(max-width:820px){
+  .config{grid-template-columns:1fr;}
+  .config > div:first-child{border-right:none; border-bottom:1px solid var(--line);}
+}
+.config h3{color:var(--clay-500); margin-bottom:12px;}
+.add-row{display:flex; gap:8px;}
+.add-row input{
+  flex:1; min-width:0; padding:10px 13px; background:var(--paper); border:1px solid var(--line);
+  border-radius:9px; font-size:14px; transition:border-color .16s, box-shadow .16s;
+}
+.add-row input:focus{outline:none; border-color:var(--jade-400); box-shadow:0 0 0 3.5px var(--jade-100); background:#fff;}
+.chips{display:flex; flex-wrap:wrap; gap:6px; margin-top:14px;}
+.chip{
+  display:inline-flex; align-items:center; gap:7px; padding:5px 6px 5px 12px;
+  background:var(--jade-50); border:1px solid var(--jade-150); border-radius:99px;
+  font-size:13px; color:var(--jade-900);
+}
+.chip.kw{background:var(--clay-100); border-color:var(--clay-200); color:var(--clay-700);}
+.chip button{
+  width:17px; height:17px; display:grid; place-items:center; cursor:pointer;
+  background:none; border:none; border-radius:99px; color:var(--clay-500); font-size:11px; line-height:1;
+  transition:background .14s, color .14s;
+}
+.chip button:hover{background:var(--coral-100); color:var(--coral-700);}
+.chip-more{background:none; border:1px dashed var(--clay-200); color:var(--clay-500); cursor:pointer; padding:5px 12px; border-radius:99px; font-size:13px;}
+.chip-more:hover{border-color:var(--jade-300); color:var(--jade-700);}
+
+.toolbar{display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; margin:20px 0 14px;}
+.live{display:inline-flex; align-items:center; gap:10px; font-size:13px; color:var(--clay-500);}
+.live .meter{--meter-h:15px; --bar-w:2.5px; --bar-gap:2.5px;}
+.live b{color:var(--jade-900); font-weight:600;}
+
+/* ══════════════════════════════════════════════════════════
+   TABULATOR — sobrescritura del tema por defecto
+   ══════════════════════════════════════════════════════════ */
+.tabulator{
+  background:transparent; border:none; font-family:'Instrument Sans',sans-serif; font-size:14px;
+}
+.tabulator .tabulator-header{
+  background:var(--jade-50); border:none; border-bottom:1px solid var(--line); color:var(--clay-700);
+}
+.tabulator .tabulator-header .tabulator-col{
+  background:transparent; border-right:none; padding:2px 0;
+}
+.tabulator .tabulator-header .tabulator-col-content{padding:11px 14px;}
+.tabulator .tabulator-header .tabulator-col-title{
+  font-family:'DM Mono',monospace; font-size:10.5px; font-weight:500;
+  letter-spacing:.14em; text-transform:uppercase; color:var(--clay-500);
+}
+.tabulator .tabulator-header .tabulator-col.tabulator-sortable:hover{background:var(--jade-100);}
+.tabulator .tabulator-col-sorter .tabulator-arrow{border-bottom-color:var(--clay-200) !important;}
+.tabulator .tabulator-col[aria-sort="asc"] .tabulator-arrow,
+.tabulator .tabulator-col[aria-sort="desc"] .tabulator-arrow{border-bottom-color:var(--jade-500) !important;}
+.tabulator .tabulator-header-filter input,
+.tabulator .tabulator-header-filter select{
+  width:100%; padding:6px 9px; background:#fff; border:1px solid var(--line);
+  border-radius:7px; font-size:12.5px; font-family:'Instrument Sans',sans-serif;
+  transition:border-color .16s, box-shadow .16s;
+}
+.tabulator .tabulator-header-filter input:focus,
+.tabulator .tabulator-header-filter select:focus{
+  outline:none; border-color:var(--jade-400); box-shadow:0 0 0 3px var(--jade-100);
+}
+.tabulator .tabulator-tableholder{background:#fff;}
+.tabulator .tabulator-row{
+  background:#fff; border-bottom:1px solid var(--line); transition:background .13s;
+}
+.tabulator .tabulator-row.tabulator-row-even{background:#fff;}
+.tabulator .tabulator-row:hover{background:var(--jade-50) !important;}
+.tabulator .tabulator-row .tabulator-cell{
+  padding:12px 14px; border-right:none; color:var(--clay-900);
+}
+.tabulator .tabulator-footer{background:transparent; border:none; padding-top:12px;}
+.table-card{overflow:hidden;}
+
+/* celdas a medida */
+.c-acc{font-weight:600; color:var(--jade-900); text-decoration:none;}
+.c-acc:hover{text-decoration:underline; text-underline-offset:3px;}
+.c-title{color:var(--clay-900); text-decoration:none; display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.c-title:hover{color:var(--jade-700); text-decoration:underline; text-underline-offset:3px;}
+.c-num{font-family:'DM Mono',monospace; font-size:13px; color:var(--clay-700);}
+.c-date{font-family:'DM Mono',monospace; font-size:12.5px; color:var(--clay-500);}
+
+/* sentimiento: color + forma (accesible sin color) */
+.sent{
+  display:inline-flex; align-items:center; gap:7px; padding:4px 11px 4px 9px;
+  border-radius:99px; font-size:12.5px; font-weight:500; cursor:pointer;
+  border:1px solid transparent; transition:box-shadow .16s;
+}
+.sent:hover{box-shadow:0 1px 6px rgba(6,56,46,.12);}
+.sent .mk{width:9px; height:9px; flex:none;}
+.sent.pos{background:var(--jade-100); color:var(--jade-700); border-color:var(--jade-150);}
+.sent.pos .mk{background:var(--jade-500); border-radius:99px;}
+.sent.neu{background:var(--amber-100); color:var(--amber-700); border-color:#EFDFC0;}
+.sent.neu .mk{background:var(--amber-700); height:3px; border-radius:2px;}
+.sent.neg{background:var(--coral-100); color:var(--coral-700); border-color:#F2D2C5;}
+.sent.neg .mk{background:var(--coral-500); clip-path:polygon(50% 0,100% 100%,0 100%);}
+
+.badge-no{padding:3px 10px; border-radius:99px; font-size:12px; background:var(--clay-100); color:var(--clay-500);}
+.badge-si{padding:3px 10px; border-radius:99px; font-size:12px; background:var(--jade-100); color:var(--jade-700);}
+
+.row-actions{display:flex; gap:4px; justify-content:flex-end;}
+.ico{
+  width:29px; height:29px; display:grid; place-items:center; cursor:pointer;
+  background:none; border:1px solid transparent; border-radius:8px; color:var(--clay-500);
+  transition:background .14s, color .14s, border-color .14s;
+}
+.ico svg{width:15px; height:15px;}
+.ico.wa:hover{background:var(--jade-100); color:var(--jade-700); border-color:var(--jade-150);}
+.ico.del:hover{background:var(--coral-100); color:var(--coral-700); border-color:#F2D2C5;}
+
+/* ── tabla de respaldo (si el CDN de Tabulator no carga) ── */
+.fb{width:100%; border-collapse:collapse; background:#fff;}
+.fb thead th{
+  font-family:'DM Mono',monospace; font-size:10.5px; font-weight:500; letter-spacing:.14em;
+  text-transform:uppercase; color:var(--clay-500); text-align:left; padding:13px 14px;
+  background:var(--jade-50); border-bottom:1px solid var(--line); white-space:nowrap;
+}
+.fb tbody td{padding:12px 14px; border-bottom:1px solid var(--line); font-size:14px;}
+.fb tbody tr{transition:background .13s;}
+.fb tbody tr:hover{background:var(--jade-50);}
+.fb tbody tr:last-child td{border-bottom:none;}
+.fb .r{text-align:right;} .fb .c{text-align:center;}
+.fb-note{
+  padding:11px 14px; font-size:12.5px; color:var(--amber-700);
+  background:var(--amber-100); border-bottom:1px solid #EFDFC0;
+}
+
+/* ── mapa (vacío) ── */
+.empty{
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px;
+  padding:74px 24px; text-align:center; color:var(--clay-500);
+}
+.empty .meter{--meter-h:34px; --bar-w:4px; --bar-gap:4px; --bar-color:var(--clay-200); opacity:.8;}
+.empty h3{font-family:'Bricolage Grotesque',sans-serif; font-size:17px; font-weight:600; color:var(--jade-900);}
+.empty p{font-size:14px; max-width:40ch;}
+
+@media(prefers-reduced-motion:reduce){
+  *{animation:none !important; transition:none !important;}
+  .meter i{transform:scaleY(.52);}
+  .tab.on::after{transform:scaleX(1);}
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="crumb">
+    <a class="brand" href="#"><div class="meter" data-meter="5"></div>
+      <span class="brand-name"><span>social</span> <b>listening</b></span></a>
+    <span class="crumb-sep">/</span>
+    <span class="crumb-here">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <rect x="2.8" y="2.8" width="18.4" height="18.4" rx="5.4"/><circle cx="12" cy="12" r="4.3"/>
+        <circle cx="17.3" cy="6.7" r="1.15" fill="currentColor" stroke="none"/>
+      </svg>Instagram</span>
+  </div>
+  <button class="user-btn"><span class="avatar">MB</span>M. Becerra</button>
+</header>
+
+<nav class="tabs">
+  <button class="tab" data-view="analisis">Análisis de publicación</button>
+  <button class="tab on" data-view="monitoreo"><div class="meter" data-meter="4"></div>Monitoreo en vivo</button>
+  <button class="tab" data-view="mapa">Mapa de reclamos</button>
+</nav>
+
+<main class="shell">
+
+  <!-- ═══ ANÁLISIS ═══ -->
+  <section class="view" id="v-analisis">
+    <div class="panel-head" style="text-align:center;">
+      <p class="tag">Análisis</p>
+      <h1 class="display">Analizá una publicación</h1>
+      <p style="margin-inline:auto;">Pegá el link de un posteo y obtené un reporte de sentimiento listo para compartir.</p>
+    </div>
+    <div class="card card-pad analyze">
+      <label class="tag" for="url">Link de la publicación</label>
+      <input id="url" type="text" placeholder="https://www.instagram.com/p/XXXXXXXX/">
+      <button class="btn btn-wide">Analizar publicación</button>
+    </div>
+  </section>
+
+  <!-- ═══ MONITOREO ═══ -->
+  <section class="view on" id="v-monitoreo">
+    <div class="panel-head">
+      <p class="tag">Monitoreo</p>
+      <h1 class="display">Monitoreo en vivo</h1>
+      <p>Detección automática de menciones cada 4 horas, con alerta por email.</p>
+    </div>
+
+    <div class="card config">
+      <div>
+        <h3 class="tag">Cuentas trackeadas</h3>
+        <div class="add-row">
+          <input type="text" placeholder="usuario (sin @)"><button class="btn-ghost">Agregar</button>
+        </div>
+        <div class="chips">
+          <span class="chip">@jorgemacri<button>✕</button></span>
+          <span class="chip">@buenosaires<button>✕</button></span>
+        </div>
+      </div>
+      <div>
+        <h3 class="tag">Palabras clave / hashtags</h3>
+        <div class="add-row">
+          <input type="text" placeholder="Jorge Macri o #JorgeMacri"><button class="btn-ghost">Agregar</button>
+        </div>
+        <div class="chips">
+          <span class="chip kw">#JorgeMacri<button>✕</button></span>
+          <span class="chip kw">jefe de gobierno porteño<button>✕</button></span>
+          <button class="chip-more">Ver las 50</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="toolbar">
+      <button class="btn">Actualizar ahora</button>
+      <span class="live"><div class="meter" data-meter="7"></div>
+        <span><b>Escuchando</b> · próxima corrida 16:00</span></span>
+    </div>
+
+    <div class="card table-card"><div id="tabla"></div></div>
+  </section>
+
+  <!-- ═══ MAPA ═══ -->
+  <section class="view" id="v-mapa">
+    <div class="panel-head">
+      <p class="tag">Reclamos</p>
+      <h1 class="display">Mapa de reclamos</h1>
+      <p>Reclamos de vecinos con ubicación detectada, geolocalizados automáticamente.</p>
+    </div>
+    <div class="card">
+      <div class="empty">
+        <div class="meter" data-meter="16"></div>
+        <h3>Todavía no hay reclamos ubicados</h3>
+        <p>Cuando el análisis detecte comentarios con una dirección, van a aparecer acá.</p>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<script src="https://unpkg.com/tabulator-tables@6.3.0/dist/js/tabulator.min.js"></script>
+<script>
+/* medidores */
+document.querySelectorAll('.meter').forEach(m=>{
+  const n=Number(m.dataset.meter)||5;
+  for(let i=0;i<n;i++){
+    const b=document.createElement('i');
+    b.style.setProperty('--peak',(.34+Math.random()*.62).toFixed(3));
+    b.style.setProperty('--dur',(1.05+Math.random()*1.5).toFixed(2)+'s');
+    b.style.setProperty('--delay',(-Math.random()*2).toFixed(2)+'s');
+    m.appendChild(b);
+  }
+});
+
+/* solapas */
+document.querySelectorAll('.tab').forEach(t=>{
+  t.addEventListener('click',()=>{
+    document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));
+    document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));
+    t.classList.add('on');
+    document.getElementById('v-'+t.dataset.view).classList.add('on');
+  });
+});
+
+/* datos de muestra */
+const datos=[
+ {account:'portalelpulso',title:'Mauricio Macri pierde poder frente a Jorge Macri',sentiment:'neutral',posted_at:'2026-08-18',likes:0,comments:1,notified:0},
+ {account:'loqocurre.pais',title:'Presidente Milei reaparece tras nueve días',sentiment:'neutral',posted_at:'2026-08-18',likes:0,comments:0,notified:0},
+ {account:'enorsai_noticias',title:'Disputa por bóveda familiar en Cementerio de Recoleta',sentiment:'negativo',posted_at:'2026-08-18',likes:4,comments:1,notified:0},
+ {account:'haceinstantes',title:'Decreto contra comercio de celulares robados en CABA',sentiment:'positivo',posted_at:'2026-08-18',likes:294,comments:36,notified:1},
+ {account:'laiglesiapresente',title:'Marcha por Jesús 2026 en Buenos Aires',sentiment:'positivo',posted_at:'2026-08-18',likes:13,comments:0,notified:0},
+ {account:'populardiario',title:'Decreto para fortalecer control sobre compra-venta',sentiment:'positivo',posted_at:'2026-08-18',likes:3,comments:1,notified:0},
+ {account:'streampolitico',title:'Macri encabeza acto homenaje a San Martín en Retiro',sentiment:'positivo',posted_at:'2026-08-18',likes:0,comments:0,notified:0},
+ {account:'cronosnoticias',title:'Milei y Macri aceleran alianza hacia 2027',sentiment:'neutral',posted_at:'2026-08-18',likes:2,comments:0,notified:0},
+ {account:'radiolared',title:'Ciudad declara emergencia contra mercado ilegal de celulares',sentiment:'positivo',posted_at:'2026-08-18',likes:46,comments:2,notified:1},
+ {account:'capricornio.ok',title:'CABA incorpora inteligencia artificial como contenido escolar',sentiment:'positivo',posted_at:'2026-08-19',likes:0,comments:0,notified:0},
+ {account:'quieromipais',title:'Gobierno se reúne con iglesia por visita papal',sentiment:'neutral',posted_at:'2026-08-19',likes:0,comments:0,notified:0},
+ {account:'comunanews',title:'Operativo contra venta de celulares robados en Once',sentiment:'negativo',posted_at:'2026-08-19',likes:12,comments:5,notified:0}
+];
+const LBL={positivo:'Positivo',neutral:'Neutral',negativo:'Negativo'};
+const MK={positivo:'pos',neutral:'neu',negativo:'neg'};
+const fmt=n=>n==null?'—':n.toLocaleString('es-AR');
+const ACC = `<div class="row-actions">
+  <button class="ico wa" title="Compartir por WhatsApp"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5.1-1.3A10 10 0 1 0 12 2Zm5.5 14.1c-.2.6-1.2 1.2-1.7 1.2-.5.1-1 .1-1.6-.1a13 13 0 0 1-5.6-4.9c-.4-.6-.9-1.5-.9-2.4 0-.9.5-1.4.7-1.6.2-.2.4-.3.6-.3h.4c.1 0 .3 0 .5.4l.7 1.6c0 .1.1.3 0 .4l-.3.4-.3.3c-.1.1-.2.2-.1.4.2.4.7 1.2 1.4 1.8.9.8 1.6 1 1.9 1.2.2.1.4.1.5-.1l.6-.7c.2-.2.3-.1.5-.1l1.5.7c.2.1.4.2.4.3v.6Z"/></svg></button>
+  <button class="ico del" title="Borrar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+</div>`;
+
+
+function respaldo(){
+  const col=['Cuenta','Título','Sentimiento','Fecha','Likes','Coment.','Avisado',''];
+  const filas=datos.map(d=>`<tr>
+    <td><a class="c-acc" href="https://instagram.com/${d.account}" target="_blank" rel="noopener">@${d.account}</a></td>
+    <td><a class="c-title" href="#">${d.title}</a></td>
+    <td><span class="sent ${MK[d.sentiment]}"><span class="mk"></span>${LBL[d.sentiment]}</span></td>
+    <td><span class="c-date">${new Date(d.posted_at).toLocaleDateString('es-AR')}</span></td>
+    <td class="r"><span class="c-num">${fmt(d.likes)}</span></td>
+    <td class="r"><span class="c-num">${fmt(d.comments)}</span></td>
+    <td class="c">${d.notified?'<span class="badge-si">Sí</span>':'<span class="badge-no">No</span>'}</td>
+    <td class="r">${ACC}</td></tr>`).join('');
+  document.getElementById('tabla').innerHTML =
+    `<p class="fb-note">Vista previa sin Tabulator (el visor bloquea scripts externos). En la app real la tabla ordena y filtra.</p>
+     <table class="fb"><thead><tr>${col.map(c=>`<th>${c}</th>`).join('')}</tr></thead><tbody>${filas}</tbody></table>`;
+}
+
+if (typeof Tabulator === 'undefined') { respaldo(); } else {
+new Tabulator('#tabla',{
+  data:datos, layout:'fitColumns', height:'560px',
+  columns:[
+    {title:'Cuenta',field:'account',width:170,headerFilter:'input',
+      formatter:c=>`<a class="c-acc" href="https://instagram.com/${c.getValue()}" target="_blank" rel="noopener">@${c.getValue()}</a>`},
+    {title:'Título',field:'title',widthGrow:4,headerFilter:'input',
+      formatter:c=>`<a class="c-title" href="#" title="${c.getValue()}">${c.getValue()}</a>`},
+    {title:'Sentimiento',field:'sentiment',width:150,headerFilter:'list',
+      headerFilterParams:{values:{'':'Todos',positivo:'Positivo',neutral:'Neutral',negativo:'Negativo'}},
+      headerFilterFunc:'=',
+      formatter:c=>{const v=c.getValue()||'neutral';
+        return `<span class="sent ${MK[v]}"><span class="mk"></span>${LBL[v]}</span>`;}},
+    {title:'Fecha',field:'posted_at',width:110,hozAlign:'center',headerHozAlign:'left',headerFilter:'input',
+      formatter:c=>`<span class="c-date">${new Date(c.getValue()).toLocaleDateString('es-AR')}</span>`},
+    {title:'Likes',field:'likes',width:95,hozAlign:'right',headerHozAlign:'left',sorter:'number',
+      formatter:c=>`<span class="c-num">${fmt(c.getValue())}</span>`},
+    {title:'Coment.',field:'comments',width:100,hozAlign:'right',headerHozAlign:'left',sorter:'number',
+      formatter:c=>`<span class="c-num">${fmt(c.getValue())}</span>`},
+    {title:'Avisado',field:'notified',width:110,hozAlign:'center',headerHozAlign:'left',
+      headerFilter:'list',headerFilterParams:{values:{'':'Todos',1:'Sí',0:'No'}},headerFilterFunc:'=',
+      formatter:c=>c.getValue()?'<span class="badge-si">Sí</span>':'<span class="badge-no">No</span>'},
+    {title:'',field:'account',width:82,headerSort:false,hozAlign:'right',
+      formatter:()=>ACC}
+  ]
+});
+}
+</script>
+</body>
+</html>

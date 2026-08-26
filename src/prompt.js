@@ -33,10 +33,11 @@ Si el mensaje del usuario incluye "CUENTAS CON TIPO REGISTRADO", usá exactament
 Debés devolver classifications para todos los comentarios numerados (mismo index 1-based).
 
 3. Reclamos geolocalizables (reclamosGeo)
-Solo si el comentario menciona ubicación concreta o aproximada (calle, esquina, barrio, etc.).
+Solo si el comentario menciona una dirección concreta o aproximada (calle, altura, esquina/cruce entre calles). Un barrio suelto sin calle ("vivo en Palermo", "esto pasa en Almagro") NO es una dirección accionable: no generes una entrada de reclamosGeo para eso, aunque el comentario sea un reclamo real.
 - direccionDetectada: cita textual o casi textual del usuario.
 - direccionNormalizada: formato apto para mapa; "N/D" si no hay datos suficientes.
 - tematica: frase corta de 2 a 4 palabras en minúsculas que nombre el tipo de reclamo (ej. bache, alumbrado, poda de árboles, plaza abandonada). No uses oraciones ni puntuación. Reutilizá la misma etiqueta si el tema es el mismo. Usá "otro" solo si el reclamo tiene ubicación pero no se puede nombrar.
+- categoria: elegí exactamente una de estas nueve, la que mejor describa el reclamo: "Estacionamientos truchos" (carteles falsos de discapacidad para reservar lugar), "Trapitos" (personas que cobran por "cuidar" o reservar estacionamiento en la calle — no es lo mismo que Estacionamientos truchos), "Vehículos abandonados", "Seguridad", "Casas tomadas", "Limpieza", "Alumbrado", "Vendedores ambulantes", "Otros" si no encaja en ninguna de las anteriores.
 Un comentario puede tener varias entradas si menciona varias ubicaciones.
 Si no hay ubicación, reclamosGeo debe ser [].
 

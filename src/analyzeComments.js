@@ -15,6 +15,8 @@ const { buildWhatsAppReport } = require('./reportBuilder');
 const { buildUserPrompt } = require('./userPrompt');
 const { requestStructuredAnalysis } = require('./llm');
 const { getLlmProvider, getProviderLabel } = require('./llm/providerConfig');
+const { buildReclamosFromAnalysis } = require('./reclamosFromAnalysis');
+const db = require('./db');
 const {
   loadAccountRegistry,
   saveAccountRegistry,
@@ -74,6 +76,13 @@ async function analyzeComments({ url, post, comments }) {
     await saveAccountRegistry(registry);
   } catch (err) {
     console.warn('No se pudo guardar account-types.json:', err.message);
+  }
+
+  // Guarda los reclamos con ubicación en la tabla `reclamos` (geo_status
+  // 'pendiente' — geoWorker.js los geocodifica después, no acá: es local a
+  // SQLite, no pega a la red, así que no agrega latencia perceptible.
+  for (const reclamo of buildReclamosFromAnalysis({ url, sample, classifications })) {
+    db.upsertReclamo(reclamo);
   }
 
   const reportResult = buildWhatsAppReport({

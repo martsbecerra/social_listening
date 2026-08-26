@@ -29,10 +29,43 @@ document.querySelectorAll('.user-btn').forEach((btn) => {
   });
 });
 
+document.querySelectorAll('.user-btn').forEach((btn) => {
+  const dropdown = document.getElementById(btn.dataset.dropdown);
+  if (!dropdown) return;
+
+  btn.addEventListener('click', () => {
+    dropdown.classList.toggle('hidden');
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!btn.contains(e.target) && !dropdown.contains(e.target)) {
+      dropdown.classList.add('hidden');
+    }
+  });
+});
+
+function initialsFromEmail(email) {
+  const local = String(email || '').split('@')[0];
+  const parts = local.split(/[._-]+/).filter(Boolean);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+  return (local.slice(0, 2) || '?').toUpperCase();
+}
+
+function displayNameFromEmail(email) {
+  const local = String(email || '').split('@')[0];
+  const parts = local.split(/[._-]+/).filter(Boolean);
+  if (parts.length === 0) return email || '';
+  return parts.map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
+}
+
 async function initAuthHeader() {
   const emailEl = document.querySelector('.user-dropdown .user-email');
   const logoutBtn = document.querySelector('.user-dropdown .logout-btn');
-  if (!emailEl && !logoutBtn) return;
+  const avatarEl = document.querySelector('.user-btn .avatar');
+  const nameEl = document.querySelector('.user-btn .user-name');
+  if (!emailEl && !logoutBtn && !avatarEl) return;
 
   try {
     const res = await fetch('/api/auth/me', { credentials: 'same-origin' });
@@ -41,7 +74,10 @@ async function initAuthHeader() {
       return;
     }
     const data = await res.json();
-    if (emailEl) emailEl.textContent = data.email || '';
+    const email = data.email || '';
+    if (emailEl) emailEl.textContent = email;
+    if (avatarEl) avatarEl.textContent = initialsFromEmail(email);
+    if (nameEl) nameEl.textContent = displayNameFromEmail(email);
   } catch {
     window.location.replace('/');
     return;
@@ -60,3 +96,11 @@ async function initAuthHeader() {
 }
 
 initAuthHeader();
+
+// Atajos del pie de página: si la URL trae #tab-analysis / #tab-monitoring /
+// #tab-claims-map, abre esa solapa al cargar. Dispara el mismo click que ya
+// usa el usuario — no es un camino de navegación nuevo.
+if (location.hash.startsWith('#tab-')) {
+  const targetTab = location.hash.slice('#tab-'.length);
+  document.querySelector(`.tab-btn[data-tab="${targetTab}"]`)?.click();
+}

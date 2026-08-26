@@ -5,23 +5,64 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Iniciar sesión — Social Listening App</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=Instrument+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap"
+    rel="stylesheet"
+  />
   <link rel="stylesheet" href="css/styles.css" />
 </head>
+<body class="login-page">
+  <div class="auth">
+    <div class="auth-stage">
+      <div class="brand">
+        <div class="meter" data-meter="5" style="--bar-color:var(--jade-300)"></div>
+        <span class="brand-name"><span>social</span> <b>listening</b></span>
+      </div>
 
-<body>
-  <div class="login-page">
-    <img src="logo.png" alt="Social Listening App" class="login-logo" />
+      <div class="stage-mid">
+        <p class="tag stage-eyebrow">Equipo de Monitoreo</p>
+        <h1 class="stage-line">Lo que se dice, <em>cuando se dice</em>.</h1>
+        <p class="stage-sub">Monitoreo de menciones en redes, con lectura de sentimiento y alertas al equipo.</p>
+      </div>
 
-    <form class="card login-card" id="loginForm" novalidate>
-      <label for="loginEmail">Email</label>
-      <input type="email" id="loginEmail" name="email" placeholder="nombre@buenosaires.gob.ar" autocomplete="username"
-        required />
+      <div class="meter stage-meter" data-meter="26"></div>
+    </div>
 
-      <button type="submit" class="login-submit" id="loginSubmit">Enviarme el link</button>
-      <p id="loginStatus" class="login-status" role="status"></p>
-    </form>
+    <div class="auth-form">
+      <div class="auth-inner">
+        <h2 class="auth-title display">Entrar</h2>
+        <p class="auth-note">Te mandamos un link a tu email institucional. No hace falta contraseña.</p>
+
+        <form id="loginForm" novalidate>
+          <div class="field">
+            <label class="tag" for="loginEmail">Email</label>
+            <input type="email" id="loginEmail" name="email" placeholder="nombre@buenosaires.gob.ar" autocomplete="username" required />
+          </div>
+
+          <button type="submit" class="login-submit" id="loginSubmit">Enviarme el link</button>
+          <p id="loginStatus" class="login-status" role="status"></p>
+        </form>
+
+        <p class="auth-foot tag">Acceso restringido</p>
+      </div>
+    </div>
   </div>
+
+  <footer class="foot foot-mini">
+    <div class="foot-mini-in">
+      <span class="brand">
+        <span class="meter" data-meter="5"></span>
+        <span class="brand-name"><span>social</span> <b>listening</b></span>
+      </span>
+      <span class="tag" id="footerYear"></span>
+    </div>
+  </footer>
+
+  <script src="js/meter.js"></script>
   <script src="js/login.js"></script>
+  <script src="js/footer.js"></script>
 </body>
 
 </html>

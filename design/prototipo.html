@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Social Listening — sistema visual</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=Instrument+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  /* — Jade: la marca y la señal — */
+  --jade-950:#032A23;
+  --jade-900:#06382E;
+  --jade-700:#0B5947;
+  --jade-500:#12805F;
+  --jade-400:#2AA57C;
+  --jade-300:#63C7A2;
+  --jade-150:#C8E8DA;
+  --jade-100:#E3F2EA;
+  --jade-50:#F1F9F5;
+
+  /* — Barro: estructura, texto, calidez — */
+  --clay-900:#2A211C;
+  --clay-700:#5B4638;
+  --clay-500:#8A6A52;
+  --clay-200:#DED3C6;
+  --clay-100:#F0E9DF;
+
+  /* — Coral: solo alerta / negativo — */
+  --coral-700:#8E3418;
+  --coral-500:#C4522C;
+  --coral-100:#FAE7DF;
+
+  --amber-700:#8A5A10;
+  --amber-100:#FBF0D9;
+
+  --paper:#FCFDFB;
+  --line:#E4EBE7;
+
+  --shadow-sm:0 1px 2px rgba(6,56,46,.05), 0 2px 8px rgba(6,56,46,.04);
+  --shadow-md:0 2px 4px rgba(6,56,46,.05), 0 12px 32px rgba(6,56,46,.09);
+  --shadow-lg:0 4px 8px rgba(6,56,46,.06), 0 24px 60px rgba(6,56,46,.13);
+}
+
+*{box-sizing:border-box; margin:0; padding:0;}
+html{-webkit-text-size-adjust:100%;}
+body{
+  font-family:'Instrument Sans',system-ui,sans-serif;
+  color:var(--clay-900); background:var(--paper);
+  font-size:15px; line-height:1.55; -webkit-font-smoothing:antialiased;
+}
+::selection{background:var(--jade-150); color:var(--jade-950);}
+button,input{font:inherit; color:inherit;}
+a{color:inherit;}
+
+.display{font-family:'Bricolage Grotesque',sans-serif; letter-spacing:-.02em;}
+.mono{font-family:'DM Mono',monospace;}
+
+/* etiqueta utilitaria: mono, versalita, tracking abierto */
+.tag{
+  font-family:'DM Mono',monospace; font-size:10.5px; font-weight:500;
+  letter-spacing:.18em; text-transform:uppercase;
+}
+
+:focus-visible{outline:2px solid var(--jade-400); outline-offset:3px; border-radius:4px;}
+
+/* ══════════════════════════════════════════════════════════
+   EL MEDIDOR — elemento firma
+   Barras de amplitud. Vivas = hay señal. Planas = no hay.
+   ══════════════════════════════════════════════════════════ */
+.meter{display:flex; align-items:flex-end; gap:var(--bar-gap,3px); height:var(--meter-h,28px);}
+.meter i{
+  display:block; width:var(--bar-w,3px); height:100%; border-radius:99px;
+  background:var(--bar-color,var(--jade-400));
+  transform:scaleY(.18); transform-origin:bottom;
+  animation:pulse var(--dur,1.6s) var(--delay,0s) ease-in-out infinite;
+}
+/* scaleY se compone en GPU: no dispara layout ni repaint en cada frame,
+   a diferencia de animar height. Con esto el costo es despreciable. */
+@keyframes pulse{
+  0%,100%{transform:scaleY(.18);}
+  50%{transform:scaleY(var(--peak,.9));}
+}
+/* línea plana: sin señal */
+.meter.flat i{animation:none; transform:scaleY(.14); background:var(--clay-200);}
+
+/* ══════════════════════════════════════════════════════════
+   MARCA
+   ══════════════════════════════════════════════════════════ */
+.brand{display:inline-flex; align-items:center; gap:11px; text-decoration:none;}
+.brand .meter{--meter-h:26px; --bar-w:3.5px; --bar-gap:3px;}
+.brand-name{
+  font-family:'Bricolage Grotesque',sans-serif; font-size:17px; letter-spacing:-.025em;
+  color:var(--jade-900); line-height:1; white-space:nowrap;
+}
+.brand-name b{font-weight:700;}
+.brand-name span{font-weight:500; color:var(--jade-500);}
+
+/* ══════════════════════════════════════════════════════════
+   1 · INGRESO
+   ══════════════════════════════════════════════════════════ */
+.auth{min-height:640px; display:grid; grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);}
+
+/* — panel izquierdo: la sala escuchando — */
+.auth-stage{
+  position:relative; overflow:hidden; padding:clamp(32px,4vw,56px);
+  display:flex; flex-direction:column; justify-content:space-between;
+  background:
+    radial-gradient(120% 90% at 12% 8%, rgba(42,165,124,.30) 0%, transparent 55%),
+    radial-gradient(90% 80% at 92% 96%, rgba(11,89,71,.75) 0%, transparent 60%),
+    linear-gradient(158deg, var(--jade-900) 0%, var(--jade-950) 62%, #02201B 100%);
+  color:#fff;
+}
+/* trama de escaneo, muy sutil */
+.auth-stage::after{
+  content:""; position:absolute; inset:0; pointer-events:none;
+  background:repeating-linear-gradient(90deg, rgba(255,255,255,.028) 0 1px, transparent 1px 5px);
+  mask-image:linear-gradient(to bottom, transparent, #000 30%, #000 70%, transparent);
+}
+.auth-stage > *{position:relative; z-index:2;}
+.auth-stage .brand-name{color:#fff;}
+.auth-stage .brand-name span{color:var(--jade-300);}
+
+.stage-mid{padding:clamp(28px,5vw,44px) 0;}
+.stage-eyebrow{color:var(--jade-300); margin-bottom:16px;}
+.stage-line{
+  font-family:'Bricolage Grotesque',sans-serif; font-weight:600;
+  font-size:clamp(26px,3.4vw,38px); line-height:1.14; letter-spacing:-.03em;
+  max-width:15ch;
+}
+.stage-line em{font-style:normal; color:var(--jade-300);}
+.stage-sub{margin-top:16px; font-size:14px; color:rgba(255,255,255,.62); max-width:34ch; line-height:1.6;}
+
+/* medidor ambiente grande, al pie del panel */
+.stage-meter{--meter-h:88px; --bar-w:6px; --bar-gap:6px; --bar-color:rgba(99,199,162,.5); opacity:.85;}
+
+/* — panel derecho: el formulario — */
+.auth-form{
+  display:flex; flex-direction:column; justify-content:center;
+  padding:clamp(32px,5vw,72px); background:var(--paper);
+}
+.auth-inner{width:100%; max-width:360px; margin:0 auto;}
+.auth-title{font-size:26px; font-weight:600; color:var(--jade-950); letter-spacing:-.025em;}
+.auth-note{margin-top:8px; font-size:13.5px; color:var(--clay-500);}
+
+.field{margin-top:22px;}
+.field label{display:block; margin-bottom:7px; color:var(--clay-700);}
+.field input{
+  width:100%; padding:12px 14px; background:#fff;
+  border:1px solid var(--line); border-radius:10px; font-size:14.5px;
+  transition:border-color .16s, box-shadow .16s;
+}
+.field input::placeholder{color:#AFBAB4;}
+.field input:focus{outline:none; border-color:var(--jade-400); box-shadow:0 0 0 3.5px var(--jade-100);}
+
+.btn{
+  width:100%; margin-top:26px; padding:13px 20px; cursor:pointer;
+  font-family:'Instrument Sans',sans-serif; font-size:15px; font-weight:600; color:#fff;
+  background:linear-gradient(135deg, var(--jade-700), var(--jade-500));
+  border:none; border-radius:10px; box-shadow:var(--shadow-sm);
+  transition:transform .14s, box-shadow .18s, filter .18s;
+}
+.btn:hover{transform:translateY(-1px); box-shadow:0 4px 16px rgba(11,89,71,.26); filter:saturate(1.08);}
+.btn:active{transform:translateY(0);}
+
+.auth-foot{margin-top:26px; padding-top:20px; border-top:1px solid var(--line); color:var(--clay-500);}
+
+/* ══════════════════════════════════════════════════════════
+   2 · PLATAFORMAS
+   ══════════════════════════════════════════════════════════ */
+.app{background:linear-gradient(180deg, var(--jade-50) 0%, var(--paper) 320px);}
+
+.topbar{
+  display:flex; align-items:center; justify-content:space-between; gap:16px;
+  padding:16px clamp(18px,4vw,40px);
+  background:rgba(252,253,251,.86); backdrop-filter:blur(10px);
+  border-bottom:1px solid var(--line);
+  position:sticky; top:0; z-index:20;
+}
+.user-btn{
+  display:inline-flex; align-items:center; gap:9px; padding:7px 13px 7px 8px; cursor:pointer;
+  background:#fff; border:1px solid var(--line); border-radius:99px;
+  font-size:13.5px; color:var(--clay-700); box-shadow:var(--shadow-sm);
+  transition:border-color .16s, box-shadow .16s;
+}
+.user-btn:hover{border-color:var(--jade-150); box-shadow:0 2px 10px rgba(6,56,46,.08);}
+.avatar{
+  width:26px; height:26px; border-radius:99px; display:grid; place-items:center;
+  background:linear-gradient(135deg, var(--jade-500), var(--jade-300));
+  color:#fff; font-size:11px; font-weight:600; letter-spacing:.02em;
+}
+
+.shell{max-width:1080px; margin:0 auto; padding:clamp(30px,5vw,54px) clamp(18px,4vw,40px) 72px;}
+
+.head-row{display:flex; align-items:flex-end; justify-content:space-between; gap:24px; flex-wrap:wrap;}
+.head-eyebrow{color:var(--jade-500);}
+.head-row h1{
+  margin-top:11px; font-size:clamp(25px,3.4vw,33px); font-weight:600;
+  color:var(--jade-950); letter-spacing:-.03em; line-height:1.15;
+}
+.head-row p{margin-top:9px; font-size:14.5px; color:var(--clay-500); max-width:46ch;}
+
+/* estado del ciclo — dato real, no adorno */
+.cycle{
+  display:flex; align-items:center; gap:12px; padding:11px 16px;
+  background:#fff; border:1px solid var(--line); border-radius:12px; box-shadow:var(--shadow-sm);
+  white-space:nowrap;
+}
+.cycle .meter{--meter-h:16px; --bar-w:2.5px; --bar-gap:2.5px;}
+.cycle-txt{font-size:12.5px; color:var(--clay-500); line-height:1.35;}
+.cycle-txt b{display:block; color:var(--jade-900); font-weight:600; font-size:13px;}
+
+/* — grilla de plataformas — */
+.grid{
+  display:grid; grid-template-columns:repeat(auto-fit,minmax(212px,1fr));
+  gap:16px; margin-top:clamp(26px,4vw,38px);
+}
+
+.plat{
+  position:relative; display:flex; flex-direction:column; overflow:hidden;
+  padding:22px 22px 0; min-height:212px; text-decoration:none;
+  background:#fff; border:1px solid var(--line); border-radius:16px;
+  box-shadow:var(--shadow-sm);
+  transition:transform .2s cubic-bezier(.2,.7,.3,1), box-shadow .22s, border-color .2s;
+}
+.plat:hover{transform:translateY(-3px); box-shadow:var(--shadow-md); border-color:var(--jade-150);}
+/* trazo jade que se dibuja al pasar por encima */
+.plat::before{
+  content:""; position:absolute; left:0; top:0; height:3px; width:0;
+  background:linear-gradient(90deg, var(--jade-500), var(--jade-300));
+  transition:width .34s cubic-bezier(.2,.7,.3,1);
+}
+.plat:hover::before{width:100%;}
+
+.plat-glyph{width:30px; height:30px; color:var(--jade-900); transition:color .2s;}
+.plat:hover .plat-glyph{color:var(--jade-500);}
+.plat-name{
+  margin-top:auto; font-family:'Bricolage Grotesque',sans-serif;
+  font-size:19px; font-weight:600; letter-spacing:-.02em; color:var(--jade-950);
+}
+.plat-state{margin-top:3px; font-size:12.5px; color:var(--clay-500);}
+.plat-state b{color:var(--jade-600,var(--jade-500)); font-weight:600;}
+
+/* la franja de señal: latido = activa, plana = sin conectar */
+.plat-signal{
+  margin:16px -22px 0; padding:13px 22px; height:56px;
+  display:flex; align-items:flex-end;
+  background:linear-gradient(180deg, var(--jade-50), #fff);
+  border-top:1px solid var(--line);
+}
+.plat-signal .meter{--meter-h:26px; --bar-w:3px; --bar-gap:3px; width:100%;}
+.plat-signal .meter i{flex:0 0 auto;}
+.plat:hover .plat-signal .meter i{animation-duration:.85s;}
+
+/* deshabilitada */
+.plat.off{background:#FDFCFA; border-style:dashed; border-color:var(--clay-200); cursor:default;}
+.plat.off:hover{transform:none; box-shadow:var(--shadow-sm); border-color:var(--clay-200);}
+.plat.off::before{display:none;}
+.plat.off .plat-glyph{color:var(--clay-500); opacity:.5;}
+.plat.off .plat-name{color:var(--clay-500);}
+.plat.off .plat-state{color:#A79684;}
+.plat.off .plat-signal{background:var(--clay-100); border-top-color:var(--clay-200);}
+
+/* aparición escalonada al cargar */
+@keyframes rise{from{opacity:0; transform:translateY(14px);} to{opacity:1; transform:none;}}
+.grid > *{animation:rise .5s cubic-bezier(.2,.7,.3,1) backwards;}
+.grid > *:nth-child(1){animation-delay:.04s;}
+.grid > *:nth-child(2){animation-delay:.10s;}
+.grid > *:nth-child(3){animation-delay:.16s;}
+.grid > *:nth-child(4){animation-delay:.22s;}
+
+/* ══════════════════════════════════════════════════════════ */
+@media(max-width:840px){
+  .auth{grid-template-columns:1fr; min-height:0;}
+  .auth-stage{padding:30px 24px 34px;}
+  .stage-meter{--meter-h:52px;}
+  .head-row{align-items:flex-start;}
+}
+@media(prefers-reduced-motion:reduce){
+  *{animation:none !important; transition:none !important;}
+  .meter i{transform:scaleY(.52);}
+  .meter.flat i{transform:scaleY(.14);}
+}
+
+/* — sólo para esta muestra — */
+.demo-label{
+  max-width:1080px; margin:0 auto; padding:52px clamp(18px,4vw,40px) 15px;
+  display:flex; align-items:center; gap:13px; color:var(--clay-500);
+}
+.demo-label::after{content:""; flex:1; height:1px; background:var(--line);}
+.demo-frame{border:1px solid var(--line); border-radius:16px; overflow:hidden; margin:0 clamp(18px,4vw,40px); box-shadow:var(--shadow-lg);}
+.demo-wrap{max-width:1160px; margin:0 auto;}
+</style>
+</head>
+<body>
+
+<div class="demo-wrap">
+
+  <p class="demo-label tag">01 — Ingreso</p>
+  <div class="demo-frame">
+    <div class="auth">
+      <div class="auth-stage">
+        <div class="brand">
+          <div class="meter" data-meter="5" style="--bar-color:var(--jade-300)"></div>
+          <span class="brand-name"><span>social</span> <b>listening</b></span>
+        </div>
+
+        <div class="stage-mid">
+          <p class="tag stage-eyebrow">Equipo de Monitoreo</p>
+          <h1 class="stage-line">Lo que se dice, <em>cuando se dice</em>.</h1>
+          <p class="stage-sub">Monitoreo de menciones en redes, con lectura de sentimiento y alertas al equipo.</p>
+        </div>
+
+        <div class="meter stage-meter" data-meter="26"></div>
+      </div>
+
+      <div class="auth-form">
+        <div class="auth-inner">
+          <h2 class="auth-title display">Entrar</h2>
+          <p class="auth-note">Usá tu cuenta institucional.</p>
+
+          <div class="field">
+            <label class="tag" for="email">Email</label>
+            <input id="email" type="email" placeholder="nombre@correo.com" autocomplete="username">
+          </div>
+
+          <div class="field">
+            <label class="tag" for="pass">Contraseña</label>
+            <input id="pass" type="password" placeholder="••••••••" autocomplete="current-password">
+          </div>
+
+          <button class="btn">Entrar</button>
+
+          <p class="auth-foot tag">Acceso restringido</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="demo-label tag">02 — Plataformas</p>
+  <div class="demo-frame">
+    <div class="app">
+      <header class="topbar">
+        <div class="brand">
+          <div class="meter" data-meter="5"></div>
+          <span class="brand-name"><span>social</span> <b>listening</b></span>
+        </div>
+        <button class="user-btn">
+          <span class="avatar">MB</span>
+          M. Becerra
+        </button>
+      </header>
+
+      <div class="shell">
+        <div class="head-row">
+          <div>
+            <p class="tag head-eyebrow">Panel</p>
+            <h1 class="display">Elegí una plataforma</h1>
+            <p>El monitoreo corre solo cada 4 horas. Entrá a una red para ver lo detectado o analizar una publicación.</p>
+          </div>
+
+          <div class="cycle">
+            <div class="meter" data-meter="7"></div>
+            <span class="cycle-txt">
+              <b>Escuchando</b>
+              Próxima corrida 16:00
+            </span>
+          </div>
+        </div>
+
+        <div class="grid">
+
+          <a class="plat" href="#">
+            <svg class="plat-glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
+              <rect x="2.8" y="2.8" width="18.4" height="18.4" rx="5.4"/>
+              <circle cx="12" cy="12" r="4.3"/>
+              <circle cx="17.3" cy="6.7" r="1.15" fill="currentColor" stroke="none"/>
+            </svg>
+            <span class="plat-name">Instagram</span>
+            <span class="plat-state"><b>128</b> menciones esta semana</span>
+            <div class="plat-signal"><div class="meter" data-meter="22"></div></div>
+          </a>
+
+          <a class="plat" href="#">
+            <svg class="plat-glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">
+              <path d="M14.2 3h3.1l-4.6 5.9L18.9 21h-4.4l-3.5-5.1L6.8 21H3.6l5.1-6.4L3.3 3h4.5l3.2 4.7L14.2 3z"/>
+            </svg>
+            <span class="plat-name">X</span>
+            <span class="plat-state"><b>96</b> menciones esta semana</span>
+            <div class="plat-signal"><div class="meter" data-meter="22"></div></div>
+          </a>
+
+          <a class="plat" href="#">
+            <svg class="plat-glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
+              <circle cx="12" cy="12" r="9.3"/>
+              <path d="M13.6 21.2v-7.4h2.5l.5-2.9h-3v-1.9c0-.85.4-1.6 1.7-1.6h1.4V4.9a15 15 0 0 0-2.2-.2c-2.3 0-3.8 1.4-3.8 3.9v2.3H8v2.9h2.7v7.4"/>
+            </svg>
+            <span class="plat-name">Facebook</span>
+            <span class="plat-state"><b>41</b> menciones esta semana</span>
+            <div class="plat-signal"><div class="meter" data-meter="22"></div></div>
+          </a>
+
+          <a class="plat" href="#">
+            <svg class="plat-glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M14.4 3.2c.35 2.6 1.9 4.1 4.4 4.3v2.7c-1.5.15-2.8-.3-4.3-1.2v5.4c0 4.5-4 5.9-6.4 4.2-2.6-1.85-2.3-6 1.1-6.6v2.7c-.3.1-.6.25-.75.4-.9.85-.5 2.4 1 2.4 1 0 1.6-.65 1.6-1.7V3.2h3.35z"/>
+            </svg>
+            <span class="plat-name">TikTok</span>
+            <span class="plat-state"><b>73</b> menciones esta semana</span>
+            <div class="plat-signal"><div class="meter" data-meter="22"></div></div>
+          </a>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// Construye las barras del medidor. Cada barra recibe su propio pico,
+// duración y desfasaje para que el conjunto no lata al unísono.
+document.querySelectorAll('.meter').forEach(m => {
+  const n = Number(m.dataset.meter) || 5;
+  for (let i = 0; i < n; i++) {
+    const bar = document.createElement('i');
+    bar.style.setProperty('--peak',  (.34 + Math.random() * .62).toFixed(3));
+    bar.style.setProperty('--dur',   (1.05 + Math.random() * 1.5).toFixed(2) + 's');
+    bar.style.setProperty('--delay', (-Math.random() * 2).toFixed(2) + 's');
+    m.appendChild(bar);
+  }
+});
+</script>
+
+</body>
+</html>

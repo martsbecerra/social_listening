@@ -6,11 +6,15 @@
 // tematica es string libre (max 40); la normalización vive en tematica.js.
 // ==========================================================================
 
+const { CATEGORIAS_RECLAMO } = require('./categoriaReclamo');
+
 // Valores permitidos; deben coincidir con validateAnalysis.js y el system prompt.
 const SENTIMENTS = ['positivo', 'negativo', 'neutral', 'ruido'];
 const ACCOUNT_TYPES = ['oficial', 'periodista', 'opositor', 'vecino', 'ruido'];
 
-// Una fila del CSV de reclamos (puede haber varias por comentario).
+// Una fila del CSV de reclamos (puede haber varias por comentario). También
+// alimenta la tabla `reclamos` del mapa: direccionDetectada + categoria son
+// los campos que usa reclamosFromAnalysis.js (ver src/db.js).
 const RECLAMO_GEO_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -23,8 +27,13 @@ const RECLAMO_GEO_SCHEMA = {
       description:
         'Etiqueta corta (2 a 4 palabras) del tipo de reclamo. No es un enum: el backend la normaliza.',
     },
+    categoria: {
+      type: 'string',
+      enum: CATEGORIAS_RECLAMO,
+      description: 'Categoría cerrada del reclamo para el mapa. "Otros" si no encaja en ninguna.',
+    },
   },
-  required: ['direccionDetectada', 'direccionNormalizada', 'tematica'],
+  required: ['direccionDetectada', 'direccionNormalizada', 'tematica', 'categoria'],
 };
 
 // Clasificación por comentario; index coincide con la lista numerada del user prompt.

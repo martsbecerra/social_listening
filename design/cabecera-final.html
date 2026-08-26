@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cabecera jade + solapas vivas + footer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=Instrument+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --jade-950:#032A23; --jade-900:#06382E; --jade-700:#0B5947; --jade-500:#12805F;
+  --jade-400:#2AA57C; --jade-300:#63C7A2; --jade-150:#C8E8DA; --jade-100:#E3F2EA; --jade-50:#F1F9F5;
+  --clay-900:#2A211C; --clay-700:#5B4638; --clay-500:#8A6A52; --clay-200:#DED3C6; --clay-100:#F0E9DF;
+  --coral-500:#C4522C; --amber-700:#8A5A10;
+  --paper:#FCFDFB; --line:#E4EBE7;
+  --shadow-sm:0 1px 2px rgba(6,56,46,.05), 0 2px 8px rgba(6,56,46,.04);
+  --shadow-md:0 2px 4px rgba(6,56,46,.05), 0 12px 32px rgba(6,56,46,.09);
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Instrument Sans',system-ui,sans-serif;color:var(--clay-900);background:var(--paper);font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased;}
+::selection{background:var(--jade-150);color:var(--jade-950);}
+button,input{font:inherit;color:inherit;}
+a{color:inherit;}
+.display{font-family:'Bricolage Grotesque',sans-serif;letter-spacing:-.02em;}
+.tag{font-family:'DM Mono',monospace;font-size:10.5px;font-weight:500;letter-spacing:.18em;text-transform:uppercase;}
+:focus-visible{outline:2px solid var(--jade-400);outline-offset:3px;border-radius:4px;}
+
+/* ══ medidor ══ */
+.meter{display:flex;align-items:flex-end;gap:var(--bar-gap,3px);height:var(--meter-h,28px);}
+.meter i{display:block;width:var(--bar-w,3px);height:100%;border-radius:99px;background:var(--bar-color,var(--jade-400));transform:scaleY(.18);transform-origin:bottom;animation:pulse var(--dur,1.6s) var(--delay,0s) ease-in-out infinite;}
+@keyframes pulse{0%,100%{transform:scaleY(.18);}50%{transform:scaleY(var(--peak,.9));}}
+
+/* ══ marca ══ */
+.brand{display:inline-flex;align-items:center;gap:11px;text-decoration:none;}
+.brand .meter{--meter-h:26px;--bar-w:3.5px;}
+.brand-name{font-family:'Bricolage Grotesque',sans-serif;font-size:17px;letter-spacing:-.025em;line-height:1;}
+.brand-name b{font-weight:700;} .brand-name span{font-weight:500;}
+
+/* ══════════════════════════════════════════
+   CABECERA JADE
+   ══════════════════════════════════════════ */
+.top{
+  position:relative;overflow:hidden;padding:15px clamp(18px,4vw,32px);
+  display:flex;align-items:center;justify-content:space-between;gap:16px;color:#fff;
+  background:
+    radial-gradient(90% 220% at 8% 0%, rgba(42,165,124,.34) 0%, transparent 60%),
+    linear-gradient(120deg, var(--jade-900) 0%, var(--jade-950) 70%, #02201B 100%);
+}
+.top::after{
+  content:"";position:absolute;inset:0;pointer-events:none;
+  background:repeating-linear-gradient(90deg, rgba(255,255,255,.032) 0 1px, transparent 1px 5px);
+  mask-image:linear-gradient(to right, transparent, #000 40%, transparent);
+}
+.top > *{position:relative;z-index:2;}
+.top .brand-name{color:#fff;} .top .brand-name span{color:var(--jade-300);}
+.crumb{display:flex;align-items:center;gap:10px;min-width:0;}
+.crumb-sep{color:rgba(255,255,255,.26);}
+.crumb-here{display:inline-flex;align-items:center;gap:7px;font-size:14px;font-weight:600;color:rgba(255,255,255,.93);white-space:nowrap;}
+.crumb-here svg{width:17px;height:17px;}
+.user-btn{
+  display:inline-flex;align-items:center;gap:9px;padding:6px 13px 6px 7px;cursor:pointer;
+  background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.18);border-radius:99px;
+  font-size:13.5px;color:rgba(255,255,255,.92);transition:background .16s,border-color .16s;
+}
+.user-btn:hover{background:rgba(255,255,255,.16);border-color:rgba(255,255,255,.3);}
+.avatar{width:25px;height:25px;border-radius:99px;display:grid;place-items:center;background:linear-gradient(135deg,var(--jade-400),var(--jade-300));color:var(--jade-950);font-size:10.5px;font-weight:700;}
+
+/* ══════════════════════════════════════════
+   SOLAPAS — cada una con su ícono vivo
+   ══════════════════════════════════════════ */
+.tabs{
+  display:flex;gap:4px;padding:0 clamp(18px,4vw,32px);
+  background:var(--paper);border-bottom:1px solid var(--line);
+  position:sticky;top:0;z-index:20;overflow-x:auto;scrollbar-width:none;
+}
+.tabs::-webkit-scrollbar{display:none;}
+.tab{
+  position:relative;display:inline-flex;align-items:center;gap:9px;white-space:nowrap;
+  padding:13px 16px;background:none;border:none;cursor:pointer;
+  font-size:14.5px;font-weight:500;color:var(--clay-500);transition:color .16s;
+}
+.tab:hover{color:var(--jade-700);}
+.tab::after{
+  content:"";position:absolute;left:16px;right:16px;bottom:-1px;height:2px;border-radius:2px;
+  background:linear-gradient(90deg,var(--jade-500),var(--jade-300));
+  transform:scaleX(0);transform-origin:left;transition:transform .28s cubic-bezier(.2,.7,.3,1);
+}
+.tab.on{color:var(--jade-950);font-weight:600;}
+.tab.on::after{transform:scaleX(1);}
+
+.glyph{width:17px;height:17px;flex:none;color:var(--jade-400);}
+.tab.on .glyph{color:var(--jade-500);}
+
+/* Análisis — la línea de tendencia se dibuja de menor a mayor y el punto la sigue */
+.glyph-an .trend{
+  stroke-dasharray:26;stroke-dashoffset:26;
+  animation:draw 3s cubic-bezier(.4,0,.2,1) infinite;
+}
+.glyph-an .head{
+  opacity:0;
+  animation:headMove 3s cubic-bezier(.4,0,.2,1) infinite;
+}
+@keyframes draw{
+  0%{stroke-dashoffset:26;}
+  55%{stroke-dashoffset:0;}
+  85%{stroke-dashoffset:0;}
+  100%{stroke-dashoffset:26;}
+}
+@keyframes headMove{
+  0%{opacity:0;transform:translate(-8px,6px);}
+  12%{opacity:1;}
+  55%{opacity:1;transform:translate(0,0);}
+  85%{opacity:1;transform:translate(0,0);}
+  92%,100%{opacity:0;transform:translate(0,0);}
+}
+
+/* Monitoreo — el medidor de la marca, en chico */
+.tab .meter{--meter-h:13px;--bar-w:2px;--bar-gap:2px;}
+
+/* Mapa — pin fijo con onda de radar que se expande */
+.glyph-mp .ping{transform-origin:12px 10px;animation:ping 2.6s cubic-bezier(.2,.7,.3,1) infinite;}
+@keyframes ping{
+  0%{transform:scale(.3);opacity:.85;}
+  70%{transform:scale(1.5);opacity:0;}
+  100%{transform:scale(1.5);opacity:0;}
+}
+
+/* ══ cuerpo ══ */
+.shell{max-width:1080px;margin:0 auto;padding:clamp(30px,5vw,48px) clamp(18px,4vw,32px) 64px;background:linear-gradient(180deg,var(--jade-50) 0%, transparent 280px);}
+.panel-head{text-align:center;}
+.panel-head .tag{color:var(--jade-500);}
+.panel-head h1{margin-top:10px;font-size:clamp(24px,3.2vw,30px);font-weight:600;color:var(--jade-950);letter-spacing:-.03em;}
+.panel-head p{margin-top:8px;font-size:14.5px;color:var(--clay-500);}
+.card{max-width:600px;margin:26px auto 0;background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow-md);padding:22px;}
+.card label{display:block;margin-bottom:7px;color:var(--clay-700);}
+.card input{width:100%;padding:12px 14px;background:var(--paper);border:1px solid var(--line);border-radius:10px;font-size:14.5px;transition:border-color .16s,box-shadow .16s;}
+.card input:focus{outline:none;border-color:var(--jade-400);box-shadow:0 0 0 3.5px var(--jade-100);background:#fff;}
+.btn{width:100%;margin-top:18px;padding:13px 22px;cursor:pointer;font-size:15px;font-weight:600;color:#fff;background:linear-gradient(135deg,var(--jade-700),var(--jade-500));border:none;border-radius:10px;box-shadow:var(--shadow-sm);transition:transform .14s,box-shadow .18s;}
+.btn:hover{transform:translateY(-1px);box-shadow:0 4px 16px rgba(11,89,71,.26);}
+
+/* ══════════════════════════════════════════
+   PIE — eco de la cabecera, en claro
+   ══════════════════════════════════════════ */
+.foot{
+  position:relative;overflow:hidden;margin-top:auto;
+  background:
+    radial-gradient(80% 180% at 92% 100%, rgba(42,165,124,.14) 0%, transparent 60%),
+    radial-gradient(60% 140% at 6% 0%, rgba(138,106,82,.09) 0%, transparent 58%),
+    linear-gradient(170deg, var(--jade-50) 0%, var(--clay-100) 100%);
+  border-top:1px solid var(--jade-150);
+}
+.foot::after{
+  content:"";position:absolute;inset:0;pointer-events:none;
+  background:repeating-linear-gradient(90deg, rgba(6,56,46,.022) 0 1px, transparent 1px 5px);
+  mask-image:linear-gradient(to right, transparent, #000 45%, transparent);
+}
+.foot-in{position:relative;z-index:2;max-width:1080px;margin:0 auto;padding:38px clamp(18px,4vw,32px) 28px;}
+
+.foot-grid{display:grid;grid-template-columns:minmax(0,1.5fr) repeat(2,minmax(0,1fr));gap:32px;}
+.foot h4{color:var(--jade-700);margin-bottom:12px;}
+.foot-lead{margin-top:14px;font-size:13.5px;color:var(--clay-700);max-width:38ch;line-height:1.6;}
+.foot-lead b{color:var(--jade-900);font-weight:600;}
+
+.stat-row{display:flex;flex-direction:column;gap:9px;}
+.stat{display:flex;align-items:baseline;gap:9px;font-size:13px;color:var(--clay-500);}
+.stat b{font-family:'DM Mono',monospace;font-size:15px;font-weight:500;color:var(--jade-900);}
+
+.foot-links{display:flex;flex-direction:column;gap:8px;font-size:13.5px;}
+.foot-links a{color:var(--clay-700);text-decoration:none;width:fit-content;transition:color .16s;}
+.foot-links a:hover{color:var(--jade-700);text-decoration:underline;text-underline-offset:3px;}
+
+.foot-rule{margin:26px 0 0;height:1px;background:linear-gradient(90deg,var(--jade-150),transparent);}
+.foot-base{
+  display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;
+  padding-top:16px;color:var(--clay-500);
+}
+.pulse-line{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;color:var(--clay-500);}
+.pulse-dot{width:7px;height:7px;border-radius:99px;background:var(--jade-400);animation:blink 2.2s ease-in-out infinite;}
+@keyframes blink{0%,100%{opacity:.35;transform:scale(.85);}50%{opacity:1;transform:scale(1);}}
+
+@media(max-width:760px){.foot-grid{grid-template-columns:1fr;gap:24px;}}
+@media(prefers-reduced-motion:reduce){
+  *{animation:none!important;transition:none!important;}
+  .meter i{transform:scaleY(.52);}
+  .glyph-an .trend{stroke-dashoffset:0;}
+  .glyph-an .head{opacity:1;transform:none;}
+  .glyph-mp .ping{opacity:.35;transform:scale(1);}
+  .tab.on::after{transform:scaleX(1);}
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="crumb">
+    <a class="brand" href="#"><div class="meter" data-meter="5" style="--bar-color:var(--jade-300)"></div>
+      <span class="brand-name"><span>social</span> <b>listening</b></span></a>
+    <span class="crumb-sep">/</span>
+    <span class="crumb-here">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <rect x="2.8" y="2.8" width="18.4" height="18.4" rx="5.4"/><circle cx="12" cy="12" r="4.3"/>
+        <circle cx="17.3" cy="6.7" r="1.15" fill="currentColor" stroke="none"/></svg>Instagram</span>
+  </div>
+  <button class="user-btn"><span class="avatar">MB</span>M. Becerra</button>
+</header>
+
+<nav class="tabs">
+  <button class="tab on">
+    <svg class="glyph glyph-an" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M3 20h18" stroke-width="1.5" opacity=".3"/>
+      <path class="trend" d="M4 16.5 9 12 13 14.5 20 6"/>
+      <circle class="head" cx="20" cy="6" r="2.2" fill="currentColor" stroke="none"/>
+    </svg>Análisis de publicación</button>
+
+  <button class="tab"><div class="meter" data-meter="5"></div>Monitoreo en vivo</button>
+
+  <button class="tab">
+    <svg class="glyph glyph-mp" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true">
+      <circle class="ping" cx="12" cy="10" r="7" stroke-width="1.5"/>
+      <path d="M12 21s6-5.7 6-10a6 6 0 1 0-12 0c0 4.3 6 10 6 10Z"/>
+      <circle cx="12" cy="10.4" r="2.1" fill="currentColor" stroke="none"/>
+    </svg>Mapa de reclamos</button>
+</nav>
+
+<main class="shell">
+  <div class="panel-head">
+    <p class="tag">Análisis</p>
+    <h1 class="display">Análisis de sentimiento en Instagram</h1>
+    <p>Pegá el link de una publicación y obtené un reporte ejecutivo listo para WhatsApp.</p>
+  </div>
+  <div class="card">
+    <label class="tag">Link de la publicación</label>
+    <input placeholder="https://www.instagram.com/p/XXXXXXXX/">
+    <button class="btn">Analizar publicación</button>
+  </div>
+</main>
+
+<footer class="foot">
+  <div class="foot-in">
+    <div class="foot-grid">
+
+      <div>
+        <a class="brand" href="#"><div class="meter" data-meter="5"></div>
+          <span class="brand-name" style="color:var(--jade-900)"><span style="color:var(--jade-500)">social</span> <b>listening</b></span></a>
+        <p class="foot-lead">Una herramienta de <b>DGAND</b> para escuchar lo que se dice en redes, medir cómo se dice y convertir los reclamos en un punto del mapa.</p>
+      </div>
+
+      <div>
+        <h4 class="tag">Qué escuchamos</h4>
+        <div class="stat-row">
+          <span class="stat"><b>4</b> plataformas</span>
+          <span class="stat"><b>6</b> corridas por día</span>
+          <span class="stat"><b>9</b> temáticas de reclamo</span>
+        </div>
+      </div>
+
+      <div>
+        <h4 class="tag">Atajos</h4>
+        <nav class="foot-links">
+          <a href="#">Análisis de publicación</a>
+          <a href="#">Monitoreo en vivo</a>
+          <a href="#">Mapa de reclamos</a>
+        </nav>
+      </div>
+
+    </div>
+
+    <div class="foot-rule"></div>
+    <div class="foot-base">
+      <span class="pulse-line"><span class="pulse-dot"></span>Escuchando · última corrida 12:00</span>
+      <span class="tag">DGAND · 2026</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+document.querySelectorAll('.meter').forEach(m=>{
+  const n=Number(m.dataset.meter)||5;
+  for(let i=0;i<n;i++){const b=document.createElement('i');
+    b.style.setProperty('--peak',(.34+Math.random()*.62).toFixed(3));
+    b.style.setProperty('--dur',(1.05+Math.random()*1.5).toFixed(2)+'s');
+    b.style.setProperty('--delay',(-Math.random()*2).toFixed(2)+'s');
+    m.appendChild(b);}
+});
+</script>
+</body>
+</html>
