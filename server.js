@@ -28,6 +28,7 @@ const {
 } = require('./src/llm/providerConfig');
 const db = require('./src/db');
 const monitor = require('./src/monitor');
+const { listPlatformIds } = require('./src/platforms');
 const { startScheduler, runCycle, getCronExpression, getLastRunAt, estimateRunsPerDay, getNextRunAt } = require('./src/scheduler');
 const { processPendingReclamosInBackground } = require('./src/geoWorker');
 const accountStats = require('./src/accountStats');
@@ -394,12 +395,19 @@ app.post('/api/x/analyze', async (req, res) => {
 // --------------------------------------------------------------------------
 // Monitoreo automático: config, tabla de posteos detectados, disparo manual.
 // --------------------------------------------------------------------------
+// Todos los endpoints de monitoreo aceptan `platform` (query en GET/DELETE,
+// body en POST). Sin él, default 'instagram': el frontend actual no manda el
+// parámetro y tiene que seguir funcionando igual.
+function platformParam(value) {
+  return String(value || '').trim() || 'instagram';
+}
+
 app.get('/api/monitoring/posts', (req, res) => {
   const page = Math.max(1, Number(req.query.page) || 1);
   // El límite subió de 100 a 5000: la tabla ahora pagina/filtra/ordena del
   // lado del cliente (Tabulator), así que el frontend pide todo de una vez.
   const pageSize = Math.min(5000, Math.max(1, Number(req.query.pageSize) || 20));
-  const { posts, total } = db.listDetectedPosts({ page, pageSize });
+  const { posts, total } = db.listDetectedPosts({ page, pageSize, platform: platformParam(req.query.platform) });
 
   // Benchmark (mediana propia de la cuenta) para el panel desplegable de
   // cada fila. Un solo listAllAccountStats() para todo el request, no una
@@ -420,7 +428,7 @@ app.get('/api/monitoring/posts', (req, res) => {
 });
 
 app.get('/api/monitoring/config', (req, res) => {
-  res.json(monitor.loadConfig());
+  res.json(monitor.loadConfig(platformParam(req.query.platform)));
 });
 
 // Para la barra de acción de "Monitoreo en vivo" ("Escuchando · próxima
@@ -429,11 +437,15 @@ app.get('/api/monitoring/status', (req, res) => {
   res.json({ nextRunAt: getNextRunAt(getCronExpression()).toISOString() });
 });
 
-// Menciones detectadas en los últimos 7 días, para el resumen del dashboard.
-// Solo Instagram tiene scraping implementado hoy; el resto de las claves
-// simplemente no viene en la respuesta.
+// Menciones detectadas en los últimos 7 días, para el resumen del dashboard,
+// con una clave por plataforma registrada (hoy solo instagram: el resto de
+// las tarjetas simplemente no encuentra su clave en la respuesta).
 app.get('/api/monitoring/counts', (req, res) => {
-  res.json({ instagram: db.countRecentPosts(7) });
+  const counts = {};
+  for (const id of listPlatformIds()) {
+    counts[id] = db.countRecentPosts(7, id);
+  }
+  res.json(counts);
 });
 
 // Datos reales para el pie de página (footer.js en las 3 páginas): nada
@@ -468,26 +480,26 @@ app.patch('/api/monitoring/posts/:id', (req, res) => {
 
 app.post('/api/monitoring/accounts', async (req, res) => {
   try {
-    res.json(await monitor.addAccount(req.body && req.body.account));
+    res.json(await monitor.addAccount(req.body && req.body.account, platformParam(req.body && req.body.platform)));
   } catch (err) {
     res.status(400).json({ error: err.userMessage || err.message });
   }
 });
 
 app.delete('/api/monitoring/accounts/:account', (req, res) => {
-  res.json(monitor.removeAccount(req.params.account));
+  res.json(monitor.removeAccount(req.params.account, platformParam(req.query.platform)));
 });
 
 app.post('/api/monitoring/keywords', async (req, res) => {
   try {
-    res.json(await monitor.addKeyword(req.body && req.body.keyword));
+    res.json(await monitor.addKeyword(req.body && req.body.keyword, platformParam(req.body && req.body.platform)));
   } catch (err) {
     res.status(400).json({ error: err.userMessage || err.message });
   }
 });
 
 app.delete('/api/monitoring/keywords/:keyword', (req, res) => {
-  res.json(monitor.removeKeyword(req.params.keyword));
+  res.json(monitor.removeKeyword(req.params.keyword, platformParam(req.query.platform)));
 });
 
 // Dispara un ciclo de monitoreo a mano, sin esperar los 4hs del cron
@@ -509,7 +521,7 @@ app.post('/api/monitoring/run-now', async (req, res) => {
 // tienen (posteos de antes de esta funcionalidad, o que fallaron al clasificar).
 app.post('/api/monitoring/backfill-classification', async (req, res) => {
   try {
-    const result = await monitor.backfillClassification();
+    const result = await monitor.backfillClassification(platformParam(req.body && req.body.platform));
     res.json(result);
   } catch (err) {
     console.error('Error en /api/monitoring/backfill-classification:', err);

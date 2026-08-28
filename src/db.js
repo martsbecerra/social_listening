@@ -85,6 +85,13 @@ if (!existingColumns.includes('ignored')) {
 if (!existingColumns.includes('ignored_at')) {
   db.exec('ALTER TABLE detected_posts ADD COLUMN ignored_at TEXT');
 }
+// Plataforma de origen del posteo (instagram | tiktok | ...), para la capa de
+// adapters de src/platforms/. Todas las filas guardadas antes de esta columna
+// eran de Instagram (única plataforma con scraping implementado): el DEFAULT
+// las deja correctas sin necesitar un UPDATE aparte.
+if (!existingColumns.includes('platform')) {
+  db.exec("ALTER TABLE detected_posts ADD COLUMN platform TEXT NOT NULL DEFAULT 'instagram'");
+}
 // Limpieza de datos: Apify devuelve -1 en likesCount cuando el autor ocultó
 // el contador de "me gusta" (centinela documentado del actor, no un error de
 // parseo) — se guardaba tal cual, como si fuera un valor real. Un posteo sin
@@ -106,14 +113,20 @@ const getPostIdByUrlStmt = db.prepare('SELECT id FROM detected_posts WHERE url =
 // posteo ya está, changes === 0 y el llamador lo trata como conocido.
 const insertPostStmt = db.prepare(`
   INSERT OR IGNORE INTO detected_posts
-    (id, account, url, caption, matched_reason, likes, comments, posted_at, detected_at, notified, title, sentiment, post_type, followers)
+    (id, account, url, caption, matched_reason, likes, comments, posted_at, detected_at, notified, title, sentiment, post_type, followers, platform)
   VALUES
-    (@id, @account, @url, @caption, @matchedReason, @likes, @comments, @postedAt, @detectedAt, 0, @title, @sentiment, @postType, @followers)
+    (@id, @account, @url, @caption, @matchedReason, @likes, @comments, @postedAt, @detectedAt, 0, @title, @sentiment, @postType, @followers, @platform)
 `);
+// Cada listado/conteo tiene su variante filtrada por plataforma: el filtro es
+// opcional (sin platform = todas), así los llamadores existentes no cambian.
 const countPostsStmt = db.prepare('SELECT COUNT(*) AS total FROM detected_posts WHERE ignored = 0');
+const countPostsByPlatformStmt = db.prepare('SELECT COUNT(*) AS total FROM detected_posts WHERE ignored = 0 AND platform = ?');
 const countRecentPostsStmt = db.prepare('SELECT COUNT(*) AS total FROM detected_posts WHERE ignored = 0 AND detected_at >= ?');
+const countRecentPostsByPlatformStmt = db.prepare('SELECT COUNT(*) AS total FROM detected_posts WHERE ignored = 0 AND detected_at >= ? AND platform = ?');
 const listPostsPageStmt = db.prepare('SELECT * FROM detected_posts WHERE ignored = 0 ORDER BY detected_at DESC LIMIT ? OFFSET ?');
+const listPostsPageByPlatformStmt = db.prepare('SELECT * FROM detected_posts WHERE ignored = 0 AND platform = ? ORDER BY detected_at DESC LIMIT ? OFFSET ?');
 const listUnclassifiedStmt = db.prepare('SELECT id, caption FROM detected_posts WHERE title IS NULL AND ignored = 0 ORDER BY detected_at ASC');
+const listUnclassifiedByPlatformStmt = db.prepare('SELECT id, caption FROM detected_posts WHERE title IS NULL AND ignored = 0 AND platform = ? ORDER BY detected_at ASC');
 const updateClassificationStmt = db.prepare('UPDATE detected_posts SET title = ?, sentiment = ? WHERE id = ?');
 const updateSentimentStmt = db.prepare('UPDATE detected_posts SET sentiment = ? WHERE id = ?');
 // Solo la primera vez: si ya estaba ignorado, ignored_at se conserva.
@@ -638,6 +651,7 @@ function saveDetectedPost(post) {
     sentiment: post.sentiment || null,
     postType: post.postType || null,
     followers: post.followers ?? null,
+    platform: post.platform || 'instagram',
   });
   return result.changes > 0;
 }
@@ -646,11 +660,14 @@ function saveDetectedPost(post) {
  * Página de posteos detectados (los más nuevos primero) + el total de filas,
  * para poder armar la paginación en la interfaz. Los ignorados no salen:
  * siguen en la tabla SQLite para el dedupe, pero no en este listado.
+ * `platform` filtra a una sola plataforma; sin él, vienen todas.
  */
-function listDetectedPosts({ page = 1, pageSize = 20 } = {}) {
-  const total = countPostsStmt.get().total;
+function listDetectedPosts({ page = 1, pageSize = 20, platform } = {}) {
+  const total = platform ? countPostsByPlatformStmt.get(platform).total : countPostsStmt.get().total;
   const offset = (page - 1) * pageSize;
-  const posts = listPostsPageStmt.all(pageSize, offset);
+  const posts = platform
+    ? listPostsPageByPlatformStmt.all(platform, pageSize, offset)
+    : listPostsPageStmt.all(pageSize, offset);
   return { posts, total };
 }
 
@@ -659,8 +676,8 @@ function listDetectedPosts({ page = 1, pageSize = 20 } = {}) {
  * (posteos viejos de antes de esta funcionalidad, o alguno que falló al
  * clasificar). Sirve para el "backfill" manual.
  */
-function listUnclassified() {
-  return listUnclassifiedStmt.all();
+function listUnclassified({ platform } = {}) {
+  return platform ? listUnclassifiedByPlatformStmt.all(platform) : listUnclassifiedStmt.all();
 }
 
 function updateClassification(id, { title, sentiment }) {
@@ -917,9 +934,11 @@ function setGeocodeCache(entry) {
 
 // Total de posteos detectados en los últimos N días, para el resumen de
 // menciones del dashboard (data/monitoring.db, detected_at es ISO 8601).
-function countRecentPosts(days) {
+function countRecentPosts(days, platform) {
   const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-  return countRecentPostsStmt.get(cutoff).total;
+  return platform
+    ? countRecentPostsByPlatformStmt.get(cutoff, platform).total
+    : countRecentPostsStmt.get(cutoff).total;
 }
 
 function mapAccountStatsRow(row) {

@@ -27,7 +27,7 @@
 // ==========================================================================
 
 const db = require('./db');
-const monitor = require('./monitor');
+const { getPlatform } = require('./platforms');
 const { BENCHMARK_POST_LIMIT } = require('./accountStats');
 const { isQuotaExceededError } = require('./apify');
 const { checkAndLogJump } = require('./viralJumpDetector');
@@ -120,7 +120,7 @@ async function refreshPostMetrics({ skipAccounts = [] } = {}) {
   for (const account of prioritized) {
     let posts;
     try {
-      posts = await monitor.scrapeAccount(account, { resultsLimit: BENCHMARK_POST_LIMIT, lookback: undefined });
+      posts = await getPlatform('instagram').scrapeAccount(account, { resultsLimit: BENCHMARK_POST_LIMIT, lookback: undefined });
     } catch (err) {
       if (isQuotaExceededError(err)) {
         console.log(`[metricsRefresh] Cuota de Apify agotada, cortando la corrida en @${account}.`);

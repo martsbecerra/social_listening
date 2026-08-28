@@ -13,6 +13,7 @@
 
 const db = require('./db');
 const monitor = require('./monitor');
+const { getPlatform } = require('./platforms');
 
 // Plan gratuito de Apify: ~15 resultados por corrida. Al pasar a plan pago,
 // subir esto en el .env alcanza — no hace falta tocar código.
@@ -74,7 +75,7 @@ function buildAccountUniverse() {
 
 /**
  * Trae hasta BENCHMARK_POST_LIMIT posteos recientes de la cuenta (mismo
- * adapter que ya usa el monitoreo por cuenta — monitor.scrapeAccount),
+ * adapter de plataforma que ya usa el monitoreo — src/platforms/),
  * descarta los de más de 3 meses, agrupa por tipo de posteo y guarda una
  * mediana por grupo con 5 posteos o más. Los grupos con menos posteos no
  * generan fila (esa cuenta/tipo queda "sin referencia" al clasificar).
@@ -95,7 +96,8 @@ function buildAccountUniverse() {
  * @returns {Promise<{ account: string, platform: string, fetched: number, recent: number, groupsSaved: number, followersChecked: number, followersFound: boolean, postsUpdated: number }>}
  */
 async function computeAccountStats(account, platform = PLATFORM) {
-  const posts = await monitor.scrapeAccount(account, {
+  const adapter = getPlatform(platform);
+  const posts = await adapter.scrapeAccount(account, {
     resultsLimit: BENCHMARK_POST_LIMIT,
     lookback: undefined, // sin onlyPostsNewerThan: el filtro de 3 meses se hace acá abajo, no en el actor.
   });
@@ -122,7 +124,7 @@ async function computeAccountStats(account, platform = PLATFORM) {
   let followersChecked = 0;
   let followersFound = false;
   try {
-    const followers = await monitor.fetchAccountFollowers(account);
+    const followers = await adapter.fetchAccountFollowers(account);
     if (followers != null) {
       db.upsertAccountFollowers({ account, platform, followers, updatedAt: new Date().toISOString() });
       db.updateFollowersForAccount(account, followers);

@@ -34,11 +34,14 @@ const REQUEST_TIMEOUT_MS = 300000;
 /**
  * Corre el actor de Apify de forma sincrónica y devuelve los items del dataset.
  * @param {object} input - La configuración (input) que espera el actor.
+ * @param {{ actorId?: string }} [options] - Actor a correr. Por defecto el de
+ *   Instagram (scrapeInstagram, abajo, no lo pasa); los adapters de
+ *   src/platforms/ pasan el suyo, así este módulo queda genérico.
  * @returns {Promise<Array>} Lista de items scrapeados.
  */
-async function runActorSync(input) {
+async function runActorSync(input, { actorId = APIFY_ACTOR } = {}) {
   const token = process.env.APIFY_API_TOKEN;
-  const url = `${APIFY_BASE}/acts/${APIFY_ACTOR}/run-sync-get-dataset-items?token=${encodeURIComponent(token)}`;
+  const url = `${APIFY_BASE}/acts/${actorId}/run-sync-get-dataset-items?token=${encodeURIComponent(token)}`;
 
   // AbortController nos deja cancelar la llamada si tarda demasiado, para
   // devolver un mensaje claro en vez de quedar colgados.
