@@ -3,6 +3,7 @@
 // ==========================================================================
 
 const { formatCountWithDots, formatViewsShort } = require('../sentimentAggregate');
+const { canonicalizeStatusUrl, parseXPostUrl } = require('./url');
 const {
   computeWeightedSentimentPercentages,
   computePerformanceLevels,
@@ -41,16 +42,37 @@ function buildReclamosCsv(sample, classifications) {
   return `${rows.join('\n')}\n`;
 }
 
-function formatInsightBlock(refs) {
+function canonicalizeUrlsInText(text, sample) {
+  return String(text || '').replace(
+    /https?:\/\/(?:www\.)?(?:x\.com|twitter\.com)\/[^\s]+/gi,
+    (url) => {
+      let raw = url;
+      let trail = '';
+      while (/[),.;:!?]$/.test(raw)) {
+        trail = raw.slice(-1) + trail;
+        raw = raw.slice(0, -1);
+      }
+      const parsed = parseXPostUrl(raw);
+      if (!parsed) return url;
+      const item = (sample || []).find((s) => String(s.id) === parsed.id);
+      const canonical = item
+        ? canonicalizeStatusUrl(item.url, item.username, item.id)
+        : canonicalizeStatusUrl(raw, parsed.handle, parsed.id);
+      return (canonical || raw) + trail;
+    }
+  );
+}
+
+function formatInsightBlock(refs, sample) {
   if (!refs || refs.length === 0) return EMPTY_INSIGHT;
-  return refs.join('\n');
+  return refs.map((line) => canonicalizeUrlsInText(line, sample)).join('\n');
 }
 
 function top6Line(item) {
   const handle = item.username ? `@${item.username}` : '@desconocido';
   const excerpt = String(item.text || '').replace(/\s+/g, ' ').slice(0, 140);
   const rts = Number(item.retweets) || 0;
-  const link = item.url || '';
+  const link = canonicalizeStatusUrl(item.url, item.username, item.id) || item.url || '';
   return `${handle} - ${excerpt} - ${rts} RTs - ${link}`;
 }
 
@@ -93,6 +115,7 @@ function buildWhatsAppReport({
 
   const ownerName = post.authorName || post.displayName || 'N/D';
   const ownerUser = post.authorHandle || post.username || 'N/D';
+  const postLink = canonicalizeStatusUrl(url, ownerUser, post.id) || url;
 
   const report = `🔍 ANÁLISIS DE POSTEO EN X: ${ownerName} / @${ownerUser}
 
@@ -110,7 +133,7 @@ function buildWhatsAppReport({
 
 👁️ ${formatViewsShort(post.views)} visualizaciones
 
-Link a publicación 👉🏼 ${url}
+Link a publicación 👉🏼 ${postLink}
 
 💡 INSIGHTS
 
@@ -118,17 +141,17 @@ Link a publicación 👉🏼 ${url}
 
 2️⃣ Según los KPI's establecidos, el posteo alcanza un nivel ${performance.viewsLevel} en visualizaciones y un nivel ${performance.interactionsLevel} en interacciones.
 
-3️⃣ Apoyo de funcionarios del GCBA y cuentas aliadas enfocadas en la validación de la gestión pública. ${formatInsightBlock(qualitative.insightApoyo)}
+3️⃣ Apoyo de funcionarios del GCBA y cuentas aliadas enfocadas en la validación de la gestión pública. ${formatInsightBlock(qualitative.insightApoyo, sample)}
 
-4️⃣ Cuestionamientos de legisladores de la oposición y militantes adversarios. ${formatInsightBlock(qualitative.insightCriticas)}
+4️⃣ Cuestionamientos de legisladores de la oposición y militantes adversarios. ${formatInsightBlock(qualitative.insightCriticas, sample)}
 
-5️⃣ Reclamos de vecinos por deficiencias específicas de gestión relacionadas al post (Ej: transporte, residuos, infraestructura). ${formatInsightBlock(qualitative.insightReclamos)}
+5️⃣ Reclamos de vecinos por deficiencias específicas de gestión relacionadas al post (Ej: transporte, residuos, infraestructura). ${formatInsightBlock(qualitative.insightReclamos, sample)}
 
-6️⃣ Declaraciones de periodistas de medios nacionales analizando la viabilidad política de la medida. ${formatInsightBlock(qualitative.insightMedios)}
+6️⃣ Declaraciones de periodistas de medios nacionales analizando la viabilidad política de la medida. ${formatInsightBlock(qualitative.insightMedios, sample)}
 
-7️⃣ ${formatInsightBlock(qualitative.insightOrganica)}
+7️⃣ ${formatInsightBlock(qualitative.insightOrganica, sample)}
 
-8️⃣ Críticas aisladas respecto a la estética o formas de la comunicación institucional sin afectar el núcleo. ${formatInsightBlock(qualitative.insightEstetica)}
+8️⃣ Críticas aisladas respecto a la estética o formas de la comunicación institucional sin afectar el núcleo. ${formatInsightBlock(qualitative.insightEstetica, sample)}
 
 📈 TOP 6 POSTEOS CON MÁS RETUITS (SENTIMIENTO POSITIVO)
 

@@ -38,7 +38,7 @@ La extracción del hilo MUST usar Grok X Search (OpenRouter con modelo `x-ai/*`,
 
 ### Requirement: REQ-X-03 — Reporte armado en código
 
-Grok MUST NOT redactar el WhatsApp final. El LLM MUST devolver JSON de clasificación. KPIs, sentimiento (+5% solo en X) y Top 6 MUST calcularse en código. La plantilla MUST seguir el Prompt Grok (Likes, RTs, QTs, Respuestas, Guardados, visualizaciones, insights 1–8, Top 6).
+Grok MUST NOT redactar el WhatsApp final. Grok vía OpenRouter (`OPENROUTER_X_MODEL`) MUST devolver JSON de clasificación; MUST NOT usar `LLM_PROVIDER` de Instagram. KPIs, sentimiento (+5% solo en X) y Top 6 MUST calcularse en código. La plantilla MUST seguir el Prompt Grok (Likes, RTs, QTs, Respuestas, Guardados, visualizaciones, insights 1–8, Top 6).
 
 #### Scenario: Insight sin evidencia
 

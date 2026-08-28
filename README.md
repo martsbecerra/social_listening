@@ -7,10 +7,10 @@ App web que:
    Claude u **OpenRouter**) siguiendo una metodología de análisis político,
    mostrando un **reporte ejecutivo** listo para WhatsApp (solapa "Análisis de
    publicación").
-2. Recibe el link de una publicación de **X**, trae el hilo con **Grok**
-   (`x_search` de Grok vía OpenRouter, no Apify) y arma el mismo tipo de reporte con la
-   plantilla de X (solapa Análisis en `x.html`). Monitoreo y mapa de X
-   están especificados y se construyen después.
+2. Recibe el link de una publicación de **X**, trae el hilo y lo clasifica
+   con **Grok** vía OpenRouter (`OPENROUTER_X_MODEL`, no Apify ni el Claude
+   de Instagram) y arma el reporte con la plantilla de X (solapa Análisis
+   en `x.html`). Monitoreo y mapa de X están especificados y se construyen después.
 3. Monitorea automáticamente, cada 4 horas, si aparece algún posteo nuevo de
    las cuentas trackeadas o que mencione las palabras clave/hashtags
    configurados, y avisa por email (solapa "Monitoreo en vivo" de Instagram).
@@ -273,7 +273,8 @@ Abrí `.env` y pegá:
 - **Anthropic (default):** `LLM_PROVIDER=anthropic`, `ANTHROPIC_API_KEY` → https://console.anthropic.com/settings/keys
 - **OpenRouter:** `LLM_PROVIDER=openrouter`, `OPENROUTER_API_KEY` → https://openrouter.ai/settings/keys
   (los modelos ya vienen con default equivalente al de Anthropic, no hace falta setearlos).
-  La misma clave sirve para **traer el hilo de X con Grok** (X Search nativo).
+  La misma clave sirve para **traer y clasificar X con Grok** (`OPENROUTER_X_MODEL`,
+  default `x-ai/grok-4.3`). Instagram no usa ese modelo.
 - `XAI_API_KEY` → opcional; solo si no usás OpenRouter y querés pegarle directo a https://console.x.ai/
 - `SMTP_USER` / `SMTP_PASS` → tu Gmail y una
   ["contraseña de aplicación"](https://myaccount.google.com/apppasswords)

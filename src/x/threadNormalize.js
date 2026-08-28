@@ -4,6 +4,7 @@
 
 const { parseCount } = require('./parseCount');
 const { normalizeHandle } = require('./influencersParse');
+const { canonicalizeStatusUrl, parseXPostUrl } = require('./url');
 
 function asText(value) {
   if (value == null) return '';
@@ -21,21 +22,31 @@ function metricsOf(raw) {
   };
 }
 
+function numericStatusId(id, url) {
+  const raw = asText(id);
+  if (/^\d+$/.test(raw)) return raw;
+  const fromUrl = parseXPostUrl(url) || parseXPostUrl(raw);
+  return fromUrl?.id || '';
+}
+
 function normalizeItem(raw, fallbackKind) {
   if (!raw || typeof raw !== 'object') return null;
   const handle = normalizeHandle(raw.authorHandle || raw.username || raw.handle);
-  const id = asText(raw.id || raw.postId || raw.tweetId);
-  const url = asText(raw.url || raw.link);
+  const rawId = asText(raw.id || raw.postId || raw.tweetId);
+  const rawUrl = asText(raw.url || raw.link);
   const text = asText(raw.text || raw.content);
-  if (!id && !url && !text) return null;
+  if (!rawId && !rawUrl && !text) return null;
 
   let kind = asText(raw.kind || fallbackKind || 'reply').toLowerCase();
   if (kind === 'qt' || kind === 'quoted' || kind === 'quote_tweet') kind = 'quote';
   if (kind === 'original' || kind === 'post' || kind === 'status') kind = 'original';
   if (kind !== 'quote' && kind !== 'original') kind = 'reply';
 
+  const statusId = numericStatusId(rawId, rawUrl);
+  const url = canonicalizeStatusUrl(rawUrl, handle, statusId);
+
   return {
-    id: id || url || `${handle}:${text.slice(0, 24)}`,
+    id: statusId || rawId || url || `${handle}:${text.slice(0, 24)}`,
     url,
     kind,
     username: handle,
@@ -54,7 +65,7 @@ function normalizePost(raw, fallbackUrl) {
   return {
     ...item,
     kind: 'original',
-    url: item.url || fallbackUrl || '',
+    url: item.url || canonicalizeStatusUrl(fallbackUrl, item.username, item.id) || fallbackUrl || '',
     authorName: item.displayName,
     authorHandle: item.username,
   };

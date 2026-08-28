@@ -968,6 +968,16 @@ pre.report {
   margin: 0;
   color: var(--clay-900);
 }
+pre.report a {
+  color: var(--jade-700);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+pre.report a:hover {
+  color: var(--jade-500);
+}
 
 /* ------------------------------------------------------------------ */
 /* Monitoreo en vivo — calcado de design/monitoreo.html                */
