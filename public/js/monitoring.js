@@ -42,7 +42,14 @@ const KEYWORDS_PREVIEW_COUNT = 2;
 // Todo de una sola vez: el orden/filtro/paginación ahora los maneja
 // Tabulator del lado del cliente, así que no paginamos contra el backend.
 const FETCH_ALL_PAGE_SIZE = 5000;
-const MONITOR_PLATFORM = document.body?.dataset?.platform === 'x' ? 'x' : 'instagram';
+// window.SL_PLATFORM lo setea x.html / instagram.html justo antes de este
+// script. dataset.platform es el respaldo. Sin eso, el API defaultéa a
+// Instagram y la solapa de X mostraría posteos de la otra red.
+function currentMonitorPlatform() {
+  if (window.SL_PLATFORM === 'x' || window.SL_PLATFORM === 'instagram') return window.SL_PLATFORM;
+  return document.body?.dataset?.platform === 'x' ? 'x' : 'instagram';
+}
+const MONITOR_PLATFORM = currentMonitorPlatform();
 const IS_X_MONITOR = MONITOR_PLATFORM === 'x';
 const PROFILE_BASE = IS_X_MONITOR ? 'https://x.com/' : 'https://instagram.com/';
 const PLATFORM_LABEL = IS_X_MONITOR ? 'X' : 'Instagram';
@@ -968,8 +975,11 @@ async function loadPosts() {
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data = await resp.json();
     monitoringLoadErrorEl.classList.add('hidden');
-    ensureMonitoringTable(data.posts);
-    renderHighlightCards(data.posts);
+    const posts = (data.posts || []).filter(
+      (post) => (post.plataforma || 'instagram') === MONITOR_PLATFORM
+    );
+    ensureMonitoringTable(posts);
+    renderHighlightCards(posts);
   } catch (err) {
     monitoringLoadErrorEl.textContent = 'No se pudo cargar la tabla. Reiniciá el servidor (para que tome el código nuevo) y recargá la página.';
     monitoringLoadErrorEl.classList.remove('hidden');
