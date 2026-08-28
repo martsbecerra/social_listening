@@ -464,6 +464,7 @@ async function runMonitoringCycle() {
       // accountStats.computeAccountStats. Posts sin cuenta (hashtag) o de
       // cuentas todavía sin caché quedan null -> "-" en la tabla.
       followers: post.account ? db.getAccountFollowers(post.account, 'instagram') : null,
+      plataforma: 'instagram',
     };
 
     const inserted = db.saveDetectedPost(postWithClassification);

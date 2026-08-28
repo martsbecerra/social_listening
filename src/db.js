@@ -85,6 +85,15 @@ if (!existingColumns.includes('ignored')) {
 if (!existingColumns.includes('ignored_at')) {
   db.exec('ALTER TABLE detected_posts ADD COLUMN ignored_at TEXT');
 }
+if (!existingColumns.includes('plataforma')) {
+  db.exec("ALTER TABLE detected_posts ADD COLUMN plataforma TEXT NOT NULL DEFAULT 'instagram'");
+}
+if (!existingColumns.includes('retweets')) {
+  db.exec('ALTER TABLE detected_posts ADD COLUMN retweets INTEGER');
+}
+if (!existingColumns.includes('views')) {
+  db.exec('ALTER TABLE detected_posts ADD COLUMN views INTEGER');
+}
 // Limpieza de datos: Apify devuelve -1 en likesCount cuando el autor ocultó
 // el contador de "me gusta" (centinela documentado del actor, no un error de
 // parseo) — se guardaba tal cual, como si fuera un valor real. Un posteo sin
@@ -106,14 +115,25 @@ const getPostIdByUrlStmt = db.prepare('SELECT id FROM detected_posts WHERE url =
 // posteo ya está, changes === 0 y el llamador lo trata como conocido.
 const insertPostStmt = db.prepare(`
   INSERT OR IGNORE INTO detected_posts
-    (id, account, url, caption, matched_reason, likes, comments, posted_at, detected_at, notified, title, sentiment, post_type, followers)
+    (id, account, url, caption, matched_reason, likes, comments, posted_at, detected_at, notified, title, sentiment, post_type, followers, plataforma, retweets, views)
   VALUES
-    (@id, @account, @url, @caption, @matchedReason, @likes, @comments, @postedAt, @detectedAt, 0, @title, @sentiment, @postType, @followers)
+    (@id, @account, @url, @caption, @matchedReason, @likes, @comments, @postedAt, @detectedAt, 0, @title, @sentiment, @postType, @followers, @plataforma, @retweets, @views)
 `);
 const countPostsStmt = db.prepare('SELECT COUNT(*) AS total FROM detected_posts WHERE ignored = 0');
+const countPostsByPlataformaStmt = db.prepare(
+  'SELECT COUNT(*) AS total FROM detected_posts WHERE ignored = 0 AND plataforma = ?'
+);
 const countRecentPostsStmt = db.prepare('SELECT COUNT(*) AS total FROM detected_posts WHERE ignored = 0 AND detected_at >= ?');
+const countRecentPostsByPlataformaStmt = db.prepare(
+  'SELECT COUNT(*) AS total FROM detected_posts WHERE ignored = 0 AND detected_at >= ? AND plataforma = ?'
+);
 const listPostsPageStmt = db.prepare('SELECT * FROM detected_posts WHERE ignored = 0 ORDER BY detected_at DESC LIMIT ? OFFSET ?');
-const listUnclassifiedStmt = db.prepare('SELECT id, caption FROM detected_posts WHERE title IS NULL AND ignored = 0 ORDER BY detected_at ASC');
+const listPostsPageByPlataformaStmt = db.prepare(
+  'SELECT * FROM detected_posts WHERE ignored = 0 AND plataforma = ? ORDER BY detected_at DESC LIMIT ? OFFSET ?'
+);
+const listUnclassifiedStmt = db.prepare(
+  "SELECT id, caption FROM detected_posts WHERE title IS NULL AND ignored = 0 AND plataforma = 'instagram' ORDER BY detected_at ASC"
+);
 const updateClassificationStmt = db.prepare('UPDATE detected_posts SET title = ?, sentiment = ? WHERE id = ?');
 const updateSentimentStmt = db.prepare('UPDATE detected_posts SET sentiment = ? WHERE id = ?');
 // Solo la primera vez: si ya estaba ignorado, ignored_at se conserva.
@@ -448,7 +468,7 @@ const getAccountFollowersStmt = db.prepare(
 // trackeadas (config/monitoring.json) con las que ya aparecen en
 // detected_posts (llegaron por hashtag, nunca se trackearon explícitamente).
 const listDistinctPostAccountsStmt = db.prepare(
-  `SELECT DISTINCT account FROM detected_posts WHERE ignored = 0 AND account IS NOT NULL AND account != 'N/D' ORDER BY account`
+  `SELECT DISTINCT account FROM detected_posts WHERE ignored = 0 AND plataforma = 'instagram' AND account IS NOT NULL AND account != 'N/D' ORDER BY account`
 );
 // Freshness de TODAS las cuentas de una, no una query por cuenta — con
 // 100-150 cuentas en el universo ampliado, N queries individuales ya no es
@@ -460,7 +480,9 @@ const getPostMetricsStmt = db.prepare('SELECT likes, comments, post_type, ignore
 const updatePostMetricsStmt = db.prepare(
   'UPDATE detected_posts SET likes = @likes, comments = @comments, post_type = @postType, metrics_updated_at = @metricsUpdatedAt WHERE id = @id'
 );
-const updateFollowersForAccountStmt = db.prepare('UPDATE detected_posts SET followers = ? WHERE account = ?');
+const updateFollowersForAccountStmt = db.prepare(
+  "UPDATE detected_posts SET followers = ? WHERE account = ? AND plataforma = 'instagram'"
+);
 
 // Marcas de "último pase" de los tramos tibio/frío del refresco de métricas
 // (ver src/metricsRefresh.js) — en la base, no en memoria, para que
@@ -488,17 +510,17 @@ const setRefreshStateStmt = db.prepare(`
 const listAccountsDueForRefreshStmt = db.prepare(`
   SELECT account, MAX(posted_at) AS mostRecentPostedAt, COUNT(*) AS postCount
   FROM detected_posts
-  WHERE ignored = 0 AND account IS NOT NULL AND account != 'N/D' AND posted_at IS NOT NULL
+  WHERE ignored = 0 AND plataforma = 'instagram' AND account IS NOT NULL AND account != 'N/D' AND posted_at IS NOT NULL
     AND posted_at > @sinceIso AND posted_at <= @untilIso
     AND (@cadenceIso IS NULL OR metrics_updated_at IS NULL OR metrics_updated_at < @cadenceIso)
   GROUP BY account
 `);
 
 const getPostForMetricsRefreshStmt = db.prepare(
-  'SELECT likes, comments, account, posted_at, ignored FROM detected_posts WHERE id = ?'
+  'SELECT likes, comments, retweets, views, account, posted_at, ignored FROM detected_posts WHERE id = ?'
 );
 const applyMetricsRefreshStmt = db.prepare(
-  'UPDATE detected_posts SET likes = @likes, comments = @comments, metrics_updated_at = @metricsUpdatedAt WHERE id = @id'
+  'UPDATE detected_posts SET likes = @likes, comments = @comments, retweets = @retweets, views = @views, metrics_updated_at = @metricsUpdatedAt WHERE id = @id'
 );
 
 const upsertReclamoStmt = db.prepare(`
@@ -638,6 +660,9 @@ function saveDetectedPost(post) {
     sentiment: post.sentiment || null,
     postType: post.postType || null,
     followers: post.followers ?? null,
+    plataforma: post.plataforma || 'instagram',
+    retweets: rejectNegative(post.retweets ?? null),
+    views: rejectNegative(post.views ?? null),
   });
   return result.changes > 0;
 }
@@ -647,9 +672,14 @@ function saveDetectedPost(post) {
  * para poder armar la paginación en la interfaz. Los ignorados no salen:
  * siguen en la tabla SQLite para el dedupe, pero no en este listado.
  */
-function listDetectedPosts({ page = 1, pageSize = 20 } = {}) {
-  const total = countPostsStmt.get().total;
+function listDetectedPosts({ page = 1, pageSize = 20, plataforma } = {}) {
   const offset = (page - 1) * pageSize;
+  if (plataforma) {
+    const total = countPostsByPlataformaStmt.get(plataforma).total;
+    const posts = listPostsPageByPlataformaStmt.all(plataforma, pageSize, offset);
+    return { posts, total };
+  }
+  const total = countPostsStmt.get().total;
   const posts = listPostsPageStmt.all(pageSize, offset);
   return { posts, total };
 }
@@ -773,11 +803,16 @@ function upsertReclamo(reclamo) {
  *   comuna?: number, desde?: string, hasta?: string, q?: string }} filters
  */
 function listReclamosFiltered(filters = {}) {
-  const { categoria, subcategoria, estado, barrio, comuna, desde, hasta, q } = filters;
+  const { plataforma, categoria, subcategoria, estado, barrio, comuna, desde, hasta, q } = filters;
   // Siempre afuera, pasen los filtros que pasen: quedan marcados en la DB
   // para poder auditar el geocoding, pero nunca se muestran ni se exportan.
   const clauses = [`geo_status IS NOT 'fuera_caba'`];
   const params = {};
+
+  if (plataforma) {
+    clauses.push('plataforma = @plataforma');
+    params.plataforma = plataforma;
+  }
 
   if (Array.isArray(categoria) && categoria.length > 0) {
     const names = categoria.map((_, i) => `@categoria${i}`);
@@ -845,10 +880,18 @@ function deleteReclamosPorOrigen(origen) {
  * les toca color propio: ese ranking tiene que salir del total y no de lo que
  * el usuario esté filtrando, o los pines cambiarían de color al mover un filtro.
  */
-function contarReclamosPorCategoria() {
+function contarReclamosPorCategoria(plataforma) {
+  const clauses = [`geo_status IS NOT 'fuera_caba'`];
+  const params = {};
+  if (plataforma) {
+    clauses.push('plataforma = @plataforma');
+    params.plataforma = plataforma;
+  }
   const filas = db
-    .prepare("SELECT categoria, COUNT(*) AS total FROM reclamos WHERE geo_status IS NOT 'fuera_caba' GROUP BY categoria")
-    .all();
+    .prepare(
+      `SELECT categoria, COUNT(*) AS total FROM reclamos WHERE ${clauses.join(' AND ')} GROUP BY categoria`
+    )
+    .all(params);
   return Object.fromEntries(filas.map((f) => [f.categoria, f.total]));
 }
 
@@ -917,8 +960,11 @@ function setGeocodeCache(entry) {
 
 // Total de posteos detectados en los últimos N días, para el resumen de
 // menciones del dashboard (data/monitoring.db, detected_at es ISO 8601).
-function countRecentPosts(days) {
+function countRecentPosts(days, plataforma) {
   const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+  if (plataforma) {
+    return countRecentPostsByPlataformaStmt.get(cutoff, plataforma).total;
+  }
   return countRecentPostsStmt.get(cutoff).total;
 }
 
@@ -1063,17 +1109,25 @@ function listAccountsDueForRefresh({ sinceIso, untilIso, cadenceIso = null }) {
  *   likes: number|null, comments: number|null}|null} null si el id no está
  *   guardado o está ignorado (no se escriben métricas de un ignorado).
  */
-function applyMetricsRefresh(id, { likes, comments }) {
+function applyMetricsRefresh(id, { likes, comments, retweets, views } = {}) {
   const existing = getPostForMetricsRefreshStmt.get(id);
   if (!existing || existing.ignored) return null;
   const cleanLikes = rejectNegative(likes ?? null);
   const cleanComments = rejectNegative(comments ?? null);
-  const changed = existing.likes !== cleanLikes || existing.comments !== cleanComments;
+  const cleanRetweets = retweets === undefined ? existing.retweets : rejectNegative(retweets ?? null);
+  const cleanViews = views === undefined ? existing.views : rejectNegative(views ?? null);
+  const changed =
+    existing.likes !== cleanLikes ||
+    existing.comments !== cleanComments ||
+    existing.retweets !== cleanRetweets ||
+    existing.views !== cleanViews;
 
   applyMetricsRefreshStmt.run({
     id,
     likes: cleanLikes,
     comments: cleanComments,
+    retweets: cleanRetweets,
+    views: cleanViews,
     metricsUpdatedAt: new Date().toISOString(),
   });
 

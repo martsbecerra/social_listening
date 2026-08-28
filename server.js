@@ -28,11 +28,13 @@ const {
 } = require('./src/llm/providerConfig');
 const db = require('./src/db');
 const monitor = require('./src/monitor');
+const xMonitor = require('./src/x/monitor');
 const { startScheduler, runCycle, getCronExpression, getLastRunAt, estimateRunsPerDay, getNextRunAt } = require('./src/scheduler');
 const { processPendingReclamosInBackground } = require('./src/geoWorker');
 const accountStats = require('./src/accountStats');
 const { CATEGORIAS_RECLAMO, ESTADOS_RECLAMO, isValidEstado } = require('./src/categoriaReclamo');
 const { subcategoriasDe } = require('./src/categoriasConfig');
+const { parseReclamosFilters, isValidReclamosPlataforma } = require('./src/reclamosQuery');
 const { normalizeEmail, isEmailAllowed } = require('./src/auth/allowlist');
 const { issueMagicLink, redeemMagicLink } = require('./src/auth/magicLink');
 const { sendMagicLinkEmail } = require('./src/mailer');
@@ -249,7 +251,7 @@ app.post('/api/analyze', async (req, res) => {
       comentariosExtraidos: comments.length,
     });
     const analysisStartedAt = Date.now();
-    const { report, csv, meta: analysisMeta } = await analyzeComments({ url, post, comments });
+    const { report, csv, meta: analysisMeta, temas, reportParts } = await analyzeComments({ url, post, comments });
     logTask('análisis LLM completado', {
       ms: Date.now() - analysisStartedAt,
       comentariosAnalizados: analysisMeta?.sampleSize ?? comments.length,
@@ -270,6 +272,8 @@ app.post('/api/analyze', async (req, res) => {
     res.json({
       report,
       csv,
+      temas: temas || [],
+      reportParts: reportParts || { beforeTemas: report, afterTemas: '' },
       meta: {
         // Extraídos por Apify vs enviados a Claude (muestra estable en commentSample.js).
         comentariosExtraidos: comments.length,
@@ -337,7 +341,7 @@ app.post('/api/x/analyze', async (req, res) => {
       padron: influencerMap.size,
     });
     const analysisStartedAt = Date.now();
-    const { report, csv, meta: analysisMeta } = await analyzeXThread({
+    const { report, csv, meta: analysisMeta, temas, reportParts } = await analyzeXThread({
       url,
       post,
       items,
@@ -363,6 +367,8 @@ app.post('/api/x/analyze', async (req, res) => {
     res.json({
       report,
       csv,
+      temas: temas || [],
+      reportParts: reportParts || { beforeTemas: report, afterTemas: '' },
       meta: {
         comentariosExtraidos: 1 + items.length,
         comentariosAnalizados: analysisMeta?.sampleSize ?? 1 + items.length,
@@ -394,12 +400,31 @@ app.post('/api/x/analyze', async (req, res) => {
 // --------------------------------------------------------------------------
 // Monitoreo automático: config, tabla de posteos detectados, disparo manual.
 // --------------------------------------------------------------------------
+function monitoringPlataforma(req) {
+  const raw = String(req.query?.plataforma || req.body?.plataforma || 'instagram').trim();
+  return raw === 'x' ? 'x' : 'instagram';
+}
+
+function monitoringSource(req) {
+  return monitoringPlataforma(req) === 'x' ? xMonitor : monitor;
+}
+
 app.get('/api/monitoring/posts', (req, res) => {
   const page = Math.max(1, Number(req.query.page) || 1);
   // El límite subió de 100 a 5000: la tabla ahora pagina/filtra/ordena del
   // lado del cliente (Tabulator), así que el frontend pide todo de una vez.
   const pageSize = Math.min(5000, Math.max(1, Number(req.query.pageSize) || 20));
-  const { posts, total } = db.listDetectedPosts({ page, pageSize });
+  const plataforma = monitoringPlataforma(req);
+  const { posts, total } = db.listDetectedPosts({ page, pageSize, plataforma });
+
+  if (plataforma === 'x') {
+    return res.json({
+      posts: posts.map((post) => ({ ...post, benchmark: null })),
+      total,
+      page,
+      pageSize,
+    });
+  }
 
   // Benchmark (mediana propia de la cuenta) para el panel desplegable de
   // cada fila. Un solo listAllAccountStats() para todo el request, no una
@@ -420,7 +445,7 @@ app.get('/api/monitoring/posts', (req, res) => {
 });
 
 app.get('/api/monitoring/config', (req, res) => {
-  res.json(monitor.loadConfig());
+  res.json(monitoringSource(req).loadConfig());
 });
 
 // Para la barra de acción de "Monitoreo en vivo" ("Escuchando · próxima
@@ -433,7 +458,10 @@ app.get('/api/monitoring/status', (req, res) => {
 // Solo Instagram tiene scraping implementado hoy; el resto de las claves
 // simplemente no viene en la respuesta.
 app.get('/api/monitoring/counts', (req, res) => {
-  res.json({ instagram: db.countRecentPosts(7) });
+  res.json({
+    instagram: db.countRecentPosts(7, 'instagram'),
+    x: db.countRecentPosts(7, 'x'),
+  });
 });
 
 // Datos reales para el pie de página (footer.js en las 3 páginas): nada
@@ -468,33 +496,33 @@ app.patch('/api/monitoring/posts/:id', (req, res) => {
 
 app.post('/api/monitoring/accounts', async (req, res) => {
   try {
-    res.json(await monitor.addAccount(req.body && req.body.account));
+    res.json(await monitoringSource(req).addAccount(req.body && req.body.account));
   } catch (err) {
     res.status(400).json({ error: err.userMessage || err.message });
   }
 });
 
 app.delete('/api/monitoring/accounts/:account', (req, res) => {
-  res.json(monitor.removeAccount(req.params.account));
+  res.json(monitoringSource(req).removeAccount(req.params.account));
 });
 
 app.post('/api/monitoring/keywords', async (req, res) => {
   try {
-    res.json(await monitor.addKeyword(req.body && req.body.keyword));
+    res.json(await monitoringSource(req).addKeyword(req.body && req.body.keyword));
   } catch (err) {
     res.status(400).json({ error: err.userMessage || err.message });
   }
 });
 
 app.delete('/api/monitoring/keywords/:keyword', (req, res) => {
-  res.json(monitor.removeKeyword(req.params.keyword));
+  res.json(monitoringSource(req).removeKeyword(req.params.keyword));
 });
 
 // Dispara un ciclo de monitoreo a mano, sin esperar los 4hs del cron
-// (útil para probar o para una demo).
+// (útil para probar o para una demo). plataforma=x corre solo X; instagram solo IG.
 app.post('/api/monitoring/run-now', async (req, res) => {
   try {
-    const result = await runCycle();
+    const result = await runCycle({ plataforma: monitoringPlataforma(req) });
     res.json(result);
   } catch (err) {
     if (err.code === 'CYCLE_IN_PROGRESS') {
@@ -518,29 +546,16 @@ app.post('/api/monitoring/backfill-classification', async (req, res) => {
 });
 
 // --------------------------------------------------------------------------
-// Mapa de reclamos: filtros combinables + edición de estado + export CSV.
+// Mapa de reclamos: filtros combinables + edición de estado.
+// plataforma es obligatorio (instagram | x): cada solapa ve solo la suya.
 // --------------------------------------------------------------------------
 
-/** Query params compartidos por el GET y el export CSV. */
-function parseReclamosFilters(query) {
-  const toList = (v) => {
-    if (v == null || v === '') return undefined;
-    return Array.isArray(v) ? v : String(v).split(',').filter(Boolean);
-  };
-  return {
-    categoria: toList(query.categoria),
-    subcategoria: toList(query.subcategoria),
-    estado: toList(query.estado),
-    barrio: query.barrio || undefined,
-    comuna: query.comuna || undefined,
-    desde: query.desde || undefined,
-    hasta: query.hasta || undefined,
-    q: query.q || undefined,
-  };
-}
-
 app.get('/api/reclamos', (req, res) => {
-  const reclamos = db.listReclamosFiltered(parseReclamosFilters(req.query));
+  const filters = parseReclamosFilters(req.query);
+  if (!isValidReclamosPlataforma(filters.plataforma)) {
+    return res.status(400).json({ error: 'Indicá plataforma=instagram o plataforma=x.' });
+  }
+  const reclamos = db.listReclamosFiltered(filters);
   res.json({
     categorias: CATEGORIAS_RECLAMO,
     estados: ESTADOS_RECLAMO,
@@ -548,11 +563,11 @@ app.get('/api/reclamos', (req, res) => {
     subcategoriasPorCategoria: Object.fromEntries(
       CATEGORIAS_RECLAMO.map((c) => [c, subcategoriasDe(c)])
     ),
-    // Conteo por categoría sobre TODA la base, no sobre lo filtrado: el mapa
+    // Conteo por categoría sobre ESA plataforma, no sobre lo filtrado: el mapa
     // asigna sus 12 colores a las categorías más frecuentes, y ese ranking no
     // puede cambiar cada vez que el usuario toca un filtro — los pines
     // cambiarían de color solos.
-    conteoPorCategoria: db.contarReclamosPorCategoria(),
+    conteoPorCategoria: db.contarReclamosPorCategoria(filters.plataforma),
     reclamos,
   });
 });

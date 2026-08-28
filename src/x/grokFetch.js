@@ -234,21 +234,18 @@ async function postJson(url, { apiKey, backend, body }) {
   return data;
 }
 
-async function callGrokFetch(url, postId) {
+async function callGrokJson(prompt, { maxTokens = 16000 } = {}) {
   const cfg = getFetchConfig();
-  const prompt = buildFetchPrompt(url, postId);
 
   let data;
   let usage;
   if (cfg.backend === 'openrouter') {
-    // Chat Completions + server tool: con modelos x-ai/* OpenRouter activa
-    // X Search nativo además de web search.
     data = await postJson(`${cfg.baseUrl}/chat/completions`, {
       apiKey: cfg.apiKey,
       backend: 'openrouter',
       body: {
         model: cfg.model,
-        max_tokens: 16000,
+        max_tokens: maxTokens,
         messages: [{ role: 'user', content: prompt }],
         tools: [{ type: 'openrouter:web_search' }],
       },
@@ -269,13 +266,21 @@ async function callGrokFetch(url, postId) {
 
   const text = extractOutputText(data);
   const parsed = extractJsonObject(text);
+  return { parsed, usage, rawText: text, backend: cfg.backend, model: cfg.model };
+}
+
+async function callGrokFetch(url, postId) {
+  const { parsed, usage, rawText, backend, model } = await callGrokJson(
+    buildFetchPrompt(url, postId),
+    { maxTokens: 16000 }
+  );
   if (!parsed) {
     const e = new Error('Grok no devolvió JSON del hilo');
     e.userMessage =
       'Grok no pudo devolver el hilo en un formato usable. Probá de nuevo o con otro posteo.';
     throw e;
   }
-  return { parsed, usage, rawText: text, backend: cfg.backend, model: cfg.model };
+  return { parsed, usage, rawText, backend, model };
 }
 
 /**
@@ -313,6 +318,7 @@ async function fetchXThread(url) {
 
 module.exports = {
   fetchXThread,
+  callGrokJson,
   extractJsonObject,
   extractOutputText,
   getModel,

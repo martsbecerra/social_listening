@@ -5,7 +5,8 @@ const statusTextEl = document.getElementById('statusText');
 const progressFillEl = document.getElementById('progressFill');
 const errorEl = document.getElementById('error');
 const resultCard = document.getElementById('resultCard');
-const reportEl = document.getElementById('report');
+const reportBeforeEl = document.getElementById('reportBefore');
+const reportAfterEl = document.getElementById('reportAfter');
 const metaEl = document.getElementById('meta');
 const copyBtn = document.getElementById('copyBtn');
 const waShareBtn = document.getElementById('waShareBtn');
@@ -15,6 +16,12 @@ const csvBtn = document.getElementById('csvBtn');
 const WA_TEXT_CAP = 4000;
 
 let currentCsv = '';
+let reportParts = { beforeTemas: '', afterTemas: '' };
+
+const temasEditor = window.TemasConversacion.mount({
+  listEl: document.getElementById('temasList'),
+  addBtn: document.getElementById('temasAddBtn'),
+});
 
 function show(el) { el.classList.remove('hidden'); }
 function hide(el) { el.classList.add('hidden'); }
@@ -149,7 +156,13 @@ async function analyze() {
 
     stopLoading(true);
 
-    renderReportWithLinks(reportEl, data.report);
+    renderReportWithLinks(reportBeforeEl, data.reportParts?.beforeTemas || data.report || '');
+    renderReportWithLinks(reportAfterEl, data.reportParts?.afterTemas || '');
+    reportParts = {
+      beforeTemas: reportBeforeEl.textContent,
+      afterTemas: reportAfterEl.textContent,
+    };
+    temasEditor.setTemas(data.temas || []);
     metaEl.textContent = '';
     hide(metaEl);
     currentCsv = data.csv || '';
@@ -163,9 +176,17 @@ async function analyze() {
   }
 }
 
+function currentReportText() {
+  return window.TemasConversacion.assemble(
+    reportParts.beforeTemas,
+    temasEditor.getTemas(),
+    reportParts.afterTemas
+  );
+}
+
 async function copyReport() {
   try {
-    await navigator.clipboard.writeText(reportEl.textContent);
+    await navigator.clipboard.writeText(currentReportText());
     copyBtn.textContent = '¡Copiado!';
     setTimeout(() => { copyBtn.textContent = 'Copiar'; }, 1500);
   } catch {
@@ -189,7 +210,7 @@ function truncateWaText(text) {
 }
 
 function shareWhatsApp() {
-  const text = reportEl.textContent;
+  const text = currentReportText();
   if (!text || !text.trim()) return;
   openWhatsAppApp(encodeURIComponent(truncateWaText(text)));
 }
@@ -214,7 +235,10 @@ function clearAll() {
   urlInput.value = '';
   hide(resultCard);
   hide(errorEl);
-  reportEl.textContent = '';
+  reportBeforeEl.textContent = '';
+  reportAfterEl.textContent = '';
+  reportParts = { beforeTemas: '', afterTemas: '' };
+  temasEditor.setTemas([]);
   metaEl.textContent = '';
   hide(metaEl);
   currentCsv = '';

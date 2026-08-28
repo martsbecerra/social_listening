@@ -13,6 +13,8 @@ const { requestStructuredAnalysis } = require('../llm');
 const { getOpenRouterXModel } = require('./grokModel');
 const { buildReclamosFromAnalysis } = require('./reclamosFromAnalysis');
 const { applyInfluencerAccountTypes } = require('./influencers');
+const { asignarSubcategorias } = require('../clasificarReclamo');
+const { addTokenUsage } = require('../llm/usage');
 
 async function analyzeXThread({ url, post, items, influencerMap }) {
   const grokModel = getOpenRouterXModel();
@@ -57,7 +59,29 @@ async function analyzeXThread({ url, post, items, influencerMap }) {
   );
   classifications = applyInfluencerAccountTypes(sample, classifications, influencerMap);
 
-  for (const reclamo of buildReclamosFromAnalysis({ url, sample, classifications })) {
+  const reclamos = buildReclamosFromAnalysis({ url, sample, classifications });
+  if (reclamos.length > 0) {
+    const { subcategorias, usage: subUsage, llamadas } = await asignarSubcategorias(
+      reclamos.map((r) => ({
+        categoria: r.categoria,
+        texto: r.textoOriginal,
+        direccionDetectada: r.direccionDetectada,
+      }))
+    );
+    reclamos.forEach((r, i) => {
+      r.subcategoria = subcategorias[i] || '';
+    });
+    if (subUsage) {
+      tokenUsage = tokenUsage ? addTokenUsage(tokenUsage, subUsage) : subUsage;
+    }
+    if (llamadas > 0) {
+      const conSub = subcategorias.filter(Boolean).length;
+      console.log(
+        `[x-reclamos] ${reclamos.length} reclamo(s), ${conSub} con subcategoría asignada (${llamadas} llamada/s al LLM).`
+      );
+    }
+  }
+  for (const reclamo of reclamos) {
     db.upsertReclamo(reclamo);
   }
 
