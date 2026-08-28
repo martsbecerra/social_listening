@@ -15,13 +15,13 @@ App web que:
    las cuentas trackeadas o que mencione las palabras clave/hashtags
    configurados, y avisa por email (solapa "Monitoreo en vivo" de Instagram).
 4. Muestra la solapa "Mapa de reclamos" (Leaflet): círculos por dirección
-   normalizada, con filtros combinables por categoría (lista cerrada de
-   nueve), estado, barrio/comuna, rango de fechas y texto libre, más
-   descarga de CSV. Se alimenta de dos fuentes: el análisis de una
-   publicación (`/api/analyze` guarda reclamos con ubicación en
-   `geo_status = 'pendiente'`; un worker los geocodifica con USIG después,
-   sin bloquear la respuesta) y un import puntual de Excel
-   (`scripts/import-reclamos-excel.js`) para cargar reclamos ya resueltos.
+   normalizada, con filtros combinables por categoría y subcategoría (esquema
+   de dos niveles del cliente, en `config/categorias-reclamos.json`), estado,
+   barrio/comuna, rango de fechas y texto libre, más descarga de CSV. Se
+   alimenta de dos fuentes: el análisis de una publicación (`/api/analyze`
+   guarda reclamos con ubicación en `geo_status = 'pendiente'`; un worker los
+   geocodifica con USIG después, sin bloquear la respuesta) y el importador
+   genérico de Excel/CSV (`scripts/import-reclamos.js`).
 
 ---
 
@@ -39,7 +39,10 @@ social_listening_app/
 │   ├── db.js                 # SQLite: posteos detectados + reclamos del mapa.
 │   ├── reclamosAddress.js    # Obsoleto (heurística del seed viejo); sin uso.
 │   ├── tematica.js           # Normaliza etiquetas libres del CSV de reclamos (legacy).
-│   ├── categoriaReclamo.js   # Categoría (9) y estado (4) cerrados del mapa.
+│   ├── categoriasConfig.js   # Carga y valida config/categorias-reclamos.json.
+│   ├── categoriaReclamo.js   # Estado (4) cerrado del mapa; re-exporta categorías.
+│   ├── clasificarReclamo.js  # Paso 2: subcategoría (1 llamada por análisis).
+│   ├── importers/            # Lectura de tablas, fechas y extracción de ubicación.
 │   ├── addressClean.js       # Limpieza de direcciones antes de geocodificar (USIG).
 │   ├── geocode.js            # USIG + geocode_cache (lo usa geoWorker.js).
 │   ├── territorios.js        # Comuna/barrio por punto-en-polígono (GeoJSON GCBA).
@@ -55,6 +58,7 @@ social_listening_app/
 │       └── whatsapp.js       # Placeholder para notificación por WhatsApp (no implementado).
 ├── config/
 │   ├── monitoring.json       # Cuentas y palabras clave/hashtags a trackear.
+│   ├── categorias-reclamos.json # Categorías y subcategorías del cliente (26/85).
 │   ├── x-influencers/        # CSV ANTIK-PRO (padrón de actores de X).
 │   └── allowed-emails.example.txt  # Plantilla de emails que pueden entrar.
 ├── data/
@@ -75,7 +79,8 @@ social_listening_app/
 │       ├── monitoring.js     # Lógica de "Monitoreo en vivo".
 │       └── claimsMap.js      # Mapa de reclamos (Leaflet, agrega en el cliente).
 ├── scripts/
-│   ├── import-reclamos-excel.js # Carga un Excel de reclamos ya resueltos (solo CLI).
+│   ├── import-reclamos.js       # Importador genérico de Excel/CSV (solo CLI).
+│   ├── migrate-categorias.js    # Migra categorías viejas al esquema de dos niveles.
 │   └── stop-server.js           # Mata el proceso que ocupa el puerto (npm run stop).
 ├── .env.example               # Plantilla de las claves (copiala a .env).
 ├── .gitignore                 # Evita subir node_modules, .env y data/.
@@ -318,18 +323,16 @@ geocodifican con USIG poco después (sin bloquear la respuesta del análisis).
 También corren cada 4hs junto con el cron de monitoreo, por si algo quedó
 pendiente por una falla transitoria de USIG.
 
-Para cargar de una vez un lote de reclamos ya resueltos (Excel con hoja
-"Reclamos" y columnas `direccion`, `comuna`, `barrio`, `link`, `texto`,
-`autor`, `fecha`, `X`, `Y`, entre otras):
+Para cargar un lote desde un Excel o CSV está el **importador genérico**, que
+detecta las columnas solo y no depende del formato de un archivo puntual:
 
 ```powershell
-npm run import-reclamos-excel -- --dry-run "ruta\al\archivo.xlsx"
-npm run import-reclamos-excel -- "ruta\al\archivo.xlsx"
+npm run import-reclamos -- data/import/archivo.xlsx --dry-run --muestra 20
+npm run import-reclamos -- data/import/archivo.xlsx --muestra 20
 ```
 
-`--dry-run` solo imprime un resumen y no toca la DB. El import real es
-idempotente (usa el link de cada fila como id): correrlo dos veces no
-duplica filas.
+Ver **"Importar reclamos desde Excel o CSV"** más abajo para las opciones,
+qué hace con cada fila y cómo revertir una importación.
 
 ---
 
@@ -390,6 +393,279 @@ El costo por análisis es bajo: son unos pocos miles de tokens de entrada
 > muestra el costo vacío en vez de estimarlo. Workaround: setear
 > `LLM_INPUT_USD_PER_MTOK` / `LLM_OUTPUT_USD_PER_MTOK` en `.env`, que tienen
 > prioridad sobre todo lo demás. Queda para resolver aparte.
+
+> **Pendiente — la `tematica` de los reclamos no se persiste.**
+> `RECLAMO_GEO_SCHEMA` (`src/analysisSchema.js`) obliga al LLM a devolver una
+> `tematica` por reclamo: una etiqueta libre y corta ("bache profundo", "luz
+> quemada"), más específica que la `categoria`, que es un enum cerrado. Pero la
+> tabla `reclamos` no tiene columna para ella: se usa para armar el reporte y
+> se descarta al guardar. Si se quisiera filtrar o agrupar por temática fina en
+> el mapa, hay que agregar la columna con el mismo patrón incremental que ya
+> usa `src/db.js` y pasarla en `buildReclamosFromAnalysis`. Queda para resolver
+> aparte.
+>
+> Distinto es el caso de las columnas del Excel de X (`visualizacion`,
+> `c_likes`, `c_retweets`, `c_replies`, `reclamo_reiterado`, `sentimiento`):
+> ésas **se descartan a propósito** al importar y no hay intención de guardarlas.
+
+### Categorías y subcategorías de reclamos
+
+El esquema es de **dos niveles**: categoría (26) + subcategoría (85). Vive en
+**`config/categorias-reclamos.json`**, no en el código — lo define el cliente y
+va a cambiar. El archivo fuente es [`design/CATEGORIAS.pdf`](design/CATEGORIAS.pdf).
+
+Para agregar, sacar o renombrar una categoría **alcanza con editar ese JSON**.
+No hay que tocar código ni migrar la base, porque:
+
+- `categoria` y `subcategoria` **no tienen `CHECK`** en la tabla. SQLite no sabe
+  alterar un `CHECK`: si la lista estuviera en el esquema, cada cambio del
+  cliente obligaría a reconstruir la tabla.
+- La validación vive en `src/categoriasConfig.js`, y todo lo que se guarda pasa
+  por `normalizeClasificacion()`, llamada desde `db.upsertReclamo()`.
+
+`estado`, `plataforma` y `geo_status` **sí** conservan su `CHECK`: son listas
+cortas, estables y definidas por el equipo, no por el cliente.
+
+Reglas de validación, en orden:
+
+| Caso | Resultado |
+|---|---|
+| Par (categoría, subcategoría) válido | Se guarda tal cual |
+| Difiere en mayúsculas o acentos | Se resuelve al texto canónico |
+| Categoría del esquema viejo | Se traduce por alias (tabla en `categoriasConfig.js`) |
+| Subcategoría que no pertenece a esa categoría | Categoría + **subcategoría vacía** |
+| Categoría inexistente | **`Coyuntura / Otros`** |
+
+Todo ajuste se loguea con el id de la fila, para poder rastrearlo.
+
+> **Por qué los alias son una tabla explícita y no una normalización.** El
+> archivo histórico trae `"Recuperción de Propiedes "` — dos typos y un espacio
+> final — que plegado da `recupercion de propiedes`, distinto de
+> `recuperacion de propiedades`. Trim + minúsculas + sin acentos **no** las une:
+> el error está en las letras. Por eso los dos textos crudos están mapeados a
+> mano a `Seguridad`.
+
+#### Migrar reclamos del esquema viejo
+
+`scripts/migrate-categorias.js` traduce las filas que quedaron con las 9
+categorías viejas. Guarda el estado anterior en la tabla `categorias_backup`,
+así el revert no depende de acordarse del mapeo:
+
+- `node scripts/migrate-categorias.js --dry-run` — muestra qué haría
+- `node scripts/migrate-categorias.js` — migra
+- `node scripts/migrate-categorias.js --revert` — vuelve atrás
+
+Es idempotente: correrlo dos veces no duplica ni rompe nada.
+
+### Importar reclamos desde Excel o CSV
+
+```
+node scripts/import-reclamos.js data/import/<archivo> [--dry-run] [--muestra N] [--limit N] [--si]
+```
+
+- `--dry-run` procesa todo y muestra el resultado **sin escribir en la base**
+  (tampoco en la caché de geocoding).
+- `--muestra N` toma **N filas válidas por categoría** en vez de importar todo.
+  "Válida" = el LLM le encontró una dirección accionable. Si una fila no la
+  tiene, sigue buscando hasta juntar las N o llegar al tope de **5N filas
+  evaluadas** por categoría; si no llegó, avisa cuántas consiguió.
+- `--limit N` procesa sólo las primeras N filas (para probar barato).
+- `--si` saltea la confirmación (para correr desatendido).
+- `--map campo=Columna` fuerza el mapeo de una columna.
+
+Antes de llamar al LLM muestra el **costo estimado** y pide confirmación.
+
+**El resumen distingue por qué cada fila llega o no al mapa**, que es lo que
+permite ver si el pipeline anda bien o si hay algo roto:
+
+| Motivo | Qué significa |
+|---|---|
+| con pin | Geocodificada ok, aparece en el mapa |
+| sin dirección accionable en el texto | El texto no menciona un lugar al que mandar una cuadrilla |
+| con dirección detectada, USIG no la resolvió | Había dirección, pero USIG no le pudo dar un punto |
+| con dirección detectada, USIG no la resolvió | Había dirección, pero USIG no le pudo dar un punto (`no_encontrada`) |
+| fuera de CABA | Dirección real, de otro partido |
+| geocoding pendiente | Falla transitoria de USIG; lo reintenta el worker |
+
+Que **la mayoría de las filas no termine en pin es lo esperable** con este tipo
+de dato: las direcciones vienen incompletas, ambiguas o directamente no hay. Un
+20–30% de pines sobre el total es normal. El importador geocodifica durante la
+corrida (no deja todo en `pendiente`) justamente para poder informar el motivo
+de cada fila en el momento, y muestra ejemplos de cada uno.
+
+En modo `--muestra`, las filas evaluadas que quedaron afuera se reportan aparte
+con ejemplos: son las que dicen si el criterio de "ubicación accionable" está
+bien calibrado o si está descartando de más.
+
+**Detección de columnas.** Busca por nombre tolerando variantes
+(`texto|comentario|contenido|mensaje|hit_sentence`, `fecha|date|mes`,
+`autor|usuario|cuenta`, `link|url|enlace`, más `direccion`, `categoria`,
+`x`, `y`, `comuna`). Si falta alguna obligatoria, **lista las que encontró y
+pide el mapeo**, sin escribir nada.
+
+**Qué hace con cada fila:**
+
+| Problema del archivo | Qué hace el importador |
+|---|---|
+| Texto en mojibake (`QuÃ©`) | Lo repara. Si más del 10% no es reparable, **aborta**: texto corrupto clasifica mal y queda mal para siempre |
+| Coordenadas sin punto decimal | Prueba el valor tal cual; si no cae en CABA, inserta el decimal; si tampoco, descarta y manda a USIG |
+| Categorías viejas o con typos | Las traduce por la tabla de alias de `categoriasConfig` |
+| Fecha con sólo el mes (`ABRIL`) | Guarda el día 1 y marca `precision_fecha = 'mes'` |
+| Fecha completa | `precision_fecha = 'exacta'` |
+| Columna `direccion` poco confiable | La usa como **pista**; manda el texto y deja que el LLM decida |
+
+**Ninguna fila se pierde.** Las que no llegan al mapa se guardan igual, con el
+`geo_status` que explica por qué — incluidas las que en modo `--muestra` quedaron
+fuera de la muestra. Saber qué proporción de reclamos **no** es geolocalizable
+es un dato en sí mismo, y si algún día mejora la extracción hay contra qué medir
+sin volver al archivo.
+
+Se distinguen dos motivos que antes colapsaban en uno:
+
+- `sin_direccion` — el texto no menciona un lugar accionable.
+- `no_encontrada` — había una dirección, pero USIG no le pudo dar un punto.
+
+La dirección original del archivo se guarda igual en `direccion_detectada`,
+aunque el modelo la descarte, para poder auditar si el criterio está
+descartando de más.
+
+**Deshacer una importación.** `--revert` borra las filas que vinieron de ese
+archivo, sin tocar el resto de la base:
+
+```
+node scripts/import-reclamos.js data/import/<archivo> --revert [--dry-run]
+```
+
+Cada fila importada guarda su archivo de origen en `import_origen`. Lo detectado
+por el monitoreo o por el análisis de publicaciones tiene ese campo en `NULL` y
+nunca se ve afectado, así que revertir una importación que salió mal no exige
+restaurar un backup entero.
+
+> **Por qué la columna `direccion` es una pista y no la verdad.** En el
+> histórico de X, esa columna salió de un extractor ingenuo: "hasta las **18h**"
+> produjo *"Carreras, Santiago de las 18"*, "antes de las **7am**" produjo
+> *"...de las 7"*, y "mi hijo vive en **España**" produjo *"España Av."*. En el
+> 28% de las filas el nombre de calle **no aparece en ningún lado del texto**, y
+> 178 filas comparten la misma calle inventada por la frase "las N". Importarla
+> tal cual llenaría el mapa de pines precisos en lugares equivocados.
+
+**Idempotencia y dedupe.** La clave es **link + dirección + categoría**, no sólo
+el link: un mismo tuit puede citar varias direcciones, y también aparecer dos
+veces con categorías distintas (un texto puede tocar higiene y seguridad a la
+vez). Correr el importador dos veces hace upsert, no duplica.
+
+### Qué ubicación es "accionable"
+
+Un reclamo entra al mapa sólo si el comentario menciona un lugar al que se
+podría mandar una cuadrilla. El LLM devuelve el tipo en `tipoUbicacion`, y de
+ahí sale la `precision` con la que se guarda:
+
+| `tipoUbicacion` | Ejemplo | `precision` |
+|---|---|---|
+| `calle_altura` | "Juramento 3109" | `exacta` |
+| `cruce` | "Nazca y Rivadavia" | `exacta` |
+| `tramo` | "Cabildo entre Juramento y Mendoza" | `exacta` |
+| `lugar_nombrado` | "Plaza Italia", "Hospital Durand" | **`aproximada`** |
+
+**No** son accionables y no generan reclamo: un barrio solo ("vivo en
+Palermo"), una comuna, la ciudad, una provincia o un país, referencias vagas
+("por mi casa", "toda la zona") y números que no son altura (horarios, precios,
+cantidades). Las reglas están en el system prompt con ejemplos de cada caso.
+
+Un `tramo` se geocodifica por su **primera esquina** (`addressClean.js` lo
+convierte a un cruce): un tramo de cuadra no tiene punto propio, y su esquina
+inicial cae dentro del tramo mencionado.
+
+> **Pendiente — los lugares con nombre propio no llegan al mapa.**
+> `precision: 'aproximada'` ya se asigna bien, pero el servicio de USIG que
+> usamos (`/normalizar/`) es un normalizador de **direcciones**, no un
+> buscador de lugares: "Plaza Italia" devuelve la calle *Calzada Circular Plaza
+> Italia* sin coordenadas, y "Hospital Durand" o "Parque Centenario" no
+> devuelven nada. Esos reclamos quedan en `sin_direccion`: se guardan y se ven
+> en la lista, pero sin pin.
+>
+> Para resolverlo harían falta dos piezas: una fuente de coordenadas de lugares
+> (los GeoJSON públicos de Buenos Aires Data — espacios verdes, hospitales,
+> escuelas — cargados igual que los polígonos de `data/geo`), y después el
+> reverse geocoding de USIG
+> (`ws.usig.buenosaires.gob.ar/geocoder/2.2/reversegeocoding`), que dado un
+> punto devuelve la puerta y la esquina más cercanas con calle y altura.
+
+### Colores del mapa
+
+**Doce colores, no veintiséis.** Con 26 categorías no existen 26 tonos que el
+ojo separe de un vistazo: pasando los diez, comparar dos pines se vuelve
+adivinanza. Entonces:
+
+- Las **12 categorías más frecuentes de toda la base** se llevan un color fijo.
+  Que salga del total y no de lo filtrado es deliberado: si el ranking se
+  recalculara con cada filtro, los pines cambiarían de color solos y no se
+  podría comparar nada entre dos vistas.
+- El resto va al **gris**, que además comunica "cola larga" mejor que un color
+  casi repetido. La leyenda lo aclara.
+- **Excepción:** si el filtro deja 12 o menos categorías seleccionadas, cada una
+  toma color propio — ya no hay ambigüedad posible.
+
+Los colores salen de la paleta del sistema (jade, barro, coral, ámbar) más
+análogos en la misma saturación, alternando claros y oscuros para que dos
+vecinos en la leyenda no se parezcan. Están en `:root` como `--cat-1` … `--cat-12`
+y `--cat-otras`.
+
+**La leyenda muestra sólo las categorías presentes en la vista actual**, con su
+conteo. Listar las 26 sería ruido; ocultar alguna dejaría pines sin explicar.
+
+**Un pin agrupa reclamos de una misma dirección**, que pueden ser de categorías
+distintas. Se pinta con la **más frecuente de ese punto**, y el popup muestra el
+desglose completo — si no, un punto con tres categorías se leería como si fuera
+de una sola.
+
+**Pin de borde punteado**: todos los reclamos de ese punto tienen
+`precision = 'aproximada'` (un lugar con nombre, no una altura). Con uno solo
+exacto el pin va sólido, porque ahí sí hay una ubicación precisa.
+
+El filtro de **subcategoría depende del de categoría**: se puebla sólo con las
+subcategorías de las categorías seleccionadas. Con las 26 marcadas serían 85
+opciones, una lista imposible de usar.
+
+### Los estados de `geo_status`
+
+Cada reclamo guarda en qué terminó su geocodificación:
+
+| `geo_status` | Qué significa | ¿Aparece en el mapa? |
+|---|---|---|
+| `pendiente` | Detectado, todavía sin geocodificar | No (hasta que corra el worker) |
+| `ok` | Resuelto dentro de CABA, con comuna y barrio | **Sí**, con pin |
+| `sin_direccion` | El texto no menciona un lugar accionable | No (queda en la lista, sin pin) |
+| `no_encontrada` | Había dirección, pero USIG no le pudo dar un punto | No (queda en la lista, sin pin) |
+| `fuera_caba` | Dirección real, pero de otro partido | No — se excluye siempre |
+| `invalida` | El texto no parece una dirección (`addressClean.js`) | No |
+
+`fuera_caba` **nunca se muestra ni se exporta**, pase el filtro que pase
+(`listReclamosFiltered`). Queda guardado sólo para poder auditar de dónde
+vienen las direcciones de afuera, con la dirección normalizada del partido que
+la reconoció.
+
+Cómo se distingue `fuera_caba` de `sin_direccion`: USIG es un servicio
+exclusivo de CABA y `geocode.js` le agrega `, CABA` a la consulta para evitar
+ambigüedades entre partidos. Con ese sufijo, una dirección de Avellaneda y una
+dirección inventada devuelven lo mismo — cero resultados. Por eso, cuando CABA
+no la reconoce, se hace una **segunda consulta sin el sufijo**: si USIG la
+ubica en otro `cod_partido`, es `fuera_caba`; si no la ubica en ningún lado, es
+`sin_direccion`. Esa segunda consulta corre sólo en el camino de fallo y queda
+cacheada, así que no agrega tráfico al caso normal.
+
+> **Nota si venís de una versión anterior.** Hasta este cambio, las direcciones
+> de otros partidos se guardaban como `sin_direccion` y la señal se perdía. Las
+> entradas `not_found` que ya estuvieran en `geocode_cache` seguirían
+> devolviendo el estado viejo, así que hay que borrarlas una vez para que se
+> reevalúen:
+>
+> ```sql
+> DELETE FROM geocode_cache WHERE status = 'not_found';
+> ```
+>
+> Ya se corrió sobre `data/monitoring.db`. Sólo hace falta repetirlo en otra
+> copia de la base que venga de antes del cambio.
 
 ---
 

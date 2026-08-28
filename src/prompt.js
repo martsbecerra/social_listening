@@ -7,6 +7,19 @@
 // casos obvios además se refuerzan en classificationHeuristics.js.
 // ==========================================================================
 
+const { listCategorias } = require('./categoriasConfig');
+
+// Las categorías se inyectan desde config/categorias-reclamos.json, no se
+// escriben en el prompt: si el cliente cambia la lista, el prompt cambia solo
+// y no puede quedar desalineado del enum del schema.
+//
+// Acá va SÓLO el primer nivel (26 opciones). Las subcategorías son 85 y
+// mandarlas todas en cada llamada sería caro al pedo: se piden en un segundo
+// paso, con la sublista de la categoría ya elegida (ver clasificarReclamo.js).
+const CATEGORIAS_PARA_PROMPT = listCategorias()
+  .map((c) => `  - ${c}`)
+  .join('\n');
+
 // Instrucciones fijas enviadas como system en analyzeComments / llm (no es código ejecutable).
 const CLASSIFICATION_SYSTEM_PROMPT = `Actuá como experto en análisis de sentimiento, marketing digital político e Instagram Analytics.
 
@@ -33,13 +46,31 @@ Si el mensaje del usuario incluye "CUENTAS CON TIPO REGISTRADO", usá exactament
 Debés devolver classifications para todos los comentarios numerados (mismo index 1-based).
 
 3. Reclamos geolocalizables (reclamosGeo)
-Solo si el comentario menciona una dirección concreta o aproximada (calle, altura, esquina/cruce entre calles). Un barrio suelto sin calle ("vivo en Palermo", "esto pasa en Almagro") NO es una dirección accionable: no generes una entrada de reclamosGeo para eso, aunque el comentario sea un reclamo real.
+Generá una entrada SOLO si el comentario menciona una ubicación ACCIONABLE, es decir, un lugar al que se podría mandar una cuadrilla. Ser estricto acá importa más que no perderse un caso: una ubicación inventada ensucia el mapa para siempre.
+
+SÍ son accionables (los cuatro tipos, con su tipoUbicacion):
+- calle_altura — calle con número: "Juramento 3109", "hay un bache en Salta 250".
+- cruce — esquina entre dos calles: "Nazca y Rivadavia", "en Corrientes esquina Medrano".
+- tramo — una avenida entre dos calles: "Cabildo entre Juramento y Mendoza".
+- lugar_nombrado — lugar con nombre propio y ubicación única: plazas, parques, estaciones, hospitales, escuelas, monumentos, clubes. Ejemplos: "Plaza Italia", "Hospital Durand", "la estación Palermo", "el Parque Centenario", "Escuela Raggio".
+
+NO son accionables. Si el comentario sólo tiene esto, NO generes entrada, aunque el reclamo sea real y esté bien fundado:
+- Un barrio solo: "vivo en Palermo", "esto pasa en Almagro", "Villa Santa Rita está abandonada".
+- Una comuna, la ciudad, una provincia o un país: "la Comuna 7", "en CABA", "en Buenos Aires", "mi hijo vive en España".
+- Referencias vagas o relativas: "en el centro", "por mi casa", "a la vuelta", "toda la zona", "en el barrio de siempre".
+- Números que NO son altura: horarios ("hasta las 18h", "a las 7am"), fechas, precios ("por 200 pesos"), cantidades ("1 o 2 o 3"). Un número suelto cerca de un nombre de calle no lo convierte en dirección.
+
+Ante la duda, NO generes la entrada.
+
 - direccionDetectada: cita textual o casi textual del usuario.
 - direccionNormalizada: formato apto para mapa; "N/D" si no hay datos suficientes.
+- tipoUbicacion: uno de los cuatro tipos de arriba.
 - tematica: frase corta de 2 a 4 palabras en minúsculas que nombre el tipo de reclamo (ej. bache, alumbrado, poda de árboles, plaza abandonada). No uses oraciones ni puntuación. Reutilizá la misma etiqueta si el tema es el mismo. Usá "otro" solo si el reclamo tiene ubicación pero no se puede nombrar.
-- categoria: elegí exactamente una de estas nueve, la que mejor describa el reclamo: "Estacionamientos truchos" (carteles falsos de discapacidad para reservar lugar), "Trapitos" (personas que cobran por "cuidar" o reservar estacionamiento en la calle — no es lo mismo que Estacionamientos truchos), "Vehículos abandonados", "Seguridad", "Casas tomadas", "Limpieza", "Alumbrado", "Vendedores ambulantes", "Otros" si no encaja en ninguna de las anteriores.
-Un comentario puede tener varias entradas si menciona varias ubicaciones.
-Si no hay ubicación, reclamosGeo debe ser [].
+- categoria: elegí EXACTAMENTE UNA de esta lista, copiada tal cual (respetá mayúsculas y acentos). Es sólo el primer nivel: la subcategoría se pide en un paso aparte, no la incluyas acá.
+${CATEGORIAS_PARA_PROMPT}
+Si el reclamo no encaja en ninguna, usá "Coyuntura / Otros".
+Un comentario puede tener varias entradas si menciona varias ubicaciones accionables.
+Si no hay ubicación accionable, reclamosGeo debe ser [].
 
 4. Textos cualitativos del reporte
 - posteoSobre: resumen ejecutivo del contenido del post.

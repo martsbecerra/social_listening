@@ -6,7 +6,7 @@
 // filas de CSV incompletas y comentarios que el modelo omitió por index.
 // ==========================================================================
 
-const { SENTIMENTS, ACCOUNT_TYPES } = require('./analysisSchema');
+const { SENTIMENTS, ACCOUNT_TYPES, TIPOS_UBICACION } = require('./analysisSchema');
 const { applyClassificationHeuristics } = require('./classificationHeuristics');
 const { normalizeTematica } = require('./tematica');
 const { normalizeCategoria } = require('./categoriaReclamo');
@@ -37,6 +37,11 @@ function sanitizeReclamosGeo(raw) {
           : 'N/D',
       tematica: normalizeTematica(r.tematica),
       categoria: normalizeCategoria(r.categoria),
+      // De acá sale la `precision` con la que se guarda el reclamo
+      // (reclamosFromAnalysis.js). Si el modelo manda un valor fuera del enum
+      // se descarta y el reclamo queda como dirección puntual, que es el caso
+      // mayoritario y el comportamiento anterior.
+      tipoUbicacion: TIPOS_UBICACION.includes(r.tipoUbicacion) ? r.tipoUbicacion : null,
     });
   }
   return out;

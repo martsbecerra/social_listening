@@ -17,10 +17,18 @@ const REGEX_CALLE_SRC =
   `(?:(?:[${CALLE_UPPER}][${CALLE_LOWER}]*[.,]?)|[0-9]+)` +
   `(?: de la| del| la| de)?(?: [${CALLE_UPPER}][${CALLE_LOWER}]*[.,]?)*`;
 
-// "en <calle>, entre <calle> y <calle>" -> "en <calle> y <calle>": la
-// entrecalle completa pasa a ser solo el cruce (lo que USIG puede resolver).
+// "<calle> entre <calle> y <calle>" -> "<calle> y <calle>": el tramo pasa a
+// ser su primera esquina, que es lo único que USIG sabe resolver. Un tramo de
+// cuadra no tiene un punto propio; su esquina inicial es la mejor aproximación
+// disponible y cae dentro del tramo mencionado.
+//
+// El "en " inicial es opcional y NO se conserva: USIG no entiende
+// "en Cabildo y Juramento", sólo "Cabildo y Juramento". La versión anterior
+// exigía el "en" y lo dejaba en la salida, así que "Cabildo entre Juramento y
+// Mendoza" no matcheaba y "en Cabildo, entre..." producía "en Cabildo, y
+// Juramento" — ninguna de las dos geocodificaba.
 const REGEX_CUADRA = new RegExp(
-  `en (${REGEX_CALLE_SRC}),? entre (${REGEX_CALLE_SRC}) y ${REGEX_CALLE_SRC}`,
+  `(?:\\ben\\s+)?(${REGEX_CALLE_SRC})\\s*,?\\s+entre\\s+(${REGEX_CALLE_SRC})\\s+y\\s+${REGEX_CALLE_SRC}`,
   'gi'
 );
 
@@ -29,9 +37,11 @@ function cleanNumberDots(text) {
   return String(text || '').replace(REGEX_ENTERO, (m) => m.replace(/\./g, ''));
 }
 
-/** "en X, entre Y y Z" -> "en X y Y". */
+/** "X entre Y y Z" (con o sin "en" y sin coma) -> "X y Y". */
 function simplifyCuadra(text) {
-  return String(text || '').replace(REGEX_CUADRA, 'en $1 y $2');
+  return String(text || '')
+    .replace(REGEX_CUADRA, (_m, calle, cruce) => `${String(calle).replace(/[.,]\s*$/, '')} y ${cruce}`)
+    .trim();
 }
 
 /** Limpieza completa antes de geocodificar: números + entrecalles. */

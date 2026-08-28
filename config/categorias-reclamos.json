@@ -1,0 +1,226 @@
+{
+  "version": 1,
+  "fuente": "design/CATEGORIAS.pdf",
+  "_comentario": "Lista cerrada de categorias y subcategorias del cliente. Los textos van TAL CUAL: el LLM los recibe como opciones y Node valida contra ellos. Los ejemplos entre parentesis son parte del texto a proposito, ayudan a clasificar. Editar aca, no en el codigo.",
+  "fallback": {
+    "categoria": "Coyuntura / Otros",
+    "subcategoria": ""
+  },
+  "categorias": [
+    {
+      "nombre": "Espacio Público",
+      "subcategorias": [
+        "Reclamos por posibles construcciones de estacionamientos en plazas y espacios verdes",
+        "Reclamos por falta de mantenimiento en espacios verdes",
+        "Reclamos por veredas en mal estado",
+        "Críticas por arreglos de veredas en supuesto buen estado",
+        "Reclamos por ocupación de veredas por locales comerciales"
+      ]
+    },
+    {
+      "nombre": "Higiene",
+      "subcategorias": [
+        "Reclamos por falta de limpieza y recolección de residuos",
+        "Reclamos por presencia de roedores",
+        "Reclamos por falta de limpieza en viaductos y vías públicas",
+        "Críticas por ausencia de barrenderos",
+        "Quejas por falta de limpieza en la vía pública y vaciado de contenedores",
+        "Reclamos por contenedores desbordados",
+        "Reclamos por falta de desratización en la zona"
+      ]
+    },
+    {
+      "nombre": "Gestión comunal",
+      "subcategorias": [
+        "Reclamos por suciedad en plazas",
+        "Consultas por licencias de conducir",
+        "Quejas por autos abandonados",
+        "Pedidos de desmalezamiento y limpieza de frentes."
+      ]
+    },
+    {
+      "nombre": "Infraestructura",
+      "subcategorias": [
+        "Reclamos por falta de mantenimiento en obras de la Ciudad",
+        "Críticas a la construcción de puentes y obras viales (ej. Puente Río Negro en la Autopista Dellepiane)",
+        "Quejas por proyectos de estacionamiento subterráneo (ej. Polo Educativo de Saavedra)"
+      ]
+    },
+    {
+      "nombre": "Seguridad",
+      "subcategorias": [
+        "Quejas por hechos de inseguridad",
+        "Pedidos de mayor presencia policial",
+        "Reclamos por venta de drogas",
+        "Críticas por presencia de trapitos",
+        "Críticas por presencia de manteros",
+        "Reclamos por operativos policiales hacia vendedores ambulantes",
+        "Reclamos por operativos policiales en movilizaciones",
+        "Reclamos por operativos policiales en recuperación de propiedades",
+        "Reclamos por viviendas usurpadas / casas tomadas",
+        "Críticas por medidas de seguridad (Ej: Operativo Muro)",
+        "Pedidos de recuperación de propiedades"
+      ]
+    },
+    {
+      "nombre": "Vivienda",
+      "subcategorias": [
+        "Reclamos vinculados al acceso a la vivienda y a créditos hipotecarios"
+      ]
+    },
+    {
+      "nombre": "Medioambiente",
+      "subcategorias": [
+        "Cuestiones referidas al ecosistema y a la contaminación",
+        "Reclamos vinculados al cuidado del medioambiente",
+        "Cuestionamientos sobre el Ecoparque y la reserva ecológica",
+        "Reclamos por reciclado y residuos diferenciados"
+      ]
+    },
+    {
+      "nombre": "Energía",
+      "subcategorias": [
+        "Reclamos por cortes de luz en distintos barrios",
+        "Reclamos por cortes de luz durante eventos masivos (ej. partidos del Mundial)"
+      ]
+    },
+    {
+      "nombre": "Transporte",
+      "subcategorias": [
+        "Reclamos por falta de limpieza en vagones y estaciones del subte",
+        "Quejas por condiciones edilicias de estaciones de subte",
+        "Críticas por demoras en licitaciones de nuevas líneas de subte (ej. Línea F)",
+        "Reclamos por paradas de colectivo falsas o mal ubicadas",
+        "Quejas por el precio del boleto del subte",
+        "Reclamos por falta de extensión de la red de subte",
+        "Reclamos por presencia de roedores en el subte",
+        "Reclamos por fallas en barreras y demoras del tren Sarmiento",
+        "Críticas por el nombre de estaciones de subte (ej. \"Rodolfo Walsh\", Línea E)",
+        "Quejas hacia los trambuses"
+      ]
+    },
+    {
+      "nombre": "Tránsito",
+      "subcategorias": [
+        "Quejas por falta de control del tránsito en zonas centrales de la Ciudad (ej. Obelisco)",
+        "Cuestionamientos por falta de semáforos",
+        "Cuestionamientos por autos mal estacionados"
+      ]
+    },
+    {
+      "nombre": "Movilización",
+      "subcategorias": [
+        "Reclamos por cortes de calle y piquetes",
+        "Quejas por movilizaciones y protestas que afectan la circulación"
+      ]
+    },
+    {
+      "nombre": "Salud",
+      "subcategorias": [
+        "Reclamos por supuesta falta de prioridad para porteños en hospitales (ej. Hospital Ramos Mejía)",
+        "Quejas por falta de turnos en hospitales (ej. Hospital Tornú)",
+        "Reclamos por demoras en la atención del SAME",
+        "Quejas por las condiciones edilicias de los centros médicos",
+        "Cuestionamientos por la atención y falta de mantenimiento hospitalario (ej. Hospital Durand)"
+      ]
+    },
+    {
+      "nombre": "Educación",
+      "subcategorias": [
+        "Críticas por las reformas en el estatuto docente de la Ciudad",
+        "Quejas por las condiciones edilicias de escuelas (ej. Escuela Comercial 4 de San Telmo, Escuela Raggio)",
+        "Reclamos por falta de implementación del boleto educativo",
+        "Reclamos por las condiciones de jardines de infantes",
+        "Críticas por el sueldo del personal docente"
+      ]
+    },
+    {
+      "nombre": "Desarrollo Humano",
+      "subcategorias": [
+        "Reclamos por personas en situación de calle con conductas indebidas",
+        "Reclamos por presunto aumento de personas en situación de calle en la vía pública"
+      ]
+    },
+    {
+      "nombre": "Género",
+      "subcategorias": [
+        "Denuncias vinculadas a la comunidad LGBT+",
+        "Reclamos por violencia de género",
+        "Cuestionamientos sobre políticas de igualdad e inclusión"
+      ]
+    },
+    {
+      "nombre": "Cultura",
+      "subcategorias": [
+        "Denuncias sobre teatros, museos y espacios culturales",
+        "Reclamos vinculados a eventos y actividades culturales de la Ciudad"
+      ]
+    },
+    {
+      "nombre": "Deportes",
+      "subcategorias": [
+        "Eventos y temas relacionados con la actividad deportiva"
+      ]
+    },
+    {
+      "nombre": "Eventos",
+      "subcategorias": [
+        "Críticas por el presupuesto invertido en shows musicales o propuestas del GCBA como Atardeceres, Verano en las plazas, Parque de Invierno, etc."
+      ]
+    },
+    {
+      "nombre": "Internacional",
+      "subcategorias": [
+        "Temas de política internacional con impacto en la gestión local",
+        "Vínculos y convenios internacionales de la Ciudad"
+      ]
+    },
+    {
+      "nombre": "Economía",
+      "subcategorias": [
+        "Quejas por aumentos en ABL, Ingresos Brutos, VTV y patentes"
+      ]
+    },
+    {
+      "nombre": "Gastos",
+      "subcategorias": [
+        "Cuestionamientos sobre la administración del presupuesto de la Ciudad"
+      ]
+    },
+    {
+      "nombre": "Tecnología",
+      "subcategorias": [
+        "Repercusiones por anuncios de simplificación de trámites digitales",
+        "Reclamos o repercusiones sobre el uso de IA y canales digitales de vinculación con vecinos"
+      ]
+    },
+    {
+      "nombre": "Trabajo",
+      "subcategorias": [
+        "Reclamos vinculados al empleo público"
+      ]
+    },
+    {
+      "nombre": "Justicia",
+      "subcategorias": [
+        "Cuestionamientos por fallos judiciales y su impacto en la gestión",
+        "Reclamos vinculados a denuncias e infracciones",
+        "Reclamos tras fallos judiciales vinculados a la recuperación de propiedades"
+      ]
+    },
+    {
+      "nombre": "Política",
+      "subcategorias": [
+        "Cuestionamientos vinculados a partidos políticos y disputas partidarias",
+        "Repercusiones por definiciones electorales",
+        "Declaraciones de actores políticos en su rol público"
+      ]
+    },
+    {
+      "nombre": "Coyuntura / Otros",
+      "subcategorias": [
+        "Temas coyunturales generales no encuadrados en otras categorías"
+      ]
+    }
+  ]
+}

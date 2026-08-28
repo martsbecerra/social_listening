@@ -43,6 +43,10 @@ async function processPendingReclamos() {
       const geo = await geocodeAddress(reclamo.direccionDetectada);
 
       if (geo.geoStatus !== 'ok') {
+        // USIG puede resolver la dirección en otro partido (ver geocode.js):
+        // eso es fuera_caba, no "no había dirección". Se cuenta acá también,
+        // no sólo en el chequeo de polígonos de más abajo.
+        if (geo.geoStatus === 'fuera_caba') fueraDeCaba += 1;
         db.updateReclamoGeo(reclamo.id, {
           direccionNormalizada: geo.direccionNormalizada,
           calle: geo.calle,
@@ -71,7 +75,12 @@ async function processPendingReclamos() {
         y: geo.y,
         comuna: territorio ? territorio.comuna : null,
         barrio: territorio ? territorio.barrio : null,
-        precision: geo.precision,
+        // USIG siempre devuelve 'exacta' cuando resuelve, porque para él la
+        // consulta resolvió y punto. Pero si el LLM dijo que la ubicación era
+        // un lugar con nombre propio ("Plaza Italia"), el punto es el centroide
+        // del lugar, no una altura: esa marca la puso reclamosFromAnalysis y no
+        // se pisa. Ver el pin punteado del mapa.
+        precision: reclamo.precision === 'aproximada' ? 'aproximada' : geo.precision,
         geoStatus,
       });
       processed += 1;
@@ -90,9 +99,13 @@ async function processPendingReclamos() {
     );
     // Muchos fuera_caba en una tanda suele ser una señal de que el
     // geocoding está resolviendo mal las direcciones, no de reclamos
-    // legítimamente fuera de la ciudad.
+    // legítimamente fuera de la ciudad. Estos reclamos quedan guardados pero
+    // nunca se muestran ni se exportan (ver listReclamosFiltered).
     if (fueraDeCaba > 0) {
-      console.warn(`[geoWorker] ${fueraDeCaba} reclamos quedaron fuera_caba en esta corrida.`);
+      console.warn(
+        `[geoWorker] ${fueraDeCaba} reclamo(s) quedaron fuera_caba en esta corrida ` +
+        `(dirección real, pero de otro partido). No se muestran en el mapa.`
+      );
     }
   }
 
