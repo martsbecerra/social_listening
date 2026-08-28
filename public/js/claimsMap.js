@@ -49,6 +49,10 @@ let subcategoriaMultiSelect = null;
 
 const MAX_COLORES = 12;
 const COLOR_OTRAS = '--cat-otras';
+// Pin con reclamos de más de una categoría: negro, no el color de la más
+// frecuente. El color dice "de qué es"; el negro, "acá hay cosas distintas".
+const COLOR_VARIAS = '#111111';
+const LABEL_VARIAS = 'Varias categorías';
 
 /** categoría canónica -> nombre de la variable CSS con su color */
 let paletaCategorias = new Map();
@@ -380,9 +384,13 @@ function clusterVisible() {
   }
   const lista = [...groups.values()];
   // Categoría con la que se pinta el pin: la más frecuente del punto. El
-  // desempate por nombre mantiene el color estable entre renders.
+  // desempate por nombre mantiene el color estable entre renders. Si el punto
+  // mezcla categorías distintas, el pin va negro (esMixto): el color dice "de
+  // qué es" y el negro dice "acá hay cosas distintas".
   for (const g of lista) {
-    g.categoriaDominante = categoriaCounts(g.reclamos)[0][0];
+    const counts = categoriaCounts(g.reclamos);
+    g.categoriaDominante = counts[0][0];
+    g.esMixto = counts.length > 1;
   }
   return lista;
 }
@@ -431,6 +439,28 @@ function renderLeyenda(groups) {
     const cuenta = document.createElement('span');
     cuenta.className = 'claims-leyenda-n';
     cuenta.textContent = `(${n})`;
+
+    item.append(punto, nombre, cuenta);
+    cont.appendChild(item);
+  }
+
+  // El negro de los pines mixtos sólo se explica si hay al menos uno en la
+  // vista actual; la cuenta es de PUNTOS (pines), no de reclamos.
+  const puntosMixtos = groups.filter((g) => g.esMixto).length;
+  if (puntosMixtos > 0) {
+    const item = document.createElement('span');
+    item.className = 'claims-leyenda-item';
+
+    const punto = document.createElement('span');
+    punto.className = 'claims-leyenda-punto';
+    punto.style.background = COLOR_VARIAS;
+
+    const nombre = document.createElement('span');
+    nombre.textContent = LABEL_VARIAS;
+
+    const cuenta = document.createElement('span');
+    cuenta.className = 'claims-leyenda-n';
+    cuenta.textContent = `(${puntosMixtos})`;
 
     item.append(punto, nombre, cuenta);
     cont.appendChild(item);
@@ -570,10 +600,11 @@ function renderMarkers() {
     const diameter = pinDiameter(count);
     const radius = diameter / 2;
 
-    // Un pin agrupa varios reclamos de la MISMA dirección, que pueden ser de
-    // categorías distintas. Se pinta con la más frecuente del punto; el
-    // desglose completo va en el popup, para no perder esa información.
-    const color = colorDeCategoria(group.categoriaDominante);
+    // Un pin agrupa varios reclamos de la MISMA dirección. Si todos son de la
+    // misma categoría lleva su color (sin importar cuántos sean); si mezcla
+    // categorías va NEGRO — el desglose completo está en el popup. El borde
+    // negro fino lo pone el CSS (.claims-pin), para todos por igual.
+    const color = group.esMixto ? COLOR_VARIAS : colorDeCategoria(group.categoriaDominante);
     // Blanco sobre estos tonos: todos son medios u oscuros, ninguno claro.
     const texto = '#ffffff';
     // Si TODOS los reclamos del punto son aproximados, el pin va punteado. Con
@@ -586,7 +617,7 @@ function renderMarkers() {
       iconAnchor: [radius, radius],
       html:
         `<div class="claims-pin${aproximado ? ' is-aproximada' : ''}" ` +
-        `style="width:${diameter}px;height:${diameter}px;background:${color};border-color:${aproximado ? texto : color};color:${texto};` +
+        `style="width:${diameter}px;height:${diameter}px;background:${color};color:${texto};` +
         `font-size:${diameter >= 48 ? 15 : diameter >= 36 ? 13 : 11}px">${count}</div>`,
     });
     const marker = L.marker([group.lat, group.lng], { icon });
@@ -642,7 +673,7 @@ function wireGlobalPopupHandlers() {
 }
 
 // -------------------------------------------------------------------------
-// Carga inicial + descarga de CSV
+// Carga inicial
 // -------------------------------------------------------------------------
 
 /**
@@ -743,12 +774,4 @@ document.getElementById('claimsClearBtn')?.addEventListener('click', () => {
   subcategoriaMultiSelect?.selectAll();
   resetOtherFilters();
   applyFiltersAndReload();
-});
-document.getElementById('claimsDownloadCsvBtn')?.addEventListener('click', () => {
-  if (selectedCategorias.size === 0 || selectedEstados.size === 0) {
-    window.alert('No hay reclamos para exportar con los filtros actuales.');
-    return;
-  }
-  const qs = buildQueryString(currentFilters());
-  window.location.href = `/api/reclamos/export.csv${qs ? `?${qs}` : ''}`;
 });

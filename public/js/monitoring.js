@@ -248,24 +248,6 @@ async function updateSentiment(id, sentiment, selectEl) {
   }
 }
 
-// Marca manual de "Notificado" (Sí/No). Es un registro que se lleva a mano
-// de qué ya se comunicó — el envío automático de alertas se eliminó.
-async function updateNotified(id, notified, cell) {
-  try {
-    const resp = await fetch(`/api/monitoring/posts/${encodeURIComponent(id)}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ notified }),
-    });
-    if (!resp.ok) throw new Error('No se pudo guardar el cambio.');
-    // Actualiza el dato de la fila: Tabulator re-dibuja la celda con el
-    // estado nuevo y el orden por esta columna queda consistente.
-    cell.getRow().update({ notified: notified ? 1 : 0 });
-  } catch (err) {
-    console.error('Error actualizando la marca de notificado:', err);
-  }
-}
-
 // Formatea un número con separador de miles es-AR, o "—" si no hay dato
 // (mismo símbolo que usa design/monitoreo.html en fmt/abbr).
 function formatCount(value) {
@@ -847,30 +829,6 @@ const MONITORING_COLUMNS = [
     sorter: 'number',
     headerSortStartingDir: 'desc',
     formatter: (cell) => `<span class="c-num">${formatCount(cell.getValue())}</span>`,
-  },
-  {
-    // Campo manual: un click alterna Sí/No (mismo espíritu que la corrección
-    // de sentimiento). Ordenable, para juntar lo que falta comunicar.
-    title: 'Notificado',
-    field: 'notified',
-    width: 112,
-    hozAlign: 'center',
-    headerHozAlign: 'left',
-    sorter: 'number',
-    formatter: (cell) => {
-      const id = cell.getRow().getData().id;
-      const notificado = Number(cell.getValue()) === 1;
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = `notified-toggle ${notificado ? 'is-si' : 'is-no'}`;
-      btn.textContent = notificado ? 'Sí' : 'No';
-      btn.title = 'Click para alternar: registro manual de qué ya se comunicó';
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        updateNotified(id, !notificado, cell);
-      });
-      return btn;
-    },
   },
   {
     title: '',

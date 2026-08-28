@@ -455,31 +455,15 @@ app.post('/api/monitoring/posts/:id/ignore', (req, res) => {
   res.json({ ok: true });
 });
 
-// Ediciones manuales de un registro de la tabla de monitoreo: el sentimiento
-// (por si Haiku se equivocó) o la marca "Notificado" (un campo manual para
-// llevar registro de qué ya se comunicó; el envío automático se eliminó).
-// Acepta uno u otro campo por request — la UI manda de a uno.
+// Corrige a mano el sentimiento de un registro (por si Haiku se equivocó).
 const VALID_SENTIMENTS = ['positivo', 'neutral', 'negativo'];
 app.patch('/api/monitoring/posts/:id', (req, res) => {
-  const { sentiment, notified } = req.body || {};
-
-  if (sentiment !== undefined) {
-    if (!VALID_SENTIMENTS.includes(sentiment)) {
-      return res.status(400).json({ error: 'Sentimiento inválido.' });
-    }
-    db.updateSentiment(req.params.id, sentiment);
-    return res.json({ ok: true });
+  const { sentiment } = req.body || {};
+  if (!VALID_SENTIMENTS.includes(sentiment)) {
+    return res.status(400).json({ error: 'Sentimiento inválido.' });
   }
-
-  if (notified !== undefined) {
-    if (typeof notified !== 'boolean') {
-      return res.status(400).json({ error: 'notified debe ser true o false.' });
-    }
-    db.setNotified(req.params.id, notified);
-    return res.json({ ok: true });
-  }
-
-  return res.status(400).json({ error: 'Nada para actualizar: mandá sentiment o notified.' });
+  db.updateSentiment(req.params.id, sentiment);
+  res.json({ ok: true });
 });
 
 app.post('/api/monitoring/accounts', async (req, res) => {
@@ -581,39 +565,6 @@ app.patch('/api/reclamos/:id', (req, res) => {
   }
   db.updateEstado(req.params.id, estado);
   res.json({ ok: true });
-});
-
-function escapeCsvField(value) {
-  const s = value == null ? '' : String(value);
-  return `"${s.replace(/"/g, '""')}"`;
-}
-
-const RECLAMOS_CSV_HEADER = [
-  'id', 'plataforma', 'categoria', 'estado', 'direccion_normalizada', 'calle',
-  'altura', 'cruce', 'barrio', 'comuna', 'autor', 'fecha', 'texto_original', 'post_url',
-];
-
-// Exporta TODOS los reclamos que pasan los filtros activos (no solo lo
-// visible en el mapa): mismos query params que GET /api/reclamos.
-app.get('/api/reclamos/export.csv', (req, res) => {
-  const reclamos = db.listReclamosFiltered(parseReclamosFilters(req.query));
-  const rows = [RECLAMOS_CSV_HEADER.map(escapeCsvField).join(';')];
-  for (const r of reclamos) {
-    rows.push(
-      [
-        r.id, r.plataforma, r.categoria, r.estado, r.direccionNormalizada, r.calle,
-        r.altura, r.cruce, r.barrio, r.comuna, r.autor, r.fecha, r.textoOriginal, r.postUrl,
-      ]
-        .map(escapeCsvField)
-        .join(';')
-    );
-  }
-  // BOM UTF-8 explícito: el CSV tiene tildes y emojis, y sin BOM Excel en
-  // Windows lo abre mal interpretado como ANSI.
-  const csv = '﻿' + rows.join('\n') + '\n';
-  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-  res.setHeader('Content-Disposition', 'attachment; filename="reclamos.csv"');
-  res.send(csv);
 });
 
 // --------------------------------------------------------------------------

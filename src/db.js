@@ -110,7 +110,6 @@ const insertPostStmt = db.prepare(`
   VALUES
     (@id, @account, @url, @caption, @matchedReason, @likes, @comments, @postedAt, @detectedAt, 0, @title, @sentiment, @postType, @followers)
 `);
-const setNotifiedStmt = db.prepare('UPDATE detected_posts SET notified = ? WHERE id = ?');
 const countPostsStmt = db.prepare('SELECT COUNT(*) AS total FROM detected_posts WHERE ignored = 0');
 const countRecentPostsStmt = db.prepare('SELECT COUNT(*) AS total FROM detected_posts WHERE ignored = 0 AND detected_at >= ?');
 const listPostsPageStmt = db.prepare('SELECT * FROM detected_posts WHERE ignored = 0 ORDER BY detected_at DESC LIMIT ? OFFSET ?');
@@ -644,15 +643,6 @@ function saveDetectedPost(post) {
 }
 
 /**
- * Marca a mano si un posteo ya se comunicó o no (columna "Notificado" de la
- * tabla de monitoreo). Es un campo puramente manual: las notificaciones
- * automáticas por email se eliminaron.
- */
-function setNotified(id, notified) {
-  setNotifiedStmt.run(notified ? 1 : 0, id);
-}
-
-/**
  * Página de posteos detectados (los más nuevos primero) + el total de filas,
  * para poder armar la paginación en la interfaz. Los ignorados no salen:
  * siguen en la tabla SQLite para el dedupe, pero no en este listado.
@@ -1117,7 +1107,6 @@ module.exports = {
   findExistingPostId,
   isKnownPost,
   saveDetectedPost,
-  setNotified,
   listDetectedPosts,
   countRecentPosts,
   listUnclassified,

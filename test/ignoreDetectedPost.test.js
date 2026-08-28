@@ -50,15 +50,6 @@ test('un posteo nuevo se lista y cuenta (REQ-IGNORE-03)', () => {
   assert.equal(total, 1);
   assert.equal(posts[0].id, 'p1');
   assert.equal(db.countRecentPosts(7), 1);
-  // Nace sin marcar como notificado: es un campo manual desde la UI.
-  assert.equal(posts[0].notified, 0);
-});
-
-test('setNotified alterna la marca manual ida y vuelta', () => {
-  db.setNotified('p1', true);
-  assert.equal(db.listDetectedPosts({ page: 1, pageSize: 20 }).posts[0].notified, 1);
-  db.setNotified('p1', false);
-  assert.equal(db.listDetectedPosts({ page: 1, pageSize: 20 }).posts[0].notified, 0);
 });
 
 test('ignorar deja la fila, la saca del listado y no pisa ignored_at (REQ-IGNORE-02, REQ-IGNORE-03)', async () => {
