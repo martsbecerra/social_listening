@@ -1,8 +1,9 @@
 // ==========================================================================
 // mailer.js
 // --------------------------------------------------------------------------
-// Envío de emails de alerta cuando el monitoreo detecta un posteo nuevo
-// relevante. Usa Nodemailer con SMTP (por defecto, Gmail).
+// Envío del email con el magic link de login. Usa Nodemailer con SMTP (por
+// defecto, Gmail). Es el único uso de email de la app: las notificaciones
+// del monitoreo por mail se eliminaron.
 //
 // Con Gmail hace falta una "contraseña de aplicación" (no la contraseña
 // normal): https://myaccount.google.com/apppasswords
@@ -39,40 +40,6 @@ function getTransporter() {
   return transporter;
 }
 
-function buildEmailBody(post) {
-  const captionSnippet = (post.caption || '').slice(0, 300);
-  const fecha = post.postedAt ? new Date(post.postedAt).toLocaleString('es-AR') : 'N/D';
-
-  return [
-    `Cuenta: @${post.account}`,
-    `Motivo: ${post.matchedReason}`,
-    `Link: ${post.url}`,
-    `Fecha: ${fecha}`,
-    `Likes: ${post.likes ?? 'N/D'} | Comentarios: ${post.comments ?? 'N/D'}`,
-    '',
-    'Caption:',
-    captionSnippet || '(sin texto)',
-  ].join('\n');
-}
-
-/**
- * Manda el email de alerta de un posteo nuevo relevante.
- * Lanza el error tal cual si falla (el caller decide cómo loguearlo).
- */
-async function sendAlertEmail(post) {
-  const to = process.env.ALERT_EMAIL_TO;
-  if (!to) {
-    throw new Error('ALERT_EMAIL_TO no está configurado en el .env');
-  }
-
-  await getTransporter().sendMail({
-    from: process.env.SMTP_FROM || process.env.SMTP_USER,
-    to,
-    subject: `🔔 Nueva mención: @${post.account}`,
-    text: buildEmailBody(post),
-  });
-}
-
 /**
  * Mail del magic link de login. El URL se arma con APP_BASE_URL, nunca
  * con el header Host.
@@ -99,4 +66,4 @@ async function sendMagicLinkEmail({ email, rawToken }) {
   });
 }
 
-module.exports = { sendAlertEmail, sendMagicLinkEmail };
+module.exports = { sendMagicLinkEmail };

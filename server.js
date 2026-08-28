@@ -28,7 +28,7 @@ const {
 } = require('./src/llm/providerConfig');
 const db = require('./src/db');
 const monitor = require('./src/monitor');
-const { startScheduler, runCycleAndNotify, getCronExpression, getLastRunAt, estimateRunsPerDay, getNextRunAt } = require('./src/scheduler');
+const { startScheduler, runCycle, getCronExpression, getLastRunAt, estimateRunsPerDay, getNextRunAt } = require('./src/scheduler');
 const { processPendingReclamosInBackground } = require('./src/geoWorker');
 const accountStats = require('./src/accountStats');
 const { CATEGORIAS_RECLAMO, ESTADOS_RECLAMO, isValidEstado } = require('./src/categoriaReclamo');
@@ -455,15 +455,31 @@ app.post('/api/monitoring/posts/:id/ignore', (req, res) => {
   res.json({ ok: true });
 });
 
-// Corrige a mano el sentimiento de un registro (por si Haiku se equivocó).
+// Ediciones manuales de un registro de la tabla de monitoreo: el sentimiento
+// (por si Haiku se equivocó) o la marca "Notificado" (un campo manual para
+// llevar registro de qué ya se comunicó; el envío automático se eliminó).
+// Acepta uno u otro campo por request — la UI manda de a uno.
 const VALID_SENTIMENTS = ['positivo', 'neutral', 'negativo'];
 app.patch('/api/monitoring/posts/:id', (req, res) => {
-  const { sentiment } = req.body || {};
-  if (!VALID_SENTIMENTS.includes(sentiment)) {
-    return res.status(400).json({ error: 'Sentimiento inválido.' });
+  const { sentiment, notified } = req.body || {};
+
+  if (sentiment !== undefined) {
+    if (!VALID_SENTIMENTS.includes(sentiment)) {
+      return res.status(400).json({ error: 'Sentimiento inválido.' });
+    }
+    db.updateSentiment(req.params.id, sentiment);
+    return res.json({ ok: true });
   }
-  db.updateSentiment(req.params.id, sentiment);
-  res.json({ ok: true });
+
+  if (notified !== undefined) {
+    if (typeof notified !== 'boolean') {
+      return res.status(400).json({ error: 'notified debe ser true o false.' });
+    }
+    db.setNotified(req.params.id, notified);
+    return res.json({ ok: true });
+  }
+
+  return res.status(400).json({ error: 'Nada para actualizar: mandá sentiment o notified.' });
 });
 
 app.post('/api/monitoring/accounts', async (req, res) => {
@@ -494,7 +510,7 @@ app.delete('/api/monitoring/keywords/:keyword', (req, res) => {
 // (útil para probar o para una demo).
 app.post('/api/monitoring/run-now', async (req, res) => {
   try {
-    const result = await runCycleAndNotify();
+    const result = await runCycle();
     res.json(result);
   } catch (err) {
     if (err.code === 'CYCLE_IN_PROGRESS') {

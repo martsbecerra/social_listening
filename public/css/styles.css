@@ -1804,6 +1804,37 @@ pre.report a:hover {
   color: var(--clay-900);
 }
 
+/* Pastilla de la columna "Notificado" de la tabla de monitoreo: marca manual
+   de qué ya se comunicó (un click alterna Sí/No). Misma familia visual que
+   .sentiment-select: verde jade para "Sí", gris neutro para "No". */
+.notified-toggle {
+  min-width: 44px;
+  margin: 0;
+  padding: 4px 12px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: box-shadow 0.16s;
+  /* El button genérico de la app pinta un gradiente jade por
+     background-image; sin esto taparía el color de fondo de la pastilla. */
+  background-image: none;
+}
+.notified-toggle:hover {
+  box-shadow: 0 1px 6px rgba(6, 56, 46, 0.12);
+}
+.notified-toggle.is-si {
+  background-color: var(--jade-100);
+  color: var(--jade-700);
+  border-color: var(--jade-150);
+}
+.notified-toggle.is-no {
+  background-color: var(--clay-100, #f0eeea);
+  color: var(--clay-700, #6b6560);
+  border-color: var(--clay-300, #cfc9c2);
+}
+
 /* Botón de ícono del prototipo aprobado (design/plataforma.html: .ico/.ico.del),
    nunca portado a la app — acá achicado (24px/13px svg) para la fila de la tabla. */
 .ico {
