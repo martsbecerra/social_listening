@@ -33,15 +33,15 @@ Implementación en fases. 1–3 primero (análisis / geo / mapa). 4 después (mo
 
 ## Phase 4: Monitoreo en vivo de X — después
 
-- [ ] 4.1 `detected_posts.plataforma` (filas existentes = instagram); list/count/ignore filtrados
-- [ ] 4.2 `config/monitoring-x.json` + endpoints de config/posts/run-now con `plataforma`
-- [ ] 4.3 Ciclo Grok `x_search` (cuentas y keywords); no Apify; tope por corrida
-- [ ] 4.4 `x.html`: solapa monitoreo real; `monitoring.js` parametrizado; columnas X (RTs/vistas) si aplican
-- [ ] 4.5 Cron: IG y luego X en el mismo `runCycle`; run-now X solo X; sin mails
-- [ ] 4.6 Dashboard `counts.x`
-- [ ] 4.7 Tests de namespace, no-mezcla de configs y counts
+- [x] 4.1 `detected_posts.plataforma` (filas existentes = instagram); list/count/ignore filtrados
+- [x] 4.2 `config/monitoring-x.json` + endpoints de config/posts/run-now con `plataforma`
+- [x] 4.3 Ciclo Grok `x_search` (cuentas y keywords); no Apify; tope por corrida
+- [x] 4.4 `x.html`: solapa monitoreo real; `monitoring.js` parametrizado; columnas X (RTs/vistas) si aplican
+- [x] 4.5 Cron: IG y luego X en el mismo `runCycle`; run-now X solo X; sin mails
+- [x] 4.6 Dashboard `counts.x`
+- [x] 4.7 Tests de namespace, no-mezcla de configs y counts
 
 ## Phase 5: Cierre
 
-- [x] 5.1 README: temas editables, mapas por plataforma (monitoreo X queda pendiente)
-- [ ] 5.2 `.env.example` si aparece tope de Grok del monitor
+- [x] 5.1 README: temas editables, mapas por plataforma, monitoreo X
+- [x] 5.2 `.env.example` si aparece tope de Grok del monitor

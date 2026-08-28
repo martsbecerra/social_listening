@@ -468,7 +468,7 @@ const getAccountFollowersStmt = db.prepare(
 // trackeadas (config/monitoring.json) con las que ya aparecen en
 // detected_posts (llegaron por hashtag, nunca se trackearon explícitamente).
 const listDistinctPostAccountsStmt = db.prepare(
-  `SELECT DISTINCT account FROM detected_posts WHERE ignored = 0 AND account IS NOT NULL AND account != 'N/D' ORDER BY account`
+  `SELECT DISTINCT account FROM detected_posts WHERE ignored = 0 AND plataforma = 'instagram' AND account IS NOT NULL AND account != 'N/D' ORDER BY account`
 );
 // Freshness de TODAS las cuentas de una, no una query por cuenta — con
 // 100-150 cuentas en el universo ampliado, N queries individuales ya no es
@@ -480,7 +480,9 @@ const getPostMetricsStmt = db.prepare('SELECT likes, comments, post_type, ignore
 const updatePostMetricsStmt = db.prepare(
   'UPDATE detected_posts SET likes = @likes, comments = @comments, post_type = @postType, metrics_updated_at = @metricsUpdatedAt WHERE id = @id'
 );
-const updateFollowersForAccountStmt = db.prepare('UPDATE detected_posts SET followers = ? WHERE account = ?');
+const updateFollowersForAccountStmt = db.prepare(
+  "UPDATE detected_posts SET followers = ? WHERE account = ? AND plataforma = 'instagram'"
+);
 
 // Marcas de "último pase" de los tramos tibio/frío del refresco de métricas
 // (ver src/metricsRefresh.js) — en la base, no en memoria, para que
@@ -508,17 +510,17 @@ const setRefreshStateStmt = db.prepare(`
 const listAccountsDueForRefreshStmt = db.prepare(`
   SELECT account, MAX(posted_at) AS mostRecentPostedAt, COUNT(*) AS postCount
   FROM detected_posts
-  WHERE ignored = 0 AND account IS NOT NULL AND account != 'N/D' AND posted_at IS NOT NULL
+  WHERE ignored = 0 AND plataforma = 'instagram' AND account IS NOT NULL AND account != 'N/D' AND posted_at IS NOT NULL
     AND posted_at > @sinceIso AND posted_at <= @untilIso
     AND (@cadenceIso IS NULL OR metrics_updated_at IS NULL OR metrics_updated_at < @cadenceIso)
   GROUP BY account
 `);
 
 const getPostForMetricsRefreshStmt = db.prepare(
-  'SELECT likes, comments, account, posted_at, ignored FROM detected_posts WHERE id = ?'
+  'SELECT likes, comments, retweets, views, account, posted_at, ignored FROM detected_posts WHERE id = ?'
 );
 const applyMetricsRefreshStmt = db.prepare(
-  'UPDATE detected_posts SET likes = @likes, comments = @comments, metrics_updated_at = @metricsUpdatedAt WHERE id = @id'
+  'UPDATE detected_posts SET likes = @likes, comments = @comments, retweets = @retweets, views = @views, metrics_updated_at = @metricsUpdatedAt WHERE id = @id'
 );
 
 const upsertReclamoStmt = db.prepare(`
@@ -1107,17 +1109,25 @@ function listAccountsDueForRefresh({ sinceIso, untilIso, cadenceIso = null }) {
  *   likes: number|null, comments: number|null}|null} null si el id no está
  *   guardado o está ignorado (no se escriben métricas de un ignorado).
  */
-function applyMetricsRefresh(id, { likes, comments }) {
+function applyMetricsRefresh(id, { likes, comments, retweets, views } = {}) {
   const existing = getPostForMetricsRefreshStmt.get(id);
   if (!existing || existing.ignored) return null;
   const cleanLikes = rejectNegative(likes ?? null);
   const cleanComments = rejectNegative(comments ?? null);
-  const changed = existing.likes !== cleanLikes || existing.comments !== cleanComments;
+  const cleanRetweets = retweets === undefined ? existing.retweets : rejectNegative(retweets ?? null);
+  const cleanViews = views === undefined ? existing.views : rejectNegative(views ?? null);
+  const changed =
+    existing.likes !== cleanLikes ||
+    existing.comments !== cleanComments ||
+    existing.retweets !== cleanRetweets ||
+    existing.views !== cleanViews;
 
   applyMetricsRefreshStmt.run({
     id,
     likes: cleanLikes,
     comments: cleanComments,
+    retweets: cleanRetweets,
+    views: cleanViews,
     metricsUpdatedAt: new Date().toISOString(),
   });
 

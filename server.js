@@ -28,6 +28,7 @@ const {
 } = require('./src/llm/providerConfig');
 const db = require('./src/db');
 const monitor = require('./src/monitor');
+const xMonitor = require('./src/x/monitor');
 const { startScheduler, runCycle, getCronExpression, getLastRunAt, estimateRunsPerDay, getNextRunAt } = require('./src/scheduler');
 const { processPendingReclamosInBackground } = require('./src/geoWorker');
 const accountStats = require('./src/accountStats');
@@ -399,12 +400,31 @@ app.post('/api/x/analyze', async (req, res) => {
 // --------------------------------------------------------------------------
 // Monitoreo automático: config, tabla de posteos detectados, disparo manual.
 // --------------------------------------------------------------------------
+function monitoringPlataforma(req) {
+  const raw = String(req.query?.plataforma || req.body?.plataforma || 'instagram').trim();
+  return raw === 'x' ? 'x' : 'instagram';
+}
+
+function monitoringSource(req) {
+  return monitoringPlataforma(req) === 'x' ? xMonitor : monitor;
+}
+
 app.get('/api/monitoring/posts', (req, res) => {
   const page = Math.max(1, Number(req.query.page) || 1);
   // El límite subió de 100 a 5000: la tabla ahora pagina/filtra/ordena del
   // lado del cliente (Tabulator), así que el frontend pide todo de una vez.
   const pageSize = Math.min(5000, Math.max(1, Number(req.query.pageSize) || 20));
-  const { posts, total } = db.listDetectedPosts({ page, pageSize });
+  const plataforma = monitoringPlataforma(req);
+  const { posts, total } = db.listDetectedPosts({ page, pageSize, plataforma });
+
+  if (plataforma === 'x') {
+    return res.json({
+      posts: posts.map((post) => ({ ...post, benchmark: null })),
+      total,
+      page,
+      pageSize,
+    });
+  }
 
   // Benchmark (mediana propia de la cuenta) para el panel desplegable de
   // cada fila. Un solo listAllAccountStats() para todo el request, no una
@@ -425,7 +445,7 @@ app.get('/api/monitoring/posts', (req, res) => {
 });
 
 app.get('/api/monitoring/config', (req, res) => {
-  res.json(monitor.loadConfig());
+  res.json(monitoringSource(req).loadConfig());
 });
 
 // Para la barra de acción de "Monitoreo en vivo" ("Escuchando · próxima
@@ -438,7 +458,10 @@ app.get('/api/monitoring/status', (req, res) => {
 // Solo Instagram tiene scraping implementado hoy; el resto de las claves
 // simplemente no viene en la respuesta.
 app.get('/api/monitoring/counts', (req, res) => {
-  res.json({ instagram: db.countRecentPosts(7) });
+  res.json({
+    instagram: db.countRecentPosts(7, 'instagram'),
+    x: db.countRecentPosts(7, 'x'),
+  });
 });
 
 // Datos reales para el pie de página (footer.js en las 3 páginas): nada
@@ -473,33 +496,33 @@ app.patch('/api/monitoring/posts/:id', (req, res) => {
 
 app.post('/api/monitoring/accounts', async (req, res) => {
   try {
-    res.json(await monitor.addAccount(req.body && req.body.account));
+    res.json(await monitoringSource(req).addAccount(req.body && req.body.account));
   } catch (err) {
     res.status(400).json({ error: err.userMessage || err.message });
   }
 });
 
 app.delete('/api/monitoring/accounts/:account', (req, res) => {
-  res.json(monitor.removeAccount(req.params.account));
+  res.json(monitoringSource(req).removeAccount(req.params.account));
 });
 
 app.post('/api/monitoring/keywords', async (req, res) => {
   try {
-    res.json(await monitor.addKeyword(req.body && req.body.keyword));
+    res.json(await monitoringSource(req).addKeyword(req.body && req.body.keyword));
   } catch (err) {
     res.status(400).json({ error: err.userMessage || err.message });
   }
 });
 
 app.delete('/api/monitoring/keywords/:keyword', (req, res) => {
-  res.json(monitor.removeKeyword(req.params.keyword));
+  res.json(monitoringSource(req).removeKeyword(req.params.keyword));
 });
 
 // Dispara un ciclo de monitoreo a mano, sin esperar los 4hs del cron
-// (útil para probar o para una demo).
+// (útil para probar o para una demo). plataforma=x corre solo X; instagram solo IG.
 app.post('/api/monitoring/run-now', async (req, res) => {
   try {
-    const result = await runCycle();
+    const result = await runCycle({ plataforma: monitoringPlataforma(req) });
     res.json(result);
   } catch (err) {
     if (err.code === 'CYCLE_IN_PROGRESS') {

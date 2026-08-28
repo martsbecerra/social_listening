@@ -12,10 +12,12 @@ App web que:
    con **Grok** vía OpenRouter (`OPENROUTER_X_MODEL`, no Apify ni el Claude
    de Instagram) y arma el reporte con la plantilla de X (solapa Análisis
    en `x.html`). El mapa de X usa el mismo Leaflet, filtrado por plataforma.
-   El monitoreo en vivo de X queda para una fase siguiente.
+   El monitoreo en vivo de X usa Grok (no Apify) y una config propia
+   (`config/monitoring-x.json`), independiente de Instagram.
 3. Monitorea automáticamente, cada 4 horas, si aparece algún posteo nuevo de
    las cuentas trackeadas o que mencione las palabras clave/hashtags
-   configurados, y avisa por email (solapa "Monitoreo en vivo" de Instagram).
+   configurados: Instagram con Apify y X con Grok (solapa "Monitoreo en vivo"
+   de cada plataforma). Ya no se mandan mails de alerta del monitoreo.
 4. Muestra la solapa "Mapa de reclamos" (Leaflet) **por plataforma**: cada
    página pide `GET /api/reclamos?plataforma=instagram|x`. Círculos por
    dirección normalizada, con filtros combinables por categoría y subcategoría
@@ -36,7 +38,7 @@ social_listening_app/
 ├── src/
 │   ├── apify.js              # Extrae comentarios y datos del posteo desde Apify.
 │   ├── analyzeComments.js    # Orquestación del análisis (Apify → LLM → reporte).
-│   ├── x/                    # Plataforma X: Grok fetch, KPIs, reporte, padrón.
+│   ├── x/                    # Plataforma X: Grok fetch, KPIs, reporte, padrón, monitor.
 │   ├── llm/                  # Proveedores: anthropicProvider, openrouterProvider.
 │   ├── prompt.js             # La metodología de análisis (system prompt).
 │   ├── temasConversacion.js  # Temas emergentes del reporte (IG y X).
@@ -53,7 +55,7 @@ social_listening_app/
 │   ├── territorios.js        # Comuna/barrio por punto-en-polígono (GeoJSON GCBA).
 │   ├── geoWorker.js          # Geocodifica reclamos 'pendiente' (cron + post-análisis).
 │   ├── reclamosFromAnalysis.js # reclamosGeo de Claude -> filas para la tabla reclamos.
-│   ├── monitor.js            # Detección de posteos nuevos + config de cuentas/keywords.
+│   ├── monitor.js            # Detección de posteos nuevos de Instagram + config.
 │   ├── classifier.js         # Título + sentimiento de cada posteo (Claude Haiku).
 │   ├── mailer.js             # Envío de emails (alertas + magic link).
 │   ├── auth/                 # Allowlist, magic link, sesión, rate limit, gate.
@@ -62,7 +64,8 @@ social_listening_app/
 │   └── notifiers/
 │       └── whatsapp.js       # Placeholder para notificación por WhatsApp (no implementado).
 ├── config/
-│   ├── monitoring.json       # Cuentas y palabras clave/hashtags a trackear.
+│   ├── monitoring.json       # Cuentas y palabras clave/hashtags de Instagram.
+│   ├── monitoring-x.json     # Cuentas y palabras clave de X (no seedea desde IG).
 │   ├── categorias-reclamos.json # Categorías y subcategorías del cliente (26/85).
 │   ├── x-influencers/        # CSV ANTIK-PRO (padrón de actores de X).
 │   └── allowed-emails.example.txt  # Plantilla de emails que pueden entrar.
@@ -74,7 +77,7 @@ social_listening_app/
 │   ├── login-verify.html     # Confirma el link (POST, un solo uso).
 │   ├── dashboard.html        # Selector de red social.
 │   ├── instagram.html        # App Instagram: análisis + monitoreo + mapa de reclamos (tabs).
-│   ├── x.html                # App X: análisis (Grok) + mapa; monitoreo próximamente.
+│   ├── x.html                # App X: análisis (Grok) + monitoreo + mapa de reclamos.
 │   ├── css/styles.css        # Estilos (paleta oscura corporativa).
 │   └── js/
 │       ├── main.js           # Tabs + dropdown de usuario (sesión / logout).
@@ -82,7 +85,7 @@ social_listening_app/
 │       ├── analysis.js       # Lógica de "Análisis de publicación" (Instagram).
 │       ├── x-analysis.js     # Análisis de publicación de X (`/api/x/analyze`).
 │       ├── temasEditor.js    # Temas emergentes editables (antes de copiar/WhatsApp).
-│       ├── monitoring.js     # Lógica de "Monitoreo en vivo".
+│       ├── monitoring.js     # Monitoreo en vivo (parametrizado por data-platform).
 │       └── claimsMap.js      # Mapa de reclamos (Leaflet, filtrado por plataforma).
 ├── scripts/
 │   ├── import-reclamos.js       # Importador genérico de Excel/CSV (solo CLI).
@@ -155,7 +158,7 @@ Hace falta `SESSION_SECRET` (string largo aleatorio) y `APP_BASE_URL` (p. ej.
   de verse en la tabla, pero sigue bloqueando una re-detección de la misma
   URL.
 
-- **`src/monitor.js`**: el detector. Por cada cuenta trackeada, le pide a
+- **`src/monitor.js`**: el detector de Instagram. Por cada cuenta trackeada, le pide a
   Apify sus posteos más recientes; por cada hashtag trackeado, scrapea esa
   página de hashtag. Compara todo contra `src/db.js` para no volver a
   evaluar ni guardar algo que ya se vio. Antes de guardar una cuenta o
@@ -179,6 +182,15 @@ Hace falta `SESSION_SECRET` (string largo aleatorio) y `APP_BASE_URL` (p. ej.
      Un posteo sin caption (nada que evaluar) solo se acepta si viene de una
      cuenta trackeada — de un hashtag se descarta, porque no hay ninguna señal
      de que se relacione con el tema.
+
+- **`src/x/monitor.js`** y **`config/monitoring-x.json`**: el detector de X.
+  Misma superficie (cuentas, keywords, actualizar ahora, tabla, ignorar),
+  config aparte para no mezclar con Instagram. Cada corrida busca con Grok
+  `from:handle` por cuenta y el texto de cada keyword; tope
+  `X_MONITOR_RESULTS_LIMIT` (default 30, máximo 50) por fuente. No usa
+  Apify. El cron corre Instagram y después X; "Actualizar ahora" en `x.html`
+  dispara solo X. La clasificación de título/sentimiento también va por Grok,
+  no por `LLM_PROVIDER`.
 
 - **`src/classifier.js`**: acá vive el llamado a **Claude Haiku 4.5** (modelo
   barato, configurable con `CLASSIFIER_MODEL`) para dos cosas: `classifyPost`
