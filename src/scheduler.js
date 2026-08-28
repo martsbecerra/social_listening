@@ -13,11 +13,9 @@
 
 const cron = require('node-cron');
 const { runMonitoringCycle } = require('./monitor');
-const { notifyNewPost } = require('./notify');
 const { processPendingReclamos } = require('./geoWorker');
 const { refreshStaleAccountStats } = require('./accountStats');
 const { refreshPostMetrics } = require('./metricsRefresh');
-const db = require('./db');
 
 const DEFAULT_CRON = '0 */4 * * *';
 
@@ -106,13 +104,11 @@ function getNextRunAt(cronExpression, from = new Date()) {
 }
 
 /**
- * Corre un ciclo de monitoreo completo y notifica cada posteo pendiente.
- * Además de los recién detectados en esta corrida, reintenta los de
- * corridas anteriores cuyo email haya fallado (ver db.listUnnotified) — así
- * un problema pasajero de SMTP no hace que un posteo se pierda para siempre.
+ * Corre un ciclo de monitoreo completo: detecta y clasifica posteos nuevos,
+ * geocodifica reclamos pendientes y refresca stats/métricas de cuentas.
  * Exportada aparte para poder llamarla a mano (botón "Actualizar ahora").
  */
-async function runCycleAndNotify({ ifBusy = 'throw' } = {}) {
+async function runCycle({ ifBusy = 'throw' } = {}) {
   if (cycleInProgress) {
     if (ifBusy === 'skip') {
       console.log('[monitor] ya hay un ciclo en curso; se saltea este disparo.');
@@ -126,19 +122,14 @@ async function runCycleAndNotify({ ifBusy = 'throw' } = {}) {
 
   cycleInProgress = true;
   try {
-    return await runCycleAndNotifyUnlocked();
+    return await runCycleUnlocked();
   } finally {
     cycleInProgress = false;
   }
 }
 
-async function runCycleAndNotifyUnlocked() {
+async function runCycleUnlocked() {
   const { checked, newPosts, scrapedAccounts } = await runMonitoringCycle();
-
-  const pending = db.listUnnotified();
-  for (const post of pending) {
-    await notifyNewPost(post);
-  }
 
   try {
     await processPendingReclamos();
@@ -170,7 +161,7 @@ function startScheduler() {
   const cronExpression = getCronExpression();
 
   cron.schedule(cronExpression, () => {
-    runCycleAndNotify({ ifBusy: 'skip' }).catch((err) => {
+    runCycle({ ifBusy: 'skip' }).catch((err) => {
       console.error('Error en el ciclo de monitoreo agendado:', err.message);
     });
   });
@@ -180,7 +171,7 @@ function startScheduler() {
 
 module.exports = {
   startScheduler,
-  runCycleAndNotify,
+  runCycle,
   getCronExpression,
   getLastRunAt,
   estimateRunsPerDay,

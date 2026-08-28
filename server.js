@@ -28,7 +28,7 @@ const {
 } = require('./src/llm/providerConfig');
 const db = require('./src/db');
 const monitor = require('./src/monitor');
-const { startScheduler, runCycleAndNotify, getCronExpression, getLastRunAt, estimateRunsPerDay, getNextRunAt } = require('./src/scheduler');
+const { startScheduler, runCycle, getCronExpression, getLastRunAt, estimateRunsPerDay, getNextRunAt } = require('./src/scheduler');
 const { processPendingReclamosInBackground } = require('./src/geoWorker');
 const accountStats = require('./src/accountStats');
 const { CATEGORIAS_RECLAMO, ESTADOS_RECLAMO, isValidEstado } = require('./src/categoriaReclamo');
@@ -494,7 +494,7 @@ app.delete('/api/monitoring/keywords/:keyword', (req, res) => {
 // (útil para probar o para una demo).
 app.post('/api/monitoring/run-now', async (req, res) => {
   try {
-    const result = await runCycleAndNotify();
+    const result = await runCycle();
     res.json(result);
   } catch (err) {
     if (err.code === 'CYCLE_IN_PROGRESS') {
@@ -565,39 +565,6 @@ app.patch('/api/reclamos/:id', (req, res) => {
   }
   db.updateEstado(req.params.id, estado);
   res.json({ ok: true });
-});
-
-function escapeCsvField(value) {
-  const s = value == null ? '' : String(value);
-  return `"${s.replace(/"/g, '""')}"`;
-}
-
-const RECLAMOS_CSV_HEADER = [
-  'id', 'plataforma', 'categoria', 'estado', 'direccion_normalizada', 'calle',
-  'altura', 'cruce', 'barrio', 'comuna', 'autor', 'fecha', 'texto_original', 'post_url',
-];
-
-// Exporta TODOS los reclamos que pasan los filtros activos (no solo lo
-// visible en el mapa): mismos query params que GET /api/reclamos.
-app.get('/api/reclamos/export.csv', (req, res) => {
-  const reclamos = db.listReclamosFiltered(parseReclamosFilters(req.query));
-  const rows = [RECLAMOS_CSV_HEADER.map(escapeCsvField).join(';')];
-  for (const r of reclamos) {
-    rows.push(
-      [
-        r.id, r.plataforma, r.categoria, r.estado, r.direccionNormalizada, r.calle,
-        r.altura, r.cruce, r.barrio, r.comuna, r.autor, r.fecha, r.textoOriginal, r.postUrl,
-      ]
-        .map(escapeCsvField)
-        .join(';')
-    );
-  }
-  // BOM UTF-8 explícito: el CSV tiene tildes y emojis, y sin BOM Excel en
-  // Windows lo abre mal interpretado como ANSI.
-  const csv = '﻿' + rows.join('\n') + '\n';
-  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-  res.setHeader('Content-Disposition', 'attachment; filename="reclamos.csv"');
-  res.send(csv);
 });
 
 // --------------------------------------------------------------------------

@@ -110,11 +110,9 @@ const insertPostStmt = db.prepare(`
   VALUES
     (@id, @account, @url, @caption, @matchedReason, @likes, @comments, @postedAt, @detectedAt, 0, @title, @sentiment, @postType, @followers)
 `);
-const markNotifiedStmt = db.prepare('UPDATE detected_posts SET notified = 1 WHERE id = ?');
 const countPostsStmt = db.prepare('SELECT COUNT(*) AS total FROM detected_posts WHERE ignored = 0');
 const countRecentPostsStmt = db.prepare('SELECT COUNT(*) AS total FROM detected_posts WHERE ignored = 0 AND detected_at >= ?');
 const listPostsPageStmt = db.prepare('SELECT * FROM detected_posts WHERE ignored = 0 ORDER BY detected_at DESC LIMIT ? OFFSET ?');
-const listUnnotifiedStmt = db.prepare('SELECT * FROM detected_posts WHERE notified = 0 AND ignored = 0 ORDER BY detected_at ASC');
 const listUnclassifiedStmt = db.prepare('SELECT id, caption FROM detected_posts WHERE title IS NULL AND ignored = 0 ORDER BY detected_at ASC');
 const updateClassificationStmt = db.prepare('UPDATE detected_posts SET title = ?, sentiment = ? WHERE id = ?');
 const updateSentimentStmt = db.prepare('UPDATE detected_posts SET sentiment = ? WHERE id = ?');
@@ -644,10 +642,6 @@ function saveDetectedPost(post) {
   return result.changes > 0;
 }
 
-function markNotified(id) {
-  markNotifiedStmt.run(id);
-}
-
 /**
  * Página de posteos detectados (los más nuevos primero) + el total de filas,
  * para poder armar la paginación en la interfaz. Los ignorados no salen:
@@ -696,25 +690,6 @@ function getPostIgnoreState(id) {
   const row = getPostIgnoredAtStmt.get(id);
   if (!row) return null;
   return { ignored: row.ignored === 1, ignoredAt: row.ignored_at || null };
-}
-
-/**
- * Posteos guardados que todavía no se notificaron con éxito: incluye tanto
- * los recién detectados en esta corrida como los de corridas anteriores
- * donde el envío de email falló (para reintentarlo en vez de perderlos
- * para siempre). Devuelve el mismo formato camelCase que espera notify.js.
- */
-function listUnnotified() {
-  return listUnnotifiedStmt.all().map((row) => ({
-    id: row.id,
-    account: row.account,
-    url: row.url,
-    caption: row.caption,
-    matchedReason: row.matched_reason,
-    likes: row.likes,
-    comments: row.comments,
-    postedAt: row.posted_at,
-  }));
 }
 
 function mapReclamoRow(row) {
@@ -1132,10 +1107,8 @@ module.exports = {
   findExistingPostId,
   isKnownPost,
   saveDetectedPost,
-  markNotified,
   listDetectedPosts,
   countRecentPosts,
-  listUnnotified,
   listUnclassified,
   updateClassification,
   updateSentiment,

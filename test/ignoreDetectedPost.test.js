@@ -50,7 +50,6 @@ test('un posteo nuevo se lista y cuenta (REQ-IGNORE-03)', () => {
   assert.equal(total, 1);
   assert.equal(posts[0].id, 'p1');
   assert.equal(db.countRecentPosts(7), 1);
-  assert.equal(db.listUnnotified().length, 1);
 });
 
 test('ignorar deja la fila, la saca del listado y no pisa ignored_at (REQ-IGNORE-02, REQ-IGNORE-03)', async () => {
@@ -63,7 +62,6 @@ test('ignorar deja la fila, la saca del listado y no pisa ignored_at (REQ-IGNORE
   assert.equal(listed.total, 0);
   assert.equal(listed.posts.length, 0);
   assert.equal(db.countRecentPosts(7), 0);
-  assert.equal(db.listUnnotified().length, 0);
 
   const row = readRaw('p1');
   assert.equal(row.ignored, 1);
