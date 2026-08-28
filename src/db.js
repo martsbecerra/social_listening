@@ -597,6 +597,7 @@ const claimMagicLinkStmt = db.prepare(`
     AND expires_at > ?
 `);
 const getMagicLinkStmt = db.prepare('SELECT email FROM magic_links WHERE token_hash = ?');
+const deleteUnusedMagicLinksStmt = db.prepare('DELETE FROM magic_links WHERE email = ? AND used_at IS NULL');
 
 function findExistingPostId(id, url) {
   if (id && isKnownPostStmt.get(id)) return id;
@@ -1103,6 +1104,15 @@ function claimMagicLink(tokenHash, nowIso) {
   return row ? { email: row.email } : null;
 }
 
+/**
+ * Borra los links todavía no usados de un email. Se llama al emitir uno
+ * nuevo: pedir otro link invalida el anterior, para que no queden varios
+ * tokens válidos dando vueltas por la misma casilla.
+ */
+function deleteUnusedMagicLinks(email) {
+  deleteUnusedMagicLinksStmt.run(email);
+}
+
 module.exports = {
   findExistingPostId,
   isKnownPost,
@@ -1141,6 +1151,7 @@ module.exports = {
   setGeocodeCache,
   insertMagicLink,
   claimMagicLink,
+  deleteUnusedMagicLinks,
   upsertXInfluencer,
   upsertXInfluencers,
   getXInfluencer,

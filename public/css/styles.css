@@ -2080,12 +2080,6 @@ pre.report a:hover {
 .login-submit:active {
   transform: translateY(0);
 }
-.auth-foot {
-  margin-top: 26px;
-  padding-top: 20px;
-  border-top: 1px solid var(--line);
-  color: var(--clay-500);
-}
 @media (max-width: 840px) {
   .auth {
     grid-template-columns: 1fr;
@@ -2110,6 +2104,14 @@ pre.report a:hover {
 }
 .login-status.is-error {
   color: var(--coral-500);
+}
+/* Cuenta regresiva del reenvío ("Podés pedir otro link en 1:47"): informativa
+   y apagada — el protagonista es el mensaje de estado de arriba. */
+.login-cooldown {
+  margin: 6px 0 0;
+  font-size: 0.85rem;
+  color: var(--clay-500);
+  font-variant-numeric: tabular-nums;
 }
 
 /* ══════════════════════════════════════════════════════════

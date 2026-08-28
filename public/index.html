@@ -37,7 +37,7 @@
     <div class="auth-form">
       <div class="auth-inner">
         <h2 class="auth-title display">Entrar</h2>
-        <p class="auth-note">Te mandamos un link a tu email institucional. No hace falta contraseña.</p>
+        <p class="auth-note">Te mandamos un link a tu email. No hace falta contraseña. El link vence en 15 minutos.</p>
 
         <form id="loginForm" novalidate>
           <div class="field">
@@ -47,9 +47,8 @@
 
           <button type="submit" class="login-submit" id="loginSubmit">Enviarme el link</button>
           <p id="loginStatus" class="login-status" role="status"></p>
+          <p id="loginCooldown" class="login-cooldown" role="status" hidden></p>
         </form>
-
-        <p class="auth-foot tag">Acceso restringido</p>
       </div>
     </div>
   </div>
