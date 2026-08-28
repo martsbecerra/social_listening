@@ -186,6 +186,16 @@ describe('x-platform parse/kpis/url', { concurrency: false }, () => {
     assert.match(report.report, /ANÁLISIS DE POSTEO EN X/);
     assert.match(report.report, /Sin registros en esta categoría/);
     assert.doesNotMatch(report.report, /Postura de la Audiencia Orgánica/);
+    assert.doesNotMatch(report.report, /TEMAS DE LA CONVERSACIÓN/);
+    assert.equal(report.temas.length, 0);
+    assert.equal(
+      require('../src/temasConversacion').assembleReport(
+        report.reportParts.beforeTemas,
+        report.temas,
+        report.reportParts.afterTemas
+      ),
+      report.report
+    );
     assert.match(report.csv, /^Direccion_o_Ubicacion,Tematica,Link_Comentario,Usuario_Perfil/);
   });
 
@@ -204,7 +214,12 @@ describe('x-platform parse/kpis/url', { concurrency: false }, () => {
         sentiment: 'negativo',
         accountType: 'vecino',
         reclamosGeo: [
-          { direccionDetectada: 'Av. Rivadavia 1000', tematica: 'bacheo', categoria: 'Otros' },
+          {
+            direccionDetectada: 'Av. Rivadavia 1000',
+            tematica: 'bacheo',
+            categoria: 'Otros',
+            tipoUbicacion: 'calle_altura',
+          },
         ],
       },
     ];
@@ -218,9 +233,12 @@ describe('x-platform parse/kpis/url', { concurrency: false }, () => {
       classifications,
     });
     assert.equal(rows[0].plataforma, 'x');
+    assert.equal(rows[0].precision, 'exacta');
     db.upsertReclamo(rows[0]);
-    const listed = db.listReclamosFiltered({});
-    assert.ok(listed.some((r) => r.plataforma === 'x' && r.commentUrl === 'https://x.com/vecino/status/9'));
+    const listedX = db.listReclamosFiltered({ plataforma: 'x' });
+    const listedIg = db.listReclamosFiltered({ plataforma: 'instagram' });
+    assert.ok(listedX.some((r) => r.plataforma === 'x' && r.commentUrl === 'https://x.com/vecino/status/9'));
+    assert.equal(listedIg.some((r) => r.id === rows[0].id), false);
   });
 
   test('import padrón a SQLite', () => {

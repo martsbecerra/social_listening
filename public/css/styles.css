@@ -968,6 +968,50 @@ pre.report {
   margin: 0;
   color: var(--clay-900);
 }
+.temas-editor {
+  margin: 16px 0;
+  padding: 16px;
+  border: 1px dashed var(--jade-150);
+  border-radius: 12px;
+  background: var(--jade-50);
+}
+.temas-editor-title {
+  margin: 0 0 4px;
+  font-family: "Bricolage Grotesque", sans-serif;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--jade-900);
+}
+.temas-editor-hint {
+  margin: 0 0 14px;
+  font-size: 13px;
+  color: var(--clay-500);
+}
+.tema-row {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--jade-150);
+}
+.tema-row:last-child {
+  margin-bottom: 10px;
+}
+.tema-row textarea {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--clay-900);
+  font: inherit;
+  font-size: 14.5px;
+  resize: vertical;
+  min-height: 72px;
+}
+.tema-row .btn-clear {
+  justify-self: start;
+}
 pre.report a {
   color: var(--jade-700);
   text-decoration: underline;

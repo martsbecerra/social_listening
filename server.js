@@ -33,6 +33,7 @@ const { processPendingReclamosInBackground } = require('./src/geoWorker');
 const accountStats = require('./src/accountStats');
 const { CATEGORIAS_RECLAMO, ESTADOS_RECLAMO, isValidEstado } = require('./src/categoriaReclamo');
 const { subcategoriasDe } = require('./src/categoriasConfig');
+const { parseReclamosFilters, isValidReclamosPlataforma } = require('./src/reclamosQuery');
 const { normalizeEmail, isEmailAllowed } = require('./src/auth/allowlist');
 const { issueMagicLink, redeemMagicLink } = require('./src/auth/magicLink');
 const { sendMagicLinkEmail } = require('./src/mailer');
@@ -249,7 +250,7 @@ app.post('/api/analyze', async (req, res) => {
       comentariosExtraidos: comments.length,
     });
     const analysisStartedAt = Date.now();
-    const { report, csv, meta: analysisMeta } = await analyzeComments({ url, post, comments });
+    const { report, csv, meta: analysisMeta, temas, reportParts } = await analyzeComments({ url, post, comments });
     logTask('análisis LLM completado', {
       ms: Date.now() - analysisStartedAt,
       comentariosAnalizados: analysisMeta?.sampleSize ?? comments.length,
@@ -270,6 +271,8 @@ app.post('/api/analyze', async (req, res) => {
     res.json({
       report,
       csv,
+      temas: temas || [],
+      reportParts: reportParts || { beforeTemas: report, afterTemas: '' },
       meta: {
         // Extraídos por Apify vs enviados a Claude (muestra estable en commentSample.js).
         comentariosExtraidos: comments.length,
@@ -337,7 +340,7 @@ app.post('/api/x/analyze', async (req, res) => {
       padron: influencerMap.size,
     });
     const analysisStartedAt = Date.now();
-    const { report, csv, meta: analysisMeta } = await analyzeXThread({
+    const { report, csv, meta: analysisMeta, temas, reportParts } = await analyzeXThread({
       url,
       post,
       items,
@@ -363,6 +366,8 @@ app.post('/api/x/analyze', async (req, res) => {
     res.json({
       report,
       csv,
+      temas: temas || [],
+      reportParts: reportParts || { beforeTemas: report, afterTemas: '' },
       meta: {
         comentariosExtraidos: 1 + items.length,
         comentariosAnalizados: analysisMeta?.sampleSize ?? 1 + items.length,
@@ -518,29 +523,16 @@ app.post('/api/monitoring/backfill-classification', async (req, res) => {
 });
 
 // --------------------------------------------------------------------------
-// Mapa de reclamos: filtros combinables + edición de estado + export CSV.
+// Mapa de reclamos: filtros combinables + edición de estado.
+// plataforma es obligatorio (instagram | x): cada solapa ve solo la suya.
 // --------------------------------------------------------------------------
 
-/** Query params compartidos por el GET y el export CSV. */
-function parseReclamosFilters(query) {
-  const toList = (v) => {
-    if (v == null || v === '') return undefined;
-    return Array.isArray(v) ? v : String(v).split(',').filter(Boolean);
-  };
-  return {
-    categoria: toList(query.categoria),
-    subcategoria: toList(query.subcategoria),
-    estado: toList(query.estado),
-    barrio: query.barrio || undefined,
-    comuna: query.comuna || undefined,
-    desde: query.desde || undefined,
-    hasta: query.hasta || undefined,
-    q: query.q || undefined,
-  };
-}
-
 app.get('/api/reclamos', (req, res) => {
-  const reclamos = db.listReclamosFiltered(parseReclamosFilters(req.query));
+  const filters = parseReclamosFilters(req.query);
+  if (!isValidReclamosPlataforma(filters.plataforma)) {
+    return res.status(400).json({ error: 'Indicá plataforma=instagram o plataforma=x.' });
+  }
+  const reclamos = db.listReclamosFiltered(filters);
   res.json({
     categorias: CATEGORIAS_RECLAMO,
     estados: ESTADOS_RECLAMO,
@@ -548,11 +540,11 @@ app.get('/api/reclamos', (req, res) => {
     subcategoriasPorCategoria: Object.fromEntries(
       CATEGORIAS_RECLAMO.map((c) => [c, subcategoriasDe(c)])
     ),
-    // Conteo por categoría sobre TODA la base, no sobre lo filtrado: el mapa
+    // Conteo por categoría sobre ESA plataforma, no sobre lo filtrado: el mapa
     // asigna sus 12 colores a las categorías más frecuentes, y ese ranking no
     // puede cambiar cada vez que el usuario toca un filtro — los pines
     // cambiarían de color solos.
-    conteoPorCategoria: db.contarReclamosPorCategoria(),
+    conteoPorCategoria: db.contarReclamosPorCategoria(filters.plataforma),
     reclamos,
   });
 });

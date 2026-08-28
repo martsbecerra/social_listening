@@ -5,7 +5,8 @@ const statusTextEl = document.getElementById('statusText');
 const progressFillEl = document.getElementById('progressFill');
 const errorEl = document.getElementById('error');
 const resultCard = document.getElementById('resultCard');
-const reportEl = document.getElementById('report');
+const reportBeforeEl = document.getElementById('reportBefore');
+const reportAfterEl = document.getElementById('reportAfter');
 const metaEl = document.getElementById('meta');
 const copyBtn = document.getElementById('copyBtn');
 const waShareBtn = document.getElementById('waShareBtn');
@@ -17,6 +18,12 @@ const WA_TEXT_CAP = 4000;
 // Guarda el CSV de reclamos de la última respuesta, para poder
 // descargarlo cuando el usuario haga clic en "Descargar CSV".
 let currentCsv = '';
+let reportParts = { beforeTemas: '', afterTemas: '' };
+
+const temasEditor = window.TemasConversacion.mount({
+  listEl: document.getElementById('temasList'),
+  addBtn: document.getElementById('temasAddBtn'),
+});
 
 function show(el) { el.classList.remove('hidden'); }
 function hide(el) { el.classList.add('hidden'); }
@@ -146,8 +153,13 @@ async function analyze() {
 
     stopLoading(true);
 
-    // Mostramos el reporte.
-    reportEl.textContent = data.report;
+    reportBeforeEl.textContent = data.reportParts?.beforeTemas || data.report || '';
+    reportAfterEl.textContent = data.reportParts?.afterTemas || '';
+    reportParts = {
+      beforeTemas: reportBeforeEl.textContent,
+      afterTemas: reportAfterEl.textContent,
+    };
+    temasEditor.setTemas(data.temas || []);
     metaEl.textContent = formatMetaLine(data.meta || {});
     currentCsv = data.csv || '';
     show(resultCard);
@@ -161,9 +173,17 @@ async function analyze() {
 }
 
 // Copiar el reporte al portapapeles (útil para pegar en WhatsApp).
+function currentReportText() {
+  return window.TemasConversacion.assemble(
+    reportParts.beforeTemas,
+    temasEditor.getTemas(),
+    reportParts.afterTemas
+  );
+}
+
 async function copyReport() {
   try {
-    await navigator.clipboard.writeText(reportEl.textContent);
+    await navigator.clipboard.writeText(currentReportText());
     copyBtn.textContent = '¡Copiado!';
     setTimeout(() => { copyBtn.textContent = 'Copiar'; }, 1500);
   } catch {
@@ -189,7 +209,7 @@ function truncateWaText(text) {
 }
 
 function shareWhatsApp() {
-  const text = reportEl.textContent;
+  const text = currentReportText();
   if (!text || !text.trim()) return;
   openWhatsAppApp(encodeURIComponent(truncateWaText(text)));
 }
@@ -218,7 +238,10 @@ function clearAll() {
   urlInput.value = '';
   hide(resultCard);
   hide(errorEl);
-  reportEl.textContent = '';
+  reportBeforeEl.textContent = '';
+  reportAfterEl.textContent = '';
+  reportParts = { beforeTemas: '', afterTemas: '' };
+  temasEditor.setTemas([]);
   metaEl.textContent = '';
   currentCsv = '';
   urlInput.focus();

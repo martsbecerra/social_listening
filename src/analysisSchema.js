@@ -7,6 +7,7 @@
 // ==========================================================================
 
 const { listCategorias } = require('./categoriasConfig');
+const { TEMAS_ARRAY_SCHEMA } = require('./temasConversacion');
 
 // Valores permitidos; deben coincidir con validateAnalysis.js y el system prompt.
 const SENTIMENTS = ['positivo', 'negativo', 'neutral', 'ruido'];
@@ -98,6 +99,7 @@ const ANALYSIS_JSON_SCHEMA = {
     insightMedios: INSIGHT_PAIR_SCHEMA,
     posturaAudiencia: { type: 'string' },
     lecturaEstrategica: { type: 'string' },
+    temasConversacion: TEMAS_ARRAY_SCHEMA,
   },
   required: [
     'posteoSobre',
@@ -108,6 +110,7 @@ const ANALYSIS_JSON_SCHEMA = {
     'insightMedios',
     'posturaAudiencia',
     'lecturaEstrategica',
+    'temasConversacion',
   ],
 };
 

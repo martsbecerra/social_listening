@@ -5,21 +5,24 @@ App web que:
 1. Recibe el link de una publicación de Instagram, extrae los comentarios y
    los datos del posteo con **Apify**, y los analiza con un **LLM** (Anthropic
    Claude u **OpenRouter**) siguiendo una metodología de análisis político,
-   mostrando un **reporte ejecutivo** listo para WhatsApp (solapa "Análisis de
-   publicación").
+   mostrando un **reporte ejecutivo** listo para WhatsApp. El reporte incluye
+   **temas emergentes** (editables en pantalla; el resto no se toca) entre el
+   KPI y los insights por tipo de cuenta.
 2. Recibe el link de una publicación de **X**, trae el hilo y lo clasifica
    con **Grok** vía OpenRouter (`OPENROUTER_X_MODEL`, no Apify ni el Claude
    de Instagram) y arma el reporte con la plantilla de X (solapa Análisis
-   en `x.html`). Monitoreo y mapa de X están especificados y se construyen después.
+   en `x.html`). El mapa de X usa el mismo Leaflet, filtrado por plataforma.
+   El monitoreo en vivo de X queda para una fase siguiente.
 3. Monitorea automáticamente, cada 4 horas, si aparece algún posteo nuevo de
    las cuentas trackeadas o que mencione las palabras clave/hashtags
    configurados, y avisa por email (solapa "Monitoreo en vivo" de Instagram).
-4. Muestra la solapa "Mapa de reclamos" (Leaflet): círculos por dirección
-   normalizada, con filtros combinables por categoría y subcategoría (esquema
-   de dos niveles del cliente, en `config/categorias-reclamos.json`), estado,
-   barrio/comuna, rango de fechas y texto libre, más descarga de CSV. Se
-   alimenta de dos fuentes: el análisis de una publicación (`/api/analyze`
-   guarda reclamos con ubicación en `geo_status = 'pendiente'`; un worker los
+4. Muestra la solapa "Mapa de reclamos" (Leaflet) **por plataforma**: cada
+   página pide `GET /api/reclamos?plataforma=instagram|x`. Círculos por
+   dirección normalizada, con filtros combinables por categoría y subcategoría
+   (esquema de dos niveles del cliente, en `config/categorias-reclamos.json`),
+   estado, barrio/comuna, rango de fechas y texto libre. Se alimenta de dos
+   fuentes: el análisis de una publicación (`/api/analyze` e `/api/x/analyze`
+   guardan reclamos con ubicación en `geo_status = 'pendiente'`; un worker los
    geocodifica con USIG después, sin bloquear la respuesta) y el importador
    genérico de Excel/CSV (`scripts/import-reclamos.js`).
 
@@ -36,6 +39,8 @@ social_listening_app/
 │   ├── x/                    # Plataforma X: Grok fetch, KPIs, reporte, padrón.
 │   ├── llm/                  # Proveedores: anthropicProvider, openrouterProvider.
 │   ├── prompt.js             # La metodología de análisis (system prompt).
+│   ├── temasConversacion.js  # Temas emergentes del reporte (IG y X).
+│   ├── reclamosQuery.js      # Query del mapa: plataforma obligatoria + filtros.
 │   ├── db.js                 # SQLite: posteos detectados + reclamos del mapa.
 │   ├── reclamosAddress.js    # Obsoleto (heurística del seed viejo); sin uso.
 │   ├── tematica.js           # Normaliza etiquetas libres del CSV de reclamos (legacy).
@@ -69,15 +74,16 @@ social_listening_app/
 │   ├── login-verify.html     # Confirma el link (POST, un solo uso).
 │   ├── dashboard.html        # Selector de red social.
 │   ├── instagram.html        # App Instagram: análisis + monitoreo + mapa de reclamos (tabs).
-│   ├── x.html                # App X: análisis (Grok); monitoreo y mapa próximamente.
+│   ├── x.html                # App X: análisis (Grok) + mapa; monitoreo próximamente.
 │   ├── css/styles.css        # Estilos (paleta oscura corporativa).
 │   └── js/
 │       ├── main.js           # Tabs + dropdown de usuario (sesión / logout).
 │       ├── login.js          # Pedido del magic link.
 │       ├── analysis.js       # Lógica de "Análisis de publicación" (Instagram).
 │       ├── x-analysis.js     # Análisis de publicación de X (`/api/x/analyze`).
+│       ├── temasEditor.js    # Temas emergentes editables (antes de copiar/WhatsApp).
 │       ├── monitoring.js     # Lógica de "Monitoreo en vivo".
-│       └── claimsMap.js      # Mapa de reclamos (Leaflet, agrega en el cliente).
+│       └── claimsMap.js      # Mapa de reclamos (Leaflet, filtrado por plataforma).
 ├── scripts/
 │   ├── import-reclamos.js       # Importador genérico de Excel/CSV (solo CLI).
 │   ├── migrate-categorias.js    # Migra categorías viejas al esquema de dos niveles.
