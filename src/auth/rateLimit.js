@@ -40,4 +40,32 @@ function isMagicLinkRateLimited({ ip, email }) {
   return ipLimited || emailLimited;
 }
 
-module.exports = { isMagicLinkRateLimited };
+// --------------------------------------------------------------------------
+// Cooldown de reenvío: máximo UN magic link cada 2 minutos por email. Es un
+// límite aparte del de ráfaga de arriba y se comporta distinto: cuando pega,
+// el endpoint responde el MISMO mensaje genérico de siempre (no revela que
+// fue rate limit) y simplemente no manda el mail. La marca se pone recién
+// cuando el SMTP aceptó el envío (ver server.js), así una falla de envío no
+// deja al usuario bloqueado 2 minutos sin haber recibido nada.
+// --------------------------------------------------------------------------
+
+const RESEND_COOLDOWN_MS = 2 * 60 * 1000;
+
+/** email (ya normalizado por el caller) -> timestamp del último envío OK */
+const lastSentByEmail = new Map();
+
+function isResendBlocked(email, now = Date.now()) {
+  const last = lastSentByEmail.get(email);
+  return last != null && now - last < RESEND_COOLDOWN_MS;
+}
+
+function markMagicLinkSent(email, now = Date.now()) {
+  lastSentByEmail.set(email, now);
+}
+
+module.exports = {
+  isMagicLinkRateLimited,
+  isResendBlocked,
+  markMagicLinkSent,
+  RESEND_COOLDOWN_MS,
+};

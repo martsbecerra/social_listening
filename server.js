@@ -43,14 +43,24 @@ const {
   clearSessionCookie,
   isAuthConfigured,
 } = require('./src/auth/session');
-const { isMagicLinkRateLimited } = require('./src/auth/rateLimit');
+const {
+  isMagicLinkRateLimited,
+  isResendBlocked,
+  markMagicLinkSent,
+  RESEND_COOLDOWN_MS,
+} = require('./src/auth/rateLimit');
 const { createAuthGate } = require('./src/auth/gate');
 
 const app = express();
 
+// La respuesta es SIEMPRE esta, pase lo que pase (email no autorizado,
+// cooldown de reenvío, envío OK): no revela qué direcciones existen.
+// retryAfterSeconds alimenta la cuenta regresiva del frontend y es idéntico
+// en toda respuesta, así el "2 minutos" vive en una sola constante.
 const MAGIC_LINK_GENERIC = {
   ok: true,
   message: 'Si el email está autorizado, te mandamos un link. Revisá tu casilla.',
+  retryAfterSeconds: RESEND_COOLDOWN_MS / 1000,
 };
 
 /** Log de alto nivel por tarea del pipeline (no por comentario). */
@@ -162,10 +172,19 @@ app.post('/api/auth/magic-link', async (req, res) => {
     return res.json(MAGIC_LINK_GENERIC);
   }
 
+  // Cooldown de reenvío (un link cada 2 min por email): se responde el mismo
+  // genérico y NO se manda nada — deshabilitar el botón en el frontend no
+  // alcanza, porque recargando la página se saltea.
+  if (isResendBlocked(email)) {
+    logAuth('cooldown de reenvío activo', { email });
+    return res.json(MAGIC_LINK_GENERIC);
+  }
+
   try {
     const { rawToken } = issueMagicLink(email);
     logAuth('enviando mail', { email, smtp: process.env.SMTP_HOST || null });
     await sendMagicLinkEmail({ email, rawToken });
+    markMagicLinkSent(email);
     logAuth('mail enviado', { email });
   } catch (err) {
     logAuth('error enviando mail', { email, message: err.message });

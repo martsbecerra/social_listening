@@ -16,6 +16,10 @@ function hashToken(rawToken) {
 }
 
 function issueMagicLink(email) {
+  // Un link nuevo invalida el anterior: si quedara más de un token válido por
+  // casilla, el usuario podría clickear el viejo pensando que es el último.
+  db.deleteUnusedMagicLinks(email);
+
   const rawToken = crypto.randomBytes(32).toString('base64url');
   const expiresAt = new Date(Date.now() + TTL_MS).toISOString();
   db.insertMagicLink({
