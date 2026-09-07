@@ -15,10 +15,12 @@
     href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=Instrument+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap"
     rel="stylesheet"
   />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link href="https://unpkg.com/tabulator-tables@6.3.0/dist/css/tabulator.min.css" rel="stylesheet" />
   <link rel="stylesheet" href="css/styles.css" />
 </head>
 
-<body>
+<body data-platform="x">
   <header class="topbar">
     <div class="crumb">
       <a class="brand" href="dashboard.html">
@@ -108,33 +110,154 @@
             </button>
           </div>
         </div>
-        <pre id="report" class="report"></pre>
+        <pre id="reportBefore" class="report"></pre>
+        <div id="temasEditor" class="temas-editor">
+          <h3 class="temas-editor-title">Temas de la conversación</h3>
+          <p class="temas-editor-hint">Podés editar, agregar o quitar temas antes de copiar o mandar por WhatsApp. El resto del reporte no se toca.</p>
+          <div id="temasList"></div>
+          <button type="button" id="temasAddBtn" class="btn-small btn-copy">Agregar tema</button>
+        </div>
+        <pre id="reportAfter" class="report"></pre>
       </div>
     </div>
   </section>
 
   <section id="tab-monitoring" class="tab-panel hidden">
-    <div class="container">
+    <div class="container-wide">
       <p class="tag panel-eyebrow">Monitoreo</p>
       <h1 class="display">Monitoreo en vivo</h1>
-      <p class="sub">Detección automática de menciones en X. Esta solapa se arma en una fase siguiente.</p>
-      <div class="card soon-panel">
-        <div class="meter" data-meter="16"></div>
-        <h3>Próximamente</h3>
-        <p>El monitoreo de cuentas y palabras clave en X va a usar Grok, no Apify. Mientras tanto, el análisis de una publicación ya está disponible en la solapa de al lado.</p>
+      <p class="sub">Detección automática de menciones en X cada 4 horas.</p>
+
+      <div class="card config">
+        <div>
+          <h3 class="tag">Cuentas trackeadas</h3>
+          <div class="add-row">
+            <input type="text" id="newAccount" placeholder="usuario (sin @)" autocomplete="off" />
+            <button id="addAccountBtn" class="btn-ghost">Agregar</button>
+          </div>
+          <p id="accountError" class="error hidden" style="margin-top:8px;"></p>
+          <div id="accountList" class="chips"></div>
+        </div>
+        <div>
+          <h3 class="tag">Palabras clave / hashtags</h3>
+          <div class="add-row">
+            <input type="text" id="newKeyword" placeholder="Jorge Macri o #JorgeMacri" autocomplete="off" />
+            <button id="addKeywordBtn" class="btn-ghost">Agregar</button>
+          </div>
+          <p id="keywordError" class="error hidden" style="margin-top:8px;"></p>
+          <div id="keywordListPreview" class="chips">
+            <button id="viewAllKeywordsBtn" class="chip-more hidden"></button>
+          </div>
+        </div>
+      </div>
+
+      <div class="runbar">
+        <button id="runNowBtn" class="btn">Actualizar ahora</button>
+        <span class="live">
+          <div class="meter" data-meter="7"></div>
+          <span><b>Escuchando</b> · <span id="monitoringNextRun">próxima corrida –</span></span>
+        </span>
+      </div>
+
+      <div id="monitoringStatusCard" class="card hidden">
+        <div class="status">
+          <div>
+            <span class="spinner"></span>
+            <span id="monitoringStatusText" class="status-text">Buscando posteos nuevos…</span>
+          </div>
+          <div class="progress-track">
+            <div id="monitoringProgressFill" class="progress-fill"></div>
+          </div>
+        </div>
+      </div>
+
+      <p id="monitoringResult" class="muted hidden" style="text-align:center;"></p>
+
+      <p id="monitoringLoadError" class="error hidden"></p>
+
+      <div id="monitoringHighlightsSection" class="hidden">
+        <div class="sec-head">
+          <h2>Se despegaron</h2>
+          <span>Posteos muy por encima del promedio de su propia cuenta</span>
+        </div>
+        <div class="cards" id="cards"></div>
+      </div>
+
+      <div class="filters">
+        <div class="frow">
+          <span class="frow-lbl tag">Filtrar</span>
+
+          <select id="fSent" aria-label="Filtrar por sentimiento">
+            <option value="">Sentimiento</option>
+            <option value="positivo">Positivo</option>
+            <option value="neutral">Neutral</option>
+            <option value="negativo">Negativo</option>
+            <option value="sin_clasificar">Sin clasificar</option>
+          </select>
+
+          <div class="acc-select" id="fAccSelect">
+            <button type="button" class="acc-select-btn" id="fAccBtn" aria-haspopup="listbox" aria-expanded="false">
+              Cuenta
+            </button>
+            <div class="acc-select-panel hidden" id="fAccPanel" role="listbox" aria-label="Cuenta"></div>
+          </div>
+
+          <input type="date" id="fDesde" aria-label="Fecha desde" />
+          <input type="date" id="fHasta" aria-label="Fecha hasta" />
+
+          <input type="search" id="q" placeholder="Buscar título, cuenta o texto del posteo..." />
+
+          <span class="f-count">Mostrando <b id="n">0</b> de <b id="m">0</b> posteos</span>
+          <button class="f-clear" id="clear" type="button" disabled>Limpiar</button>
+        </div>
+      </div>
+
+      <div class="card tbl-wrap">
+        <div id="monitoringTable"></div>
       </div>
     </div>
   </section>
 
   <section id="tab-claims-map" class="tab-panel hidden">
-    <div class="container">
+    <div class="container-wide">
       <p class="tag panel-eyebrow">Reclamos</p>
       <h1 class="display">Mapa de reclamos</h1>
       <p class="sub">Reclamos con dirección detectados en los hilos analizados de X.</p>
-      <div class="card soon-panel">
-        <div class="meter" data-meter="16"></div>
-        <h3>Próximamente</h3>
-        <p>Los reclamos con ubicación ya se guardan cuando analizás un posteo. El mapa de X se conecta en la fase siguiente.</p>
+
+      <div class="card claims-filters-card">
+        <div class="claims-filters-row">
+          <div id="claimsCategoriaSelect"></div>
+          <div id="claimsSubcategoriaSelect"></div>
+          <div id="claimsEstadoSelect"></div>
+          <select id="claimsBarrio">
+            <option value="">Barrio</option>
+          </select>
+          <select id="claimsComuna">
+            <option value="">Comuna</option>
+          </select>
+          <input type="date" id="claimsDesde" />
+          <input type="date" id="claimsHasta" />
+          <input
+            type="text"
+            id="claimsBuscar"
+            class="claims-search"
+            placeholder="Buscar dirección o texto del comentario…"
+            autocomplete="off"
+          />
+          <button type="button" id="claimsClearBtn" class="btn-small btn-clear">Limpiar</button>
+        </div>
+        <div id="claimsLeyenda" class="claims-leyenda"></div>
+      </div>
+
+      <p id="claimsMapError" class="error hidden"></p>
+
+      <div class="card claims-map-card">
+        <div id="claims-map"></div>
+        <div id="claimsMapEmpty" class="hidden muted claims-map-empty">
+          <div class="meter" data-meter="16"></div>
+          <h3 id="claimsMapEmptyTitle" data-default-title="Todavía no hay reclamos ubicados">Todavía no hay reclamos ubicados</h3>
+          <p id="claimsMapEmptyText" data-default-text="Cuando el análisis de X detecte un hilo con una dirección, van a aparecer acá.">Cuando el análisis de X detecte un hilo con una dirección, van a aparecer acá.</p>
+        </div>
       </div>
     </div>
   </section>
@@ -180,9 +303,35 @@
     </div>
   </footer>
 
+  <div id="ignoreModal" class="modal-overlay hidden">
+    <div class="modal-box">
+      <p>¿Seguro que querés ignorar esta publicación?</p>
+      <div class="modal-actions">
+        <button id="ignoreCancelBtn" class="btn-clear">Cancelar</button>
+        <button id="ignoreConfirmBtn">Sí, ignorar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="keywordsModal" class="modal-overlay hidden">
+    <div class="modal-box modal-box-wide">
+      <div class="modal-header">
+        <p>Palabras clave / hashtags</p>
+        <button id="keywordsModalCloseBtn" class="btn-small btn-clear">Cerrar</button>
+      </div>
+      <ul id="keywordListFull" class="tag-list"></ul>
+    </div>
+  </div>
+
   <script src="js/meter.js"></script>
   <script src="js/main.js"></script>
+  <script src="js/temasEditor.js"></script>
   <script src="js/x-analysis.js"></script>
+  <script src="https://unpkg.com/tabulator-tables@6.3.0/dist/js/tabulator.min.js"></script>
+  <script>window.SL_PLATFORM = 'x';</script>
+  <script src="js/monitoring.js?v=plat"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="js/claimsMap.js"></script>
   <script src="js/footer.js"></script>
 </body>
 

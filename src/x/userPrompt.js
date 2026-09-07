@@ -24,7 +24,7 @@ function buildUserPrompt({ url, post, sample, total, isPartial, influencerMap })
 
   const knownBlock = formatInfluencerPromptBlock(sample, influencerMap);
 
-  return `Clasificá cada ítem numerado. Completá posteoSobre, classifications (un ítem por cada número) e insights 3–8. Respondé únicamente con JSON según el schema.
+  return `Clasificá cada ítem numerado. Completá posteoSobre, classifications (un ítem por cada número), insights 3–8 y temasConversacion. Respondé únicamente con JSON según el schema.
 
 === DATOS DEL POSTEO ===
 Autor: ${fmt(post.authorName || post.displayName)} / @${fmt(post.authorHandle || post.username)}

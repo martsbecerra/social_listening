@@ -11,6 +11,7 @@ const {
 const { PARTIAL_SAMPLE_DISCLOSURE } = require('./sample');
 const { EMPTY_INSIGHT } = require('./validate');
 const { isIdentifiedInfluencer } = require('./influencers');
+const { assembleReport } = require('../temasConversacion');
 
 const CSV_HEADER = 'Direccion_o_Ubicacion,Tematica,Link_Comentario,Usuario_Perfil';
 
@@ -116,8 +117,9 @@ function buildWhatsAppReport({
   const ownerName = post.authorName || post.displayName || 'N/D';
   const ownerUser = post.authorHandle || post.username || 'N/D';
   const postLink = canonicalizeStatusUrl(url, ownerUser, post.id) || url;
+  const temas = Array.isArray(qualitative.temasConversacion) ? qualitative.temasConversacion : [];
 
-  const report = `🔍 ANÁLISIS DE POSTEO EN X: ${ownerName} / @${ownerUser}
+  const beforeTemas = `🔍 ANÁLISIS DE POSTEO EN X: ${ownerName} / @${ownerUser}
 
 👉🏼 Posteo sobre: ${posteoSobre}
 
@@ -139,9 +141,9 @@ Link a publicación 👉🏼 ${postLink}
 
 1️⃣ Sentiment positivo: ${metrics.positivoPct}% | Sentiment negativo: ${metrics.negativoPct}%
 
-2️⃣ Según los KPI's establecidos, el posteo alcanza un nivel ${performance.viewsLevel} en visualizaciones y un nivel ${performance.interactionsLevel} en interacciones.
+2️⃣ Según los KPI's establecidos, el posteo alcanza un nivel ${performance.viewsLevel} en visualizaciones y un nivel ${performance.interactionsLevel} en interacciones.`;
 
-3️⃣ Apoyo de funcionarios del GCBA y cuentas aliadas enfocadas en la validación de la gestión pública. ${formatInsightBlock(qualitative.insightApoyo, sample)}
+  const afterTemas = `3️⃣ Apoyo de funcionarios del GCBA y cuentas aliadas enfocadas en la validación de la gestión pública. ${formatInsightBlock(qualitative.insightApoyo, sample)}
 
 4️⃣ Cuestionamientos de legisladores de la oposición y militantes adversarios. ${formatInsightBlock(qualitative.insightCriticas, sample)}
 
@@ -161,6 +163,8 @@ ${formatTop6(buildTop6(sample, classifications, 'positivo', influencerMap))}
 
 ${formatTop6(buildTop6(sample, classifications, 'negativo', influencerMap))}`;
 
+  const report = assembleReport(beforeTemas, temas, afterTemas);
+
   const csv = buildReclamosCsv(sample, classifications);
 
   return {
@@ -171,6 +175,8 @@ ${formatTop6(buildTop6(sample, classifications, 'negativo', influencerMap))}`;
       viewsLevel: performance.viewsLevel,
       interactionsLevel: performance.interactionsLevel,
     },
+    temas,
+    reportParts: { beforeTemas, afterTemas },
   };
 }
 

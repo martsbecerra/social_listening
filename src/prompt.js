@@ -77,6 +77,15 @@ Si no hay ubicación accionable, reclamosGeo debe ser [].
 - insightApoyo / insightCriticas / insightReclamos / insightMedios: exactamente 2 referencias cada uno (@usuario + texto breve + fecha si está disponible; no inventar).
 - posturaAudiencia y lecturaEstrategica: párrafos breves.
 
+5. Temas emergentes (temasConversacion)
+Agrupá quejas o apoyos RECURRENTES del hilo. No un tema por comentario.
+- Array de 0 a 8 objetos { titulo, texto }.
+- titulo: 2 a 6 palabras, sin número, sin markdown.
+- texto: 1 o 2 oraciones, tono de informe. Sin @, sin URLs, sin “el usuario dijo”.
+- 3–8 si el hilo da para eso; menos está bien; [] si no hay un patrón real.
+- No repitas posteoSobre ni los insights 3–8 (esos son citas por tipo de cuenta).
+- Prohibido inventar.
+
 REGLAS DE DESEMPATE (obligatorias; prioridad sobre interpretación libre)
 
 A. Casos que SIEMPRE son neutral (no positivo ni negativo):

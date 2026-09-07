@@ -42,7 +42,23 @@ const KEYWORDS_PREVIEW_COUNT = 2;
 // Todo de una sola vez: el orden/filtro/paginación ahora los maneja
 // Tabulator del lado del cliente, así que no paginamos contra el backend.
 const FETCH_ALL_PAGE_SIZE = 5000;
+// window.SL_PLATFORM lo setea x.html / instagram.html justo antes de este
+// script. dataset.platform es el respaldo. Sin eso, el API defaultéa a
+// Instagram y la solapa de X mostraría posteos de la otra red.
+function currentMonitorPlatform() {
+  if (window.SL_PLATFORM === 'x' || window.SL_PLATFORM === 'instagram') return window.SL_PLATFORM;
+  return document.body?.dataset?.platform === 'x' ? 'x' : 'instagram';
+}
+const MONITOR_PLATFORM = currentMonitorPlatform();
+const IS_X_MONITOR = MONITOR_PLATFORM === 'x';
+const PROFILE_BASE = IS_X_MONITOR ? 'https://x.com/' : 'https://instagram.com/';
+const PLATFORM_LABEL = IS_X_MONITOR ? 'X' : 'Instagram';
 let pendingIgnoreId = null;
+
+function withPlataforma(url) {
+  const sep = url.includes('?') ? '&' : '?';
+  return `${url}${sep}plataforma=${encodeURIComponent(MONITOR_PLATFORM)}`;
+}
 
 // -------------------------------------------------------------------------
 // Config: cuentas trackeadas / palabras clave (visible arriba, sin modal).
@@ -94,7 +110,7 @@ function renderKeywordLists(keywords) {
 
 async function loadConfig() {
   try {
-    const resp = await fetch('/api/monitoring/config');
+    const resp = await fetch(withPlataforma('/api/monitoring/config'));
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const config = await resp.json();
     renderTagList(accountListEl, config.accounts, removeAccount);
@@ -112,13 +128,13 @@ async function addAccount() {
 
   accountErrorEl.classList.add('hidden');
   addAccountBtn.disabled = true;
-  addAccountBtn.textContent = 'Verificando…';
+  addAccountBtn.textContent = IS_X_MONITOR ? 'Agregando…' : 'Verificando…';
 
   try {
-    const resp = await fetch('/api/monitoring/accounts', {
+    const resp = await fetch(withPlataforma('/api/monitoring/accounts'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ account }),
+      body: JSON.stringify({ account, plataforma: MONITOR_PLATFORM }),
     });
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || 'No se pudo agregar la cuenta.');
@@ -135,7 +151,7 @@ async function addAccount() {
 
 async function removeAccount(account) {
   try {
-    await fetch(`/api/monitoring/accounts/${encodeURIComponent(account)}`, { method: 'DELETE' });
+    await fetch(withPlataforma(`/api/monitoring/accounts/${encodeURIComponent(account)}`), { method: 'DELETE' });
   } catch (err) {
     console.error('Error quitando cuenta:', err);
   }
@@ -151,10 +167,10 @@ async function addKeyword() {
   addKeywordBtn.textContent = 'Verificando…';
 
   try {
-    const resp = await fetch('/api/monitoring/keywords', {
+    const resp = await fetch(withPlataforma('/api/monitoring/keywords'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ keyword }),
+      body: JSON.stringify({ keyword, plataforma: MONITOR_PLATFORM }),
     });
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || 'No se pudo agregar la palabra clave.');
@@ -171,7 +187,7 @@ async function addKeyword() {
 
 async function removeKeyword(keyword) {
   try {
-    await fetch(`/api/monitoring/keywords/${encodeURIComponent(keyword)}`, { method: 'DELETE' });
+    await fetch(withPlataforma(`/api/monitoring/keywords/${encodeURIComponent(keyword)}`), { method: 'DELETE' });
   } catch (err) {
     console.error('Error quitando palabra clave:', err);
   }
@@ -210,7 +226,7 @@ async function confirmIgnore() {
   if (!pendingIgnoreId) return;
   const id = pendingIgnoreId;
   try {
-    const resp = await fetch(`/api/monitoring/posts/${encodeURIComponent(id)}/ignore`, { method: 'POST' });
+    const resp = await fetch(withPlataforma(`/api/monitoring/posts/${encodeURIComponent(id)}/ignore`), { method: 'POST' });
     if (!resp.ok) throw new Error('No se pudo ignorar.');
     if (monitoringTable) {
       if (expandedRowId === id) expandedRowId = null;
@@ -237,7 +253,7 @@ async function updateSentiment(id, sentiment, selectEl) {
   if (optUnset) optUnset.remove();
 
   try {
-    const resp = await fetch(`/api/monitoring/posts/${encodeURIComponent(id)}`, {
+    const resp = await fetch(withPlataforma(`/api/monitoring/posts/${encodeURIComponent(id)}`), {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sentiment }),
@@ -353,18 +369,20 @@ function buildDetailPanel(data) {
   cap.textContent = data.caption || '';
   wrap.appendChild(cap);
 
-  const bench = document.createElement('div');
-  bench.className = 'dt-bench';
-  const benchmark = data.benchmark || {};
-  bench.appendChild(buildBenchLine('Comentarios', benchmark.comments));
-  bench.appendChild(buildBenchLine('Likes', benchmark.likes));
-  wrap.appendChild(bench);
+  if (!IS_X_MONITOR) {
+    const bench = document.createElement('div');
+    bench.className = 'dt-bench';
+    const benchmark = data.benchmark || {};
+    bench.appendChild(buildBenchLine('Comentarios', benchmark.comments));
+    bench.appendChild(buildBenchLine('Likes', benchmark.likes));
+    wrap.appendChild(bench);
+  }
 
   const links = document.createElement('div');
   links.className = 'dt-links';
   if (data.account && data.account !== 'N/D') {
     const profile = document.createElement('a');
-    profile.href = `https://instagram.com/${data.account}`;
+    profile.href = `${PROFILE_BASE}${data.account}`;
     profile.target = '_blank';
     profile.rel = 'noopener';
     profile.textContent = 'Ver perfil';
@@ -381,7 +399,7 @@ function buildDetailPanel(data) {
   const meta = document.createElement('p');
   meta.className = 'dt-meta';
   const { date, time } = formatFullDateTime(data.posted_at);
-  meta.textContent = time ? `${date} · ${time} · Instagram` : `${date} · Instagram`;
+  meta.textContent = time ? `${date} · ${time} · ${PLATFORM_LABEL}` : `${date} · ${PLATFORM_LABEL}`;
   wrap.appendChild(meta);
 
   return wrap;
@@ -428,6 +446,10 @@ function highlightTop(post) {
 }
 
 function renderHighlightCards(posts) {
+  if (IS_X_MONITOR || !highlightsSectionEl || !cardsEl) {
+    if (highlightsSectionEl) highlightsSectionEl.classList.add('hidden');
+    return;
+  }
   const scored = posts
     .map((post) => ({ post, top: highlightTop(post) }))
     .filter((entry) => entry.top && entry.top.best >= HIGHLIGHT_MIN_RATIO)
@@ -715,7 +737,7 @@ const MONITORING_COLUMNS = [
       if (!account || account === 'N/D') return 'N/D';
       const a = document.createElement('a');
       a.className = 'c-acc';
-      a.href = `https://instagram.com/${account}`;
+      a.href = `${PROFILE_BASE}${account}`;
       a.target = '_blank';
       a.rel = 'noopener';
       a.textContent = `@${account}`;
@@ -853,6 +875,40 @@ const MONITORING_COLUMNS = [
   },
 ];
 
+if (IS_X_MONITOR) {
+  const followersIdx = MONITORING_COLUMNS.findIndex((col) => col.field === 'followers');
+  if (followersIdx !== -1) MONITORING_COLUMNS.splice(followersIdx, 1);
+  const commentsCol = MONITORING_COLUMNS.find((col) => col.field === 'comments');
+  if (commentsCol) commentsCol.title = 'Resp.';
+  const commentsIdx = MONITORING_COLUMNS.findIndex((col) => col.field === 'comments');
+  if (commentsIdx !== -1) {
+    MONITORING_COLUMNS.splice(
+      commentsIdx + 1,
+      0,
+      {
+        title: 'RTs',
+        field: 'retweets',
+        width: 90,
+        hozAlign: 'right',
+        headerHozAlign: 'right',
+        sorter: 'number',
+        headerSortStartingDir: 'desc',
+        formatter: (cell) => `<span class="c-num">${formatCount(cell.getValue())}</span>`,
+      },
+      {
+        title: 'Vistas',
+        field: 'views',
+        width: 100,
+        hozAlign: 'right',
+        headerHozAlign: 'right',
+        sorter: 'number',
+        headerSortStartingDir: 'desc',
+        formatter: (cell) => `<span class="c-num">${formatCount(cell.getValue())}</span>`,
+      }
+    );
+  }
+}
+
 let monitoringTable = null;
 
 function ensureMonitoringTable(posts) {
@@ -915,12 +971,15 @@ function ensureMonitoringTable(posts) {
 
 async function loadPosts() {
   try {
-    const resp = await fetch(`/api/monitoring/posts?page=1&pageSize=${FETCH_ALL_PAGE_SIZE}`);
+    const resp = await fetch(withPlataforma(`/api/monitoring/posts?page=1&pageSize=${FETCH_ALL_PAGE_SIZE}`));
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data = await resp.json();
     monitoringLoadErrorEl.classList.add('hidden');
-    ensureMonitoringTable(data.posts);
-    renderHighlightCards(data.posts);
+    const posts = (data.posts || []).filter(
+      (post) => (post.plataforma || 'instagram') === MONITOR_PLATFORM
+    );
+    ensureMonitoringTable(posts);
+    renderHighlightCards(posts);
   } catch (err) {
     monitoringLoadErrorEl.textContent = 'No se pudo cargar la tabla. Reiniciá el servidor (para que tome el código nuevo) y recargá la página.';
     monitoringLoadErrorEl.classList.remove('hidden');
@@ -953,13 +1012,21 @@ async function loadNextRun() {
 // principio y se frena cerca del 92%, más mensajes rotativos, para que se
 // vea que algo está pasando mientras se espera.
 // --------------------------------------------------------------------
-const MONITOR_LOADING_MESSAGES = [
-  'Buscando posteos nuevos en las cuentas trackeadas…',
-  'Revisando los hashtags configurados…',
-  'Evaluando relevancia con IA…',
-  'Clasificando título y sentimiento…',
-  'Guardando resultados…',
-];
+const MONITOR_LOADING_MESSAGES = IS_X_MONITOR
+  ? [
+      'Buscando posteos nuevos con Grok…',
+      'Revisando las cuentas y palabras clave…',
+      'Evaluando relevancia…',
+      'Clasificando título y sentimiento…',
+      'Guardando resultados…',
+    ]
+  : [
+      'Buscando posteos nuevos en las cuentas trackeadas…',
+      'Revisando los hashtags configurados…',
+      'Evaluando relevancia con IA…',
+      'Clasificando título y sentimiento…',
+      'Guardando resultados…',
+    ];
 
 let monitorProgressTimer = null;
 let monitorMessageTimer = null;
@@ -1011,7 +1078,11 @@ async function runNow() {
   startMonitorLoading();
 
   try {
-    const resp = await fetch('/api/monitoring/run-now', { method: 'POST' });
+    const resp = await fetch(withPlataforma('/api/monitoring/run-now'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ plataforma: MONITOR_PLATFORM }),
+    });
     const data = await resp.json();
 
     if (!resp.ok) throw new Error(data.error || 'Ocurrió un error inesperado.');

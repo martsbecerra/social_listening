@@ -13,6 +13,7 @@
 
 const cron = require('node-cron');
 const { runMonitoringCycle } = require('./monitor');
+const { runXMonitoringCycle } = require('./x/monitor');
 const { processPendingReclamos } = require('./geoWorker');
 const { refreshStaleAccountStats } = require('./accountStats');
 const { refreshPostMetrics } = require('./metricsRefresh');
@@ -108,7 +109,7 @@ function getNextRunAt(cronExpression, from = new Date()) {
  * geocodifica reclamos pendientes y refresca stats/métricas de cuentas.
  * Exportada aparte para poder llamarla a mano (botón "Actualizar ahora").
  */
-async function runCycle({ ifBusy = 'throw' } = {}) {
+async function runCycle({ ifBusy = 'throw', plataforma } = {}) {
   if (cycleInProgress) {
     if (ifBusy === 'skip') {
       console.log('[monitor] ya hay un ciclo en curso; se saltea este disparo.');
@@ -122,14 +123,40 @@ async function runCycle({ ifBusy = 'throw' } = {}) {
 
   cycleInProgress = true;
   try {
-    return await runCycleUnlocked();
+    return await runCycleUnlocked(plataforma);
   } finally {
     cycleInProgress = false;
   }
 }
 
-async function runCycleUnlocked() {
-  const { checked, newPosts, scrapedAccounts } = await runMonitoringCycle();
+async function runCycleUnlocked(plataforma) {
+  const runIg = plataforma !== 'x';
+  const runX = plataforma !== 'instagram';
+
+  let checked = 0;
+  let newCount = 0;
+  let scrapedAccounts = [];
+
+  if (runIg) {
+    const ig = await runMonitoringCycle();
+    checked += ig.checked || 0;
+    newCount += (ig.newPosts || []).length;
+    scrapedAccounts = ig.scrapedAccounts || [];
+  }
+
+  if (runX) {
+    try {
+      const x = await runXMonitoringCycle();
+      checked += x.checked || 0;
+      newCount += (x.newPosts || []).length;
+    } catch (err) {
+      console.error('Error en el ciclo de monitoreo de X:', err.message);
+      if (plataforma === 'x') {
+        err.userMessage = err.userMessage || 'Falló el ciclo de monitoreo de X. Revisá la consola del servidor.';
+        throw err;
+      }
+    }
+  }
 
   try {
     await processPendingReclamos();
@@ -137,24 +164,23 @@ async function runCycleUnlocked() {
     console.error('Error geocodificando reclamos pendientes:', err.message);
   }
 
-  try {
-    await refreshStaleAccountStats();
-  } catch (err) {
-    console.error('Error recalculando el benchmark de cuentas:', err.message);
-  }
+  if (runIg) {
+    try {
+      await refreshStaleAccountStats();
+    } catch (err) {
+      console.error('Error recalculando el benchmark de cuentas:', err.message);
+    }
 
-  try {
-    // Las cuentas de scrapedAccounts ya se consultaron recién arriba (y
-    // monitor.js ya aprovechó esa misma respuesta para refrescar sus
-    // posteos conocidos) — se excluyen acá para no pagarlas dos veces.
-    await refreshPostMetrics({ skipAccounts: scrapedAccounts });
-  } catch (err) {
-    console.error('Error refrescando métricas de posteos:', err.message);
+    try {
+      await refreshPostMetrics({ skipAccounts: scrapedAccounts });
+    } catch (err) {
+      console.error('Error refrescando métricas de posteos:', err.message);
+    }
   }
 
   lastRunAt = new Date().toISOString();
 
-  return { checked, newCount: newPosts.length };
+  return { checked, newCount };
 }
 
 function startScheduler() {

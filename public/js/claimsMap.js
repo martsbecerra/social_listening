@@ -13,6 +13,10 @@ const AMBA_BOUNDS = [
 ];
 const SEARCH_DEBOUNCE_MS = 350;
 
+function currentPlatform() {
+  return document.body?.dataset?.platform === 'x' ? 'x' : 'instagram';
+}
+
 let claimsMap = null;
 let claimsLayer = null;
 let rawReclamos = [];
@@ -154,6 +158,7 @@ function isDefaultFilters(f) {
 
 function buildQueryString(f) {
   const params = new URLSearchParams();
+  params.set('plataforma', currentPlatform());
   if (f.categoria.length > 0 && f.categoria.length < allCategorias.length) {
     params.set('categoria', f.categoria.join(','));
   }
@@ -189,7 +194,7 @@ async function applyFiltersAndReload() {
 
   try {
     const qs = buildQueryString(currentFilters());
-    const resp = await fetch(`/api/reclamos${qs ? `?${qs}` : ''}`);
+    const resp = await fetch(`/api/reclamos?${qs}`);
     if (!resp.ok) throw new Error('No se pudieron cargar los reclamos.');
     const data = await resp.json();
     rawReclamos = Array.isArray(data.reclamos) ? data.reclamos : [];
@@ -577,8 +582,10 @@ function setEmptyState(isEmpty, filtered) {
     title.textContent = 'Ningún reclamo coincide con los filtros';
     text.textContent = 'Probá ampliar el rango de fechas o tildar más categorías/estados.';
   } else {
-    title.textContent = 'Todavía no hay reclamos ubicados';
-    text.textContent = 'Cuando el análisis detecte comentarios con una dirección, van a aparecer acá.';
+    title.textContent = title.dataset.defaultTitle || 'Todavía no hay reclamos ubicados';
+    text.textContent =
+      text.dataset.defaultText ||
+      'Cuando el análisis detecte comentarios con una dirección, van a aparecer acá.';
   }
 }
 
@@ -714,7 +721,7 @@ async function refreshClaimsMap() {
   }
 
   try {
-    const resp = await fetch('/api/reclamos');
+    const resp = await fetch(`/api/reclamos?plataforma=${encodeURIComponent(currentPlatform())}`);
     if (!resp.ok) throw new Error('No se pudieron cargar los reclamos.');
     const data = await resp.json();
 
