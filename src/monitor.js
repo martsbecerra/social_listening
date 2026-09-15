@@ -347,7 +347,7 @@ async function runMonitoringCycle() {
 
       const postWithClassification = {
         ...post,
-        platform: platformId,
+        plataforma: platformId,
         title: evaluation.title,
         sentiment: evaluation.sentiment,
         matchedReason: evaluation.matchedReason,
@@ -392,7 +392,7 @@ async function runMonitoringCycle() {
  * clasificados.
  */
 async function backfillClassification(platformId) {
-  const pending = db.listUnclassified({ platform: platformId });
+  const pending = db.listUnclassified({ plataforma: platformId });
   let classified = 0;
   let stillPending = 0;
 

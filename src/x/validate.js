@@ -2,9 +2,10 @@
 // validate.js — Normaliza el JSON de clasificación X.
 // ==========================================================================
 
-const { SENTIMENTS, ACCOUNT_TYPES } = require('./analysisSchema');
+const { SENTIMENTS, ACCOUNT_TYPES, TIPOS_UBICACION } = require('./analysisSchema');
 const { normalizeTematica } = require('../tematica');
 const { normalizeCategoria } = require('../categoriaReclamo');
+const { normalizeTemas } = require('../temasConversacion');
 
 const SENTIMENT_SET = new Set(SENTIMENTS);
 const ACCOUNT_SET = new Set(ACCOUNT_TYPES);
@@ -25,8 +26,13 @@ function sanitizeReclamosGeo(raw) {
     if (!direccionDetectada) continue;
     out.push({
       direccionDetectada,
+      direccionNormalizada:
+        typeof r.direccionNormalizada === 'string' && r.direccionNormalizada.trim()
+          ? r.direccionNormalizada.trim()
+          : 'N/D',
       tematica: normalizeTematica(r.tematica),
       categoria: normalizeCategoria(r.categoria),
+      tipoUbicacion: TIPOS_UBICACION.includes(r.tipoUbicacion) ? r.tipoUbicacion : null,
     });
   }
   return out;
@@ -107,6 +113,7 @@ function validateAndNormalizeAnalysis(parsed, sampleLength, sample = []) {
     insightMedios: normalizeInsightRefs(p.insightMedios, sample),
     insightOrganica: normalizeInsightRefs(p.insightOrganica, sample),
     insightEstetica: normalizeInsightRefs(p.insightEstetica, sample),
+    temasConversacion: normalizeTemas(p.temasConversacion),
   };
   const classifications = normalizeClassifications(p.classifications, sampleLength);
   return { qualitative, classifications };

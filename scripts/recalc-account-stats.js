@@ -96,7 +96,7 @@ async function recalcOne(account, { index, total } = {}) {
  * con lo que va a mostrar la tabla.
  */
 function printGoalCheck() {
-  const { posts, total } = db.listDetectedPosts({ page: 1, pageSize: 1_000_000 });
+  const { posts, total } = db.listDetectedPosts({ page: 1, pageSize: 1_000_000, plataforma: 'instagram' });
   const statsMap = accountStats.buildAccountStatsMap();
 
   let withBenchmark = 0;

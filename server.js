@@ -29,11 +29,15 @@ const {
 const db = require('./src/db');
 const monitor = require('./src/monitor');
 const { listPlatformIds } = require('./src/platforms');
+// Transición: X todavía corre por el módulo paralelo. Se va cuando X sea un
+// adapter de src/platforms/ (paso 3 de la unificación multiplataforma).
+const xMonitor = require('./src/x/monitor');
 const { startScheduler, runCycle, getCronExpression, getLastRunAt, estimateRunsPerDay, getNextRunAt } = require('./src/scheduler');
 const { processPendingReclamosInBackground } = require('./src/geoWorker');
 const accountStats = require('./src/accountStats');
 const { CATEGORIAS_RECLAMO, ESTADOS_RECLAMO, isValidEstado } = require('./src/categoriaReclamo');
 const { subcategoriasDe } = require('./src/categoriasConfig');
+const { parseReclamosFilters, isValidReclamosPlataforma } = require('./src/reclamosQuery');
 const { normalizeEmail, isEmailAllowed } = require('./src/auth/allowlist');
 const { issueMagicLink, redeemMagicLink } = require('./src/auth/magicLink');
 const { sendMagicLinkEmail } = require('./src/mailer');
@@ -42,14 +46,24 @@ const {
   clearSessionCookie,
   isAuthConfigured,
 } = require('./src/auth/session');
-const { isMagicLinkRateLimited } = require('./src/auth/rateLimit');
+const {
+  isMagicLinkRateLimited,
+  isResendBlocked,
+  markMagicLinkSent,
+  RESEND_COOLDOWN_MS,
+} = require('./src/auth/rateLimit');
 const { createAuthGate } = require('./src/auth/gate');
 
 const app = express();
 
+// La respuesta es SIEMPRE esta, pase lo que pase (email no autorizado,
+// cooldown de reenvío, envío OK): no revela qué direcciones existen.
+// retryAfterSeconds alimenta la cuenta regresiva del frontend y es idéntico
+// en toda respuesta, así el "2 minutos" vive en una sola constante.
 const MAGIC_LINK_GENERIC = {
   ok: true,
   message: 'Si el email está autorizado, te mandamos un link. Revisá tu casilla.',
+  retryAfterSeconds: RESEND_COOLDOWN_MS / 1000,
 };
 
 /** Log de alto nivel por tarea del pipeline (no por comentario). */
@@ -161,10 +175,19 @@ app.post('/api/auth/magic-link', async (req, res) => {
     return res.json(MAGIC_LINK_GENERIC);
   }
 
+  // Cooldown de reenvío (un link cada 2 min por email): se responde el mismo
+  // genérico y NO se manda nada — deshabilitar el botón en el frontend no
+  // alcanza, porque recargando la página se saltea.
+  if (isResendBlocked(email)) {
+    logAuth('cooldown de reenvío activo', { email });
+    return res.json(MAGIC_LINK_GENERIC);
+  }
+
   try {
     const { rawToken } = issueMagicLink(email);
     logAuth('enviando mail', { email, smtp: process.env.SMTP_HOST || null });
     await sendMagicLinkEmail({ email, rawToken });
+    markMagicLinkSent(email);
     logAuth('mail enviado', { email });
   } catch (err) {
     logAuth('error enviando mail', { email, message: err.message });
@@ -250,7 +273,7 @@ app.post('/api/analyze', async (req, res) => {
       comentariosExtraidos: comments.length,
     });
     const analysisStartedAt = Date.now();
-    const { report, csv, meta: analysisMeta } = await analyzeComments({ url, post, comments });
+    const { report, csv, meta: analysisMeta, temas, reportParts } = await analyzeComments({ url, post, comments });
     logTask('análisis LLM completado', {
       ms: Date.now() - analysisStartedAt,
       comentariosAnalizados: analysisMeta?.sampleSize ?? comments.length,
@@ -271,6 +294,8 @@ app.post('/api/analyze', async (req, res) => {
     res.json({
       report,
       csv,
+      temas: temas || [],
+      reportParts: reportParts || { beforeTemas: report, afterTemas: '' },
       meta: {
         // Extraídos por Apify vs enviados a Claude (muestra estable en commentSample.js).
         comentariosExtraidos: comments.length,
@@ -338,7 +363,7 @@ app.post('/api/x/analyze', async (req, res) => {
       padron: influencerMap.size,
     });
     const analysisStartedAt = Date.now();
-    const { report, csv, meta: analysisMeta } = await analyzeXThread({
+    const { report, csv, meta: analysisMeta, temas, reportParts } = await analyzeXThread({
       url,
       post,
       items,
@@ -364,6 +389,8 @@ app.post('/api/x/analyze', async (req, res) => {
     res.json({
       report,
       csv,
+      temas: temas || [],
+      reportParts: reportParts || { beforeTemas: report, afterTemas: '' },
       meta: {
         comentariosExtraidos: 1 + items.length,
         comentariosAnalizados: analysisMeta?.sampleSize ?? 1 + items.length,
@@ -395,11 +422,31 @@ app.post('/api/x/analyze', async (req, res) => {
 // --------------------------------------------------------------------------
 // Monitoreo automático: config, tabla de posteos detectados, disparo manual.
 // --------------------------------------------------------------------------
-// Todos los endpoints de monitoreo aceptan `platform` (query en GET/DELETE,
-// body en POST). Sin él, default 'instagram': el frontend actual no manda el
-// parámetro y tiene que seguir funcionando igual.
-function platformParam(value) {
-  return String(value || '').trim() || 'instagram';
+// Todos los endpoints de monitoreo aceptan `plataforma` (query en GET/DELETE,
+// body en POST). Sin él, default 'instagram': el frontend viejo no manda el
+// parámetro y tiene que seguir funcionando igual. Un id desconocido NO cae en
+// silencio a instagram: el middleware de abajo responde 400 antes del handler.
+// Transición (hasta que X sea un adapter de src/platforms/): la lista es fija
+// y X se despacha al módulo paralelo src/x/monitor.js vía monitoringSource.
+const PLATAFORMAS_MONITOREO = ['instagram', 'x'];
+
+function monitoringPlataforma(req) {
+  const raw = String(req.query?.plataforma || req.body?.plataforma || '').trim();
+  return raw || 'instagram';
+}
+
+app.use('/api/monitoring', (req, res, next) => {
+  const plataforma = monitoringPlataforma(req);
+  if (!PLATAFORMAS_MONITOREO.includes(plataforma)) {
+    return res.status(400).json({
+      error: `Plataforma desconocida: "${plataforma}". Soportadas: ${PLATAFORMAS_MONITOREO.join(', ')}.`,
+    });
+  }
+  next();
+});
+
+function monitoringSource(req) {
+  return monitoringPlataforma(req) === 'x' ? xMonitor : monitor;
 }
 
 app.get('/api/monitoring/posts', (req, res) => {
@@ -407,7 +454,19 @@ app.get('/api/monitoring/posts', (req, res) => {
   // El límite subió de 100 a 5000: la tabla ahora pagina/filtra/ordena del
   // lado del cliente (Tabulator), así que el frontend pide todo de una vez.
   const pageSize = Math.min(5000, Math.max(1, Number(req.query.pageSize) || 20));
-  const { posts, total } = db.listDetectedPosts({ page, pageSize, platform: platformParam(req.query.platform) });
+  const plataforma = monitoringPlataforma(req);
+  const { posts, total } = db.listDetectedPosts({ page, pageSize, plataforma });
+
+  // Transición: X no tiene benchmark todavía. Cuando X sea un adapter esto
+  // pasa a decidirse por capability del adapter, no por nombre.
+  if (plataforma === 'x') {
+    return res.json({
+      posts: posts.map((post) => ({ ...post, benchmark: null })),
+      total,
+      page,
+      pageSize,
+    });
+  }
 
   // Benchmark (mediana propia de la cuenta) para el panel desplegable de
   // cada fila. Un solo listAllAccountStats() para todo el request, no una
@@ -428,7 +487,7 @@ app.get('/api/monitoring/posts', (req, res) => {
 });
 
 app.get('/api/monitoring/config', (req, res) => {
-  res.json(monitor.loadConfig(platformParam(req.query.platform)));
+  res.json(monitoringSource(req).loadConfig());
 });
 
 // Para la barra de acción de "Monitoreo en vivo" ("Escuchando · próxima
@@ -438,14 +497,14 @@ app.get('/api/monitoring/status', (req, res) => {
 });
 
 // Menciones detectadas en los últimos 7 días, para el resumen del dashboard,
-// con una clave por plataforma registrada (hoy solo instagram: el resto de
-// las tarjetas simplemente no encuentra su clave en la respuesta).
+// con una clave por plataforma con monitoreo (instagram y x: el resto de las
+// tarjetas simplemente no encuentra su clave en la respuesta). Transición:
+// cuando X sea un adapter, esto vuelve a recorrer listPlatformIds().
 app.get('/api/monitoring/counts', (req, res) => {
-  const counts = {};
-  for (const id of listPlatformIds()) {
-    counts[id] = db.countRecentPosts(7, id);
-  }
-  res.json(counts);
+  res.json({
+    instagram: db.countRecentPosts(7, 'instagram'),
+    x: db.countRecentPosts(7, 'x'),
+  });
 });
 
 // Datos reales para el pie de página (footer.js en las 3 páginas): nada
@@ -480,33 +539,33 @@ app.patch('/api/monitoring/posts/:id', (req, res) => {
 
 app.post('/api/monitoring/accounts', async (req, res) => {
   try {
-    res.json(await monitor.addAccount(req.body && req.body.account, platformParam(req.body && req.body.platform)));
+    res.json(await monitoringSource(req).addAccount(req.body && req.body.account));
   } catch (err) {
     res.status(400).json({ error: err.userMessage || err.message });
   }
 });
 
 app.delete('/api/monitoring/accounts/:account', (req, res) => {
-  res.json(monitor.removeAccount(req.params.account, platformParam(req.query.platform)));
+  res.json(monitoringSource(req).removeAccount(req.params.account));
 });
 
 app.post('/api/monitoring/keywords', async (req, res) => {
   try {
-    res.json(await monitor.addKeyword(req.body && req.body.keyword, platformParam(req.body && req.body.platform)));
+    res.json(await monitoringSource(req).addKeyword(req.body && req.body.keyword));
   } catch (err) {
     res.status(400).json({ error: err.userMessage || err.message });
   }
 });
 
 app.delete('/api/monitoring/keywords/:keyword', (req, res) => {
-  res.json(monitor.removeKeyword(req.params.keyword, platformParam(req.query.platform)));
+  res.json(monitoringSource(req).removeKeyword(req.params.keyword));
 });
 
 // Dispara un ciclo de monitoreo a mano, sin esperar los 4hs del cron
-// (útil para probar o para una demo).
+// (útil para probar o para una demo). plataforma=x corre solo X; instagram solo IG.
 app.post('/api/monitoring/run-now', async (req, res) => {
   try {
-    const result = await runCycle();
+    const result = await runCycle({ plataforma: monitoringPlataforma(req) });
     res.json(result);
   } catch (err) {
     if (err.code === 'CYCLE_IN_PROGRESS') {
@@ -521,7 +580,7 @@ app.post('/api/monitoring/run-now', async (req, res) => {
 // tienen (posteos de antes de esta funcionalidad, o que fallaron al clasificar).
 app.post('/api/monitoring/backfill-classification', async (req, res) => {
   try {
-    const result = await monitor.backfillClassification(platformParam(req.body && req.body.platform));
+    const result = await monitor.backfillClassification(monitoringPlataforma(req));
     res.json(result);
   } catch (err) {
     console.error('Error en /api/monitoring/backfill-classification:', err);
@@ -530,29 +589,16 @@ app.post('/api/monitoring/backfill-classification', async (req, res) => {
 });
 
 // --------------------------------------------------------------------------
-// Mapa de reclamos: filtros combinables + edición de estado + export CSV.
+// Mapa de reclamos: filtros combinables + edición de estado.
+// plataforma es obligatorio (instagram | x): cada solapa ve solo la suya.
 // --------------------------------------------------------------------------
 
-/** Query params compartidos por el GET y el export CSV. */
-function parseReclamosFilters(query) {
-  const toList = (v) => {
-    if (v == null || v === '') return undefined;
-    return Array.isArray(v) ? v : String(v).split(',').filter(Boolean);
-  };
-  return {
-    categoria: toList(query.categoria),
-    subcategoria: toList(query.subcategoria),
-    estado: toList(query.estado),
-    barrio: query.barrio || undefined,
-    comuna: query.comuna || undefined,
-    desde: query.desde || undefined,
-    hasta: query.hasta || undefined,
-    q: query.q || undefined,
-  };
-}
-
 app.get('/api/reclamos', (req, res) => {
-  const reclamos = db.listReclamosFiltered(parseReclamosFilters(req.query));
+  const filters = parseReclamosFilters(req.query);
+  if (!isValidReclamosPlataforma(filters.plataforma)) {
+    return res.status(400).json({ error: 'Indicá plataforma=instagram o plataforma=x.' });
+  }
+  const reclamos = db.listReclamosFiltered(filters);
   res.json({
     categorias: CATEGORIAS_RECLAMO,
     estados: ESTADOS_RECLAMO,
@@ -560,11 +606,11 @@ app.get('/api/reclamos', (req, res) => {
     subcategoriasPorCategoria: Object.fromEntries(
       CATEGORIAS_RECLAMO.map((c) => [c, subcategoriasDe(c)])
     ),
-    // Conteo por categoría sobre TODA la base, no sobre lo filtrado: el mapa
+    // Conteo por categoría sobre ESA plataforma, no sobre lo filtrado: el mapa
     // asigna sus 12 colores a las categorías más frecuentes, y ese ranking no
     // puede cambiar cada vez que el usuario toca un filtro — los pines
     // cambiarían de color solos.
-    conteoPorCategoria: db.contarReclamosPorCategoria(),
+    conteoPorCategoria: db.contarReclamosPorCategoria(filters.plataforma),
     reclamos,
   });
 });

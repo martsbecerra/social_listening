@@ -22,7 +22,7 @@ function buildUserPrompt({ url, post, sample, total, isPartial, registry }) {
 
   const knownBlock = formatKnownAccountTypesPromptBlock(sample, registry);
 
-  return `Clasificá cada comentario siguiendo las REGLAS DE DESEMPATE del system prompt. Completá posteoSobre, classifications (un ítem por cada comentario numerado), insights y textos 7–8. Respondé únicamente con JSON según el schema.
+  return `Clasificá cada comentario siguiendo las REGLAS DE DESEMPATE del system prompt. Completá posteoSobre, classifications (un ítem por cada comentario numerado), insights, textos 7–8 y temasConversacion. Respondé únicamente con JSON según el schema.
 
 === DATOS DEL POSTEO ===
 Autor (nombre): ${fmt(post.ownerFullName)}

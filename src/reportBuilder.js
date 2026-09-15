@@ -13,6 +13,7 @@ const {
   formatViewsShort,
 } = require('./sentimentAggregate');
 const { PARTIAL_SAMPLE_DISCLOSURE } = require('./commentSample');
+const { assembleReport } = require('./temasConversacion');
 
 // Encabezado fijo exigido por la metodología (descarga en el front).
 const CSV_HEADER =
@@ -92,12 +93,12 @@ function buildWhatsAppReport({
   const criticas = formatReferenceLines(qualitative.insightCriticas);
   const reclamos = formatReferenceLines(qualitative.insightReclamos);
   const medios = formatReferenceLines(qualitative.insightMedios);
+  const temas = Array.isArray(qualitative.temasConversacion) ? qualitative.temasConversacion : [];
 
   const ownerName = post.ownerFullName ?? 'N/D';
   const ownerUser = post.ownerUsername ?? 'N/D';
 
-  // Formato fijo de emojis y numeración (copiar/pegar WhatsApp).
-  const report = `🔍 ANÁLISIS DE POSTEO EN INSTAGRAM: ${ownerName} / @${ownerUser}
+  const beforeTemas = `🔍 ANÁLISIS DE POSTEO EN INSTAGRAM: ${ownerName} / @${ownerUser}
 
 👉🏼 Posteo sobre: ${posteoSobre}
 
@@ -110,9 +111,9 @@ Link a publicación 👉🏼 ${url}
 
 1️⃣ Sentiment positivo: ${metrics.positivoPct}% | Sentiment negativo: ${metrics.negativoPct}%
 
-2️⃣ Según los KPI's establecidos, el posteo alcanza un nivel ${performanceLevel} en cuanto a visualizaciones/interacciones.
+2️⃣ Según los KPI's establecidos, el posteo alcanza un nivel ${performanceLevel} en cuanto a visualizaciones/interacciones.`;
 
-3️⃣ Apoyo de funcionarios, cuentas aliadas o usuarios afines enfocados en validar la gestión o el mensaje principal.
+  const afterTemas = `3️⃣ Apoyo de funcionarios, cuentas aliadas o usuarios afines enfocados en validar la gestión o el mensaje principal.
 ${apoyo[0]}
 ${apoyo[1]}
 
@@ -132,9 +133,17 @@ ${medios[1]}
 
 8️⃣ Lectura estratégica: ${qualitative.lecturaEstrategica || 'N/D'}`;
 
+  const report = assembleReport(beforeTemas, temas, afterTemas);
+
   const csv = buildReclamosCsv(sample, classifications);
 
-  return { report, csv, meta: { sampleSize, totalComments, ...metrics, performanceLevel } };
+  return {
+    report,
+    csv,
+    meta: { sampleSize, totalComments, ...metrics, performanceLevel },
+    temas,
+    reportParts: { beforeTemas, afterTemas },
+  };
 }
 
 module.exports = { buildWhatsAppReport, buildReclamosCsv };

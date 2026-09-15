@@ -10,6 +10,7 @@ const { SENTIMENTS, ACCOUNT_TYPES, TIPOS_UBICACION } = require('./analysisSchema
 const { applyClassificationHeuristics } = require('./classificationHeuristics');
 const { normalizeTematica } = require('./tematica');
 const { normalizeCategoria } = require('./categoriaReclamo');
+const { normalizeTemas } = require('./temasConversacion');
 
 const SENTIMENT_SET = new Set(SENTIMENTS);
 const ACCOUNT_SET = new Set(ACCOUNT_TYPES);
@@ -112,6 +113,7 @@ function validateAndNormalizeAnalysis(parsed, sampleLength, sample = []) {
       typeof p.posturaAudiencia === 'string' ? p.posturaAudiencia.trim() : 'N/D',
     lecturaEstrategica:
       typeof p.lecturaEstrategica === 'string' ? p.lecturaEstrategica.trim() : 'N/D',
+    temasConversacion: normalizeTemas(p.temasConversacion),
   };
 
   let classifications = normalizeClassifications(p.classifications, sampleLength);

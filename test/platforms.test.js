@@ -66,22 +66,22 @@ describe('platforms', { concurrency: false }, () => {
     assert.throws(() => getPlatform('tiktok'), /Plataforma desconocida/);
   });
 
-  test('detected_posts: platform se guarda y el filtro opcional funciona', () => {
+  test('detected_posts: plataforma se guarda y el filtro opcional funciona', () => {
     const base = {
       caption: 'hola', matchedReason: 'test', likes: 1, comments: 1,
       postedAt: new Date().toISOString(), title: 't', sentiment: 'neutral',
       postType: null, followers: null,
     };
-    assert.equal(db.saveDetectedPost({ ...base, id: 'ig1', account: 'a', url: 'https://ex.com/1', platform: 'instagram' }), true);
-    assert.equal(db.saveDetectedPost({ ...base, id: 'tk1', account: 'b', url: 'https://ex.com/2', platform: 'tiktok' }), true);
-    // Sin platform en el post: default instagram (filas de antes del refactor).
+    assert.equal(db.saveDetectedPost({ ...base, id: 'ig1', account: 'a', url: 'https://ex.com/1', plataforma: 'instagram' }), true);
+    assert.equal(db.saveDetectedPost({ ...base, id: 'tk1', account: 'b', url: 'https://ex.com/2', plataforma: 'tiktok' }), true);
+    // Sin plataforma en el post: default instagram (filas de antes del refactor).
     assert.equal(db.saveDetectedPost({ ...base, id: 'ig2', account: 'c', url: 'https://ex.com/3' }), true);
 
     assert.equal(db.listDetectedPosts({ page: 1, pageSize: 20 }).total, 3);
-    const ig = db.listDetectedPosts({ page: 1, pageSize: 20, platform: 'instagram' });
+    const ig = db.listDetectedPosts({ page: 1, pageSize: 20, plataforma: 'instagram' });
     assert.equal(ig.total, 2);
-    assert.ok(ig.posts.every((p) => p.platform === 'instagram'));
-    assert.equal(db.listDetectedPosts({ page: 1, pageSize: 20, platform: 'tiktok' }).total, 1);
+    assert.ok(ig.posts.every((p) => p.plataforma === 'instagram'));
+    assert.equal(db.listDetectedPosts({ page: 1, pageSize: 20, plataforma: 'tiktok' }).total, 1);
     assert.equal(db.countRecentPosts(7), 3);
     assert.equal(db.countRecentPosts(7, 'tiktok'), 1);
   });

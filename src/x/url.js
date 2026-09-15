@@ -104,4 +104,5 @@ module.exports = {
   statusUrl,
   profileUrl,
   canonicalizeStatusUrl,
+  cleanHandle,
 };

@@ -38,6 +38,7 @@ function buildReclamosFromAnalysis({ url, sample, classifications }) {
         detectedAt: now,
         textoOriginal: comment.text || '',
         categoria: r.categoria,
+        subcategoria: '',
         direccionDetectada: r.direccionDetectada,
         direccionNormalizada: null,
         calle: null,
@@ -47,7 +48,7 @@ function buildReclamosFromAnalysis({ url, sample, classifications }) {
         y: null,
         comuna: null,
         barrio: null,
-        precision: null,
+        precision: r.tipoUbicacion === 'lugar_nombrado' ? 'aproximada' : 'exacta',
         geoStatus: 'pendiente',
         estado: 'Pendiente',
       });
