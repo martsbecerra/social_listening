@@ -34,7 +34,7 @@ const RATIO_HIGH = 1.5;
 // vencerían todas juntas y ese ciclo saldría carísimo — esto lo escalona.
 const MAX_ACCOUNTS_PER_CYCLE = Number(process.env.MAX_ACCOUNTS_PER_CYCLE) || 10;
 
-const PLATFORM = 'instagram'; // única plataforma con scraping implementado hoy.
+const PLATAFORMA = 'instagram'; // única plataforma con scraping implementado hoy.
 
 function median(numbers) {
   const sorted = numbers.filter(Number.isFinite).sort((a, b) => a - b);
@@ -44,8 +44,8 @@ function median(numbers) {
   return n % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
 }
 
-function statsMapKey(account, platform, postType) {
-  return `${account.toLowerCase()}|${platform}|${postType || ''}`;
+function statsMapKey(account, plataforma, postType) {
+  return `${account.toLowerCase()}|${plataforma}|${postType || ''}`;
 }
 
 /**
@@ -92,11 +92,11 @@ function buildAccountUniverse() {
  *      actualizan acá "gratis", sin una corrida aparte.
  *
  * @param {string} account
- * @param {string} [platform]
- * @returns {Promise<{ account: string, platform: string, fetched: number, recent: number, groupsSaved: number, followersChecked: number, followersFound: boolean, postsUpdated: number }>}
+ * @param {string} [plataforma]
+ * @returns {Promise<{ account: string, plataforma: string, fetched: number, recent: number, groupsSaved: number, followersChecked: number, followersFound: boolean, postsUpdated: number }>}
  */
-async function computeAccountStats(account, platform = PLATFORM) {
-  const adapter = getPlatform(platform);
+async function computeAccountStats(account, plataforma = PLATAFORMA) {
+  const adapter = getPlatform(plataforma);
   const posts = await adapter.scrapeAccount(account, {
     resultsLimit: BENCHMARK_POST_LIMIT,
     lookback: undefined, // sin onlyPostsNewerThan: el filtro de 3 meses se hace acá abajo, no en el actor.
@@ -126,7 +126,7 @@ async function computeAccountStats(account, platform = PLATFORM) {
   try {
     const followers = await adapter.fetchAccountFollowers(account);
     if (followers != null) {
-      db.upsertAccountFollowers({ account, platform, followers, updatedAt: new Date().toISOString() });
+      db.upsertAccountFollowers({ account, plataforma, followers, updatedAt: new Date().toISOString() });
       db.updateFollowersForAccount(account, followers);
       followersFound = true;
     }
@@ -157,7 +157,7 @@ async function computeAccountStats(account, platform = PLATFORM) {
     if (group.length < BENCHMARK_MIN_POSTS) return;
     db.upsertAccountStats({
       account,
-      platform,
+      plataforma,
       postType,
       nPosts: group.length,
       // Sin Number(...) acá a propósito: p.likes/p.comments pueden ser null
@@ -182,7 +182,7 @@ async function computeAccountStats(account, platform = PLATFORM) {
 
   return {
     account,
-    platform,
+    plataforma,
     fetched: posts.length,
     recent: recent.length,
     groupsSaved,
@@ -251,7 +251,7 @@ async function refreshStaleAccountStats() {
   const staleThresholdMs = BENCHMARK_RECALC_DAYS * 24 * 60 * 60 * 1000;
 
   const freshnessByAccount = new Map(
-    db.getAllAccountStatsFreshness(PLATFORM).map((row) => [row.account.toLowerCase(), row.lastComputedAt])
+    db.getAllAccountStatsFreshness(PLATAFORMA).map((row) => [row.account.toLowerCase(), row.lastComputedAt])
   );
 
   const { toProcess, staleButCapped, freshCount } = selectStaleAccountsForCycle(
@@ -268,7 +268,7 @@ async function refreshStaleAccountStats() {
 
   for (const { account } of toProcess) {
     try {
-      const result = await computeAccountStats(account, PLATFORM);
+      const result = await computeAccountStats(account, PLATAFORMA);
       recalculated += 1;
       apifyResultsConsumed += result.fetched;
       followersChecked += result.followersChecked;
@@ -301,7 +301,7 @@ async function refreshStaleAccountStats() {
 function buildAccountStatsMap() {
   const map = new Map();
   for (const row of db.listAllAccountStats()) {
-    map.set(statsMapKey(row.account, row.platform, row.postType), row);
+    map.set(statsMapKey(row.account, row.plataforma, row.postType), row);
   }
   return map;
 }
@@ -330,14 +330,14 @@ function classifyValue(value, medianValue, nPosts, basis) {
  * Cada métrica devuelve basis: 'tipo' | 'global' (ausente si sin-referencia),
  * para poder mostrar cuál referencia se usó.
  *
- * @param {{ account: string, platform?: string, postType?: string|null,
+ * @param {{ account: string, plataforma?: string, postType?: string|null,
  *   likes: number|null, comments: number|null, statsMap?: Map }} params
  *   statsMap opcional (ver buildAccountStatsMap): evita una query por post
  *   cuando se clasifican muchos posteos seguidos (server.js).
  */
-function classifyPostAgainstBenchmark({ account, platform = PLATFORM, postType = null, likes, comments, statsMap }) {
+function classifyPostAgainstBenchmark({ account, plataforma = PLATAFORMA, postType = null, likes, comments, statsMap }) {
   const lookup = (pt) =>
-    statsMap ? statsMap.get(statsMapKey(account || '', platform, pt)) : account ? db.getAccountStats(account, platform, pt) : null;
+    statsMap ? statsMap.get(statsMapKey(account || '', plataforma, pt)) : account ? db.getAccountStats(account, plataforma, pt) : null;
 
   let stats = null;
   let basis = null;

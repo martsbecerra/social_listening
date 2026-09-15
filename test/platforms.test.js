@@ -1,7 +1,7 @@
 'use strict';
 
 // Contrato de la capa de plataformas: migración del config al formato por
-// secciones (sin perder keywords) y filtro por platform en db. Corre contra
+// secciones (sin perder keywords) y filtro por plataforma en db. Corre contra
 // tempfiles: nunca toca config/monitoring.json ni data/monitoring.db.
 
 const fs = require('fs');

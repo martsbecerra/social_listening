@@ -476,6 +476,7 @@ app.get('/api/monitoring/posts', (req, res) => {
     ...post,
     benchmark: accountStats.classifyPostAgainstBenchmark({
       account: post.account,
+      plataforma,
       postType: post.post_type,
       likes: post.likes,
       comments: post.comments,
