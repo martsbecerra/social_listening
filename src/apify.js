@@ -22,7 +22,23 @@
 // Contra: si un posteo tuviera MUCHÍSIMOS comentarios y el scraping tardara
 // más que ese límite, la conexión se cortaría. En ese caso convendría el
 // flujo asincrónico. Para este caso de uso, el sincrónico es lo correcto.
+//
+// RUNS SIMULTÁNEOS (cola global)
+// --------------------------------------------------------------------------
+// El plan Free de Apify permite 5 Actor runs a la vez. La detección del
+// monitoreo lanza todas las fuentes de Instagram juntas y con 12 cuentas +
+// hashtags varias fallaban con 402 "concurrent-runs-limit-exceeded". Por eso
+// TODAS las llamadas a Apify de la app (detección, benchmark, refresco de
+// métricas, análisis a demanda, validación de cuentas y hashtags) pasan por
+// runActorSync y este único limitador: como mucho APIFY_MAX_CONCURRENT
+// corridas en vuelo, el resto espera su turno en orden de llegada. El lugar
+// se retiene mientras dura el run (el endpoint sincrónico mantiene la
+// conexión abierta hasta que el actor termina). Si igual llega un 402 por
+// runs simultáneos, esa llamada espera y reintenta UNA vez sin soltar su
+// lugar; recién ahí falla.
 // ==========================================================================
+
+const { createLimiter } = require('./concurrencyLimiter');
 
 // Nombre del actor en la API (el "/" se escribe como "~")
 const APIFY_ACTOR = 'apify~instagram-scraper';
@@ -31,8 +47,39 @@ const APIFY_BASE = 'https://api.apify.com/v2';
 // Cuánto esperamos como máximo antes de cortar por nuestra cuenta (5 min).
 const REQUEST_TIMEOUT_MS = 300000;
 
+// Runs simultáneos permitidos a esta app. 3 deja margen para que dos cosas
+// corran a la vez (ej. el cron y un análisis a demanda) sin llegar a los 5
+// del plan Free. Al pasar a un plan con más runs, subirlo en el .env.
+const APIFY_MAX_CONCURRENT = Math.max(1, Math.floor(Number(process.env.APIFY_MAX_CONCURRENT) || 3));
+// Cuánto esperar antes del único reintento de un 402 por runs simultáneos
+// (otro proceso usando el mismo token, o el tope de arriba demasiado alto).
+const APIFY_RETRY_DELAY_MS = parseDelayMs(process.env.APIFY_RETRY_DELAY_MS, 5000);
+// Tipo de error que devuelve Apify en ese caso (402, cuerpo
+// {"error":{"type":"concurrent-runs-limit-exceeded",...}}). Se busca en el
+// texto, igual que la cuota mensual, para no depender del status exacto.
+const CONCURRENT_RUNS_ERROR = 'concurrent-runs-limit-exceeded';
+
+const apifyLimiter = createLimiter(APIFY_MAX_CONCURRENT);
+
+function parseDelayMs(raw, fallback) {
+  if (raw === undefined || raw === '') return fallback;
+  const value = Number(raw);
+  return Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function isConcurrentRunsError(err) {
+  return Boolean(err && err.concurrentRunsLimit);
+}
+
 /**
  * Corre el actor de Apify de forma sincrónica y devuelve los items del dataset.
+ * Pasa por la cola global de runs simultáneos (ver encabezado): si ya hay
+ * APIFY_MAX_CONCURRENT corridas en vuelo, espera su turno. Un 402 por runs
+ * simultáneos se reintenta una vez después de APIFY_RETRY_DELAY_MS, sin
+ * soltar el lugar en la cola; si vuelve a fallar, tira con code RATE_LIMITED.
+ *
  * @param {object} input - La configuración (input) que espera el actor.
  * @param {{ actorId?: string }} [options] - Actor a correr. Por defecto el de
  *   Instagram (scrapeInstagram, abajo, no lo pasa); los adapters de
@@ -40,6 +87,24 @@ const REQUEST_TIMEOUT_MS = 300000;
  * @returns {Promise<Array>} Lista de items scrapeados.
  */
 async function runActorSync(input, { actorId = APIFY_ACTOR } = {}) {
+  return apifyLimiter.run(async () => {
+    try {
+      return await runActorSyncOnce(input, actorId);
+    } catch (err) {
+      if (!isConcurrentRunsError(err)) throw err;
+      console.warn(
+        `[apify] Apify rechazó la corrida por runs simultáneos (${CONCURRENT_RUNS_ERROR}); ` +
+          `se reintenta una vez en ${APIFY_RETRY_DELAY_MS} ms ` +
+          `(${apifyLimiter.inFlight()} en vuelo acá, tope APIFY_MAX_CONCURRENT=${APIFY_MAX_CONCURRENT}).`
+      );
+      await sleep(APIFY_RETRY_DELAY_MS);
+      return runActorSyncOnce(input, actorId);
+    }
+  });
+}
+
+/** Una sola llamada HTTP al endpoint sincrónico, sin cola ni reintento. */
+async function runActorSyncOnce(input, actorId) {
   const token = process.env.APIFY_API_TOKEN;
   const url = `${APIFY_BASE}/acts/${actorId}/run-sync-get-dataset-items?token=${encodeURIComponent(token)}`;
 
@@ -82,6 +147,15 @@ async function runActorSync(input, { actorId = APIFY_ACTOR } = {}) {
     if (isQuotaExceededError(e)) {
       e.code = 'QUOTA_EXCEEDED';
       e.userMessage = 'Se agotó la cuota mensual de Apify (APIFY_API_TOKEN). Esperá al próximo período o ampliá el plan.';
+    } else if (text.includes(CONCURRENT_RUNS_ERROR)) {
+      // Demasiados runs a la vez para el plan: runActorSync lo reintenta una
+      // vez (ver arriba). Si el usuario llega a ver este error es porque el
+      // reintento también falló.
+      e.code = 'RATE_LIMITED';
+      e.concurrentRunsLimit = true;
+      e.userMessage =
+        'Apify no acepta más runs simultáneos (límite del plan). Se reintentó una vez sin suerte: ' +
+        'esperá unos segundos y volvé a probar, o bajá APIFY_MAX_CONCURRENT en el .env.';
     } else {
       if (resp.status === 401 || resp.status === 403) e.code = 'AUTH_INVALID';
       else if (resp.status === 429) e.code = 'RATE_LIMITED';
@@ -99,6 +173,9 @@ async function runActorSync(input, { actorId = APIFY_ACTOR } = {}) {
 function mapApifyError(status) {
   if (status === 401 || status === 403) {
     return 'La clave de Apify (APIFY_API_TOKEN) es inválida o no tiene permisos. Revisá el archivo .env.';
+  }
+  if (status === 402) {
+    return 'Apify rechazó la corrida por límites del plan (402). Revisá el uso y los límites en la consola de Apify.';
   }
   if (status === 404) {
     return 'No se encontró el actor de Apify o la URL. Verificá el link de la publicación.';
@@ -235,4 +312,12 @@ function normalizeComments(commentItems) {
     }));
 }
 
-module.exports = { scrapeInstagram, runActorSync, mapApifyError, isQuotaExceededError };
+module.exports = {
+  scrapeInstagram,
+  runActorSync,
+  mapApifyError,
+  isQuotaExceededError,
+  // Para tests y diagnóstico: el limitador único del proceso y su tope.
+  apifyLimiter,
+  APIFY_MAX_CONCURRENT,
+};

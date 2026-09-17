@@ -457,7 +457,34 @@ mantiene la conexión abierta.
 Una en modo `comments` (los comentarios) y otra en modo `posts` (caption, likes,
 comentarios totales, reproducciones, autor). Corren **en paralelo**, así que casi
 no suma tiempo. Además, en la corrida de comentarios activamos `addParentData`
-como respaldo por si la de `posts` no trajera datos.
+como respaldo por si la de `posts` no trajera datos. Las dos pasan por la cola
+de runs simultáneos (abajo) y siguen corriendo a la vez mientras haya lugar.
+
+### Runs simultáneos de Apify (cola global)
+
+El plan Free de Apify permite **5 Actor runs a la vez**. La detección del
+monitoreo lanza todas las fuentes de Instagram juntas (12 cuentas más
+hashtags), así que sin control varias fallaban con `402
+concurrent-runs-limit-exceeded` y esas fuentes se perdían ese ciclo. Todas las
+llamadas a Apify de la app (detección, benchmark, refresco de métricas,
+análisis a demanda, validación de cuentas y hashtags) pasan por una cola
+única en `src/apify.js` (`runActorSync`, con `src/concurrencyLimiter.js`):
+como mucho `APIFY_MAX_CONCURRENT` corridas en vuelo (default 3, que deja
+margen para que dos cosas corran a la vez sin llegar a 5), el resto espera su
+turno en orden de llegada. El lugar se retiene mientras dura el run, porque
+el endpoint sincrónico mantiene la conexión abierta hasta que el actor
+termina.
+
+Si igual llega un 402 por runs simultáneos (otro proceso con el mismo token,
+o el tope del `.env` demasiado alto), esa llamada espera
+`APIFY_RETRY_DELAY_MS` (default 5 s) y reintenta **una sola vez** sin soltar
+su lugar; si vuelve a fallar, sale como error `RATE_LIMITED`: en "Actualizar
+ahora" se muestra, después de guardar lo que sí llegó, y en el cron se anota
+y se sigue.
+
+Efecto en el tiempo: con 13 fuentes y tope 3, un ciclo de Instagram pasa de
+un minuto a unos 3-5 (cada corrida de 15 posteos tarda 30-60 s). El botón
+"Actualizar ahora" espera esa respuesta, como siempre.
 
 ### ¿Qué modelo usa cada tarea?
 
@@ -777,7 +804,9 @@ La app muestra mensajes claros cuando:
 
 - El link no es una publicación válida de Instagram.
 - Falta o es inválida alguna clave (Apify o el proveedor LLM activo).
-- Apify falla, se demora demasiado o alcanzó su límite de uso.
+- Apify falla, se demora demasiado o alcanzó su límite de uso (incluido el
+  402 por runs simultáneos, que primero se reintenta una vez; ver "Runs
+  simultáneos de Apify" más arriba).
 - La publicación no tiene comentarios extraíbles.
 - El LLM falla o alcanzó su límite de uso.
 
