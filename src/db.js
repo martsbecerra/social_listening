@@ -85,9 +85,34 @@ if (!existingColumns.includes('ignored')) {
 if (!existingColumns.includes('ignored_at')) {
   db.exec('ALTER TABLE detected_posts ADD COLUMN ignored_at TEXT');
 }
-if (!existingColumns.includes('plataforma')) {
+// Plataforma de origen del posteo (instagram | x | ...), para la capa de
+// adapters de src/platforms/. Todas las filas guardadas antes de esta columna
+// eran de Instagram (única plataforma con scraping implementado): el DEFAULT
+// las deja correctas sin necesitar un UPDATE aparte.
+// Historia: la rama refactor_plataformas creó esta columna como `platform` y
+// main como `plataforma`. Una base puede venir de cualquiera de las dos, o de
+// ambas (las dos columnas a la vez). Se unifica en `plataforma` conservando
+// los datos. La migración es de ida (el código anterior no arranca contra
+// la base migrada): backup de data/monitoring.db (+ -wal y -shm) antes.
+const hasPlatformEn = existingColumns.includes('platform');
+const hasPlataforma = existingColumns.includes('plataforma');
+if (hasPlatformEn && !hasPlataforma) {
+  // Base que corrió solo refactor_plataformas: mismo dato, otro nombre.
+  db.exec('ALTER TABLE detected_posts RENAME COLUMN platform TO plataforma');
+} else if (hasPlatformEn && hasPlataforma) {
+  // Base que corrió las dos ramas. Cada fila la escribió una sola de ellas,
+  // así que la columna "real" es la que no quedó en su DEFAULT: `plataforma`
+  // gana salvo que esté en 'instagram' y `platform` diga otra cosa. Después
+  // se tira la columna en inglés (no está en ningún índice ni en la PK).
+  db.exec('BEGIN');
+  db.exec("UPDATE detected_posts SET plataforma = platform WHERE plataforma = 'instagram' AND platform <> 'instagram'");
+  db.exec('ALTER TABLE detected_posts DROP COLUMN platform');
+  db.exec('COMMIT');
+} else if (!hasPlataforma) {
+  // Base anterior a ambas ramas (o recién creada).
   db.exec("ALTER TABLE detected_posts ADD COLUMN plataforma TEXT NOT NULL DEFAULT 'instagram'");
 }
+// Métricas propias de X (Instagram las deja NULL y no las muestra).
 if (!existingColumns.includes('retweets')) {
   db.exec('ALTER TABLE detected_posts ADD COLUMN retweets INTEGER');
 }
@@ -104,8 +129,9 @@ if (!existingColumns.includes('views')) {
 db.exec('UPDATE detected_posts SET likes = NULL WHERE likes < 0');
 db.exec('UPDATE detected_posts SET comments = NULL WHERE comments < 0');
 // Misma pieza de Instagram = misma URL. Si Apify cambia cuál campo usa
-// normalizeMonitorPost para armar el id (raw.id vs shortCode), sin este
-// índice se insertaría una segunda fila y se re-notificaría.
+// normalizePost (src/platforms/instagram.js) para armar el id (raw.id vs
+// shortCode), sin este índice se insertaría una segunda fila y se
+// re-notificaría.
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS detected_posts_url_unique ON detected_posts(url)');
 
 const isKnownPostStmt = db.prepare('SELECT 1 FROM detected_posts WHERE id = ?');
@@ -119,6 +145,8 @@ const insertPostStmt = db.prepare(`
   VALUES
     (@id, @account, @url, @caption, @matchedReason, @likes, @comments, @postedAt, @detectedAt, 0, @title, @sentiment, @postType, @followers, @plataforma, @retweets, @views)
 `);
+// Cada listado/conteo tiene su variante filtrada por plataforma: el filtro es
+// opcional (sin plataforma = todas), así los llamadores existentes no cambian.
 const countPostsStmt = db.prepare('SELECT COUNT(*) AS total FROM detected_posts WHERE ignored = 0');
 const countPostsByPlataformaStmt = db.prepare(
   'SELECT COUNT(*) AS total FROM detected_posts WHERE ignored = 0 AND plataforma = ?'
@@ -131,8 +159,9 @@ const listPostsPageStmt = db.prepare('SELECT * FROM detected_posts WHERE ignored
 const listPostsPageByPlataformaStmt = db.prepare(
   'SELECT * FROM detected_posts WHERE ignored = 0 AND plataforma = ? ORDER BY detected_at DESC LIMIT ? OFFSET ?'
 );
-const listUnclassifiedStmt = db.prepare(
-  "SELECT id, caption FROM detected_posts WHERE title IS NULL AND ignored = 0 AND plataforma = 'instagram' ORDER BY detected_at ASC"
+const listUnclassifiedStmt = db.prepare('SELECT id, caption FROM detected_posts WHERE title IS NULL AND ignored = 0 ORDER BY detected_at ASC');
+const listUnclassifiedByPlataformaStmt = db.prepare(
+  'SELECT id, caption FROM detected_posts WHERE title IS NULL AND ignored = 0 AND plataforma = ? ORDER BY detected_at ASC'
 );
 const updateClassificationStmt = db.prepare('UPDATE detected_posts SET title = ?, sentiment = ? WHERE id = ?');
 const updateSentimentStmt = db.prepare('UPDATE detected_posts SET sentiment = ? WHERE id = ?');
@@ -400,39 +429,47 @@ for (const col of ['calle', 'altura', 'cruce', 'comuna', 'barrio']) {
 db.exec(`
   CREATE TABLE IF NOT EXISTS account_stats (
     account TEXT NOT NULL,
-    platform TEXT NOT NULL,
+    plataforma TEXT NOT NULL,
     post_type TEXT CHECK(post_type IN ('reel','imagen','carrusel') OR post_type IS NULL),
     n_posts INTEGER NOT NULL,
     median_likes REAL,
     median_comments REAL,
     computed_at TEXT NOT NULL,
-    PRIMARY KEY (account, platform, post_type)
+    PRIMARY KEY (account, plataforma, post_type)
   )
 `);
+// Bases anteriores tienen la columna como `platform` (así nació en la base
+// común de refactor y main). RENAME COLUMN reescribe también la PRIMARY KEY
+// compuesta y conserva las filas. Va antes de los prepare de abajo, que ya
+// nombran `plataforma`.
+const accountStatsColumns = db.prepare('PRAGMA table_info(account_stats)').all().map((c) => c.name);
+if (accountStatsColumns.includes('platform') && !accountStatsColumns.includes('plataforma')) {
+  db.exec('ALTER TABLE account_stats RENAME COLUMN platform TO plataforma');
+}
 
 // INSERT/UPDATE separados en vez de "INSERT ... ON CONFLICT": SQLite trata
 // cada NULL como distinto de cualquier otro NULL a los fines de la
-// restricción UNIQUE/PRIMARY KEY, así que "ON CONFLICT(account, platform,
+// restricción UNIQUE/PRIMARY KEY, así que "ON CONFLICT(account, plataforma,
 // post_type)" nunca dispara cuando post_type es NULL — cada recálculo de una
 // cuenta sin tipo detectado insertaría una fila nueva en vez de actualizar
 // la existente. Con el SELECT previo (que sí usa "IS") no depende de esa
 // semántica de NULL para nada.
 const insertAccountStatsStmt = db.prepare(`
-  INSERT INTO account_stats (account, platform, post_type, n_posts, median_likes, median_comments, computed_at)
-  VALUES (@account, @platform, @postType, @nPosts, @medianLikes, @medianComments, @computedAt)
+  INSERT INTO account_stats (account, plataforma, post_type, n_posts, median_likes, median_comments, computed_at)
+  VALUES (@account, @plataforma, @postType, @nPosts, @medianLikes, @medianComments, @computedAt)
 `);
 const updateAccountStatsStmt = db.prepare(`
   UPDATE account_stats
   SET n_posts = @nPosts, median_likes = @medianLikes, median_comments = @medianComments, computed_at = @computedAt
-  WHERE account = @account AND platform = @platform AND post_type IS @postType
+  WHERE account = @account AND plataforma = @plataforma AND post_type IS @postType
 `);
 // "post_type IS ?" (no "=") porque "= NULL" nunca matchea en SQL, ni para
 // las cuentas sin desglose por tipo (post_type NULL de los dos lados).
 const getAccountStatsStmt = db.prepare(`
-  SELECT * FROM account_stats WHERE account = ? AND platform = ? AND post_type IS ?
+  SELECT * FROM account_stats WHERE account = ? AND plataforma = ? AND post_type IS ?
 `);
 const getAccountStatsFreshnessStmt = db.prepare(`
-  SELECT MAX(computed_at) AS lastComputedAt FROM account_stats WHERE account = ? AND platform = ?
+  SELECT MAX(computed_at) AS lastComputedAt FROM account_stats WHERE account = ? AND plataforma = ?
 `);
 const listAllAccountStatsStmt = db.prepare('SELECT * FROM account_stats');
 
@@ -445,22 +482,27 @@ const listAllAccountStatsStmt = db.prepare('SELECT * FROM account_stats');
 db.exec(`
   CREATE TABLE IF NOT EXISTS account_followers (
     account TEXT NOT NULL,
-    platform TEXT NOT NULL,
+    plataforma TEXT NOT NULL,
     followers INTEGER,
     updated_at TEXT NOT NULL,
-    PRIMARY KEY (account, platform)
+    PRIMARY KEY (account, plataforma)
   )
 `);
+// Mismo renombre que account_stats (ver arriba).
+const accountFollowersColumns = db.prepare('PRAGMA table_info(account_followers)').all().map((c) => c.name);
+if (accountFollowersColumns.includes('platform') && !accountFollowersColumns.includes('plataforma')) {
+  db.exec('ALTER TABLE account_followers RENAME COLUMN platform TO plataforma');
+}
 const insertAccountFollowersStmt = db.prepare(`
-  INSERT INTO account_followers (account, platform, followers, updated_at)
-  VALUES (@account, @platform, @followers, @updatedAt)
+  INSERT INTO account_followers (account, plataforma, followers, updated_at)
+  VALUES (@account, @plataforma, @followers, @updatedAt)
 `);
 const updateAccountFollowersStmt = db.prepare(`
   UPDATE account_followers SET followers = @followers, updated_at = @updatedAt
-  WHERE account = @account AND platform = @platform
+  WHERE account = @account AND plataforma = @plataforma
 `);
 const getAccountFollowersStmt = db.prepare(
-  'SELECT followers FROM account_followers WHERE account = ? AND platform = ?'
+  'SELECT followers FROM account_followers WHERE account = ? AND plataforma = ?'
 );
 
 // Carga inicial / recálculo forzado del benchmark (ver scripts/recalc-
@@ -468,20 +510,20 @@ const getAccountFollowersStmt = db.prepare(
 // trackeadas (config/monitoring.json) con las que ya aparecen en
 // detected_posts (llegaron por hashtag, nunca se trackearon explícitamente).
 const listDistinctPostAccountsStmt = db.prepare(
-  `SELECT DISTINCT account FROM detected_posts WHERE ignored = 0 AND plataforma = 'instagram' AND account IS NOT NULL AND account != 'N/D' ORDER BY account`
+  `SELECT DISTINCT account FROM detected_posts WHERE ignored = 0 AND plataforma = ? AND account IS NOT NULL AND account != 'N/D' ORDER BY account`
 );
 // Freshness de TODAS las cuentas de una, no una query por cuenta — con
 // 100-150 cuentas en el universo ampliado, N queries individuales ya no es
 // gratis (ver accountStats.refreshStaleAccountStats).
 const getAllAccountStatsFreshnessStmt = db.prepare(
-  'SELECT account, MAX(computed_at) AS lastComputedAt FROM account_stats WHERE platform = ? GROUP BY account'
+  'SELECT account, MAX(computed_at) AS lastComputedAt FROM account_stats WHERE plataforma = ? GROUP BY account'
 );
 const getPostMetricsStmt = db.prepare('SELECT likes, comments, post_type, ignored FROM detected_posts WHERE id = ?');
 const updatePostMetricsStmt = db.prepare(
   'UPDATE detected_posts SET likes = @likes, comments = @comments, post_type = @postType, metrics_updated_at = @metricsUpdatedAt WHERE id = @id'
 );
 const updateFollowersForAccountStmt = db.prepare(
-  "UPDATE detected_posts SET followers = ? WHERE account = ? AND plataforma = 'instagram'"
+  'UPDATE detected_posts SET followers = ? WHERE account = ? AND plataforma = ?'
 );
 
 // Marcas de "último pase" de los tramos tibio/frío del refresco de métricas
@@ -510,7 +552,7 @@ const setRefreshStateStmt = db.prepare(`
 const listAccountsDueForRefreshStmt = db.prepare(`
   SELECT account, MAX(posted_at) AS mostRecentPostedAt, COUNT(*) AS postCount
   FROM detected_posts
-  WHERE ignored = 0 AND plataforma = 'instagram' AND account IS NOT NULL AND account != 'N/D' AND posted_at IS NOT NULL
+  WHERE ignored = 0 AND plataforma = @plataforma AND account IS NOT NULL AND account != 'N/D' AND posted_at IS NOT NULL
     AND posted_at > @sinceIso AND posted_at <= @untilIso
     AND (@cadenceIso IS NULL OR metrics_updated_at IS NULL OR metrics_updated_at < @cadenceIso)
   GROUP BY account
@@ -672,16 +714,14 @@ function saveDetectedPost(post) {
  * Página de posteos detectados (los más nuevos primero) + el total de filas,
  * para poder armar la paginación en la interfaz. Los ignorados no salen:
  * siguen en la tabla SQLite para el dedupe, pero no en este listado.
+ * `plataforma` filtra a una sola plataforma; sin ella, vienen todas.
  */
 function listDetectedPosts({ page = 1, pageSize = 20, plataforma } = {}) {
+  const total = plataforma ? countPostsByPlataformaStmt.get(plataforma).total : countPostsStmt.get().total;
   const offset = (page - 1) * pageSize;
-  if (plataforma) {
-    const total = countPostsByPlataformaStmt.get(plataforma).total;
-    const posts = listPostsPageByPlataformaStmt.all(plataforma, pageSize, offset);
-    return { posts, total };
-  }
-  const total = countPostsStmt.get().total;
-  const posts = listPostsPageStmt.all(pageSize, offset);
+  const posts = plataforma
+    ? listPostsPageByPlataformaStmt.all(plataforma, pageSize, offset)
+    : listPostsPageStmt.all(pageSize, offset);
   return { posts, total };
 }
 
@@ -690,8 +730,8 @@ function listDetectedPosts({ page = 1, pageSize = 20, plataforma } = {}) {
  * (posteos viejos de antes de esta funcionalidad, o alguno que falló al
  * clasificar). Sirve para el "backfill" manual.
  */
-function listUnclassified() {
-  return listUnclassifiedStmt.all();
+function listUnclassified({ plataforma } = {}) {
+  return plataforma ? listUnclassifiedByPlataformaStmt.all(plataforma) : listUnclassifiedStmt.all();
 }
 
 function updateClassification(id, { title, sentiment }) {
@@ -963,16 +1003,15 @@ function setGeocodeCache(entry) {
 // menciones del dashboard (data/monitoring.db, detected_at es ISO 8601).
 function countRecentPosts(days, plataforma) {
   const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-  if (plataforma) {
-    return countRecentPostsByPlataformaStmt.get(cutoff, plataforma).total;
-  }
-  return countRecentPostsStmt.get(cutoff).total;
+  return plataforma
+    ? countRecentPostsByPlataformaStmt.get(cutoff, plataforma).total
+    : countRecentPostsStmt.get(cutoff).total;
 }
 
 function mapAccountStatsRow(row) {
   return {
     account: row.account,
-    platform: row.platform,
+    plataforma: row.plataforma,
     postType: row.post_type,
     nPosts: row.n_posts,
     medianLikes: row.median_likes,
@@ -984,14 +1023,14 @@ function mapAccountStatsRow(row) {
 function upsertAccountStats(row) {
   const params = {
     account: row.account,
-    platform: row.platform,
+    plataforma: row.plataforma,
     postType: row.postType ?? null,
     nPosts: row.nPosts,
     medianLikes: row.medianLikes,
     medianComments: row.medianComments,
     computedAt: row.computedAt || new Date().toISOString(),
   };
-  const existing = getAccountStatsStmt.get(params.account, params.platform, params.postType);
+  const existing = getAccountStatsStmt.get(params.account, params.plataforma, params.postType);
   if (existing) {
     updateAccountStatsStmt.run(params);
   } else {
@@ -999,23 +1038,23 @@ function upsertAccountStats(row) {
   }
 }
 
-function getAccountStats(account, platform, postType) {
-  const row = getAccountStatsStmt.get(account, platform, postType ?? null);
+function getAccountStats(account, plataforma, postType) {
+  const row = getAccountStatsStmt.get(account, plataforma, postType ?? null);
   return row ? mapAccountStatsRow(row) : null;
 }
 
 /** @returns {string|null} ISO de la fila más nueva de esta cuenta, o null si no tiene ninguna. */
-function getAccountStatsFreshness(account, platform) {
-  return getAccountStatsFreshnessStmt.get(account, platform).lastComputedAt;
+function getAccountStatsFreshness(account, plataforma) {
+  return getAccountStatsFreshnessStmt.get(account, plataforma).lastComputedAt;
 }
 
 function listAllAccountStats() {
   return listAllAccountStatsStmt.all().map(mapAccountStatsRow);
 }
 
-function upsertAccountFollowers({ account, platform, followers, updatedAt }) {
-  const params = { account, platform, followers: followers ?? null, updatedAt: updatedAt || new Date().toISOString() };
-  const existing = getAccountFollowersStmt.get(account, platform);
+function upsertAccountFollowers({ account, plataforma, followers, updatedAt }) {
+  const params = { account, plataforma, followers: followers ?? null, updatedAt: updatedAt || new Date().toISOString() };
+  const existing = getAccountFollowersStmt.get(account, plataforma);
   if (existing) {
     updateAccountFollowersStmt.run(params);
   } else {
@@ -1024,19 +1063,19 @@ function upsertAccountFollowers({ account, platform, followers, updatedAt }) {
 }
 
 /** @returns {number|null} Última cantidad de seguidores cacheada, o null si nunca se calculó. */
-function getAccountFollowers(account, platform) {
-  const row = getAccountFollowersStmt.get(account, platform);
+function getAccountFollowers(account, plataforma) {
+  const row = getAccountFollowersStmt.get(account, plataforma);
   return row ? row.followers : null;
 }
 
-/** @returns {string[]} Cuentas distintas presentes en detected_posts (sin NULL ni 'N/D'). */
-function listDistinctPostAccounts() {
-  return listDistinctPostAccountsStmt.all().map((row) => row.account);
+/** @returns {string[]} Cuentas distintas de una plataforma presentes en detected_posts (sin NULL ni 'N/D'). */
+function listDistinctPostAccounts(plataforma = 'instagram') {
+  return listDistinctPostAccountsStmt.all(plataforma).map((row) => row.account);
 }
 
 /** @returns {{account: string, lastComputedAt: string|null}[]} Freshness de account_stats para TODAS las cuentas que tengan al menos una fila, de una sola query. */
-function getAllAccountStatsFreshness(platform) {
-  return getAllAccountStatsFreshnessStmt.all(platform);
+function getAllAccountStatsFreshness(plataforma) {
+  return getAllAccountStatsFreshnessStmt.all(plataforma);
 }
 
 /**
@@ -1073,9 +1112,9 @@ function updatePostMetricsIfChanged(id, { likes, comments, postType }) {
   return true;
 }
 
-/** Propaga la cantidad de seguidores a TODOS los posteos ya guardados de una cuenta (no solo a los nuevos). */
-function updateFollowersForAccount(account, followers) {
-  updateFollowersForAccountStmt.run(followers ?? null, account);
+/** Propaga la cantidad de seguidores a TODOS los posteos ya guardados de una cuenta de esa plataforma (no solo a los nuevos). */
+function updateFollowersForAccount(account, followers, plataforma = 'instagram') {
+  updateFollowersForAccountStmt.run(followers ?? null, account, plataforma);
 }
 
 function getRefreshState(key) {
@@ -1092,8 +1131,8 @@ function setRefreshState(key, value) {
  * cumpla la cadencia (cadenceIso null = sin filtro de metrics_updated_at).
  * @returns {{account: string, mostRecentPostedAt: string, postCount: number}[]}
  */
-function listAccountsDueForRefresh({ sinceIso, untilIso, cadenceIso = null }) {
-  return listAccountsDueForRefreshStmt.all({ sinceIso, untilIso, cadenceIso });
+function listAccountsDueForRefresh({ sinceIso, untilIso, cadenceIso = null, plataforma = 'instagram' }) {
+  return listAccountsDueForRefreshStmt.all({ sinceIso, untilIso, cadenceIso, plataforma });
 }
 
 /**

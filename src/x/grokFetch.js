@@ -58,6 +58,7 @@ function getFetchConfig() {
   }
 
   const e = new Error('Falta clave para Grok (OPENROUTER_API_KEY o XAI_API_KEY)');
+  e.code = 'NOT_CONFIGURED';
   e.userMessage =
     'Para analizar X hace falta OPENROUTER_API_KEY (Grok vía OpenRouter) o XAI_API_KEY. Completá el .env e intentá de nuevo.';
   throw e;
@@ -184,17 +185,38 @@ function usageFromXai(data) {
   return { inputTokens: input, outputTokens: output, totalTokens: total, costSource: 'xai' };
 }
 
+// Cuota / créditos agotados. OpenRouter responde 402 ("Insufficient credits");
+// xAI usa 403 o 429 con un mensaje que habla de créditos o de límite de
+// gasto. Distinto de un rate limit (transitorio) y de una clave inválida.
+const QUOTA_MESSAGE_RE = /credit|quota|spending limit|insufficient|balance/i;
+
+/**
+ * Traduce una respuesta fallida de Grok a un Error con `code` (ver
+ * src/platforms/errors.js) y `userMessage`. Los códigos son los que el
+ * monitoreo trata como "error de plataforma": clave inválida, rate limit y
+ * cuota agotada. Cualquier otro fallo (5xx, red, JSON inválido) queda sin
+ * código: es un problema puntual de esa llamada.
+ */
 function mapFetchError(backend, err, status, body) {
   const msg = body?.error?.message || err?.message || 'error desconocido';
   const label = backend === 'openrouter' ? 'OpenRouter/Grok' : 'xAI';
   console.error(`Error llamando a ${label}:`, status || '', msg);
   const e = new Error(`${label} falló: ${msg}`);
-  if (status === 401 || status === 403) {
+  const quotaByMessage = (status === 403 || status === 429) && QUOTA_MESSAGE_RE.test(msg);
+  if (status === 402 || quotaByMessage) {
+    e.code = 'QUOTA_EXCEEDED';
+    e.userMessage =
+      backend === 'openrouter'
+        ? 'OpenRouter no tiene créditos suficientes para Grok (cuota agotada). Cargá créditos e intentá de nuevo.'
+        : 'La cuenta de xAI no tiene créditos suficientes (cuota agotada). Cargá créditos e intentá de nuevo.';
+  } else if (status === 401 || status === 403) {
+    e.code = 'AUTH_INVALID';
     e.userMessage =
       backend === 'openrouter'
         ? 'La clave de OpenRouter (OPENROUTER_API_KEY) es inválida. Revisá el archivo .env.'
         : 'La clave de xAI (XAI_API_KEY) es inválida. Revisá el archivo .env.';
   } else if (status === 429) {
+    e.code = 'RATE_LIMITED';
     e.userMessage = `${label} rechazó el pedido por rate limit. Esperá un momento e intentá de nuevo.`;
   } else {
     e.userMessage = 'No se pudo leer el hilo de X con Grok. Intentá de nuevo en unos minutos.';

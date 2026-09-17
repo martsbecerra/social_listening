@@ -1,14 +1,15 @@
 // ==========================================================================
 // metricsRefresh.js
 // --------------------------------------------------------------------------
-// Refresca likes/comments de posteos YA detectados — nunca re-detecta, nunca
+// Refresca las métricas de posteos YA detectados — nunca re-detecta, nunca
 // re-clasifica sentimiento/relevancia (misma fila, mismo id, mismo título).
 //
-// Agrupado por cuenta, no por posteo: Apify cobra por resultado devuelto, y
-// pedir "los últimos N posteos" de una cuenta trae la misma cantidad de
-// resultados sin importar a cuántos de esos posteos les tocaba refrescar.
-// Una sola llamada por cuenta cubre todos sus posteos pendientes, de
-// cualquier tramo, aunque solo uno haya disparado la inclusión de la cuenta.
+// Agrupado por cuenta, no por posteo: la fuente cobra por resultado
+// devuelto, y pedir "los últimos N posteos" de una cuenta trae la misma
+// cantidad de resultados sin importar a cuántos de esos posteos les tocaba
+// refrescar. Una sola llamada por cuenta cubre todos sus posteos
+// pendientes, de cualquier tramo, aunque solo uno haya disparado la
+// inclusión de la cuenta.
 //
 // Tres tramos por antigüedad (ver posted_at):
 //   - Caliente (< REFRESH_HOT_HOURS): sin cadencia propia, el cron de 4hs
@@ -21,15 +22,21 @@
 //     gateado solo a nivel de tramo (refresh_state, REFRESH_COLD_EVERY_DAYS).
 //     Más viejo que REFRESH_COLD_MAX_DAYS: congelado, ninguna consulta lo toca.
 //
+// Multiplataforma: corre por cada plataforma cuyo adapter declara
+// capabilities.metricsRefresh (hoy Instagram), con sus propias marcas de
+// tramo y su propia cola. Las métricas que se escriben son las que declara
+// el adapter (pickMetrics del orquestador).
+//
 // runMonitoringCycle (monitor.js) ya refresca gratis los posteos conocidos
 // que aparecen en su propio scraping — las cuentas trackeadas que acaba de
 // consultar se excluyen acá vía skipAccounts, para no pagarlas dos veces.
 // ==========================================================================
 
 const db = require('./db');
-const monitor = require('./monitor');
+const { getPlatform, listPlatformIds } = require('./platforms');
+const { isQuotaExceeded } = require('./platforms/errors');
 const { BENCHMARK_POST_LIMIT } = require('./accountStats');
-const { isQuotaExceededError } = require('./apify');
+const { pickMetrics } = require('./monitor');
 const { checkAndLogJump } = require('./viralJumpDetector');
 
 const REFRESH_HOT_HOURS = Number(process.env.REFRESH_HOT_HOURS) || 48;
@@ -54,42 +61,58 @@ function sumPostCount(rows) {
 }
 
 /**
- * Refresca likes/comments de los posteos guardados que les toca según su
- * antigüedad, sin volver a pedirle Apify a las cuentas que el propio ciclo
- * de monitoreo ya consultó en esta misma corrida (skipAccounts). Nunca tira
- * — si Apify devuelve cuota agotada, corta y vuelve normalmente.
- *
- * @param {{ skipAccounts?: string[] }} [options]
+ * Clave de refresh_state por tramo y plataforma. Instagram conserva las
+ * claves históricas (sin sufijo) para no perder las marcas ya guardadas.
  */
-async function refreshPostMetrics({ skipAccounts = [] } = {}) {
+function stateKey(base, plataforma) {
+  return plataforma === 'instagram' ? base : `${base}:${plataforma}`;
+}
+
+/** Plataformas del registro con refresco de métricas, opcionalmente acotadas. */
+function refreshPlatformIds(plataformas) {
+  return listPlatformIds().filter((id) => {
+    if (plataformas && !plataformas.includes(id)) return false;
+    const { capabilities } = getPlatform(id);
+    return Boolean(capabilities && capabilities.metricsRefresh);
+  });
+}
+
+/**
+ * Refresco de UNA plataforma. Nunca tira — si la fuente devuelve cuota
+ * agotada, corta esa plataforma y vuelve normalmente.
+ */
+async function refreshPostMetricsFor(plataforma, skipSet) {
+  const platform = getPlatform(plataforma);
   const now = Date.now();
   const nowIso = new Date(now).toISOString();
-  const skipSet = new Set(skipAccounts.map((a) => a.toLowerCase()));
 
   const hotSinceIso = hoursAgoIso(REFRESH_HOT_HOURS, now);
   const warmMaxAgeIso = daysAgoIso(REFRESH_WARM_DAYS, now);
   const coldMaxAgeIso = daysAgoIso(REFRESH_COLD_MAX_DAYS, now);
 
   // Caliente: siempre, sin gate propio.
-  const hotAccounts = db.listAccountsDueForRefresh({ sinceIso: hotSinceIso, untilIso: nowIso, cadenceIso: null });
+  const hotAccounts = db.listAccountsDueForRefresh({ sinceIso: hotSinceIso, untilIso: nowIso, cadenceIso: null, plataforma });
 
   // Tibio: gate de tramo (marca persistida) antes de siquiera consultar.
-  const warmLastPassAt = db.getRefreshState('warm_last_pass_at');
+  const warmKey = stateKey('warm_last_pass_at', plataforma);
+  const warmLastPassAt = db.getRefreshState(warmKey);
   const warmDue = !warmLastPassAt || now - new Date(warmLastPassAt).getTime() >= REFRESH_WARM_EVERY_HOURS * HOUR_MS;
   const warmAccounts = warmDue
     ? db.listAccountsDueForRefresh({
         sinceIso: warmMaxAgeIso,
         untilIso: hotSinceIso,
         cadenceIso: hoursAgoIso(REFRESH_WARM_EVERY_HOURS, now),
+        plataforma,
       })
     : [];
 
   // Frío: mismo mecanismo, cadencia semanal, sin gate por posteo (todo el
   // tramo ya está gateado a nivel semana).
-  const coldLastPassAt = db.getRefreshState('cold_last_pass_at');
+  const coldKey = stateKey('cold_last_pass_at', plataforma);
+  const coldLastPassAt = db.getRefreshState(coldKey);
   const coldDue = !coldLastPassAt || now - new Date(coldLastPassAt).getTime() >= REFRESH_COLD_EVERY_DAYS * DAY_MS;
   const coldAccounts = coldDue
-    ? db.listAccountsDueForRefresh({ sinceIso: coldMaxAgeIso, untilIso: warmMaxAgeIso, cadenceIso: null })
+    ? db.listAccountsDueForRefresh({ sinceIso: coldMaxAgeIso, untilIso: warmMaxAgeIso, cadenceIso: null, plataforma })
     : [];
 
   const hotCount = sumPostCount(hotAccounts);
@@ -111,7 +134,7 @@ async function refreshPostMetrics({ skipAccounts = [] } = {}) {
     .map(([account]) => account);
 
   let accountsChecked = 0;
-  let apifyResultsConsumed = 0;
+  let resultsConsumed = 0;
   let rowsUpdated = 0;
   let postsMatched = 0;
   let jumpsDetected = 0;
@@ -120,21 +143,21 @@ async function refreshPostMetrics({ skipAccounts = [] } = {}) {
   for (const account of prioritized) {
     let posts;
     try {
-      posts = await monitor.scrapeAccount(account, { resultsLimit: BENCHMARK_POST_LIMIT, lookback: undefined });
+      posts = await platform.scrapeAccount(account, { resultsLimit: BENCHMARK_POST_LIMIT, lookback: undefined });
     } catch (err) {
-      if (isQuotaExceededError(err)) {
-        console.log(`[metricsRefresh] Cuota de Apify agotada, cortando la corrida en @${account}.`);
+      if (isQuotaExceeded(err)) {
+        console.log(`[metricsRefresh] (${plataforma}) cuota de la fuente agotada, cortando la corrida en @${account}.`);
         quotaExceeded = true;
         break;
       }
-      console.error(`[metricsRefresh] No se pudo refrescar @${account}:`, err.message);
+      console.error(`[metricsRefresh] (${plataforma}) No se pudo refrescar @${account}:`, err.message);
       continue;
     }
     accountsChecked += 1;
-    apifyResultsConsumed += posts.length;
+    resultsConsumed += posts.length;
 
     for (const post of posts) {
-      const result = db.applyMetricsRefresh(post.id, { likes: post.likes, comments: post.comments });
+      const result = db.applyMetricsRefresh(post.id, pickMetrics(platform, post));
       if (!result) continue; // no estaba guardado -> no corresponde tocarlo (eso es cosa de runMonitoringCycle)
       postsMatched += 1;
       if (result.changed) rowsUpdated += 1;
@@ -154,13 +177,13 @@ async function refreshPostMetrics({ skipAccounts = [] } = {}) {
   // el tope), sí se avanzan: esas cuentas vuelven a competir por prioridad
   // en el próximo pase, ya no dentro de este.
   if (!quotaExceeded) {
-    if (warmDue) db.setRefreshState('warm_last_pass_at', nowIso);
-    if (coldDue) db.setRefreshState('cold_last_pass_at', nowIso);
+    if (warmDue) db.setRefreshState(warmKey, nowIso);
+    if (coldDue) db.setRefreshState(coldKey, nowIso);
   }
 
   console.log(
-    `[metricsRefresh] ${hotCount} posteos en tramo caliente, ${warmCount} en tibio, ${coldCount} en frío, ` +
-      `${accountsChecked} cuentas consultadas, ${apifyResultsConsumed} resultados de Apify, ` +
+    `[metricsRefresh] (${plataforma}) ${hotCount} posteos en tramo caliente, ${warmCount} en tibio, ${coldCount} en frío, ` +
+      `${accountsChecked} cuentas consultadas, ${resultsConsumed} resultados consumidos, ` +
       `${rowsUpdated} filas actualizadas, ${jumpsDetected} saltos detectados`
   );
 
@@ -170,7 +193,7 @@ async function refreshPostMetrics({ skipAccounts = [] } = {}) {
   // "nada cambió" (eso es normal y no ameritaría este aviso).
   if (accountsChecked > 0 && postsMatched === 0 && !quotaExceeded) {
     console.log(
-      `[metricsRefresh] ATENCIÓN: ${accountsChecked} cuentas consultadas, 0 filas actualizadas. ` +
+      `[metricsRefresh] (${plataforma}) ATENCIÓN: ${accountsChecked} cuentas consultadas, 0 filas actualizadas. ` +
         `Revisar que los ids del scraping coincidan con los guardados.`
     );
   }
@@ -180,15 +203,51 @@ async function refreshPostMetrics({ skipAccounts = [] } = {}) {
     warmCount,
     coldCount,
     accountsChecked,
-    apifyResultsConsumed,
+    resultsConsumed,
     rowsUpdated,
     jumpsDetected,
     quotaExceeded,
   };
 }
 
+/**
+ * Refresca las métricas de los posteos guardados que les toca según su
+ * antigüedad, plataforma por plataforma (solo las que tienen esa
+ * capability), sin volver a consultar las cuentas que el propio ciclo de
+ * monitoreo ya scrapeó en esta misma corrida.
+ *
+ * @param {{ plataformas?: string[], skipAccounts?: Object<string, string[]> | string[] }} [options]
+ *   skipAccounts: por plataforma ({ instagram: [...] }, lo que devuelve
+ *   runMonitoringCycle); un array plano se aplica a todas.
+ */
+async function refreshPostMetrics({ plataformas, skipAccounts = {} } = {}) {
+  const totals = {
+    hotCount: 0,
+    warmCount: 0,
+    coldCount: 0,
+    accountsChecked: 0,
+    resultsConsumed: 0,
+    rowsUpdated: 0,
+    jumpsDetected: 0,
+    quotaExceeded: false,
+    porPlataforma: {},
+  };
+  for (const plataforma of refreshPlatformIds(plataformas)) {
+    const skipList = Array.isArray(skipAccounts) ? skipAccounts : skipAccounts[plataforma] || [];
+    const skipSet = new Set(skipList.map((a) => String(a).toLowerCase()));
+    const result = await refreshPostMetricsFor(plataforma, skipSet);
+    totals.porPlataforma[plataforma] = result;
+    for (const key of ['hotCount', 'warmCount', 'coldCount', 'accountsChecked', 'resultsConsumed', 'rowsUpdated', 'jumpsDetected']) {
+      totals[key] += result[key];
+    }
+    totals.quotaExceeded = totals.quotaExceeded || result.quotaExceeded;
+  }
+  return totals;
+}
+
 module.exports = {
   refreshPostMetrics,
+  refreshPlatformIds,
   REFRESH_HOT_HOURS,
   REFRESH_WARM_DAYS,
   REFRESH_WARM_EVERY_HOURS,

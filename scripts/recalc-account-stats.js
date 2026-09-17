@@ -35,7 +35,7 @@ const { stdin, stdout } = require('node:process');
 
 const accountStats = require('../src/accountStats');
 const db = require('../src/db');
-const { isQuotaExceededError } = require('../src/apify');
+const { isQuotaExceeded } = require('../src/platforms/errors');
 
 const PENDIENTES_PATH = path.join(__dirname, 'pendientes-benchmark.txt');
 
@@ -184,7 +184,7 @@ async function runAccountList(accounts, { si, sourceLabel } = {}) {
       apifyResultsConsumed += result.fetched;
       profileChecks += result.followersChecked;
     } catch (err) {
-      if (isQuotaExceededError(err)) {
+      if (isQuotaExceeded(err)) {
         // Se agotó la cuota mensual de Apify: seguir con las que faltan
         // solo generaría el mismo 403 una por una. Corta acá — la cuenta
         // que acaba de fallar tampoco se procesó, así que también queda

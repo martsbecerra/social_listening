@@ -12,12 +12,14 @@ App web que:
    con **Grok** vía OpenRouter (`OPENROUTER_X_MODEL`, no Apify ni el Claude
    de Instagram) y arma el reporte con la plantilla de X (solapa Análisis
    en `x.html`). El mapa de X usa el mismo Leaflet, filtrado por plataforma.
-   El monitoreo en vivo de X usa Grok (no Apify) y una config propia
-   (`config/monitoring-x.json`), independiente de Instagram.
 3. Monitorea automáticamente, cada 4 horas, si aparece algún posteo nuevo de
    las cuentas trackeadas o que mencione las palabras clave/hashtags
-   configurados: Instagram con Apify y X con Grok (solapa "Monitoreo en vivo"
-   de cada plataforma). Ya no se mandan mails de alerta del monitoreo.
+   configurados, en todas las redes registradas en `src/platforms/`: cada
+   red tiene su **adapter** (Instagram trae con Apify, X trae con Grok) y el
+   resto — relevancia, título y sentimiento con el clasificador compartido,
+   dedupe, guardado — es el mismo para todas. Cuentas y keywords de cada red
+   viven en su sección de `config/monitoring.json`. Ya no se mandan mails de
+   alerta del monitoreo.
 4. Muestra la solapa "Mapa de reclamos" (Leaflet) **por plataforma**: cada
    página pide `GET /api/reclamos?plataforma=instagram|x`. Círculos por
    dirección normalizada, con filtros combinables por categoría y subcategoría
@@ -38,7 +40,8 @@ social_listening_app/
 ├── src/
 │   ├── apify.js              # Extrae comentarios y datos del posteo desde Apify.
 │   ├── analyzeComments.js    # Orquestación del análisis (Apify → LLM → reporte).
-│   ├── x/                    # Plataforma X: Grok fetch, KPIs, reporte, padrón, monitor.
+│   ├── x/                    # Análisis de publicación de X: Grok fetch, KPIs, reporte, padrón.
+│   ├── platforms/            # Adapters del monitoreo por red (instagram.js, x.js) + registro y contrato.
 │   ├── llm/                  # Proveedores: anthropicProvider, openrouterProvider.
 │   ├── prompt.js             # La metodología de análisis (system prompt).
 │   ├── temasConversacion.js  # Temas emergentes del reporte (IG y X).
@@ -55,8 +58,10 @@ social_listening_app/
 │   ├── territorios.js        # Comuna/barrio por punto-en-polígono (GeoJSON GCBA).
 │   ├── geoWorker.js          # Geocodifica reclamos 'pendiente' (cron + post-análisis).
 │   ├── reclamosFromAnalysis.js # reclamosGeo de Claude -> filas para la tabla reclamos.
-│   ├── monitor.js            # Detección de posteos nuevos de Instagram + config.
-│   ├── classifier.js         # Título + sentimiento de cada posteo (Claude Haiku).
+│   ├── monitor.js            # Orquestador del monitoreo (todas las redes) + config.
+│   ├── accountStats.js       # Benchmark por cuenta (solo redes con esa capability).
+│   ├── metricsRefresh.js     # Refresco de métricas de posteos ya guardados (ídem).
+│   ├── classifier.js         # Título + sentimiento de cada posteo (Claude Haiku), para todas las redes.
 │   ├── mailer.js             # Envío de emails (alertas + magic link).
 │   ├── auth/                 # Allowlist, magic link, sesión, rate limit, gate.
 │   ├── notify.js             # Orquesta las notificaciones (email + WhatsApp a futuro).
@@ -64,8 +69,7 @@ social_listening_app/
 │   └── notifiers/
 │       └── whatsapp.js       # Placeholder para notificación por WhatsApp (no implementado).
 ├── config/
-│   ├── monitoring.json       # Cuentas y palabras clave/hashtags de Instagram.
-│   ├── monitoring-x.json     # Cuentas y palabras clave de X (no seedea desde IG).
+│   ├── monitoring.json       # Cuentas y palabras clave/hashtags, una sección por red (instagram, x).
 │   ├── categorias-reclamos.json # Categorías y subcategorías del cliente (26/85).
 │   ├── x-influencers/        # CSV ANTIK-PRO (padrón de actores de X).
 │   └── allowed-emails.example.txt  # Plantilla de emails que pueden entrar.
@@ -103,7 +107,9 @@ social_listening_app/
 - **`src/apify.js`**: habla con la API de Apify. Corre el actor
   `apify/instagram-scraper` (modo `comments` y modo `posts`) usando el
   endpoint **sincrónico** `run-sync-get-dataset-items`. También expone
-  `runActorSync` para que `src/monitor.js` lo reuse.
+  `runActorSync` para que el adapter de Instagram
+  (`src/platforms/instagram.js`) lo reuse, y marca los errores de clave,
+  rate limit y cuota con `code` (ver `src/platforms/errors.js`).
 - **`src/analyzeComments.js`**: muestra estable, prompt, llamada al proveedor LLM,
   validación y armado del reporte WhatsApp + CSV.
 - **`src/prompt.js`**: contiene la metodología completa de análisis (el
@@ -130,19 +136,21 @@ Hace falta `SESSION_SECRET` (string largo aleatorio) y `APP_BASE_URL` (p. ej.
 
 ### Monitoreo automático — archivos nuevos explicados
 
-- **`config/monitoring.json`**: un archivo de texto plano con dos listas,
-  `accounts` (usuarios de Instagram a trackear) y `keywords` (palabras clave o
+- **`config/monitoring.json`**: qué se monitorea, con una sección por red
+  registrada en `src/platforms/` (`instagram`, `x`), cada una con sus
+  `accounts` (usuarios de esa red a trackear) y `keywords` (palabras clave o
   hashtags, estos últimos empezando con `#`). Se puede editar a mano, o desde
-  la propia web (solapa "Monitoreo en vivo" → agregar/quitar). Cualquier
-  posteo de una cuenta trackeada cuenta como relevante automáticamente; los
-  posteos que vienen de un hashtag trackeado además se filtran por si el
-  caption contiene alguna de las keywords configuradas.
+  la propia web (solapa "Monitoreo en vivo" → agregar/quitar; cada solapa
+  escribe su sección). Formato y semántica de cada campo en
+  `config/README.md`. La relevancia de lo que traen esas fuentes se decide
+  igual para todas las redes (ver `src/monitor.js` más abajo).
 
-  > **Limitación importante**: las keywords que NO son hashtag (ej. "Jorge
-  > Macri" a secas) no hacen una búsqueda libre en todo Instagram — Apify no
-  > ofrece eso de forma confiable. Solo se buscan dentro de lo que ya se
-  > scrapea: posteos de las cuentas trackeadas y posteos de los hashtags
-  > configurados.
+  > **Limitación importante (Instagram)**: las keywords que NO son hashtag
+  > (ej. "Jorge Macri" a secas) no hacen una búsqueda libre en todo Instagram
+  > — Apify no ofrece eso de forma confiable. Solo se buscan dentro de lo que
+  > ya se scrapea: posteos de las cuentas trackeadas y posteos de los hashtags
+  > configurados. En X es al revés: cada keyword, con `#` o sin él, es una
+  > búsqueda de Grok con costo por corrida.
 
 - **`src/db.js`** — ¿qué es SQLite y por qué lo usamos así?: SQLite es una
   base de datos que vive en **un solo archivo** (`data/monitoring.db`), sin
@@ -158,39 +166,72 @@ Hace falta `SESSION_SECRET` (string largo aleatorio) y `APP_BASE_URL` (p. ej.
   de verse en la tabla, pero sigue bloqueando una re-detección de la misma
   URL.
 
-- **`src/monitor.js`**: el detector de Instagram. Por cada cuenta trackeada, le pide a
-  Apify sus posteos más recientes; por cada hashtag trackeado, scrapea esa
-  página de hashtag. Compara todo contra `src/db.js` para no volver a
-  evaluar ni guardar algo que ya se vio. Antes de guardar una cuenta o
-  hashtag nuevo (al agregarlo desde la interfaz), valida contra Apify que
-  exista de verdad — el actor no tira un error HTTP para esto, sino que
-  devuelve un item con `"error": "not_found"` (cuentas) o `"no_items"`
-  (hashtags), así que basta con revisar ese campo antes de guardarlo en
-  `config/monitoring.json` (y también antes de tratar un resultado como
-  posteo real: si no se filtra, queda guardado un "posteo" cuyo link en
-  realidad es el del perfil).
+- **`src/monitor.js`**: el orquestador del monitoreo, agnóstico de red. Por
+  cada plataforma registrada en `src/platforms/` lee su sección de
+  `config/monitoring.json` y le pide a su adapter los posteos recientes de
+  cada cuenta trackeada, de cada hashtag y — solo si el adapter sabe
+  buscarlas — de cada keyword suelta. Compara todo contra `src/db.js` para
+  no volver a evaluar ni guardar algo que ya se vio. Antes de guardar una
+  cuenta o hashtag nuevo (al agregarlo desde la interfaz) el adapter valida
+  lo que puede: Instagram consulta a Apify que exista (el actor no tira un
+  error HTTP, devuelve un item con `"error": "not_found"` o `"no_items"`);
+  X solo chequea el formato del handle, porque un modelo no puede afirmar
+  que una cuenta no existe.
 
-  **Cómo decide si un posteo es relevante** (dos pasos, en `evaluateRelevance`):
-  1. Si el caption/hashtags contienen alguna palabra clave configurada
+  **Cómo decide si un posteo es relevante** (en `evaluateRelevance`, igual
+  para todas las redes):
+  1. Si llegó por una **búsqueda por término** (hoy solo X: sus keywords y
+     también sus hashtags, porque en X un hashtag es una búsqueda más, no una
+     página de descubrimiento como en Instagram) → relevante directo: la
+     búsqueda ya lo encontró para ese término, descartarlo después sería
+     perder lo que la búsqueda validó. Solo se le ponen título y sentimiento.
+  2. Si el caption/hashtags contienen alguna palabra clave configurada
      literalmente → relevante directo.
-  2. Si no hay coincidencia literal → le pregunta a **Claude** si el
+  3. Si no hay coincidencia literal → le pregunta a **Claude** si el
      contenido igual habla del Jefe de Gobierno porteño o de su gestión,
      sin necesidad de que lo nombre explícitamente (`classifyRelevance` en
      `src/classifier.js`). Así se detectan menciones indirectas (ej. un
      anuncio de una política de vivienda que no dice su nombre) que el
      matching de texto solo, se perdería.
      Un posteo sin caption (nada que evaluar) solo se acepta si viene de una
-     cuenta trackeada — de un hashtag se descarta, porque no hay ninguna señal
-     de que se relacione con el tema.
+     cuenta trackeada — de un hashtag o una búsqueda se descarta, porque no
+     hay ninguna señal de que se relacione con el tema.
 
-- **`src/x/monitor.js`** y **`config/monitoring-x.json`**: el detector de X.
-  Misma superficie (cuentas, keywords, actualizar ahora, tabla, ignorar),
-  config aparte para no mezclar con Instagram. Cada corrida busca con Grok
-  `from:handle` por cuenta y el texto de cada keyword; tope
-  `X_MONITOR_RESULTS_LIMIT` (default 30, máximo 50) por fuente. No usa
-  Apify. El cron corre Instagram y después X; "Actualizar ahora" en `x.html`
-  dispara solo X. La clasificación de título/sentimiento también va por Grok,
-  no por `LLM_PROVIDER`.
+- **`src/platforms/`**: un adapter por red, con el contrato documentado en
+  `index.js` (`id`, `label`, `capabilities`, `isConfigured`, `scrapeAccount`,
+  `scrapeHashtag`, `scrapeKeyword` opcional, `normalizePost`, `metrics`,
+  errores con `code`). Sumar una red es escribir su adapter y registrarlo.
+  - **`instagram.js`**: trae con Apify. Tiene todas las capabilities:
+    benchmark por cuenta, seguidores y refresco de métricas.
+  - **`x.js`**: trae con **Grok** (búsqueda en X vía OpenRouter o xAI):
+    `from:handle` por cuenta, `#hashtag` y el texto literal de cada keyword;
+    hashtags y keywords son búsquedas por término, así que lo que traen es
+    relevante directo (ver arriba). Tope `X_MONITOR_RESULTS_LIMIT` (default
+    30, máximo 50) por fuente. No usa Apify. Grok **solo extrae**: título y
+    sentimiento van por el mismo `src/classifier.js` que Instagram (y por lo
+    tanto por `LLM_PROVIDER`). Métricas propias: respuestas (en el lugar de
+    comentarios), RTs y vistas. Sin seguidores ni refresco de métricas por
+    ahora.
+
+  El cron recorre todas las redes; "Actualizar ahora" en una solapa corre
+  solo esa red, y el benchmark y el refresco de métricas corren solo para las
+  redes cuyo adapter declara esa capability (hoy Instagram).
+
+  Si una red falla entera —clave inválida, rate limit o cuota agotada, que
+  los adapters marcan con `code` (ver `src/platforms/errors.js`)— "Actualizar
+  ahora" en esa solapa muestra ese error en vez de un "0 nuevos" engañoso;
+  lo que las otras fuentes sí trajeron queda guardado igual y el mensaje lo
+  aclara. En el cron la red se anota como incompleta y se sigue con las
+  demás. Un fallo puntual de una sola fuente (cuenta privada, etc.) solo se
+  loguea, como siempre.
+
+  **Pendiente — benchmark de X.** El adapter de X declara
+  `capabilities.benchmark: false`: la tabla de X muestra sus métricas pero
+  sin la referencia "alto/normal/bajo" contra la mediana de la cuenta. Los
+  datos están (likes, respuestas, RTs y vistas por posteo, y `account_stats`
+  acepta filas de X sin tipo de posteo); falta decidir la fuente de la
+  mediana (una búsqueda de Grok por cuenta) y sumar medianas de RTs/vistas.
+  Cuando se haga, alcanza con activar la capability en `src/platforms/x.js`.
 
 - **`src/classifier.js`**: acá vive el llamado a **Claude Haiku 4.5** (modelo
   barato, configurable con `CLASSIFIER_MODEL`) para dos cosas: `classifyPost`
@@ -198,9 +239,9 @@ Hace falta `SESSION_SECRET` (string largo aleatorio) y `APP_BASE_URL` (p. ej.
   `classifyRelevance` (título + sentimiento + si aplica o no, para posteos
   sin coincidencia literal — ver arriba). Todo a partir del caption, no de
   los comentarios de la gente (eso sigue siendo un análisis aparte, manual,
-  en "Análisis de publicación"). Si Claude falla, `classifyPost` cae en
-  `neutral` por defecto y `classifyRelevance` cae en "no relevante" (mejor
-  perderse algo dudoso que llenar la tabla de ruido).
+  en "Análisis de publicación"). Si el clasificador falla, el posteo no se
+  descarta: se guarda marcado como "sin clasificar" para revisarlo a mano
+  (ver "Cuando falla el clasificador del monitoreo", más abajo).
 
 - **`src/scheduler.js`** — ¿qué es un "cron" y por qué `node-cron`?: un cron
   es simplemente "una tarea que se repite sola cada tanto tiempo", sin que
@@ -291,8 +332,11 @@ Abrí `.env` y pegá:
 - **Anthropic (default):** `LLM_PROVIDER=anthropic`, `ANTHROPIC_API_KEY` → https://console.anthropic.com/settings/keys
 - **OpenRouter:** `LLM_PROVIDER=openrouter`, `OPENROUTER_API_KEY` → https://openrouter.ai/settings/keys
   (los modelos ya vienen con default equivalente al de Anthropic, no hace falta setearlos).
-  La misma clave sirve para **traer y clasificar X con Grok** (`OPENROUTER_X_MODEL`,
-  default `x-ai/grok-4.3`). Instagram no usa ese modelo.
+  La misma clave sirve para **traer posteos e hilos de X con Grok** (`OPENROUTER_X_MODEL`,
+  default `x-ai/grok-4.3`). Instagram no usa ese modelo. La clasificación del
+  monitoreo (título y sentimiento) va por `LLM_PROVIDER` para todas las redes,
+  así que monitorear X necesita, además de la clave de Grok, el proveedor de
+  `LLM_PROVIDER` configurado.
 - `XAI_API_KEY` → opcional; solo si no usás OpenRouter y querés pegarle directo a https://console.x.ai/
 - `SMTP_USER` / `SMTP_PASS` → tu Gmail y una
   ["contraseña de aplicación"](https://myaccount.google.com/apppasswords)
@@ -736,9 +780,9 @@ para ver el nombre exacto del campo y ajustá `normalizePost` / `normalizeCommen
 
 `src/metricsRefresh.js` (y el refresco "gratis" que hace `runMonitoringCycle`
 contra posteos ya conocidos) cruzan lo que devuelve `scrapeAccount` contra
-`detected_posts` **por id**. Ese id se arma en `normalizeMonitorPost`
-(`src/monitor.js`) probando alternativas: `pick(raw.id, shortCode, raw.pk)` —
-la primera que venga definida gana.
+`detected_posts` **por id**. Ese id se arma en `normalizePost`
+(`src/platforms/instagram.js`) probando alternativas:
+`pick(raw.id, shortCode, raw.pk)` — la primera que venga definida gana.
 
 El riesgo: si en algún momento cambia CUÁL de esas alternativas trae Apify
 para un mismo posteo (por ejemplo, hoy no manda `raw.id` y usa `shortCode`,
@@ -756,4 +800,5 @@ Qué revisar en la primera corrida real:
 2. Mirá la consola durante/después del ciclo: si aparece
    `[metricsRefresh] ATENCIÓN: N cuentas consultadas, 0 filas actualizadas`,
    es la señal de que el cruce por id dejó de funcionar — hay que revisar
-   `normalizeMonitorPost` contra la respuesta real del actor.
+   `normalizePost` (`src/platforms/instagram.js`) contra la respuesta real
+   del actor.

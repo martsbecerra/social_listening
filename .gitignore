@@ -21,3 +21,4 @@ config/allowed-emails.txt
 
 # Agent / SDD infrastructure (skill registry)
 .atl/
+config/monitoring-x.json.migrado

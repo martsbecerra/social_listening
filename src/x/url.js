@@ -99,6 +99,7 @@ function canonicalizeStatusUrl(url, handle, id) {
 }
 
 module.exports = {
+  HANDLE_RE,
   isValidXPostUrl,
   parseXPostUrl,
   statusUrl,

@@ -1,38 +1,64 @@
 // ==========================================================================
 // monitor.js
 // --------------------------------------------------------------------------
-// Detecta posteos nuevos de Instagram relevantes para el monitoreo, a partir
-// de dos tipos de fuentes:
-//   - Cuentas trackeadas (config/monitoring.json).
-//   - Páginas de hashtag configuradas (las keywords que empiezan con "#").
+// Orquestador del monitoreo, agnóstico de plataforma. Detecta posteos nuevos
+// relevantes a partir de las fuentes configuradas por plataforma
+// (config/monitoring.json, una sección por red):
+//   - Cuentas trackeadas.
+//   - Hashtags (las keywords que empiezan con "#").
+//   - Keywords planas, SOLO en las plataformas cuyo adapter sabe buscarlas
+//     (scrapeKeyword, por ejemplo X). En las demás son un filtro de texto
+//     sobre lo que ya se scrapeó por cuenta o hashtag.
 //
 // Un posteo se considera relevante si:
-//   1. Su caption/hashtags contienen alguna palabra clave literal
+//   1. Llegó por una búsqueda por término (sourceType 'keyword': una keyword,
+//      o un hashtag en las redes donde el hashtag es una búsqueda más, como
+//      X) — la búsqueda ya lo validó, o
+//   2. Su caption/hashtags contienen alguna palabra clave literal
 //      (case-insensitive), o
-//   2. No hay coincidencia literal, pero Claude determina que el contenido
-//      igual habla del Jefe de Gobierno porteño o su gestión (detección
-//      semántica — ver classifyRelevance en src/classifier.js). Así no
-//      dependemos únicamente de que el texto use exactamente alguna de las
-//      palabras configuradas.
+//   3. No hay coincidencia literal, pero el clasificador determina que el
+//      contenido igual habla del Jefe de Gobierno porteño o su gestión
+//      (detección semántica — ver classifyRelevance en src/classifier.js).
 //
-// Reusa runActorSync (mismo actor "apify/instagram-scraper" que ya usa
-// src/apify.js para el análisis puntual). La base SQLite (src/db.js) es la
-// que decide qué es realmente "nuevo": no se vuelve a evaluar ni gastar
-// clasificación en algo ya conocido.
+// Todo lo específico de cada plataforma (fuente de datos, URLs, nombres de
+// campos, métricas propias, qué sabe hacer) vive en su adapter de
+// src/platforms/. Este módulo solo orquesta: scrapear vía adapter, evaluar
+// relevancia con el clasificador compartido, dedupe contra SQLite (src/db.js,
+// que decide qué es realmente "nuevo") y guardado.
 //
-// NOTA sobre nombres de campos: igual que en src/apify.js, los nombres que
-// devuelve el actor pueden variar según la versión (ver README). Si algo
-// aparece vacío, revisar una corrida real en el panel de Apify.
+// Errores al scrapear: una fuente que falla sola (cuenta privada, etc.) se
+// loguea y el ciclo sigue. Un error de plataforma (credenciales inválidas,
+// rate limit, cuota agotada — ver src/platforms/errors.js) es otra cosa: si
+// la corrida era solo de esa plataforma ("Actualizar ahora" en su solapa) el
+// error le llega al usuario en vez de un "0 nuevos" que parece un éxito; en
+// el cron se anota en porPlataforma[id].error y se sigue con las demás.
 // ==========================================================================
 
 const fs = require('fs');
 const path = require('path');
-const { runActorSync } = require('./apify');
 const { classifyPost, classifyRelevance } = require('./classifier');
 const { checkAndLogJump } = require('./viralJumpDetector');
+const { getPlatform, listPlatformIds, DEFAULT_PLATFORM_ID } = require('./platforms');
+const { isPlatformError } = require('./platforms/errors');
 const db = require('./db');
 
-const CONFIG_PATH = path.join(__dirname, '..', 'config', 'monitoring.json');
+// MONITORING_CONFIG_PATH: solo para tests (tempfile), mismo patrón que
+// MONITORING_DB_PATH en db.js. En runtime normal es config/monitoring.json.
+const CONFIG_PATH =
+  process.env.MONITORING_CONFIG_PATH || path.join(__dirname, '..', 'config', 'monitoring.json');
+
+// Config que tenía el monitoreo de X cuando era un módulo aparte
+// (config/monitoring-x.json). Se absorbe UNA vez como sección "x" de
+// monitoring.json (ver absorbLegacyXConfig). MONITORING_X_CONFIG_PATH queda
+// solo para poder probar esa migración con un tempfile.
+const LEGACY_X_CONFIG_PATH =
+  process.env.MONITORING_X_CONFIG_PATH || path.join(__dirname, '..', 'config', 'monitoring-x.json');
+
+// Columnas de detected_posts que pueden ser métricas de un adapter. Un
+// adapter puede declarar más claves en `metrics`, pero al guardar/refrescar
+// solo pasan las que existen en la tabla (node:sqlite rechaza parámetros
+// desconocidos).
+const METRIC_COLUMNS = ['likes', 'comments', 'retweets', 'views'];
 
 /**
  * Las cuentas son simplemente el nombre de usuario. Acepta también el
@@ -43,153 +69,204 @@ function normalizeAccount(entry) {
   return typeof entry === 'string' ? entry : entry.username;
 }
 
+function cleanList(list) {
+  return (Array.isArray(list) ? list : []).map((v) => String(v).trim()).filter(Boolean);
+}
+
 /**
- * config/monitoring.json tiene dos formatos posibles:
- *   - Viejo (anidado): { instagram: { accounts, hashtags, keywords: {categoría: [...]} } }.
- *     Las keywords venían agrupadas por categoría y los hashtags aparte, sin
- *     el "#" — solo para que el archivo se pudiera leer y mantener a mano.
- *   - Actual (plano): { accounts: [...], keywords: [...] } — es lo que
- *     escribe saveConfig() cada vez que se agrega/saca algo desde la app
- *     (addAccount/removeAccount/addKeyword/removeKeyword), así que un
- *     archivo que arrancó anidado termina en este formato apenas se edita
- *     una vez desde la UI.
- * Acá se soportan los dos, aplanando el viejo a la misma forma que ya espera
- * el resto del código (evaluateRelevance, runMonitoringCycle no saben que
- * existían categorías; a un hashtag "JorgeMacri" se le vuelve a poner el "#"
- * adelante para que el filter(k => k.startsWith('#')) lo siga reconociendo).
+ * config/monitoring.json tiene tres formatos posibles:
+ *   - Actual (secciones por plataforma): { instagram: { accounts: [...],
+ *     keywords: [...] }, x: { ... } }. Es el único que escribe saveConfig().
+ *   - Plano (anterior): { accounts: [...], keywords: [...] } en la raíz —
+ *     era todo Instagram implícitamente.
+ *   - Legacy (anidado): { instagram: { accounts, hashtags, keywords:
+ *     {categoría: [...]} } }. Las keywords venían agrupadas por categoría y
+ *     los hashtags aparte, sin el "#" — solo para que el archivo se pudiera
+ *     leer y mantener a mano. Se distingue del actual porque sus keywords
+ *     son un OBJETO, no un array.
+ * Los dos formatos viejos se migran al actual UNA sola vez (se reescribe el
+ * archivo); si ya está en formato actual no se toca nada — la migración es
+ * idempotente. Devuelve siempre { plataforma: { accounts, keywords } }.
  */
-function loadConfig() {
+function readConfigAll() {
   const raw = fs.readFileSync(CONFIG_PATH, 'utf8');
   const parsed = JSON.parse(raw);
 
-  if (parsed.instagram) {
-    const ig = parsed.instagram;
-    const keywordGroups = ig.keywords || {};
-    const flatKeywords = [
-      ...Object.values(keywordGroups).flat(),
-      ...(Array.isArray(ig.hashtags) ? ig.hashtags.map((h) => `#${h}`) : []),
-    ];
-    return {
-      accounts: (Array.isArray(ig.accounts) ? ig.accounts : []).map(normalizeAccount),
-      keywords: flatKeywords,
+  // Formato plano: accounts/keywords como arrays en la raíz.
+  if (Array.isArray(parsed.accounts) || Array.isArray(parsed.keywords)) {
+    const section = {
+      accounts: (Array.isArray(parsed.accounts) ? parsed.accounts : []).map(normalizeAccount),
+      keywords: Array.isArray(parsed.keywords) ? parsed.keywords : [],
     };
+    const all = { [DEFAULT_PLATFORM_ID]: section };
+    saveConfig(all);
+    console.log(
+      `[monitor] config migrado al formato por plataforma (plano -> secciones): ` +
+        `accounts ${parsed.accounts?.length ?? 0} -> ${section.accounts.length}, ` +
+        `keywords ${parsed.keywords?.length ?? 0} -> ${section.keywords.length}`
+    );
+    return all;
   }
 
-  return {
-    accounts: (Array.isArray(parsed.accounts) ? parsed.accounts : []).map(normalizeAccount),
-    keywords: Array.isArray(parsed.keywords) ? parsed.keywords : [],
-  };
-}
+  // Legacy anidado: instagram.keywords es un objeto por categoría (no array).
+  if (parsed.instagram && !Array.isArray(parsed.instagram.keywords)) {
+    const ig = parsed.instagram;
+    const keywordGroups = ig.keywords || {};
+    const groupCount = Object.values(keywordGroups).flat().length;
+    const hashtagCount = Array.isArray(ig.hashtags) ? ig.hashtags.length : 0;
+    const section = {
+      accounts: (Array.isArray(ig.accounts) ? ig.accounts : []).map(normalizeAccount),
+      keywords: [
+        ...Object.values(keywordGroups).flat(),
+        // A un hashtag "JorgeMacri" se le vuelve a poner el "#" adelante para
+        // que el filter(k => k.startsWith('#')) lo siga reconociendo.
+        ...(Array.isArray(ig.hashtags) ? ig.hashtags.map((h) => `#${h}`) : []),
+      ],
+    };
+    const all = { [DEFAULT_PLATFORM_ID]: section };
+    saveConfig(all);
+    console.log(
+      `[monitor] config migrado al formato por plataforma (legacy anidado -> secciones): ` +
+        `accounts ${ig.accounts?.length ?? 0} -> ${section.accounts.length}, ` +
+        `keywords ${groupCount}+${hashtagCount} hashtags -> ${section.keywords.length}`
+    );
+    return all;
+  }
 
-function saveConfig(config) {
-  fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2) + '\n', 'utf8');
+  // Formato actual: cada clave de la raíz es una sección de plataforma.
+  const all = {};
+  for (const [platformId, section] of Object.entries(parsed)) {
+    all[platformId] = {
+      accounts: (Array.isArray(section.accounts) ? section.accounts : []).map(normalizeAccount),
+      keywords: Array.isArray(section.keywords) ? section.keywords : [],
+    };
+  }
+  return all;
 }
 
 /**
- * Chequea contra Apify que la cuenta/hashtag realmente exista antes de
- * guardarla, para no quedar cada 4hs consultando una página inexistente por
- * un typo. El actor no tira error HTTP para esto: devuelve un item con
- * "error": "not_found" (cuentas) o "no_items" (hashtags) en vez de datos
- * reales, así que basta con mirar ese campo.
+ * Migración única del config que X tenía cuando era un módulo aparte:
+ * si todavía no hay sección "x" y existe el archivo viejo, se copia como
+ * sección "x", se guarda monitoring.json y el archivo viejo se renombra a
+ * ".migrado" (queda como respaldo, ya no se lee). Idempotente: la segunda
+ * vez no hay archivo viejo y no pasa nada. Nunca tira: un archivo viejo
+ * roto se avisa y se ignora.
  */
-async function validateAccountExists(account) {
-  const items = await runActorSync({
-    directUrls: [`https://www.instagram.com/${account}/`],
-    resultsType: 'posts',
-    resultsLimit: 1,
-  });
-  const first = Array.isArray(items) && items[0];
-  if (first && first.error) {
-    const e = new Error(`Cuenta no encontrada: ${account}`);
-    e.userMessage = `No encontramos la cuenta @${account} en Instagram. Revisá que esté bien escrita.`;
-    throw e;
+function absorbLegacyXConfig(all) {
+  if (all.x || !fs.existsSync(LEGACY_X_CONFIG_PATH)) return all;
+  let parsed;
+  try {
+    parsed = JSON.parse(fs.readFileSync(LEGACY_X_CONFIG_PATH, 'utf8'));
+  } catch (err) {
+    console.warn(`[monitor] no se pudo leer ${LEGACY_X_CONFIG_PATH} para migrarlo:`, err.message);
+    return all;
   }
+  all.x = { accounts: cleanList(parsed.accounts), keywords: cleanList(parsed.keywords) };
+  saveConfig(all);
+  const migrated = `${LEGACY_X_CONFIG_PATH}.migrado`;
+  try {
+    fs.renameSync(LEGACY_X_CONFIG_PATH, migrated);
+  } catch (err) {
+    console.warn(`[monitor] config de X absorbida, pero no se pudo renombrar el archivo viejo:`, err.message);
+  }
+  console.log(
+    `[monitor] config de X absorbida como sección "x" de monitoring.json ` +
+      `(${all.x.accounts.length} cuentas, ${all.x.keywords.length} keywords); el archivo viejo quedó como ${migrated}`
+  );
+  return all;
 }
 
-async function validateHashtagExists(tag) {
-  const items = await runActorSync({
-    directUrls: [`https://www.instagram.com/explore/tags/${tag}/`],
-    resultsType: 'posts',
-    resultsLimit: 1,
-  });
-  const first = Array.isArray(items) && items[0];
-  if (first && first.error) {
-    const e = new Error(`Hashtag no encontrado: ${tag}`);
-    e.userMessage = `No encontramos contenido para el hashtag #${tag}. Revisá que esté bien escrito.`;
-    throw e;
-  }
+function loadConfigAll() {
+  return absorbLegacyXConfig(readConfigAll());
+}
+
+/** Config de UNA plataforma, con la misma forma { accounts, keywords } de siempre. */
+function loadConfig(platformId = DEFAULT_PLATFORM_ID) {
+  return loadConfigAll()[platformId] || { accounts: [], keywords: [] };
+}
+
+function saveConfig(configAll) {
+  fs.writeFileSync(CONFIG_PATH, JSON.stringify(configAll, null, 2) + '\n', 'utf8');
 }
 
 /**
  * Agrega una cuenta a trackear (sacando "@" si lo escribieron de más).
- * Antes de guardarla, valida que exista de verdad en Instagram. No hace
- * nada si ya estaba (evita duplicados).
+ * Antes de guardarla, el adapter valida lo que pueda validar (Instagram
+ * consulta que exista; X solo chequea el formato del handle). No hace nada
+ * si ya estaba (evita duplicados).
  */
-async function addAccount(account) {
+async function addAccount(account, platformId = DEFAULT_PLATFORM_ID) {
   const clean = String(account || '').trim().replace(/^@/, '');
   if (!clean) {
     const e = new Error('Cuenta vacía');
     e.userMessage = 'Escribí un nombre de cuenta.';
     throw e;
   }
-  await validateAccountExists(clean);
-  const config = loadConfig();
+  const platform = getPlatform(platformId);
+  await platform.validateAccount(clean);
+  const all = loadConfigAll();
+  const config = all[platformId] || (all[platformId] = { accounts: [], keywords: [] });
   const isNew = !config.accounts.some((a) => a.toLowerCase() === clean.toLowerCase());
   if (isNew) {
     config.accounts.push(clean);
-    saveConfig(config);
+    saveConfig(all);
 
-    // Sin esto la cuenta queda hasta un mes sin referencia (la cadencia
-    // normal es mensual, ver accountStats.js). Sin "await": no demorar la
-    // respuesta de "agregar cuenta" — ya hace su propio llamado a Apify
-    // arriba (validateAccountExists) y este es un segundo llamado aparte.
-    // require() adentro de la función (no arriba del archivo) para evitar
-    // una dependencia circular: accountStats.js ya importa este módulo para
-    // reusar scrapeAccount/loadConfig.
-    require('./accountStats')
-      .computeAccountStats(clean)
-      .catch((err) => {
-        console.error(`No se pudo calcular el benchmark de @${clean}:`, err.message);
-      });
+    // Solo en plataformas con benchmark: sin esto la cuenta queda hasta un
+    // mes sin referencia (la cadencia normal es mensual, ver accountStats.js).
+    // Sin "await": no demorar la respuesta de "agregar cuenta". require()
+    // adentro de la función (no arriba del archivo) para evitar una
+    // dependencia circular: accountStats.js importa este módulo para reusar
+    // loadConfig.
+    if (platform.capabilities && platform.capabilities.benchmark) {
+      require('./accountStats')
+        .computeAccountStats(clean, platformId)
+        .catch((err) => {
+          console.error(`No se pudo calcular el benchmark de @${clean}:`, err.message);
+        });
+    }
   }
   return config;
 }
 
-function removeAccount(account) {
-  const config = loadConfig();
+function removeAccount(account, platformId = DEFAULT_PLATFORM_ID) {
+  const all = loadConfigAll();
+  const config = all[platformId] || (all[platformId] = { accounts: [], keywords: [] });
   config.accounts = config.accounts.filter((a) => a.toLowerCase() !== String(account).toLowerCase());
-  saveConfig(config);
+  saveConfig(all);
   return config;
 }
 
 /**
- * Agrega una palabra clave o hashtag. Si empieza con "#" se trata como
- * hashtag (se scrapea esa página directamente, y por eso se valida que
- * exista); si no, es texto libre a buscar dentro de lo que ya se scrapea
- * (ver limitación en el README) y no hay nada concreto que validar.
+ * Agrega una palabra clave o hashtag. Si empieza con "#" el adapter valida
+ * lo que pueda (Instagram consulta que la página del hashtag exista); si no,
+ * es texto libre: en Instagram se busca dentro de lo que ya se scrapea, en
+ * X se busca literalmente (ver scrapeKeyword en el adapter).
  */
-async function addKeyword(keyword) {
+async function addKeyword(keyword, platformId = DEFAULT_PLATFORM_ID) {
   const clean = String(keyword || '').trim();
   if (!clean) {
     const e = new Error('Keyword vacía');
     e.userMessage = 'Escribí una palabra clave o hashtag.';
     throw e;
   }
+  const platform = getPlatform(platformId);
   if (clean.startsWith('#')) {
-    await validateHashtagExists(clean.slice(1));
+    await platform.validateHashtag(clean.slice(1));
   }
-  const config = loadConfig();
+  const all = loadConfigAll();
+  const config = all[platformId] || (all[platformId] = { accounts: [], keywords: [] });
   if (!config.keywords.some((k) => k.toLowerCase() === clean.toLowerCase())) {
     config.keywords.push(clean);
-    saveConfig(config);
+    saveConfig(all);
   }
   return config;
 }
 
-function removeKeyword(keyword) {
-  const config = loadConfig();
+function removeKeyword(keyword, platformId = DEFAULT_PLATFORM_ID) {
+  const all = loadConfigAll();
+  const config = all[platformId] || (all[platformId] = { accounts: [], keywords: [] });
   config.keywords = config.keywords.filter((k) => k.toLowerCase() !== String(keyword).toLowerCase());
-  saveConfig(config);
+  saveConfig(all);
   return config;
 }
 
@@ -199,148 +276,45 @@ function textIncludesAny(text, needles) {
 }
 
 /**
- * Dado un item crudo del actor (resultsType: 'posts'), lo deja en un formato
- * predecible. Mismo estilo defensivo ("pick" con varias alternativas) que
- * normalizePost() en src/apify.js.
- *
- * sourceType indica de dónde salió ('account' o 'hashtag') — se usa más
- * adelante para decidir cómo evaluar la relevancia de un posteo sin caption.
+ * Métricas de un posteo según lo que declara el adapter, limitadas a las
+ * columnas que existen en detected_posts. Es lo que se pasa a
+ * db.applyMetricsRefresh: las claves ausentes se conservan como estaban
+ * (Instagram no toca retweets/views; X las refresca).
  */
-/**
- * Tipo de posteo (reel|imagen|carrusel), para el benchmark de
- * src/accountStats.js. Sin verificar contra una corrida real de Apify
- * todavía (ver ese archivo) — probamos varios nombres de campo posibles del
- * actor y si ninguno aparece, devolvemos null (misma filosofía "pick" que ya
- * usa esta función y normalizePost() en apify.js).
- */
-function derivePostType(raw) {
-  const productType = String(raw.productType || '').toLowerCase();
-  if (productType === 'clips') return 'reel';
-  if (productType === 'carousel_container') return 'carrusel';
-
-  const type = String(raw.type || '').toLowerCase();
-  if (type === 'sidecar') return 'carrusel';
-  if (type === 'video') return 'reel';
-  if (type === 'image') return 'imagen';
-
-  if (typeof raw.isVideo === 'boolean') return raw.isVideo ? 'reel' : 'imagen';
-
-  return null;
-}
-
-// Apify (apify/instagram-scraper) devuelve -1 en likesCount cuando el autor
-// ocultó el contador de "me gusta" del posteo — no es un dato real, es un
-// centinela de "no disponible" (confirmado: es un comportamiento documentado
-// del actor, no un error de parseo nuestro). Lo tratamos igual que "sin
-// dato" — null, nunca -1 ni 0 — para no inventar un valor ni contaminar la
-// mediana de account_stats. No hay documentación de que commentsCount use el
-// mismo centinela, pero por las dudas (y porque un comentario negativo nunca
-// puede ser real) se aplica el mismo criterio ahí también.
-function nullIfMissingSentinel(value) {
-  return typeof value === 'number' && value < 0 ? null : value;
-}
-
-function normalizeMonitorPost(raw, { account, sourceType }) {
-  const pick = (...values) => values.find((v) => v !== undefined && v !== null && v !== '');
-  const shortCode = pick(raw.shortCode, raw.code);
-  const id = String(pick(raw.id, shortCode, raw.pk));
-  const url = pick(raw.url, shortCode && `https://www.instagram.com/p/${shortCode}/`);
-  const hashtags = Array.isArray(raw.hashtags) ? raw.hashtags.join(' ') : '';
-
-  return {
-    id,
-    account: pick(raw.ownerUsername, raw.owner && raw.owner.username, account, 'N/D'),
-    url,
-    caption: pick(raw.caption, ''),
-    hashtagsText: hashtags,
-    likes: nullIfMissingSentinel(pick(raw.likesCount, null)),
-    comments: nullIfMissingSentinel(pick(raw.commentsCount, null)),
-    postedAt: pick(raw.timestamp, null),
-    postType: derivePostType(raw),
-    sourceType,
-  };
-}
-
-/**
- * Solo scrapea — el filtrado de relevancia se hace después, en
- * runMonitoringCycle, porque ahora combina coincidencia de texto con
- * detección semántica (ver classifyRelevance en src/classifier.js).
- */
-async function scrapeAccount(username, { resultsLimit, lookback }) {
-  const items = await runActorSync({
-    directUrls: [`https://www.instagram.com/${username}/`],
-    resultsType: 'posts',
-    resultsLimit,
-    onlyPostsNewerThan: lookback,
-    skipPinnedPosts: true,
-  });
-
-  // Cuando no hay posteos nuevos (o la cuenta no tiene datos en esa
-  // ventana), el actor devuelve un item con "error": "no_items"/"not_found"
-  // en vez de un posteo real — hay que descartarlo, si no queda guardado
-  // como si fuera un posteo (con el link del perfil en vez de uno real).
-  return (Array.isArray(items) ? items : [])
-    .filter((raw) => !raw.error)
-    .map((raw) => normalizeMonitorPost(raw, { account: username, sourceType: 'account' }));
-}
-
-/**
- * Cantidad de seguidores de una cuenta. Los items de "posts" NO traen este
- * dato (confirmado contra la doc del actor apify/instagram-scraper: solo
- * ownerFullName/ownerUsername/ownerId a nivel de posteo) — hace falta una
- * corrida aparte con resultsType "details" sobre la URL del perfil, que
- * devuelve followersCount en el nivel superior del item. Se llama desde
- * accountStats.computeAccountStats, con la misma cadencia que el benchmark
- * (mensual / cuenta nueva / recálculo forzado) — no en cada corrida de 4hs.
- *
- * Nunca tira: sin token de Apify, cuenta privada, actor caído o cualquier
- * otro error, devuelve null (la columna de seguidores queda en "-", el
- * resto del ciclo de monitoreo sigue sin verse afectado).
- * @returns {Promise<number|null>}
- */
-async function fetchAccountFollowers(username) {
-  try {
-    const items = await runActorSync({
-      directUrls: [`https://www.instagram.com/${username}/`],
-      resultsType: 'details',
-      resultsLimit: 1,
-    });
-    const raw = (Array.isArray(items) && items[0]) || null;
-    if (!raw || raw.error) return null;
-    const value = Number(raw.followersCount);
-    return Number.isFinite(value) ? value : null;
-  } catch (err) {
-    console.error(`No se pudieron traer los seguidores de @${username}:`, err.message);
-    return null;
+function pickMetrics(platform, post) {
+  const out = {};
+  for (const metric of platform.metrics || []) {
+    if (METRIC_COLUMNS.includes(metric.key)) out[metric.key] = post[metric.key];
   }
-}
-
-async function scrapeHashtag(tag, { resultsLimit }) {
-  const items = await runActorSync({
-    directUrls: [`https://www.instagram.com/explore/tags/${tag}/`],
-    resultsType: 'posts',
-    resultsLimit,
-  });
-
-  return (Array.isArray(items) ? items : [])
-    .filter((raw) => !raw.error)
-    .map((raw) => normalizeMonitorPost(raw, { account: null, sourceType: 'hashtag' }));
+  return out;
 }
 
 /**
  * Decide si un posteo candidato es relevante y, si lo es, le pone
- * título + sentimiento. Dos caminos:
- *   1. Coincidencia literal de palabra clave → clasificación directa
- *      (siempre relevante, no hace falta preguntarle a Claude si aplica).
- *   2. Sin coincidencia literal → se le pregunta a Claude si el contenido
- *      igual habla del Jefe de Gobierno porteño / su gestión (detección
- *      semántica), para no depender solo del texto exacto.
+ * título + sentimiento. Tres caminos:
+ *   1. Llegó por una búsqueda por término (sourceType 'keyword': una keyword
+ *      o, en X, también un hashtag — ahí el hashtag es una búsqueda más, no
+ *      una página de descubrimiento) → relevante sin preguntar: la búsqueda
+ *      de la plataforma ya lo encontró para ese término, descartarlo después
+ *      sería perder lo que la búsqueda validó. Solo se clasifican título y
+ *      sentimiento. sourceType 'hashtag' (Instagram) NO entra acá: la página
+ *      del hashtag trae todo lo que lo usa y hay que filtrarlo.
+ *   2. Coincidencia literal de palabra clave → clasificación directa
+ *      (siempre relevante, no hace falta preguntar si aplica).
+ *   3. Sin coincidencia literal → se le pregunta al clasificador si el
+ *      contenido igual habla del Jefe de Gobierno porteño / su gestión
+ *      (detección semántica), para no depender solo del texto exacto.
  * Un posteo sin caption solo se acepta si viene de una cuenta trackeada
- * (no hay texto que evaluar semánticamente, pero viene de la fuente que
- * explícitamente querés ver); si viene de un hashtag, se descarta.
+ * (no hay texto que evaluar, pero viene de la fuente que explícitamente
+ * querés ver); si viene de un hashtag o una búsqueda, se descarta.
+ *
+ * @param {object} post posteo normalizado por el adapter
+ * @param {string[]} keywords keywords planas (sin "#") de la plataforma
+ * @param {{ platform?: object }} [options] adapter, para etiquetar el prompt
  */
-async function evaluateRelevance(post, keywords) {
-  const text = `${post.caption} ${post.hashtagsText}`.trim();
+async function evaluateRelevance(post, keywords, { platform } = {}) {
+  const platformLabel = platform && platform.label ? platform.label : undefined;
+  const text = `${post.caption || ''} ${post.hashtagsText || ''}`.trim();
 
   if (!post.caption || !post.caption.trim()) {
     if (post.sourceType === 'account') {
@@ -350,10 +324,29 @@ async function evaluateRelevance(post, keywords) {
   }
 
   const literalMatch = textIncludesAny(text, keywords);
+
+  if (post.sourceType === 'keyword') {
+    const { title, sentiment, unclassified } = await classifyPost(post.caption, { platformLabel });
+    const term = post.sourceQuery || literalMatch;
+    let base = 'Búsqueda por palabra clave';
+    if (term) {
+      base = String(term).startsWith('#')
+        ? `Búsqueda por hashtag: "${term}"`
+        : `Búsqueda por palabra clave: "${term}"`;
+    }
+    return {
+      relevant: true,
+      title,
+      sentiment,
+      unclassified,
+      matchedReason: unclassified ? `${base} — sin clasificar` : base,
+    };
+  }
+
   if (literalMatch) {
     // La relevancia acá NO depende del LLM: ya matcheó una palabra clave. Si
     // el clasificador falla, el posteo entra igual, sin título ni sentimiento.
-    const { title, sentiment, unclassified } = await classifyPost(post.caption);
+    const { title, sentiment, unclassified } = await classifyPost(post.caption, { platformLabel });
     const base = post.sourceType === 'account'
       ? `Cuenta trackeada: @${post.account} (coincidencia: "${literalMatch}")`
       : `Coincidencia con palabra clave: "${literalMatch}"`;
@@ -366,7 +359,7 @@ async function evaluateRelevance(post, keywords) {
     };
   }
 
-  const result = await classifyRelevance(post.caption);
+  const result = await classifyRelevance(post.caption, { platformLabel });
   if (!result.relevant) return { relevant: false };
 
   // Sin palabra clave literal y con el clasificador caído no sabemos si es
@@ -391,119 +384,215 @@ async function evaluateRelevance(post, keywords) {
   return { relevant: true, title: result.title, sentiment: result.sentiment, matchedReason };
 }
 
+function notConfiguredError(platform) {
+  const e = new Error(`La plataforma ${platform.id} no tiene credenciales configuradas`);
+  e.code = 'NOT_CONFIGURED';
+  e.userMessage = `Falta configurar ${platform.label || platform.id}: revisá las claves en el .env.`;
+  return e;
+}
+
 /**
- * Corre un ciclo completo de monitoreo: scrapea todas las fuentes
- * configuradas, evalúa relevancia (texto o semántica), descarta lo ya
- * conocido y guarda + devuelve solo los posteos nuevos.
+ * Corre un ciclo completo de monitoreo: por cada plataforma del registro
+ * (o solo las pedidas en `plataformas`), scrapea todas las fuentes vía su
+ * adapter, evalúa relevancia, descarta lo ya conocido y guarda + devuelve
+ * solo los posteos nuevos. La evaluación, el dedupe y el guardado son los
+ * mismos para todas las plataformas; solo el scraping es del adapter.
+ *
+ * Una plataforma sin credenciales se saltea con un aviso — salvo que sea la
+ * única pedida (botón "Actualizar ahora" de esa solapa), en cuyo caso el
+ * error llega al usuario. Lo mismo si alguna fuente falla con un error de
+ * plataforma (credenciales inválidas, rate limit, cuota agotada — ver
+ * platforms/errors.js): primero se guarda lo que las demás fuentes sí
+ * trajeron y después, si la corrida era solo de esa plataforma, se tira ese
+ * error (con `userMessage`, y aclarando cuántos posteos entraron igual). En
+ * una corrida de todo el registro queda en porPlataforma[id].error y se
+ * sigue con las demás.
+ *
+ * @param {{ plataformas?: string[] }} [options] subconjunto del registro;
+ *   sin él, todas (cron).
+ * @returns {Promise<{ checked: number, newPosts: object[],
+ *   scrapedAccounts: Object<string, string[]>,
+ *   porPlataforma: Object<string, { checked: number, newCount: number, skipped: boolean,
+ *     error?: { code: string, message: string } }> }>}
  */
-async function runMonitoringCycle() {
-  const { accounts, keywords } = loadConfig();
+async function runMonitoringCycle({ plataformas } = {}) {
+  const all = loadConfigAll();
   const resultsLimit = Number(process.env.MONITOR_RESULTS_LIMIT || 15);
   const lookback = process.env.MONITOR_LOOKBACK || '1 day';
+  const ids = listPlatformIds().filter((id) => !plataformas || plataformas.includes(id));
+  const singlePlatformRun = Boolean(plataformas && plataformas.length === 1);
 
-  const hashtagTags = keywords.filter((k) => k.startsWith('#')).map((k) => k.slice(1));
-  // Para filtrar por substring usamos la lista completa de keywords, sin el "#".
-  const plainKeywords = keywords.map((k) => (k.startsWith('#') ? k.slice(1) : k));
-
-  const sourceResults = await Promise.allSettled([
-    ...accounts.map((account) => scrapeAccount(account, { resultsLimit, lookback })),
-    ...hashtagTags.map((tag) => scrapeHashtag(tag, { resultsLimit })),
-  ]);
-
-  const allCandidates = [];
-  for (const result of sourceResults) {
-    if (result.status === 'fulfilled') {
-      allCandidates.push(...result.value);
-    } else {
-      // Una fuente que falla (cuenta privada/eliminada, error de Apify, etc.)
-      // no debe tirar abajo el resto del ciclo.
-      console.error('Monitoreo: falló una fuente:', result.reason && result.reason.message);
-    }
-  }
-
-  // Dedupe por id dentro de esta misma corrida (una cuenta trackeada podría
-  // aparecer también en un hashtag, por ejemplo).
-  const seenInThisRun = new Map();
-  for (const post of allCandidates) {
-    if (post.url && !seenInThisRun.has(post.id)) {
-      seenInThisRun.set(post.id, post);
-    }
-  }
-
+  let checked = 0;
   const newPosts = [];
+  const scrapedAccounts = {};
+  const porPlataforma = {};
   let metricsRefreshedFree = 0;
-  for (const post of seenInThisRun.values()) {
-    // Por id o por url: si Apify cambia el campo con el que armamos el id,
-    // la URL sigue siendo la misma pieza y no hay que re-clasificarla.
-    const existingId = db.findExistingPostId(post.id, post.url);
-    if (existingId) {
-      // Ya lo conocíamos (incluye ignorados: la fila sigue en SQLite para
-      // no re-detectar ni re-notificar). No reclasificar. Si no está
-      // ignorado, esta misma respuesta de Apify trae likes/comments
-      // actuales — refrescar la fila sale gratis. Si está ignorado,
-      // applyMetricsRefresh es no-op.
-      const refresh = db.applyMetricsRefresh(existingId, { likes: post.likes, comments: post.comments });
-      if (refresh) {
-        metricsRefreshedFree += 1;
-        checkAndLogJump({ account: refresh.account, id: existingId, postedAt: refresh.postedAt, metric: 'comentarios', previous: refresh.previousComments, current: refresh.comments });
-        checkAndLogJump({ account: refresh.account, id: existingId, postedAt: refresh.postedAt, metric: 'likes', previous: refresh.previousLikes, current: refresh.likes });
-      }
+
+  for (const platformId of ids) {
+    const platform = getPlatform(platformId);
+    const config = all[platformId] || { accounts: [], keywords: [] };
+    porPlataforma[platformId] = { checked: 0, newCount: 0, skipped: false };
+
+    if (typeof platform.isConfigured === 'function' && !platform.isConfigured()) {
+      if (singlePlatformRun) throw notConfiguredError(platform);
+      console.warn(`[monitor] ${platformId}: sin credenciales configuradas, se saltea esta plataforma.`);
+      porPlataforma[platformId].skipped = true;
       continue;
     }
 
-    const evaluation = await evaluateRelevance(post, plainKeywords);
-    if (!evaluation.relevant) continue;
+    const { accounts, keywords } = config;
+    const hashtagTags = keywords.filter((k) => k.startsWith('#')).map((k) => k.slice(1));
+    const textKeywords = keywords.filter((k) => !k.startsWith('#'));
+    // Para filtrar por substring usamos la lista completa de keywords, sin el "#".
+    const plainKeywords = keywords.map((k) => (k.startsWith('#') ? k.slice(1) : k));
+    const canSearchKeywords = typeof platform.scrapeKeyword === 'function';
 
-    const postWithClassification = {
-      ...post,
-      title: evaluation.title,
-      sentiment: evaluation.sentiment,
-      matchedReason: evaluation.matchedReason,
-      // Snapshot de la caché (account_followers), no un llamado a Apify acá:
-      // eso encarecería cada corrida de 4hs. Se refresca por afuera, en
-      // accountStats.computeAccountStats. Posts sin cuenta (hashtag) o de
-      // cuentas todavía sin caché quedan null -> "-" en la tabla.
-      followers: post.account ? db.getAccountFollowers(post.account, 'instagram') : null,
-      plataforma: 'instagram',
-    };
+    const sourceResults = await Promise.allSettled([
+      ...accounts.map((account) => platform.scrapeAccount(account, { resultsLimit, lookback })),
+      ...hashtagTags.map((tag) => platform.scrapeHashtag(tag, { resultsLimit, lookback })),
+      ...(canSearchKeywords
+        ? textKeywords.map((keyword) => platform.scrapeKeyword(keyword, { resultsLimit, lookback }))
+        : []),
+    ]);
 
-    const inserted = db.saveDetectedPost(postWithClassification);
-    if (!inserted) {
-      // Carrera con otro ciclo: entre el findExisting y el INSERT el otro
-      // proceso ya lo guardó. No es un posteo nuevo para notificar.
-      const racedId = db.findExistingPostId(post.id, post.url);
-      if (racedId) {
-        db.applyMetricsRefresh(racedId, { likes: post.likes, comments: post.comments });
+    const allCandidates = [];
+    // Primer error de plataforma de esta corrida (clave inválida, rate limit,
+    // cuota): se resuelve DESPUÉS de guardar lo que sí llegó (ver abajo).
+    let platformError = null;
+    for (const result of sourceResults) {
+      if (result.status === 'fulfilled') {
+        allCandidates.push(...result.value);
+      } else if (isPlatformError(result.reason)) {
+        if (!platformError) platformError = result.reason;
+        console.error(
+          `Monitoreo (${platformId}): la plataforma no se pudo consultar (${result.reason.code}):`,
+          result.reason.message
+        );
+      } else {
+        // Una fuente que falla sola (cuenta privada/eliminada, error puntual
+        // de la fuente, etc.) no debe tirar abajo el resto del ciclo.
+        console.error(`Monitoreo (${platformId}): falló una fuente:`, result.reason && result.reason.message);
       }
-      continue;
     }
-    newPosts.push(postWithClassification);
+
+    // Dedupe por id dentro de esta misma corrida (una cuenta trackeada podría
+    // aparecer también en un hashtag o en una búsqueda). Si el mismo posteo
+    // llega por más de una fuente gana la versión que vino por búsqueda
+    // (sourceType 'keyword'): esa ya está validada por la búsqueda y entra
+    // sin classifyRelevance, mientras que la versión 'account' podría ser
+    // descartada por el clasificador. La cuenta no se pierde: post.account
+    // es el mismo handle en las dos. Por plataforma: dos plataformas
+    // distintas nunca comparten id.
+    const seenInThisRun = new Map();
+    for (const post of allCandidates) {
+      if (!post.url) continue;
+      const prev = seenInThisRun.get(post.id);
+      if (!prev || (prev.sourceType !== 'keyword' && post.sourceType === 'keyword')) {
+        seenInThisRun.set(post.id, post);
+      }
+    }
+    checked += seenInThisRun.size;
+    porPlataforma[platformId].checked = seenInThisRun.size;
+
+    for (const post of seenInThisRun.values()) {
+      // Por id o por url: si el scraper cambia el campo con el que armamos el
+      // id, la URL sigue siendo la misma pieza y no hay que re-clasificarla.
+      const existingId = db.findExistingPostId(post.id, post.url);
+      if (existingId) {
+        // Ya lo conocíamos (incluye ignorados: la fila sigue en SQLite para
+        // no re-detectar). No reclasificar. Si no está ignorado, esta misma
+        // respuesta del scraper trae las métricas actuales — refrescar la
+        // fila sale gratis. Si está ignorado, applyMetricsRefresh es no-op.
+        const refresh = db.applyMetricsRefresh(existingId, pickMetrics(platform, post));
+        if (refresh) {
+          metricsRefreshedFree += 1;
+          checkAndLogJump({ account: refresh.account, id: existingId, postedAt: refresh.postedAt, metric: 'comentarios', previous: refresh.previousComments, current: refresh.comments });
+          checkAndLogJump({ account: refresh.account, id: existingId, postedAt: refresh.postedAt, metric: 'likes', previous: refresh.previousLikes, current: refresh.likes });
+        }
+        continue;
+      }
+
+      const evaluation = await evaluateRelevance(post, plainKeywords, { platform });
+      if (!evaluation.relevant) continue;
+
+      const postWithClassification = {
+        ...post,
+        plataforma: platformId,
+        title: evaluation.title,
+        sentiment: evaluation.sentiment,
+        matchedReason: evaluation.matchedReason,
+        // Snapshot de la caché (account_followers), no un llamado al scraper
+        // acá: eso encarecería cada corrida de 4hs. Se refresca por afuera,
+        // en accountStats.computeAccountStats. Posts sin cuenta (hashtag),
+        // de cuentas todavía sin caché o de plataformas sin seguidores
+        // quedan null -> "-" en la tabla.
+        followers:
+          post.account && platform.capabilities && platform.capabilities.followers
+            ? db.getAccountFollowers(post.account, platformId)
+            : null,
+      };
+
+      const inserted = db.saveDetectedPost(postWithClassification);
+      if (!inserted) {
+        // Carrera con otro ciclo: entre el findExisting y el INSERT el otro
+        // proceso ya lo guardó. No es un posteo nuevo para notificar.
+        const racedId = db.findExistingPostId(post.id, post.url);
+        if (racedId) {
+          db.applyMetricsRefresh(racedId, pickMetrics(platform, post));
+        }
+        continue;
+      }
+      newPosts.push(postWithClassification);
+      porPlataforma[platformId].newCount += 1;
+    }
+
+    // Cuentas trackeadas cuyo perfil se scrapeó de verdad en este ciclo (no
+    // las de hashtag/keyword: ahí solo se pesca el posteo puntual que
+    // matcheó, nunca "los últimos N" de esa cuenta). src/metricsRefresh.js las
+    // usa para no volver a pedirle al scraper una cuenta que ya se acaba de
+    // consultar. Por plataforma: el mismo handle puede existir en dos redes.
+    scrapedAccounts[platformId] = [...accounts];
+
+    if (platformError) {
+      const saved = porPlataforma[platformId].newCount;
+      const userMessage = platformError.userMessage || platformError.message;
+      // Sin code solo puede ser la cuota de Apify detectada por texto
+      // (ver isQuotaExceeded en platforms/errors.js).
+      const code = platformError.code || 'QUOTA_EXCEEDED';
+      porPlataforma[platformId].error = { code, message: userMessage };
+      if (singlePlatformRun) {
+        // Lo que sí llegó ya está guardado; el error igual tiene que verse.
+        platformError.code = code;
+        platformError.userMessage = saved > 0
+          ? `${userMessage} Igual se guardaron ${saved} posteo(s) nuevo(s) de las fuentes que sí respondieron.`
+          : userMessage;
+        throw platformError;
+      }
+      console.warn(`[monitor] ${platformId}: la corrida quedó incompleta (${code}); se sigue con las demás plataformas.`);
+    }
   }
 
   if (metricsRefreshedFree > 0) {
     console.log(`[monitor] ${metricsRefreshedFree} posteo(s) ya conocidos refrescados gratis con este mismo ciclo.`);
   }
 
-  // Cuentas trackeadas cuyo perfil se scrapeó de verdad en este ciclo (no
-  // las de hashtag: ahí solo se pesca el posteo puntual que matcheó, nunca
-  // "los últimos N" de esa cuenta). src/metricsRefresh.js las usa para no
-  // volver a pedirle Apify a una cuenta que ya se acaba de consultar.
-  return { checked: seenInThisRun.size, newPosts, scrapedAccounts: accounts };
+  return { checked, newPosts, scrapedAccounts, porPlataforma };
 }
 
 /**
- * Genera título + sentimiento para los posteos guardados que todavía no lo
- * tienen (posteos de antes de esta funcionalidad, o alguno que falló). Se
- * puede llamar las veces que haga falta: no vuelve a tocar los que ya están
- * clasificados.
+ * Genera título + sentimiento para los posteos guardados de una plataforma
+ * que todavía no lo tienen (posteos de antes de esta funcionalidad, o
+ * alguno que falló). Se puede llamar las veces que haga falta: no vuelve a
+ * tocar los que ya están clasificados.
  */
-async function backfillClassification() {
-  const pending = db.listUnclassified();
+async function backfillClassification(platformId = DEFAULT_PLATFORM_ID) {
+  const platform = getPlatform(platformId);
+  const pending = db.listUnclassified({ plataforma: platformId });
   let classified = 0;
   let stillPending = 0;
 
   for (const row of pending) {
-    const { title, sentiment, unclassified } = await classifyPost(row.caption);
+    const { title, sentiment, unclassified } = await classifyPost(row.caption, { platformLabel: platform.label });
     if (unclassified) {
       // Sigue fallando: no pisamos la fila con los mismos nulls, queda
       // pendiente para el próximo intento.
@@ -526,10 +615,12 @@ module.exports = {
   runMonitoringCycle,
   backfillClassification,
   loadConfig,
+  loadConfigAll,
   addAccount,
   removeAccount,
   addKeyword,
   removeKeyword,
-  scrapeAccount,
-  fetchAccountFollowers,
+  // Expuestos para tests.
+  evaluateRelevance,
+  pickMetrics,
 };
