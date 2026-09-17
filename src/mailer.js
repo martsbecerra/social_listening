@@ -17,7 +17,7 @@ function smtpConfigError() {
   const missing = ['SMTP_HOST', 'SMTP_USER', 'SMTP_PASS'].filter((key) => !process.env[key]);
   if (missing.length === 0) return null;
   return new Error(
-    `Faltan ${missing.join(', ')} en el .env. Sin SMTP_HOST, Nodemailer intenta 127.0.0.1 y el magic link no sale.`
+    `Faltan ${missing.join(', ')} en Infisical. Sin SMTP_HOST, Nodemailer intenta 127.0.0.1 y el magic link no sale.`
   );
 }
 
@@ -47,7 +47,7 @@ function getTransporter() {
 async function sendMagicLinkEmail({ email, rawToken }) {
   const base = (process.env.APP_BASE_URL || '').replace(/\/$/, '');
   if (!base) {
-    throw new Error('APP_BASE_URL no está configurado en el .env');
+    throw new Error('APP_BASE_URL no está configurado en Infisical');
   }
 
   const verifyUrl = `${base}/login-verify.html?token=${encodeURIComponent(rawToken)}`;

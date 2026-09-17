@@ -18,7 +18,7 @@ const DEFAULT_BASE_URL = 'https://openrouter.ai/api/v1';
 const STRUCTURED_OUTPUT_MAX_ATTEMPTS = 2;
 
 // Header opcional pero recomendado por OpenRouter para identificar la app
-// (aparece en los rankings de openrouter.ai). Se puede pisar desde .env.
+// (aparece en los rankings de openrouter.ai). Se puede pisar desde Infisical.
 const DEFAULT_APP_TITLE = 'Social Listening App';
 
 function getBaseUrl() {
@@ -36,7 +36,7 @@ function requireApiKey() {
     const e = new Error('OPENROUTER_API_KEY no configurada');
     e.isApiFailure = true;
     e.userMessage =
-      'Falta OPENROUTER_API_KEY en .env. Obtené una en https://openrouter.ai/settings/keys o usá LLM_PROVIDER=anthropic.';
+      'Falta OPENROUTER_API_KEY en Infisical. Obtené una en https://openrouter.ai/settings/keys o usá LLM_PROVIDER=anthropic.';
     throw e;
   }
   return apiKey;
@@ -237,7 +237,7 @@ function mapOpenRouterHttpError(status, data) {
   e.status = status;
 
   if (status === 401) {
-    e.userMessage = 'La clave de OpenRouter (OPENROUTER_API_KEY) es inválida. Revisá el archivo .env.';
+    e.userMessage = 'La clave de OpenRouter (OPENROUTER_API_KEY) es inválida. Revisá Infisical.';
   } else if (status === 402 || /insufficient|credits|balance/i.test(msg)) {
     e.userMessage =
       'Tu cuenta de OpenRouter no tiene crédito suficiente. Cargá saldo en https://openrouter.ai/settings/credits e intentá de nuevo.';

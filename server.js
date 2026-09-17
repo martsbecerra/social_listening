@@ -6,8 +6,8 @@
 //   2) Expone /api/analyze (Instagram + Apify) y /api/x/analyze (X + Grok).
 // ==========================================================================
 
-// dotenv carga las variables del archivo .env a process.env (APIFY_API_TOKEN, etc.)
-require('dotenv').config();
+// Infisical carga las claves a process.env (APIFY_API_TOKEN, etc.). No hay .env local.
+require('./src/secrets').loadSecretsOrExit();
 
 const express = require('express');
 const path = require('path');
@@ -120,9 +120,9 @@ function checkEnv() {
   if (faltantes.length > 0) {
     const provider = getLlmProvider();
     abortarArranque([
-      `Faltan estas variables en el archivo .env: ${faltantes.join(', ')}`,
+      `Faltan estas variables en Infisical: ${faltantes.join(', ')}`,
       `LLM_PROVIDER está en "${provider}", que necesita: ${claimsLlm.join(', ')}.`,
-      'Copiá ".env.example" como ".env" y completá tus claves.',
+      'Cargalas en el proyecto Infisical "Social Listening" (env dev o prod).',
     ]);
   }
 }

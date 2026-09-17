@@ -46,7 +46,7 @@ function getLastRunAt() {
 /**
  * Corridas por día a partir del campo de horas de la expresión cron
  * (ej. cada 4 horas -> 6). Cubre los formatos que MONITOR_CRON admite en
- * el .env.example: notación de paso (cada N horas), "*" (cada hora), lista
+ * el .env.example / Infisical: notación de paso (cada N horas), "*" (cada hora), lista
  * de horas fijas ("6,12,18") y una sola hora fija.
  */
 function estimateRunsPerDay(cronExpression) {

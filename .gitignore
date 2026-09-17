@@ -1,7 +1,7 @@
 # Dependencias
 node_modules/
 
-# Variables de entorno con secretos (¡nunca subir!)
+# Variables de entorno con secretos (¡nunca subir!). La app las lee de Infisical.
 .env
 
 # Datos locales: SQLite del monitoreo, registro de account-types, etc.

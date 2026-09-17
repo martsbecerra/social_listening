@@ -98,7 +98,7 @@ async function runActorSync(input, { actorId = APIFY_ACTOR } = {}) {
  */
 function mapApifyError(status) {
   if (status === 401 || status === 403) {
-    return 'La clave de Apify (APIFY_API_TOKEN) es inválida o no tiene permisos. Revisá el archivo .env.';
+    return 'La clave de Apify (APIFY_API_TOKEN) es inválida o no tiene permisos. Revisá Infisical.';
   }
   if (status === 404) {
     return 'No se encontró el actor de Apify o la URL. Verificá el link de la publicación.';

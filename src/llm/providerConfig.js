@@ -1,5 +1,5 @@
 // ==========================================================================
-// providerConfig.js — Selección de proveedor/modelo vía .env
+// providerConfig.js — Selección de proveedor/modelo vía Infisical / process.env
 // --------------------------------------------------------------------------
 // Un solo lugar decide QUÉ proveedor y QUÉ modelo se usa en cada tarea. Las
 // dos tareas del sistema son:
@@ -30,7 +30,7 @@ const DEFAULT_MODELS = {
   },
 };
 
-/** Variable de .env que pisa el default, por proveedor y tarea. */
+/** Variable de entorno que pisa el default, por proveedor y tarea. */
 const MODEL_ENV_KEYS = {
   anthropic: {
     analysis: 'CLAUDE_MODEL',

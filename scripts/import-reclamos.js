@@ -26,7 +26,7 @@
 
 // Sin esto el script no ve LLM_PROVIDER ni las claves: caería en el proveedor
 // por defecto y fallaría en la primera llamada. server.js lo hace por su lado.
-require('dotenv').config();
+require('../src/secrets').loadSecretsOrExit();
 
 const path = require('path');
 const readline = require('readline');

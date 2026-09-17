@@ -60,7 +60,7 @@ function getFetchConfig() {
   const e = new Error('Falta clave para Grok (OPENROUTER_API_KEY o XAI_API_KEY)');
   e.code = 'NOT_CONFIGURED';
   e.userMessage =
-    'Para analizar X hace falta OPENROUTER_API_KEY (Grok vía OpenRouter) o XAI_API_KEY. Completá el .env e intentá de nuevo.';
+    'Para analizar X hace falta OPENROUTER_API_KEY (Grok vía OpenRouter) o XAI_API_KEY. Completá las claves en Infisical e intentá de nuevo.';
   throw e;
 }
 
@@ -213,8 +213,8 @@ function mapFetchError(backend, err, status, body) {
     e.code = 'AUTH_INVALID';
     e.userMessage =
       backend === 'openrouter'
-        ? 'La clave de OpenRouter (OPENROUTER_API_KEY) es inválida. Revisá el archivo .env.'
-        : 'La clave de xAI (XAI_API_KEY) es inválida. Revisá el archivo .env.';
+        ? 'La clave de OpenRouter (OPENROUTER_API_KEY) es inválida. Revisá Infisical.'
+        : 'La clave de xAI (XAI_API_KEY) es inválida. Revisá Infisical.';
   } else if (status === 429) {
     e.code = 'RATE_LIMITED';
     e.userMessage = `${label} rechazó el pedido por rate limit. Esperá un momento e intentá de nuevo.`;

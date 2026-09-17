@@ -94,7 +94,7 @@ function mapAnthropicError(err) {
   e.status = err.status;
   const mensajeApi = err.error?.error?.message || '';
   if (err.status === 401) {
-    e.userMessage = 'La clave de Anthropic (ANTHROPIC_API_KEY) es inválida. Revisá el archivo .env.';
+    e.userMessage = 'La clave de Anthropic (ANTHROPIC_API_KEY) es inválida. Revisá Infisical.';
   } else if (err.status === 400 && /credit balance is too low/i.test(mensajeApi)) {
     e.userMessage =
       'Tu cuenta de Anthropic no tiene crédito suficiente. Cargá saldo en https://console.anthropic.com/settings/billing e intentá de nuevo.';

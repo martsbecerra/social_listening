@@ -378,7 +378,7 @@ async function evaluateRelevance(post, keywords, { platform } = {}) {
 function notConfiguredError(platform) {
   const e = new Error(`La plataforma ${platform.id} no tiene credenciales configuradas`);
   e.code = 'NOT_CONFIGURED';
-  e.userMessage = `Falta configurar ${platform.label || platform.id}: revisá las claves en el .env.`;
+  e.userMessage = `Falta configurar ${platform.label || platform.id}: revisá las claves en Infisical.`;
   return e;
 }
 

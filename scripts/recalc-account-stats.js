@@ -27,7 +27,7 @@
 // procesar, para que el próximo intento arranque justo ahí.
 // ==========================================================================
 
-require('dotenv').config();
+require('../src/secrets').loadSecretsOrExit();
 
 const fs = require('fs');
 const path = require('path');

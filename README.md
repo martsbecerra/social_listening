@@ -38,6 +38,7 @@ App web que:
 social_listening_app/
 ├── server.js                 # Servidor web (Express). Punto de entrada.
 ├── src/
+│   ├── secrets.js            # Carga secrets desde Infisical a process.env.
 │   ├── apify.js              # Extrae comentarios y datos del posteo desde Apify.
 │   ├── analyzeComments.js    # Orquestación del análisis (Apify → LLM → reporte).
 │   ├── x/                    # Análisis de publicación de X: Grok fetch, KPIs, reporte, padrón.
@@ -95,15 +96,19 @@ social_listening_app/
 │   ├── import-reclamos.js       # Importador genérico de Excel/CSV (solo CLI).
 │   ├── migrate-categorias.js    # Migra categorías viejas al esquema de dos niveles.
 │   └── stop-server.js           # Mata el proceso que ocupa el puerto (npm run stop).
-├── .env.example               # Plantilla de las claves (copiala a .env).
-├── .gitignore                 # Evita subir node_modules, .env y data/.
+├── .infisical.json            # Project id de Infisical (no es secreto).
+├── .env.example               # Catálogo de keys que viven en Infisical.
+├── .gitignore                 # Evita subir node_modules, .env residual y data/.
 └── package.json                # Dependencias y scripts del proyecto.
 ```
 
 ### Qué hace cada archivo
 
 - **`server.js`**: levanta el servidor, sirve la web y expone las rutas de la
-  API (análisis puntual + monitoreo). Arranca el cron al iniciar.
+  API (análisis puntual + monitoreo). Arranca el cron al iniciar. Lo primero
+  que hace es pedir los secrets a Infisical (`src/secrets.js`).
+- **`src/secrets.js`**: autentica contra Infisical y copia las keys a
+  `process.env`. En local usa `infisical login`; en prod, machine identity.
 - **`src/apify.js`**: habla con la API de Apify. Corre el actor
   `apify/instagram-scraper` (modo `comments` y modo `posts`) usando el
   endpoint **sincrónico** `run-sync-get-dataset-items`. También expone
@@ -122,8 +127,8 @@ social_listening_app/
 
 Solo entran emails de la allowlist. El archivo
 `config/allowed-emails.txt` (no se versiona; copiá el `.example.txt`) se puede
-editar a mano, un email por línea. En producción (Railway) usá también
-`ALLOWED_EMAILS` en las variables de entorno: un email entra si está en el
+editar a mano, un email por línea. En producción usá también
+`ALLOWED_EMAILS` en Infisical: un email entra si está en el
 archivo **o** en el env. Los cambios al archivo aplican en el próximo intento,
 sin reiniciar.
 
@@ -328,7 +333,7 @@ En la práctica es bastante menos: las cuentas trackeadas usan
 esa corrida devuelve ~0 resultados (no se paga por posteos viejos ya vistos).
 Los hashtags sí pagan siempre el `resultsLimit` completo. Para bajar el costo:
 reducí `MONITOR_RESULTS_LIMIT`, sacá hashtags, o espaciá el cron
-(`MONITOR_CRON` en el `.env`, ej. cada 6-8hs).
+(`MONITOR_CRON` en Infisical, ej. cada 6-8hs).
 
 El benchmark por cuenta (`src/accountStats.js`) solo gasta cuando una cuenta
 aparece con un posteo nuevo y nunca se calculó o pasaron
@@ -358,15 +363,22 @@ Parada en la carpeta del proyecto:
 npm install
 ```
 
-### 3. Configurar las claves
+### 3. Configurar las claves (Infisical)
 
-Copiá `.env.example` a `.env` y completá tus claves:
+No hay `.env` local. Las claves viven en el proyecto Infisical
+**Social Listening**. En local alcanza con estar logueado en el CLI:
 
 ```powershell
-Copy-Item .env.example .env
+infisical login
 ```
 
-Abrí `.env` y pegá:
+Al hacer `npm start`, la app pide los secrets a Infisical (env `dev` por
+defecto; `.infisical.json` trae el project id). En producción seteá solo el
+bootstrap de Infisical: `INFISICAL_CLIENT_ID` e `INFISICAL_CLIENT_SECRET`
+(machine identity). Opcional: `INFISICAL_ENV=prod`.
+
+El catálogo de variables está en `.env.example` (es documentación, no se
+copia a un archivo de secretos). Las más importantes:
 
 - `APIFY_API_TOKEN` → https://console.apify.com/account/integrations
 - **Anthropic (default):** `LLM_PROVIDER=anthropic`, `ANTHROPIC_API_KEY` → https://console.anthropic.com/settings/keys
@@ -493,7 +505,7 @@ El costo por análisis es bajo: son unos pocos miles de tokens de entrada
 > tarifas cuando el proveedor es `anthropic`. Con `openrouter` el costo sale
 > del campo `cost` que devuelve la API; si esa respuesta no lo trae, la UI
 > muestra el costo vacío en vez de estimarlo. Workaround: setear
-> `LLM_INPUT_USD_PER_MTOK` / `LLM_OUTPUT_USD_PER_MTOK` en `.env`, que tienen
+> `LLM_INPUT_USD_PER_MTOK` / `LLM_OUTPUT_USD_PER_MTOK` en Infisical, que tienen
 > prioridad sobre todo lo demás. Queda para resolver aparte.
 
 > **Pendiente — la `tematica` de los reclamos no se persiste.**

@@ -8,7 +8,7 @@
 // ==========================================================================
 
 const DEFAULT_MAX_COMMENTS_TO_SEND = 150;
-// Tope duro por costo/latencia aunque el .env pida más.
+// Tope duro por costo/latencia aunque Infisical pida más.
 const HARD_CAP_COMMENTS = 500;
 
 /**

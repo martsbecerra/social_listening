@@ -5,8 +5,6 @@
 // Sirve cuando quedó un Node huérfano y `npm start` falla con EADDRINUSE.
 // ==========================================================================
 
-require('dotenv').config();
-
 const { execSync } = require('child_process');
 
 const PORT = Number(process.env.PORT || 3000);

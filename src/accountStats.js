@@ -30,7 +30,7 @@ const monitor = require('./monitor');
 const { getPlatform, listPlatformIds } = require('./platforms');
 
 // Plan gratuito de Apify: ~15 resultados por corrida. Al pasar a plan pago,
-// subir esto en el .env alcanza — no hace falta tocar código.
+// subir esto en Infisical alcanza — no hace falta tocar código.
 const BENCHMARK_POST_LIMIT = Number(process.env.BENCHMARK_POST_LIMIT) || 15;
 // Una mediana sobre menos de esto no significa nada.
 const BENCHMARK_MIN_POSTS = 5;
