@@ -5,7 +5,8 @@
 // universo de cuentas (trackeadas + las que aparecen en detected_posts por
 // hashtag), o de las que quedaron pendientes de una corrida anterior que se
 // cortó por cuota de Apify — sin importar cuán reciente sea su computed_at
-// (la cadencia automática es mensual y además escalonada — ver
+// ni si la cuenta apareció con posteos nuevos (el ciclo automático solo
+// recalcula cuentas que aparecen en el monitoreo, y escalonado — ver
 // src/accountStats.js).
 //
 // Cada cuenta hace UNA sola pasada de Apify que sirve para tres cosas a la
@@ -77,10 +78,12 @@ async function recalcOne(account, { index, total } = {}) {
   console.log(`${prefix}@${account}...`);
 
   const result = await accountStats.computeAccountStats(account);
-  const refLine =
-    result.groupsSaved > 0
-      ? `${result.groupsSaved} grupo(s) con referencia guardada`
-      : 'sin datos suficientes (menos de 5 posteos recientes)';
+  let refLine = 'sin datos suficientes (menos de 5 posteos recientes)';
+  if (result.groupsSaved > 0) {
+    refLine = `${result.groupsSaved} grupo(s) con referencia guardada`;
+  } else if (result.referenceKept) {
+    refLine += ', referencia anterior conservada';
+  }
 
   console.log(
     `  ${result.fetched} posteos traídos, ${result.recent} de los últimos 3 meses, ${refLine}, ` +
