@@ -190,7 +190,9 @@ async function scrapeHashtag(tag, { resultsLimit }) {
  * corrida aparte con resultsType "details" sobre la URL del perfil, que
  * devuelve followersCount en el nivel superior del item. Se llama desde
  * accountStats.computeAccountStats, con la misma cadencia que el benchmark
- * (mensual / cuenta nueva / recálculo forzado) — no en cada corrida de 4hs.
+ * (cuando la cuenta aparece con un posteo nuevo y nunca se calculó o pasaron
+ * BENCHMARK_RECALC_DAYS desde el último cálculo, o en un recálculo forzado
+ * por script) — no en cada corrida de 4hs.
  *
  * Nunca tira: sin token de Apify, cuenta privada, actor caído o cualquier
  * otro error, devuelve null (la columna de seguidores queda en "-", el

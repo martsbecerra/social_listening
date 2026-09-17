@@ -233,6 +233,39 @@ Hace falta `SESSION_SECRET` (string largo aleatorio) y `APP_BASE_URL` (p. ej.
   mediana (una búsqueda de Grok por cuenta) y sumar medianas de RTs/vistas.
   Cuando se haga, alcanza con activar la capability en `src/platforms/x.js`.
 
+- **`src/accountStats.js`**: el **benchmark por cuenta** (solo en redes cuyo
+  adapter declara `capabilities.benchmark`, hoy Instagram): la mediana de
+  likes y comentarios de los últimos 3 meses de ESA cuenta, por tipo de
+  posteo más una global de fallback, contra la que cada posteo de la tabla
+  se clasifica como alto/normal/bajo. Se guarda en `account_stats`.
+
+  **Cuándo se calcula.** Una cuenta se (re)calcula SOLO cuando aparece con
+  un posteo nuevo en el monitoreo (`detected_posts`) y, además, nunca se
+  calculó o ese posteo se detectó `BENCHMARK_RECALC_DAYS` (default 90) o
+  más días después del último cálculo. Vale igual para trackeadas y para
+  cuentas llegadas por hashtag: scrapear una trackeada sin guardar ningún
+  posteo relevante no dispara nada; agregar una cuenta trackeada tampoco
+  (queda sin referencia hasta su primera publicación relevante, y ahí se
+  calcula en ese mismo ciclo); una cuenta que no vuelve a aparecer conserva
+  su mediana sin volver a pagarla. La condición sale de la base (fecha de
+  detección del posteo contra fecha del último cálculo), no de estado en
+  memoria. El benchmark corre después de guardar los posteos del ciclo, así
+  el posteo de una cuenta nueva ya sale con referencia en la tabla.
+
+  Tope `MAX_ACCOUNTS_PER_CYCLE` (default 10) por ciclo: si aparecen muchas
+  cuentas pendientes de golpe, las que quedan afuera siguen pendientes y
+  salen en los ciclos siguientes, en orden de llegada. Un intento que no
+  trae 5 posteos recientes (cuenta privada, publica poco, la fuente
+  devolvió vacío) no borra la referencia anterior: la conserva y solo
+  anota la fecha, para no reintentar en cada ciclo. La misma pasada trae
+  los seguidores de la cuenta y actualiza métricas de sus posteos ya
+  guardados, así que `BENCHMARK_RECALC_DAYS` es también la cadencia máxima
+  de seguidores; una cuenta que no reaparece no los actualiza.
+
+  Carga manual o recálculo forzado, sin este criterio:
+  `node scripts/recalc-account-stats.js <cuenta>`, `--todas` o
+  `--pendientes` (ver el encabezado del script).
+
 - **`src/classifier.js`**: acá vive el llamado a **Claude Haiku 4.5** (modelo
   barato, configurable con `CLASSIFIER_MODEL`) para dos cosas: `classifyPost`
   (título + sentimiento de un posteo que ya se sabe relevante) y
@@ -296,6 +329,13 @@ esa corrida devuelve ~0 resultados (no se paga por posteos viejos ya vistos).
 Los hashtags sí pagan siempre el `resultsLimit` completo. Para bajar el costo:
 reducí `MONITOR_RESULTS_LIMIT`, sacá hashtags, o espaciá el cron
 (`MONITOR_CRON` en el `.env`, ej. cada 6-8hs).
+
+El benchmark por cuenta (`src/accountStats.js`) solo gasta cuando una cuenta
+aparece con un posteo nuevo y nunca se calculó o pasaron
+`BENCHMARK_RECALC_DAYS` desde el último cálculo: `BENCHMARK_POST_LIMIT`
+resultados más una consulta de perfil por cuenta, como mucho
+`MAX_ACCOUNTS_PER_CYCLE` cuentas por ciclo. Una cuenta que no vuelve a
+aparecer no cuesta nada.
 
 ---
 

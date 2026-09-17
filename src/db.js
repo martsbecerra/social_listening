@@ -505,18 +505,56 @@ const getAccountFollowersStmt = db.prepare(
   'SELECT followers FROM account_followers WHERE account = ? AND plataforma = ?'
 );
 
-// Carga inicial / recálculo forzado del benchmark (ver scripts/recalc-
-// account-stats.js): el universo de cuentas a procesar es la unión de las
+// Carga manual / recálculo forzado del benchmark (scripts/recalc-account-
+// stats.js --todas): el universo de cuentas a procesar es la unión de las
 // trackeadas (config/monitoring.json) con las que ya aparecen en
 // detected_posts (llegaron por hashtag, nunca se trackearon explícitamente).
+// El ciclo automático NO usa este universo: usa listAccountBenchmarkActivity.
 const listDistinctPostAccountsStmt = db.prepare(
   `SELECT DISTINCT account FROM detected_posts WHERE ignored = 0 AND plataforma = ? AND account IS NOT NULL AND account != 'N/D' ORDER BY account`
 );
-// Freshness de TODAS las cuentas de una, no una query por cuenta — con
-// 100-150 cuentas en el universo ampliado, N queries individuales ya no es
-// gratis (ver accountStats.refreshStaleAccountStats).
-const getAllAccountStatsFreshnessStmt = db.prepare(
-  'SELECT account, MAX(computed_at) AS lastComputedAt FROM account_stats WHERE plataforma = ? GROUP BY account'
+// Qué cuentas tienen que recalcular su benchmark, derivado SOLO de la base
+// (ver accountStats.refreshStaleAccountStats): una fila por cuenta con
+// posteos visibles en detected_posts, con la fecha del último posteo
+// detectado, la del último cálculo (la fila global de account_stats,
+// post_type NULL: es la que se escribe en cada intento, con o sin datos
+// suficientes) y `eligibleSince`, la fecha del primer posteo que dispara el
+// recálculo: cualquiera si nunca se calculó, o uno detectado @recalcDays o
+// más días después del último cálculo. NULL = no hay nada que recalcular.
+// Como todo sale de detected_at vs. computed_at, una cuenta que quedó
+// fuera del tope en un ciclo sigue elegible en el siguiente sin guardar
+// estado en memoria, y una recalculada deja de serlo sola (su computed_at
+// pasa a ser posterior a sus posteos).
+// Join case-insensitive: el nombre devuelto es el de account_stats si
+// existe (así el recálculo pisa esas filas y no crea otras con distinta
+// capitalización), si no el del posteo.
+const listAccountBenchmarkActivityStmt = db.prepare(`
+  SELECT
+    COALESCE(s.account, MIN(p.account)) AS account,
+    MAX(p.detected_at) AS lastDetectedAt,
+    s.computed_at AS lastComputedAt,
+    MIN(CASE
+          WHEN s.computed_at IS NULL
+            OR julianday(p.detected_at) - julianday(s.computed_at) >= @recalcDays
+          THEN p.detected_at
+        END) AS eligibleSince
+  FROM detected_posts p
+  LEFT JOIN (
+    SELECT lower(account) AS k, MIN(account) AS account, MAX(computed_at) AS computed_at
+    FROM account_stats
+    WHERE plataforma = @plataforma AND post_type IS NULL
+    GROUP BY lower(account)
+  ) s ON s.k = lower(p.account)
+  WHERE p.plataforma = @plataforma AND p.ignored = 0 AND p.account IS NOT NULL AND p.account != 'N/D'
+  GROUP BY lower(p.account)
+  ORDER BY eligibleSince, account
+`);
+// Un intento de recálculo que no trajo datos suficientes deja la
+// referencia anterior intacta y solo avanza la fecha (ver
+// accountStats.computeAccountStats): la cuenta cuenta como calculada y no
+// vuelve a la cola en cada ciclo.
+const touchAccountStatsComputedAtStmt = db.prepare(
+  'UPDATE account_stats SET computed_at = @computedAt WHERE lower(account) = lower(@account) AND plataforma = @plataforma'
 );
 const getPostMetricsStmt = db.prepare('SELECT likes, comments, post_type, ignored FROM detected_posts WHERE id = ?');
 const updatePostMetricsStmt = db.prepare(
@@ -1073,9 +1111,21 @@ function listDistinctPostAccounts(plataforma = 'instagram') {
   return listDistinctPostAccountsStmt.all(plataforma).map((row) => row.account);
 }
 
-/** @returns {{account: string, lastComputedAt: string|null}[]} Freshness de account_stats para TODAS las cuentas que tengan al menos una fila, de una sola query. */
-function getAllAccountStatsFreshness(plataforma) {
-  return getAllAccountStatsFreshnessStmt.all(plataforma);
+/**
+ * Cuentas de una plataforma con posteos visibles en detected_posts y su
+ * situación frente al benchmark (ver el comentario del statement).
+ * @param {string} plataforma
+ * @param {number} recalcDays días entre el último cálculo y un posteo nuevo para volver a calcular
+ * @returns {{account: string, lastDetectedAt: string, lastComputedAt: string|null, eligibleSince: string|null}[]}
+ *   ordenadas por eligibleSince (las que no deben recalcularse, con NULL, van primero en SQLite).
+ */
+function listAccountBenchmarkActivity(plataforma, recalcDays) {
+  return listAccountBenchmarkActivityStmt.all({ plataforma, recalcDays });
+}
+
+/** Avanza computed_at de todas las filas de la cuenta sin tocar medianas ni n_posts. @returns {number} filas tocadas */
+function touchAccountStatsComputedAt(account, plataforma, computedAt) {
+  return touchAccountStatsComputedAtStmt.run({ account, plataforma, computedAt: computedAt || new Date().toISOString() }).changes;
 }
 
 /**
@@ -1224,7 +1274,8 @@ module.exports = {
   upsertAccountFollowers,
   getAccountFollowers,
   listDistinctPostAccounts,
-  getAllAccountStatsFreshness,
+  listAccountBenchmarkActivity,
+  touchAccountStatsComputedAt,
   updatePostMetricsIfChanged,
   updateFollowersForAccount,
   getRefreshState,

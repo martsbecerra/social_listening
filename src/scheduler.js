@@ -138,6 +138,17 @@ async function runCycle({ ifBusy = 'throw', plataforma } = {}) {
   }
 }
 
+/** Une listas de cuentas por plataforma ({ instagram: [...] }) para skipAccounts de refreshPostMetrics. */
+function mergeSkipAccounts(...sources) {
+  const merged = {};
+  for (const source of sources) {
+    for (const [plataforma, accounts] of Object.entries(source || {})) {
+      merged[plataforma] = [...(merged[plataforma] || []), ...(accounts || [])];
+    }
+  }
+  return merged;
+}
+
 async function runCycleUnlocked(plataformas) {
   const { checked, newPosts, scrapedAccounts, porPlataforma } = await runMonitoringCycle({ plataformas });
   const newCount = (newPosts || []).length;
@@ -148,17 +159,25 @@ async function runCycleUnlocked(plataformas) {
     console.error('Error geocodificando reclamos pendientes:', err.message);
   }
 
-  // Benchmark y refresco de métricas: cada módulo recorre solo las
-  // plataformas (del subconjunto pedido) cuyo adapter tiene esa capability.
+  // Benchmark DESPUÉS de guardar los posteos nuevos: solo se recalculan las
+  // cuentas que acaban de aparecer con un posteo (nunca calculadas, o con
+  // el último cálculo de BENCHMARK_RECALC_DAYS o más), así ese posteo ya
+  // sale con benchmark en este mismo ciclo. Cada módulo recorre solo las
+  // plataformas (del subconjunto pedido) cuyo adapter tiene esa capability:
   // "Actualizar ahora" en una solapa sin benchmark no gasta nada acá.
+  let recalculatedAccounts = {};
   try {
-    await refreshStaleAccountStats({ plataformas });
+    ({ recalculatedAccounts } = await refreshStaleAccountStats({ plataformas }));
   } catch (err) {
     console.error('Error recalculando el benchmark de cuentas:', err.message);
   }
 
+  // Refresco de métricas sin las cuentas que este ciclo ya consultó: las
+  // trackeadas que scrapeó el monitoreo y las que acaba de pasar el
+  // benchmark (computeAccountStats actualiza sus posteos con esa misma
+  // pasada, no hay que pagarla dos veces).
   try {
-    await refreshPostMetrics({ plataformas, skipAccounts: scrapedAccounts });
+    await refreshPostMetrics({ plataformas, skipAccounts: mergeSkipAccounts(scrapedAccounts, recalculatedAccounts) });
   } catch (err) {
     console.error('Error refrescando métricas de posteos:', err.message);
   }

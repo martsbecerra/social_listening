@@ -210,20 +210,11 @@ async function addAccount(account, platformId = DEFAULT_PLATFORM_ID) {
   if (isNew) {
     config.accounts.push(clean);
     saveConfig(all);
-
-    // Solo en plataformas con benchmark: sin esto la cuenta queda hasta un
-    // mes sin referencia (la cadencia normal es mensual, ver accountStats.js).
-    // Sin "await": no demorar la respuesta de "agregar cuenta". require()
-    // adentro de la función (no arriba del archivo) para evitar una
-    // dependencia circular: accountStats.js importa este módulo para reusar
-    // loadConfig.
-    if (platform.capabilities && platform.capabilities.benchmark) {
-      require('./accountStats')
-        .computeAccountStats(clean, platformId)
-        .catch((err) => {
-          console.error(`No se pudo calcular el benchmark de @${clean}:`, err.message);
-        });
-    }
+    // A propósito NO se calcula el benchmark acá: al agregar una cuenta
+    // trackeada queda sin referencia hasta que traiga una publicación
+    // relevante al monitoreo; recién ahí, en ese mismo ciclo, se calcula
+    // (ver accountStats.refreshStaleAccountStats). Una trackeada que nunca
+    // aparece no cuesta ni una consulta.
   }
   return config;
 }
