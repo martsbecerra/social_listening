@@ -6,12 +6,16 @@
 // (que queda como orquestador agnóstico de plataforma). La dependencia va en
 // un solo sentido: monitor.js importa este módulo, nunca al revés.
 //
+// El contrato del adapter está documentado en platforms/index.js. Apify es
+// un detalle interno de ESTE adapter: el orquestador no sabe qué fuente hay
+// detrás, solo ve capabilities, isConfigured() y errores con `code`.
+//
 // NOTA sobre nombres de campos: igual que en src/apify.js, los nombres que
 // devuelve el actor pueden variar según la versión (ver README). Si algo
 // aparece vacío, revisar una corrida real en el panel de Apify.
 // ==========================================================================
 
-const { runActorSync } = require('../apify');
+const { runActorSync, isQuotaExceededError } = require('../apify');
 
 const PLATFORM_ID = 'instagram';
 const ACTOR_ID = 'apify~instagram-scraper';
@@ -24,9 +28,23 @@ function buildHashtagUrl(tag) {
   return `https://www.instagram.com/explore/tags/${tag}/`;
 }
 
-/** Corre el actor de ESTA plataforma (mismo runActorSync genérico de apify.js). */
-function runActor(input) {
-  return runActorSync(input, { actorId: ACTOR_ID });
+function isConfigured() {
+  return Boolean((process.env.APIFY_API_TOKEN || '').trim());
+}
+
+/**
+ * Corre el actor de ESTA plataforma (mismo runActorSync genérico de apify.js).
+ * apify.js ya marca `code` (AUTH_INVALID / RATE_LIMITED / QUOTA_EXCEEDED, ver
+ * platforms/errors.js); acá queda el respaldo por texto para la cuota, por
+ * si el error llegara por otro camino sin código.
+ */
+async function runActor(input) {
+  try {
+    return await runActorSync(input, { actorId: ACTOR_ID });
+  } catch (err) {
+    if (err && !err.code && isQuotaExceededError(err)) err.code = 'QUOTA_EXCEEDED';
+    throw err;
+  }
 }
 
 /**
@@ -131,6 +149,9 @@ function normalizePost(raw, { account, sourceType }) {
  * Solo scrapea — el filtrado de relevancia se hace después, en el
  * orquestador (runMonitoringCycle), porque combina coincidencia de texto con
  * detección semántica (ver classifyRelevance en src/classifier.js).
+ *
+ * `lookback` usa la sintaxis del actor ("1 day"); `undefined` = sin filtro
+ * de fecha (camino del benchmark, que filtra los 3 meses por su cuenta).
  */
 async function scrapeAccount(username, { resultsLimit, lookback }) {
   const items = await runActor({
@@ -195,7 +216,17 @@ async function fetchAccountFollowers(username) {
 
 module.exports = {
   id: PLATFORM_ID,
+  label: 'Instagram',
+  // Metadata propia de este adapter, no parte del contrato genérico.
   actorId: ACTOR_ID,
+  /**
+   * Qué sabe hacer esta plataforma además de detectar posteos (ver
+   * platforms/index.js). Instagram tiene todo: benchmark por cuenta
+   * (mediana de likes/comentarios), seguidores y refresco de métricas de
+   * posteos ya guardados.
+   */
+  capabilities: { benchmark: true, followers: true, metricsRefresh: true },
+  isConfigured,
   validateAccount,
   validateHashtag,
   scrapeAccount,
@@ -205,7 +236,8 @@ module.exports = {
   fetchAccountFollowers,
   /**
    * Qué métricas expone esta plataforma, para que el frontend arme las
-   * columnas leyendo de acá en vez de hardcodearlas. `label` es el nombre
+   * columnas leyendo de acá en vez de hardcodearlas, y para que el
+   * orquestador sepa qué campos guardar y refrescar. `label` es el nombre
    * que se muestra en la UI; `primary` marca LA métrica a destacar de la
    * plataforma (en Instagram son los likes; en TikTok va a ser playCount).
    */

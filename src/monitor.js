@@ -2,23 +2,36 @@
 // monitor.js
 // --------------------------------------------------------------------------
 // Orquestador del monitoreo, agnóstico de plataforma. Detecta posteos nuevos
-// relevantes a partir de dos tipos de fuentes por plataforma:
-//   - Cuentas trackeadas (config/monitoring.json, sección por plataforma).
-//   - Páginas de hashtag configuradas (las keywords que empiezan con "#").
+// relevantes a partir de las fuentes configuradas por plataforma
+// (config/monitoring.json, una sección por red):
+//   - Cuentas trackeadas.
+//   - Hashtags (las keywords que empiezan con "#").
+//   - Keywords planas, SOLO en las plataformas cuyo adapter sabe buscarlas
+//     (scrapeKeyword, por ejemplo X). En las demás son un filtro de texto
+//     sobre lo que ya se scrapeó por cuenta o hashtag.
 //
 // Un posteo se considera relevante si:
-//   1. Su caption/hashtags contienen alguna palabra clave literal
+//   1. Llegó por una búsqueda por término (sourceType 'keyword': una keyword,
+//      o un hashtag en las redes donde el hashtag es una búsqueda más, como
+//      X) — la búsqueda ya lo validó, o
+//   2. Su caption/hashtags contienen alguna palabra clave literal
 //      (case-insensitive), o
-//   2. No hay coincidencia literal, pero Claude determina que el contenido
-//      igual habla del Jefe de Gobierno porteño o su gestión (detección
-//      semántica — ver classifyRelevance en src/classifier.js). Así no
-//      dependemos únicamente de que el texto use exactamente alguna de las
-//      palabras configuradas.
+//   3. No hay coincidencia literal, pero el clasificador determina que el
+//      contenido igual habla del Jefe de Gobierno porteño o su gestión
+//      (detección semántica — ver classifyRelevance en src/classifier.js).
 //
-// Todo lo específico de cada plataforma (URLs, actor de Apify, nombres de
-// campos) vive en su adapter de src/platforms/. Este módulo solo orquesta:
-// scrapear vía adapter, evaluar relevancia, dedupe contra SQLite (src/db.js,
+// Todo lo específico de cada plataforma (fuente de datos, URLs, nombres de
+// campos, métricas propias, qué sabe hacer) vive en su adapter de
+// src/platforms/. Este módulo solo orquesta: scrapear vía adapter, evaluar
+// relevancia con el clasificador compartido, dedupe contra SQLite (src/db.js,
 // que decide qué es realmente "nuevo") y guardado.
+//
+// Errores al scrapear: una fuente que falla sola (cuenta privada, etc.) se
+// loguea y el ciclo sigue. Un error de plataforma (credenciales inválidas,
+// rate limit, cuota agotada — ver src/platforms/errors.js) es otra cosa: si
+// la corrida era solo de esa plataforma ("Actualizar ahora" en su solapa) el
+// error le llega al usuario en vez de un "0 nuevos" que parece un éxito; en
+// el cron se anota en porPlataforma[id].error y se sigue con las demás.
 // ==========================================================================
 
 const fs = require('fs');
@@ -26,12 +39,26 @@ const path = require('path');
 const { classifyPost, classifyRelevance } = require('./classifier');
 const { checkAndLogJump } = require('./viralJumpDetector');
 const { getPlatform, listPlatformIds, DEFAULT_PLATFORM_ID } = require('./platforms');
+const { isPlatformError } = require('./platforms/errors');
 const db = require('./db');
 
 // MONITORING_CONFIG_PATH: solo para tests (tempfile), mismo patrón que
 // MONITORING_DB_PATH en db.js. En runtime normal es config/monitoring.json.
 const CONFIG_PATH =
   process.env.MONITORING_CONFIG_PATH || path.join(__dirname, '..', 'config', 'monitoring.json');
+
+// Config que tenía el monitoreo de X cuando era un módulo aparte
+// (config/monitoring-x.json). Se absorbe UNA vez como sección "x" de
+// monitoring.json (ver absorbLegacyXConfig). MONITORING_X_CONFIG_PATH queda
+// solo para poder probar esa migración con un tempfile.
+const LEGACY_X_CONFIG_PATH =
+  process.env.MONITORING_X_CONFIG_PATH || path.join(__dirname, '..', 'config', 'monitoring-x.json');
+
+// Columnas de detected_posts que pueden ser métricas de un adapter. Un
+// adapter puede declarar más claves en `metrics`, pero al guardar/refrescar
+// solo pasan las que existen en la tabla (node:sqlite rechaza parámetros
+// desconocidos).
+const METRIC_COLUMNS = ['likes', 'comments', 'retweets', 'views'];
 
 /**
  * Las cuentas son simplemente el nombre de usuario. Acepta también el
@@ -42,10 +69,14 @@ function normalizeAccount(entry) {
   return typeof entry === 'string' ? entry : entry.username;
 }
 
+function cleanList(list) {
+  return (Array.isArray(list) ? list : []).map((v) => String(v).trim()).filter(Boolean);
+}
+
 /**
  * config/monitoring.json tiene tres formatos posibles:
  *   - Actual (secciones por plataforma): { instagram: { accounts: [...],
- *     keywords: [...] } }. Es el único que escribe saveConfig().
+ *     keywords: [...] }, x: { ... } }. Es el único que escribe saveConfig().
  *   - Plano (anterior): { accounts: [...], keywords: [...] } en la raíz —
  *     era todo Instagram implícitamente.
  *   - Legacy (anidado): { instagram: { accounts, hashtags, keywords:
@@ -57,7 +88,7 @@ function normalizeAccount(entry) {
  * archivo); si ya está en formato actual no se toca nada — la migración es
  * idempotente. Devuelve siempre { plataforma: { accounts, keywords } }.
  */
-function loadConfigAll() {
+function readConfigAll() {
   const raw = fs.readFileSync(CONFIG_PATH, 'utf8');
   const parsed = JSON.parse(raw);
 
@@ -113,6 +144,42 @@ function loadConfigAll() {
   return all;
 }
 
+/**
+ * Migración única del config que X tenía cuando era un módulo aparte:
+ * si todavía no hay sección "x" y existe el archivo viejo, se copia como
+ * sección "x", se guarda monitoring.json y el archivo viejo se renombra a
+ * ".migrado" (queda como respaldo, ya no se lee). Idempotente: la segunda
+ * vez no hay archivo viejo y no pasa nada. Nunca tira: un archivo viejo
+ * roto se avisa y se ignora.
+ */
+function absorbLegacyXConfig(all) {
+  if (all.x || !fs.existsSync(LEGACY_X_CONFIG_PATH)) return all;
+  let parsed;
+  try {
+    parsed = JSON.parse(fs.readFileSync(LEGACY_X_CONFIG_PATH, 'utf8'));
+  } catch (err) {
+    console.warn(`[monitor] no se pudo leer ${LEGACY_X_CONFIG_PATH} para migrarlo:`, err.message);
+    return all;
+  }
+  all.x = { accounts: cleanList(parsed.accounts), keywords: cleanList(parsed.keywords) };
+  saveConfig(all);
+  const migrated = `${LEGACY_X_CONFIG_PATH}.migrado`;
+  try {
+    fs.renameSync(LEGACY_X_CONFIG_PATH, migrated);
+  } catch (err) {
+    console.warn(`[monitor] config de X absorbida, pero no se pudo renombrar el archivo viejo:`, err.message);
+  }
+  console.log(
+    `[monitor] config de X absorbida como sección "x" de monitoring.json ` +
+      `(${all.x.accounts.length} cuentas, ${all.x.keywords.length} keywords); el archivo viejo quedó como ${migrated}`
+  );
+  return all;
+}
+
+function loadConfigAll() {
+  return absorbLegacyXConfig(readConfigAll());
+}
+
 /** Config de UNA plataforma, con la misma forma { accounts, keywords } de siempre. */
 function loadConfig(platformId = DEFAULT_PLATFORM_ID) {
   return loadConfigAll()[platformId] || { accounts: [], keywords: [] };
@@ -124,8 +191,9 @@ function saveConfig(configAll) {
 
 /**
  * Agrega una cuenta a trackear (sacando "@" si lo escribieron de más).
- * Antes de guardarla, valida que exista de verdad en la plataforma. No hace
- * nada si ya estaba (evita duplicados).
+ * Antes de guardarla, el adapter valida lo que pueda validar (Instagram
+ * consulta que exista; X solo chequea el formato del handle). No hace nada
+ * si ya estaba (evita duplicados).
  */
 async function addAccount(account, platformId = DEFAULT_PLATFORM_ID) {
   const clean = String(account || '').trim().replace(/^@/, '');
@@ -143,18 +211,19 @@ async function addAccount(account, platformId = DEFAULT_PLATFORM_ID) {
     config.accounts.push(clean);
     saveConfig(all);
 
-    // Sin esto la cuenta queda hasta un mes sin referencia (la cadencia
-    // normal es mensual, ver accountStats.js). Sin "await": no demorar la
-    // respuesta de "agregar cuenta" — ya hace su propio llamado a Apify
-    // arriba (validateAccount) y este es un segundo llamado aparte.
-    // require() adentro de la función (no arriba del archivo) para evitar
-    // una dependencia circular: accountStats.js importa este módulo para
-    // reusar loadConfig.
-    require('./accountStats')
-      .computeAccountStats(clean, platformId)
-      .catch((err) => {
-        console.error(`No se pudo calcular el benchmark de @${clean}:`, err.message);
-      });
+    // Solo en plataformas con benchmark: sin esto la cuenta queda hasta un
+    // mes sin referencia (la cadencia normal es mensual, ver accountStats.js).
+    // Sin "await": no demorar la respuesta de "agregar cuenta". require()
+    // adentro de la función (no arriba del archivo) para evitar una
+    // dependencia circular: accountStats.js importa este módulo para reusar
+    // loadConfig.
+    if (platform.capabilities && platform.capabilities.benchmark) {
+      require('./accountStats')
+        .computeAccountStats(clean, platformId)
+        .catch((err) => {
+          console.error(`No se pudo calcular el benchmark de @${clean}:`, err.message);
+        });
+    }
   }
   return config;
 }
@@ -168,10 +237,10 @@ function removeAccount(account, platformId = DEFAULT_PLATFORM_ID) {
 }
 
 /**
- * Agrega una palabra clave o hashtag. Si empieza con "#" se trata como
- * hashtag (se scrapea esa página directamente, y por eso se valida que
- * exista); si no, es texto libre a buscar dentro de lo que ya se scrapea
- * (ver limitación en el README) y no hay nada concreto que validar.
+ * Agrega una palabra clave o hashtag. Si empieza con "#" el adapter valida
+ * lo que pueda (Instagram consulta que la página del hashtag exista); si no,
+ * es texto libre: en Instagram se busca dentro de lo que ya se scrapea, en
+ * X se busca literalmente (ver scrapeKeyword en el adapter).
  */
 async function addKeyword(keyword, platformId = DEFAULT_PLATFORM_ID) {
   const clean = String(keyword || '').trim();
@@ -207,19 +276,45 @@ function textIncludesAny(text, needles) {
 }
 
 /**
- * Decide si un posteo candidato es relevante y, si lo es, le pone
- * título + sentimiento. Dos caminos:
- *   1. Coincidencia literal de palabra clave → clasificación directa
- *      (siempre relevante, no hace falta preguntarle a Claude si aplica).
- *   2. Sin coincidencia literal → se le pregunta a Claude si el contenido
- *      igual habla del Jefe de Gobierno porteño / su gestión (detección
- *      semántica), para no depender solo del texto exacto.
- * Un posteo sin caption solo se acepta si viene de una cuenta trackeada
- * (no hay texto que evaluar semánticamente, pero viene de la fuente que
- * explícitamente querés ver); si viene de un hashtag, se descarta.
+ * Métricas de un posteo según lo que declara el adapter, limitadas a las
+ * columnas que existen en detected_posts. Es lo que se pasa a
+ * db.applyMetricsRefresh: las claves ausentes se conservan como estaban
+ * (Instagram no toca retweets/views; X las refresca).
  */
-async function evaluateRelevance(post, keywords) {
-  const text = `${post.caption} ${post.hashtagsText}`.trim();
+function pickMetrics(platform, post) {
+  const out = {};
+  for (const metric of platform.metrics || []) {
+    if (METRIC_COLUMNS.includes(metric.key)) out[metric.key] = post[metric.key];
+  }
+  return out;
+}
+
+/**
+ * Decide si un posteo candidato es relevante y, si lo es, le pone
+ * título + sentimiento. Tres caminos:
+ *   1. Llegó por una búsqueda por término (sourceType 'keyword': una keyword
+ *      o, en X, también un hashtag — ahí el hashtag es una búsqueda más, no
+ *      una página de descubrimiento) → relevante sin preguntar: la búsqueda
+ *      de la plataforma ya lo encontró para ese término, descartarlo después
+ *      sería perder lo que la búsqueda validó. Solo se clasifican título y
+ *      sentimiento. sourceType 'hashtag' (Instagram) NO entra acá: la página
+ *      del hashtag trae todo lo que lo usa y hay que filtrarlo.
+ *   2. Coincidencia literal de palabra clave → clasificación directa
+ *      (siempre relevante, no hace falta preguntar si aplica).
+ *   3. Sin coincidencia literal → se le pregunta al clasificador si el
+ *      contenido igual habla del Jefe de Gobierno porteño / su gestión
+ *      (detección semántica), para no depender solo del texto exacto.
+ * Un posteo sin caption solo se acepta si viene de una cuenta trackeada
+ * (no hay texto que evaluar, pero viene de la fuente que explícitamente
+ * querés ver); si viene de un hashtag o una búsqueda, se descarta.
+ *
+ * @param {object} post posteo normalizado por el adapter
+ * @param {string[]} keywords keywords planas (sin "#") de la plataforma
+ * @param {{ platform?: object }} [options] adapter, para etiquetar el prompt
+ */
+async function evaluateRelevance(post, keywords, { platform } = {}) {
+  const platformLabel = platform && platform.label ? platform.label : undefined;
+  const text = `${post.caption || ''} ${post.hashtagsText || ''}`.trim();
 
   if (!post.caption || !post.caption.trim()) {
     if (post.sourceType === 'account') {
@@ -229,10 +324,29 @@ async function evaluateRelevance(post, keywords) {
   }
 
   const literalMatch = textIncludesAny(text, keywords);
+
+  if (post.sourceType === 'keyword') {
+    const { title, sentiment, unclassified } = await classifyPost(post.caption, { platformLabel });
+    const term = post.sourceQuery || literalMatch;
+    let base = 'Búsqueda por palabra clave';
+    if (term) {
+      base = String(term).startsWith('#')
+        ? `Búsqueda por hashtag: "${term}"`
+        : `Búsqueda por palabra clave: "${term}"`;
+    }
+    return {
+      relevant: true,
+      title,
+      sentiment,
+      unclassified,
+      matchedReason: unclassified ? `${base} — sin clasificar` : base,
+    };
+  }
+
   if (literalMatch) {
     // La relevancia acá NO depende del LLM: ya matcheó una palabra clave. Si
     // el clasificador falla, el posteo entra igual, sin título ni sentimiento.
-    const { title, sentiment, unclassified } = await classifyPost(post.caption);
+    const { title, sentiment, unclassified } = await classifyPost(post.caption, { platformLabel });
     const base = post.sourceType === 'account'
       ? `Cuenta trackeada: @${post.account} (coincidencia: "${literalMatch}")`
       : `Coincidencia con palabra clave: "${literalMatch}"`;
@@ -245,7 +359,7 @@ async function evaluateRelevance(post, keywords) {
     };
   }
 
-  const result = await classifyRelevance(post.caption);
+  const result = await classifyRelevance(post.caption, { platformLabel });
   if (!result.relevant) return { relevant: false };
 
   // Sin palabra clave literal y con el clasificador caído no sabemos si es
@@ -270,59 +384,115 @@ async function evaluateRelevance(post, keywords) {
   return { relevant: true, title: result.title, sentiment: result.sentiment, matchedReason };
 }
 
+function notConfiguredError(platform) {
+  const e = new Error(`La plataforma ${platform.id} no tiene credenciales configuradas`);
+  e.code = 'NOT_CONFIGURED';
+  e.userMessage = `Falta configurar ${platform.label || platform.id}: revisá las claves en el .env.`;
+  return e;
+}
+
 /**
- * Corre un ciclo completo de monitoreo: por cada plataforma configurada,
- * scrapea todas las fuentes vía su adapter, evalúa relevancia (texto o
- * semántica), descarta lo ya conocido y guarda + devuelve solo los posteos
- * nuevos. La evaluación, el dedupe y el guardado son los mismos para todas
- * las plataformas; solo el scraping es del adapter.
+ * Corre un ciclo completo de monitoreo: por cada plataforma del registro
+ * (o solo las pedidas en `plataformas`), scrapea todas las fuentes vía su
+ * adapter, evalúa relevancia, descarta lo ya conocido y guarda + devuelve
+ * solo los posteos nuevos. La evaluación, el dedupe y el guardado son los
+ * mismos para todas las plataformas; solo el scraping es del adapter.
+ *
+ * Una plataforma sin credenciales se saltea con un aviso — salvo que sea la
+ * única pedida (botón "Actualizar ahora" de esa solapa), en cuyo caso el
+ * error llega al usuario. Lo mismo si alguna fuente falla con un error de
+ * plataforma (credenciales inválidas, rate limit, cuota agotada — ver
+ * platforms/errors.js): primero se guarda lo que las demás fuentes sí
+ * trajeron y después, si la corrida era solo de esa plataforma, se tira ese
+ * error (con `userMessage`, y aclarando cuántos posteos entraron igual). En
+ * una corrida de todo el registro queda en porPlataforma[id].error y se
+ * sigue con las demás.
+ *
+ * @param {{ plataformas?: string[] }} [options] subconjunto del registro;
+ *   sin él, todas (cron).
+ * @returns {Promise<{ checked: number, newPosts: object[],
+ *   scrapedAccounts: Object<string, string[]>,
+ *   porPlataforma: Object<string, { checked: number, newCount: number, skipped: boolean,
+ *     error?: { code: string, message: string } }> }>}
  */
-async function runMonitoringCycle() {
+async function runMonitoringCycle({ plataformas } = {}) {
   const all = loadConfigAll();
   const resultsLimit = Number(process.env.MONITOR_RESULTS_LIMIT || 15);
   const lookback = process.env.MONITOR_LOOKBACK || '1 day';
+  const ids = listPlatformIds().filter((id) => !plataformas || plataformas.includes(id));
+  const singlePlatformRun = Boolean(plataformas && plataformas.length === 1);
 
   let checked = 0;
   const newPosts = [];
-  const scrapedAccounts = [];
+  const scrapedAccounts = {};
+  const porPlataforma = {};
   let metricsRefreshedFree = 0;
 
-  for (const platformId of listPlatformIds()) {
-    const config = all[platformId];
-    if (!config) continue;
+  for (const platformId of ids) {
     const platform = getPlatform(platformId);
-    const { accounts, keywords } = config;
+    const config = all[platformId] || { accounts: [], keywords: [] };
+    porPlataforma[platformId] = { checked: 0, newCount: 0, skipped: false };
 
+    if (typeof platform.isConfigured === 'function' && !platform.isConfigured()) {
+      if (singlePlatformRun) throw notConfiguredError(platform);
+      console.warn(`[monitor] ${platformId}: sin credenciales configuradas, se saltea esta plataforma.`);
+      porPlataforma[platformId].skipped = true;
+      continue;
+    }
+
+    const { accounts, keywords } = config;
     const hashtagTags = keywords.filter((k) => k.startsWith('#')).map((k) => k.slice(1));
+    const textKeywords = keywords.filter((k) => !k.startsWith('#'));
     // Para filtrar por substring usamos la lista completa de keywords, sin el "#".
     const plainKeywords = keywords.map((k) => (k.startsWith('#') ? k.slice(1) : k));
+    const canSearchKeywords = typeof platform.scrapeKeyword === 'function';
 
     const sourceResults = await Promise.allSettled([
       ...accounts.map((account) => platform.scrapeAccount(account, { resultsLimit, lookback })),
-      ...hashtagTags.map((tag) => platform.scrapeHashtag(tag, { resultsLimit })),
+      ...hashtagTags.map((tag) => platform.scrapeHashtag(tag, { resultsLimit, lookback })),
+      ...(canSearchKeywords
+        ? textKeywords.map((keyword) => platform.scrapeKeyword(keyword, { resultsLimit, lookback }))
+        : []),
     ]);
 
     const allCandidates = [];
+    // Primer error de plataforma de esta corrida (clave inválida, rate limit,
+    // cuota): se resuelve DESPUÉS de guardar lo que sí llegó (ver abajo).
+    let platformError = null;
     for (const result of sourceResults) {
       if (result.status === 'fulfilled') {
         allCandidates.push(...result.value);
+      } else if (isPlatformError(result.reason)) {
+        if (!platformError) platformError = result.reason;
+        console.error(
+          `Monitoreo (${platformId}): la plataforma no se pudo consultar (${result.reason.code}):`,
+          result.reason.message
+        );
       } else {
-        // Una fuente que falla (cuenta privada/eliminada, error de Apify,
-        // etc.) no debe tirar abajo el resto del ciclo.
-        console.error('Monitoreo: falló una fuente:', result.reason && result.reason.message);
+        // Una fuente que falla sola (cuenta privada/eliminada, error puntual
+        // de la fuente, etc.) no debe tirar abajo el resto del ciclo.
+        console.error(`Monitoreo (${platformId}): falló una fuente:`, result.reason && result.reason.message);
       }
     }
 
     // Dedupe por id dentro de esta misma corrida (una cuenta trackeada podría
-    // aparecer también en un hashtag, por ejemplo). Por plataforma: dos
-    // plataformas distintas nunca comparten id.
+    // aparecer también en un hashtag o en una búsqueda). Si el mismo posteo
+    // llega por más de una fuente gana la versión que vino por búsqueda
+    // (sourceType 'keyword'): esa ya está validada por la búsqueda y entra
+    // sin classifyRelevance, mientras que la versión 'account' podría ser
+    // descartada por el clasificador. La cuenta no se pierde: post.account
+    // es el mismo handle en las dos. Por plataforma: dos plataformas
+    // distintas nunca comparten id.
     const seenInThisRun = new Map();
     for (const post of allCandidates) {
-      if (post.url && !seenInThisRun.has(post.id)) {
+      if (!post.url) continue;
+      const prev = seenInThisRun.get(post.id);
+      if (!prev || (prev.sourceType !== 'keyword' && post.sourceType === 'keyword')) {
         seenInThisRun.set(post.id, post);
       }
     }
     checked += seenInThisRun.size;
+    porPlataforma[platformId].checked = seenInThisRun.size;
 
     for (const post of seenInThisRun.values()) {
       // Por id o por url: si el scraper cambia el campo con el que armamos el
@@ -331,9 +501,9 @@ async function runMonitoringCycle() {
       if (existingId) {
         // Ya lo conocíamos (incluye ignorados: la fila sigue en SQLite para
         // no re-detectar). No reclasificar. Si no está ignorado, esta misma
-        // respuesta del scraper trae likes/comments actuales — refrescar la
+        // respuesta del scraper trae las métricas actuales — refrescar la
         // fila sale gratis. Si está ignorado, applyMetricsRefresh es no-op.
-        const refresh = db.applyMetricsRefresh(existingId, { likes: post.likes, comments: post.comments });
+        const refresh = db.applyMetricsRefresh(existingId, pickMetrics(platform, post));
         if (refresh) {
           metricsRefreshedFree += 1;
           checkAndLogJump({ account: refresh.account, id: existingId, postedAt: refresh.postedAt, metric: 'comentarios', previous: refresh.previousComments, current: refresh.comments });
@@ -342,7 +512,7 @@ async function runMonitoringCycle() {
         continue;
       }
 
-      const evaluation = await evaluateRelevance(post, plainKeywords);
+      const evaluation = await evaluateRelevance(post, plainKeywords, { platform });
       if (!evaluation.relevant) continue;
 
       const postWithClassification = {
@@ -353,9 +523,13 @@ async function runMonitoringCycle() {
         matchedReason: evaluation.matchedReason,
         // Snapshot de la caché (account_followers), no un llamado al scraper
         // acá: eso encarecería cada corrida de 4hs. Se refresca por afuera,
-        // en accountStats.computeAccountStats. Posts sin cuenta (hashtag) o
-        // de cuentas todavía sin caché quedan null -> "-" en la tabla.
-        followers: post.account ? db.getAccountFollowers(post.account, platformId) : null,
+        // en accountStats.computeAccountStats. Posts sin cuenta (hashtag),
+        // de cuentas todavía sin caché o de plataformas sin seguidores
+        // quedan null -> "-" en la tabla.
+        followers:
+          post.account && platform.capabilities && platform.capabilities.followers
+            ? db.getAccountFollowers(post.account, platformId)
+            : null,
       };
 
       const inserted = db.saveDetectedPost(postWithClassification);
@@ -364,40 +538,61 @@ async function runMonitoringCycle() {
         // proceso ya lo guardó. No es un posteo nuevo para notificar.
         const racedId = db.findExistingPostId(post.id, post.url);
         if (racedId) {
-          db.applyMetricsRefresh(racedId, { likes: post.likes, comments: post.comments });
+          db.applyMetricsRefresh(racedId, pickMetrics(platform, post));
         }
         continue;
       }
       newPosts.push(postWithClassification);
+      porPlataforma[platformId].newCount += 1;
     }
 
     // Cuentas trackeadas cuyo perfil se scrapeó de verdad en este ciclo (no
-    // las de hashtag: ahí solo se pesca el posteo puntual que matcheó, nunca
-    // "los últimos N" de esa cuenta). src/metricsRefresh.js las usa para no
-    // volver a pedirle al scraper una cuenta que ya se acaba de consultar.
-    scrapedAccounts.push(...accounts);
+    // las de hashtag/keyword: ahí solo se pesca el posteo puntual que
+    // matcheó, nunca "los últimos N" de esa cuenta). src/metricsRefresh.js las
+    // usa para no volver a pedirle al scraper una cuenta que ya se acaba de
+    // consultar. Por plataforma: el mismo handle puede existir en dos redes.
+    scrapedAccounts[platformId] = [...accounts];
+
+    if (platformError) {
+      const saved = porPlataforma[platformId].newCount;
+      const userMessage = platformError.userMessage || platformError.message;
+      // Sin code solo puede ser la cuota de Apify detectada por texto
+      // (ver isQuotaExceeded en platforms/errors.js).
+      const code = platformError.code || 'QUOTA_EXCEEDED';
+      porPlataforma[platformId].error = { code, message: userMessage };
+      if (singlePlatformRun) {
+        // Lo que sí llegó ya está guardado; el error igual tiene que verse.
+        platformError.code = code;
+        platformError.userMessage = saved > 0
+          ? `${userMessage} Igual se guardaron ${saved} posteo(s) nuevo(s) de las fuentes que sí respondieron.`
+          : userMessage;
+        throw platformError;
+      }
+      console.warn(`[monitor] ${platformId}: la corrida quedó incompleta (${code}); se sigue con las demás plataformas.`);
+    }
   }
 
   if (metricsRefreshedFree > 0) {
     console.log(`[monitor] ${metricsRefreshedFree} posteo(s) ya conocidos refrescados gratis con este mismo ciclo.`);
   }
 
-  return { checked, newPosts, scrapedAccounts };
+  return { checked, newPosts, scrapedAccounts, porPlataforma };
 }
 
 /**
- * Genera título + sentimiento para los posteos guardados que todavía no lo
- * tienen (posteos de antes de esta funcionalidad, o alguno que falló). Se
- * puede llamar las veces que haga falta: no vuelve a tocar los que ya están
- * clasificados.
+ * Genera título + sentimiento para los posteos guardados de una plataforma
+ * que todavía no lo tienen (posteos de antes de esta funcionalidad, o
+ * alguno que falló). Se puede llamar las veces que haga falta: no vuelve a
+ * tocar los que ya están clasificados.
  */
-async function backfillClassification(platformId) {
+async function backfillClassification(platformId = DEFAULT_PLATFORM_ID) {
+  const platform = getPlatform(platformId);
   const pending = db.listUnclassified({ plataforma: platformId });
   let classified = 0;
   let stillPending = 0;
 
   for (const row of pending) {
-    const { title, sentiment, unclassified } = await classifyPost(row.caption);
+    const { title, sentiment, unclassified } = await classifyPost(row.caption, { platformLabel: platform.label });
     if (unclassified) {
       // Sigue fallando: no pisamos la fila con los mismos nulls, queda
       // pendiente para el próximo intento.
@@ -420,8 +615,12 @@ module.exports = {
   runMonitoringCycle,
   backfillClassification,
   loadConfig,
+  loadConfigAll,
   addAccount,
   removeAccount,
   addKeyword,
   removeKeyword,
+  // Expuestos para tests.
+  evaluateRelevance,
+  pickMetrics,
 };

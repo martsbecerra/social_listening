@@ -73,7 +73,20 @@ async function runActorSync(input, { actorId = APIFY_ACTOR } = {}) {
   if (!resp.ok) {
     const text = await resp.text().catch(() => '');
     const e = new Error(`Apify respondió ${resp.status}: ${text}`);
-    e.userMessage = mapApifyError(resp.status);
+    // `code` tipificado (ver src/platforms/errors.js): el monitoreo distingue
+    // un error de la plataforma entera (clave, cuota, rate limit), que tiene
+    // que llegarle al usuario, de un fallo puntual de una fuente. La cuota
+    // agotada viene como 403 con un texto fijo (isQuotaExceededError, abajo),
+    // así que se mira antes que el status para no confundirla con una clave
+    // inválida.
+    if (isQuotaExceededError(e)) {
+      e.code = 'QUOTA_EXCEEDED';
+      e.userMessage = 'Se agotó la cuota mensual de Apify (APIFY_API_TOKEN). Esperá al próximo período o ampliá el plan.';
+    } else {
+      if (resp.status === 401 || resp.status === 403) e.code = 'AUTH_INVALID';
+      else if (resp.status === 429) e.code = 'RATE_LIMITED';
+      e.userMessage = mapApifyError(resp.status);
+    }
     throw e;
   }
 

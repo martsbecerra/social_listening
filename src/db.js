@@ -129,8 +129,9 @@ if (!existingColumns.includes('views')) {
 db.exec('UPDATE detected_posts SET likes = NULL WHERE likes < 0');
 db.exec('UPDATE detected_posts SET comments = NULL WHERE comments < 0');
 // Misma pieza de Instagram = misma URL. Si Apify cambia cuál campo usa
-// normalizeMonitorPost para armar el id (raw.id vs shortCode), sin este
-// índice se insertaría una segunda fila y se re-notificaría.
+// normalizePost (src/platforms/instagram.js) para armar el id (raw.id vs
+// shortCode), sin este índice se insertaría una segunda fila y se
+// re-notificaría.
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS detected_posts_url_unique ON detected_posts(url)');
 
 const isKnownPostStmt = db.prepare('SELECT 1 FROM detected_posts WHERE id = ?');
@@ -509,7 +510,7 @@ const getAccountFollowersStmt = db.prepare(
 // trackeadas (config/monitoring.json) con las que ya aparecen en
 // detected_posts (llegaron por hashtag, nunca se trackearon explícitamente).
 const listDistinctPostAccountsStmt = db.prepare(
-  `SELECT DISTINCT account FROM detected_posts WHERE ignored = 0 AND plataforma = 'instagram' AND account IS NOT NULL AND account != 'N/D' ORDER BY account`
+  `SELECT DISTINCT account FROM detected_posts WHERE ignored = 0 AND plataforma = ? AND account IS NOT NULL AND account != 'N/D' ORDER BY account`
 );
 // Freshness de TODAS las cuentas de una, no una query por cuenta — con
 // 100-150 cuentas en el universo ampliado, N queries individuales ya no es
@@ -522,7 +523,7 @@ const updatePostMetricsStmt = db.prepare(
   'UPDATE detected_posts SET likes = @likes, comments = @comments, post_type = @postType, metrics_updated_at = @metricsUpdatedAt WHERE id = @id'
 );
 const updateFollowersForAccountStmt = db.prepare(
-  "UPDATE detected_posts SET followers = ? WHERE account = ? AND plataforma = 'instagram'"
+  'UPDATE detected_posts SET followers = ? WHERE account = ? AND plataforma = ?'
 );
 
 // Marcas de "último pase" de los tramos tibio/frío del refresco de métricas
@@ -551,7 +552,7 @@ const setRefreshStateStmt = db.prepare(`
 const listAccountsDueForRefreshStmt = db.prepare(`
   SELECT account, MAX(posted_at) AS mostRecentPostedAt, COUNT(*) AS postCount
   FROM detected_posts
-  WHERE ignored = 0 AND plataforma = 'instagram' AND account IS NOT NULL AND account != 'N/D' AND posted_at IS NOT NULL
+  WHERE ignored = 0 AND plataforma = @plataforma AND account IS NOT NULL AND account != 'N/D' AND posted_at IS NOT NULL
     AND posted_at > @sinceIso AND posted_at <= @untilIso
     AND (@cadenceIso IS NULL OR metrics_updated_at IS NULL OR metrics_updated_at < @cadenceIso)
   GROUP BY account
@@ -1067,9 +1068,9 @@ function getAccountFollowers(account, plataforma) {
   return row ? row.followers : null;
 }
 
-/** @returns {string[]} Cuentas distintas presentes en detected_posts (sin NULL ni 'N/D'). */
-function listDistinctPostAccounts() {
-  return listDistinctPostAccountsStmt.all().map((row) => row.account);
+/** @returns {string[]} Cuentas distintas de una plataforma presentes en detected_posts (sin NULL ni 'N/D'). */
+function listDistinctPostAccounts(plataforma = 'instagram') {
+  return listDistinctPostAccountsStmt.all(plataforma).map((row) => row.account);
 }
 
 /** @returns {{account: string, lastComputedAt: string|null}[]} Freshness de account_stats para TODAS las cuentas que tengan al menos una fila, de una sola query. */
@@ -1111,9 +1112,9 @@ function updatePostMetricsIfChanged(id, { likes, comments, postType }) {
   return true;
 }
 
-/** Propaga la cantidad de seguidores a TODOS los posteos ya guardados de una cuenta (no solo a los nuevos). */
-function updateFollowersForAccount(account, followers) {
-  updateFollowersForAccountStmt.run(followers ?? null, account);
+/** Propaga la cantidad de seguidores a TODOS los posteos ya guardados de una cuenta de esa plataforma (no solo a los nuevos). */
+function updateFollowersForAccount(account, followers, plataforma = 'instagram') {
+  updateFollowersForAccountStmt.run(followers ?? null, account, plataforma);
 }
 
 function getRefreshState(key) {
@@ -1130,8 +1131,8 @@ function setRefreshState(key, value) {
  * cumpla la cadencia (cadenceIso null = sin filtro de metrics_updated_at).
  * @returns {{account: string, mostRecentPostedAt: string, postCount: number}[]}
  */
-function listAccountsDueForRefresh({ sinceIso, untilIso, cadenceIso = null }) {
-  return listAccountsDueForRefreshStmt.all({ sinceIso, untilIso, cadenceIso });
+function listAccountsDueForRefresh({ sinceIso, untilIso, cadenceIso = null, plataforma = 'instagram' }) {
+  return listAccountsDueForRefreshStmt.all({ sinceIso, untilIso, cadenceIso, plataforma });
 }
 
 /**

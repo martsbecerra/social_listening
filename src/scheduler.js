@@ -5,6 +5,11 @@
 // "node-cron" (una librería chica que solo necesita un string cron estándar
 // y ejecuta la función dentro de este mismo proceso Node).
 //
+// No sabe de plataformas: el ciclo recorre el registro de src/platforms/ y
+// cada paso posterior (benchmark, refresco de métricas) decide por las
+// capabilities de cada adapter. "Actualizar ahora" desde una solapa pasa
+// `plataforma` y el ciclo se acota a esa sola.
+//
 // IMPORTANTE: esto SOLO corre mientras el proceso de Node quede abierto. Si
 // cerrás la terminal o la PC se suspende, esa corrida se saltea en silencio.
 // El día que se despliegue a un hosting siempre encendido, no hace falta
@@ -13,7 +18,6 @@
 
 const cron = require('node-cron');
 const { runMonitoringCycle } = require('./monitor');
-const { runXMonitoringCycle } = require('./x/monitor');
 const { processPendingReclamos } = require('./geoWorker');
 const { refreshStaleAccountStats } = require('./accountStats');
 const { refreshPostMetrics } = require('./metricsRefresh');
@@ -106,8 +110,13 @@ function getNextRunAt(cronExpression, from = new Date()) {
 
 /**
  * Corre un ciclo de monitoreo completo: detecta y clasifica posteos nuevos,
- * geocodifica reclamos pendientes y refresca stats/métricas de cuentas.
- * Exportada aparte para poder llamarla a mano (botón "Actualizar ahora").
+ * geocodifica reclamos pendientes y refresca benchmark/métricas de cuentas
+ * (en las plataformas que lo soportan). Exportada aparte para poder
+ * llamarla a mano (botón "Actualizar ahora").
+ *
+ * @param {{ ifBusy?: 'throw'|'skip', plataforma?: string }} [options]
+ *   plataforma: acota el ciclo a esa sola (la solapa que apretó el botón);
+ *   sin ella corre todo el registro (cron).
  */
 async function runCycle({ ifBusy = 'throw', plataforma } = {}) {
   if (cycleInProgress) {
@@ -123,40 +132,15 @@ async function runCycle({ ifBusy = 'throw', plataforma } = {}) {
 
   cycleInProgress = true;
   try {
-    return await runCycleUnlocked(plataforma);
+    return await runCycleUnlocked(plataforma ? [plataforma] : undefined);
   } finally {
     cycleInProgress = false;
   }
 }
 
-async function runCycleUnlocked(plataforma) {
-  const runIg = plataforma !== 'x';
-  const runX = plataforma !== 'instagram';
-
-  let checked = 0;
-  let newCount = 0;
-  let scrapedAccounts = [];
-
-  if (runIg) {
-    const ig = await runMonitoringCycle();
-    checked += ig.checked || 0;
-    newCount += (ig.newPosts || []).length;
-    scrapedAccounts = ig.scrapedAccounts || [];
-  }
-
-  if (runX) {
-    try {
-      const x = await runXMonitoringCycle();
-      checked += x.checked || 0;
-      newCount += (x.newPosts || []).length;
-    } catch (err) {
-      console.error('Error en el ciclo de monitoreo de X:', err.message);
-      if (plataforma === 'x') {
-        err.userMessage = err.userMessage || 'Falló el ciclo de monitoreo de X. Revisá la consola del servidor.';
-        throw err;
-      }
-    }
-  }
+async function runCycleUnlocked(plataformas) {
+  const { checked, newPosts, scrapedAccounts, porPlataforma } = await runMonitoringCycle({ plataformas });
+  const newCount = (newPosts || []).length;
 
   try {
     await processPendingReclamos();
@@ -164,23 +148,24 @@ async function runCycleUnlocked(plataforma) {
     console.error('Error geocodificando reclamos pendientes:', err.message);
   }
 
-  if (runIg) {
-    try {
-      await refreshStaleAccountStats();
-    } catch (err) {
-      console.error('Error recalculando el benchmark de cuentas:', err.message);
-    }
+  // Benchmark y refresco de métricas: cada módulo recorre solo las
+  // plataformas (del subconjunto pedido) cuyo adapter tiene esa capability.
+  // "Actualizar ahora" en una solapa sin benchmark no gasta nada acá.
+  try {
+    await refreshStaleAccountStats({ plataformas });
+  } catch (err) {
+    console.error('Error recalculando el benchmark de cuentas:', err.message);
+  }
 
-    try {
-      await refreshPostMetrics({ skipAccounts: scrapedAccounts });
-    } catch (err) {
-      console.error('Error refrescando métricas de posteos:', err.message);
-    }
+  try {
+    await refreshPostMetrics({ plataformas, skipAccounts: scrapedAccounts });
+  } catch (err) {
+    console.error('Error refrescando métricas de posteos:', err.message);
   }
 
   lastRunAt = new Date().toISOString();
 
-  return { checked, newCount };
+  return { checked, newCount, porPlataforma };
 }
 
 function startScheduler() {

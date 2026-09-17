@@ -28,10 +28,7 @@ const {
 } = require('./src/llm/providerConfig');
 const db = require('./src/db');
 const monitor = require('./src/monitor');
-const { listPlatformIds } = require('./src/platforms');
-// Transición: X todavía corre por el módulo paralelo. Se va cuando X sea un
-// adapter de src/platforms/ (paso 3 de la unificación multiplataforma).
-const xMonitor = require('./src/x/monitor');
+const { listPlatformIds, getPlatform } = require('./src/platforms');
 const { startScheduler, runCycle, getCronExpression, getLastRunAt, estimateRunsPerDay, getNextRunAt } = require('./src/scheduler');
 const { processPendingReclamosInBackground } = require('./src/geoWorker');
 const accountStats = require('./src/accountStats');
@@ -424,12 +421,9 @@ app.post('/api/x/analyze', async (req, res) => {
 // --------------------------------------------------------------------------
 // Todos los endpoints de monitoreo aceptan `plataforma` (query en GET/DELETE,
 // body en POST). Sin él, default 'instagram': el frontend viejo no manda el
-// parámetro y tiene que seguir funcionando igual. Un id desconocido NO cae en
-// silencio a instagram: el middleware de abajo responde 400 antes del handler.
-// Transición (hasta que X sea un adapter de src/platforms/): la lista es fija
-// y X se despacha al módulo paralelo src/x/monitor.js vía monitoringSource.
-const PLATAFORMAS_MONITOREO = ['instagram', 'x'];
-
+// parámetro y tiene que seguir funcionando igual. Un id que no esté en el
+// registro de src/platforms/ NO cae en silencio a instagram: el middleware
+// de abajo responde 400 antes del handler.
 function monitoringPlataforma(req) {
   const raw = String(req.query?.plataforma || req.body?.plataforma || '').trim();
   return raw || 'instagram';
@@ -437,17 +431,14 @@ function monitoringPlataforma(req) {
 
 app.use('/api/monitoring', (req, res, next) => {
   const plataforma = monitoringPlataforma(req);
-  if (!PLATAFORMAS_MONITOREO.includes(plataforma)) {
+  const soportadas = listPlatformIds();
+  if (!soportadas.includes(plataforma)) {
     return res.status(400).json({
-      error: `Plataforma desconocida: "${plataforma}". Soportadas: ${PLATAFORMAS_MONITOREO.join(', ')}.`,
+      error: `Plataforma desconocida: "${plataforma}". Soportadas: ${soportadas.join(', ')}.`,
     });
   }
   next();
 });
-
-function monitoringSource(req) {
-  return monitoringPlataforma(req) === 'x' ? xMonitor : monitor;
-}
 
 app.get('/api/monitoring/posts', (req, res) => {
   const page = Math.max(1, Number(req.query.page) || 1);
@@ -457,38 +448,32 @@ app.get('/api/monitoring/posts', (req, res) => {
   const plataforma = monitoringPlataforma(req);
   const { posts, total } = db.listDetectedPosts({ page, pageSize, plataforma });
 
-  // Transición: X no tiene benchmark todavía. Cuando X sea un adapter esto
-  // pasa a decidirse por capability del adapter, no por nombre.
-  if (plataforma === 'x') {
-    return res.json({
-      posts: posts.map((post) => ({ ...post, benchmark: null })),
-      total,
-      page,
-      pageSize,
-    });
-  }
-
   // Benchmark (mediana propia de la cuenta) para el panel desplegable de
-  // cada fila. Un solo listAllAccountStats() para todo el request, no una
-  // query por posteo.
-  const statsMap = accountStats.buildAccountStatsMap();
+  // cada fila, solo en plataformas cuyo adapter lo soporta; en las demás va
+  // null y el frontend no lo dibuja. Un solo listAllAccountStats() para todo
+  // el request, no una query por posteo.
+  const { capabilities } = getPlatform(plataforma);
+  const hasBenchmark = Boolean(capabilities && capabilities.benchmark);
+  const statsMap = hasBenchmark ? accountStats.buildAccountStatsMap() : null;
   const postsWithBenchmark = posts.map((post) => ({
     ...post,
-    benchmark: accountStats.classifyPostAgainstBenchmark({
-      account: post.account,
-      plataforma,
-      postType: post.post_type,
-      likes: post.likes,
-      comments: post.comments,
-      statsMap,
-    }),
+    benchmark: hasBenchmark
+      ? accountStats.classifyPostAgainstBenchmark({
+          account: post.account,
+          plataforma,
+          postType: post.post_type,
+          likes: post.likes,
+          comments: post.comments,
+          statsMap,
+        })
+      : null,
   }));
 
   res.json({ posts: postsWithBenchmark, total, page, pageSize });
 });
 
 app.get('/api/monitoring/config', (req, res) => {
-  res.json(monitoringSource(req).loadConfig());
+  res.json(monitor.loadConfig(monitoringPlataforma(req)));
 });
 
 // Para la barra de acción de "Monitoreo en vivo" ("Escuchando · próxima
@@ -498,14 +483,14 @@ app.get('/api/monitoring/status', (req, res) => {
 });
 
 // Menciones detectadas en los últimos 7 días, para el resumen del dashboard,
-// con una clave por plataforma con monitoreo (instagram y x: el resto de las
-// tarjetas simplemente no encuentra su clave en la respuesta). Transición:
-// cuando X sea un adapter, esto vuelve a recorrer listPlatformIds().
+// con una clave por plataforma registrada en src/platforms/ (el resto de
+// las tarjetas simplemente no encuentra su clave en la respuesta).
 app.get('/api/monitoring/counts', (req, res) => {
-  res.json({
-    instagram: db.countRecentPosts(7, 'instagram'),
-    x: db.countRecentPosts(7, 'x'),
-  });
+  const counts = {};
+  for (const id of listPlatformIds()) {
+    counts[id] = db.countRecentPosts(7, id);
+  }
+  res.json(counts);
 });
 
 // Datos reales para el pie de página (footer.js en las 3 páginas): nada
@@ -540,26 +525,26 @@ app.patch('/api/monitoring/posts/:id', (req, res) => {
 
 app.post('/api/monitoring/accounts', async (req, res) => {
   try {
-    res.json(await monitoringSource(req).addAccount(req.body && req.body.account));
+    res.json(await monitor.addAccount(req.body && req.body.account, monitoringPlataforma(req)));
   } catch (err) {
     res.status(400).json({ error: err.userMessage || err.message });
   }
 });
 
 app.delete('/api/monitoring/accounts/:account', (req, res) => {
-  res.json(monitoringSource(req).removeAccount(req.params.account));
+  res.json(monitor.removeAccount(req.params.account, monitoringPlataforma(req)));
 });
 
 app.post('/api/monitoring/keywords', async (req, res) => {
   try {
-    res.json(await monitoringSource(req).addKeyword(req.body && req.body.keyword));
+    res.json(await monitor.addKeyword(req.body && req.body.keyword, monitoringPlataforma(req)));
   } catch (err) {
     res.status(400).json({ error: err.userMessage || err.message });
   }
 });
 
 app.delete('/api/monitoring/keywords/:keyword', (req, res) => {
-  res.json(monitoringSource(req).removeKeyword(req.params.keyword));
+  res.json(monitor.removeKeyword(req.params.keyword, monitoringPlataforma(req)));
 });
 
 // Dispara un ciclo de monitoreo a mano, sin esperar los 4hs del cron

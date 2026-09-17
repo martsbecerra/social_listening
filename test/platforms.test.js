@@ -14,6 +14,9 @@ const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sl-platforms-'));
 const configPath = path.join(tmpDir, 'monitoring.json');
 process.env.MONITORING_CONFIG_PATH = configPath;
 process.env.MONITORING_DB_PATH = path.join(tmpDir, 'monitoring.db');
+// Sin archivo viejo de X en el tempdir: que el test nunca absorba (y
+// renombre) un config/monitoring-x.json real del working tree.
+process.env.MONITORING_X_CONFIG_PATH = path.join(tmpDir, 'monitoring-x.json');
 
 // Config en el formato PLANO viejo, como el real (52 keywords): la migración
 // no puede perder ninguna.
@@ -38,8 +41,56 @@ describe('platforms', { concurrency: false }, () => {
     // El archivo quedó reescrito en formato por secciones.
     const onDisk = JSON.parse(fs.readFileSync(configPath, 'utf8'));
     assert.equal(onDisk.accounts, undefined);
+    assert.deepEqual(Object.keys(onDisk), ['instagram']); // ninguna sección ajena se coló
     assert.deepEqual(onDisk.instagram.accounts, ['cuentaig']);
     assert.equal(onDisk.instagram.keywords.length, 52);
+  });
+
+  test('errores tipificados: platforms/errors.js y los `code` que marca apify.js', async () => {
+    const { isPlatformError, isQuotaExceeded, PLATFORM_ERROR_CODES } = require('../src/platforms/errors');
+    assert.deepEqual(PLATFORM_ERROR_CODES, ['NOT_CONFIGURED', 'QUOTA_EXCEEDED', 'RATE_LIMITED', 'AUTH_INVALID']);
+    for (const code of PLATFORM_ERROR_CODES) {
+      assert.equal(isPlatformError(Object.assign(new Error(code), { code })), true, code);
+    }
+    const apifyQuotaByText = new Error('Apify respondió 403: {"error":{"type":"actor-disabled","message":"Monthly usage hard limit exceeded"}}');
+    assert.equal(isQuotaExceeded(apifyQuotaByText), true);
+    assert.equal(isPlatformError(apifyQuotaByText), true);
+    assert.equal(isPlatformError(new Error('Grok no devolvió JSON')), false);
+    assert.equal(isPlatformError(null), false);
+
+    // runActorSync marca code según la respuesta de Apify (fetch stubeado).
+    const { runActorSync } = require('../src/apify');
+    const originalFetch = global.fetch;
+    const respond = (status, text) => async () => ({ ok: false, status, text: async () => text, json: async () => [] });
+    try {
+      const cases = [
+        [401, 'invalid token', 'AUTH_INVALID', /clave de Apify/],
+        [403, 'forbidden', 'AUTH_INVALID', /clave de Apify/],
+        [403, '{"error":{"type":"actor-disabled","message":"Monthly usage hard limit exceeded"}}', 'QUOTA_EXCEEDED', /cuota mensual de Apify/],
+        [429, 'too many requests', 'RATE_LIMITED', /límite de uso de Apify/],
+        [500, 'boom', undefined, /Apify\) falló/], // fallo puntual: sin código
+      ];
+      for (const [status, text, code, messageRe] of cases) {
+        global.fetch = respond(status, text);
+        await assert.rejects(runActorSync({}, { actorId: 'apify~instagram-scraper' }), (err) => {
+          assert.equal(err.code, code, `${status} ${text}`);
+          assert.match(err.userMessage, messageRe);
+          return true;
+        });
+      }
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  test('benchmark y refresco de métricas solo para las plataformas con esa capability', () => {
+    const { benchmarkPlatformIds } = require('../src/accountStats');
+    const { refreshPlatformIds } = require('../src/metricsRefresh');
+    assert.deepEqual(benchmarkPlatformIds(), ['instagram']);
+    assert.deepEqual(benchmarkPlatformIds(['x']), []);
+    assert.deepEqual(benchmarkPlatformIds(['x', 'instagram']), ['instagram']);
+    assert.deepEqual(refreshPlatformIds(), ['instagram']);
+    assert.deepEqual(refreshPlatformIds(['x']), []);
   });
 
   test('la migración es idempotente: en formato nuevo no reescribe', () => {
@@ -52,16 +103,30 @@ describe('platforms', { concurrency: false }, () => {
   });
 
   test('registro: getPlatform y contrato del adapter', () => {
-    assert.deepEqual(listPlatformIds(), ['instagram']);
+    assert.deepEqual(listPlatformIds(), ['instagram', 'x']);
     const ig = getPlatform('instagram');
     assert.equal(ig.id, 'instagram');
+    assert.equal(ig.label, 'Instagram');
+    // Apify es un detalle interno de este adapter, no parte del contrato.
     assert.equal(ig.actorId, 'apify~instagram-scraper');
-    assert.equal(typeof ig.scrapeAccount, 'function');
-    assert.equal(typeof ig.normalizePost, 'function');
     assert.equal(ig.buildProfileUrl('pepe'), 'https://www.instagram.com/pepe/');
-    // Metadata de métricas: exactamente una primaria.
-    assert.equal(ig.metrics.filter((m) => m.primary).length, 1);
-    assert.ok(ig.metrics.every((m) => m.key && m.label && typeof m.primary === 'boolean'));
+    assert.deepEqual(ig.capabilities, { benchmark: true, followers: true, metricsRefresh: true });
+
+    // Contrato genérico: lo mismo para cada adapter del registro.
+    for (const id of listPlatformIds()) {
+      const adapter = getPlatform(id);
+      assert.equal(adapter.id, id);
+      assert.equal(typeof adapter.label, 'string');
+      for (const fn of ['isConfigured', 'validateAccount', 'validateHashtag', 'scrapeAccount', 'scrapeHashtag', 'normalizePost', 'buildProfileUrl', 'fetchAccountFollowers']) {
+        assert.equal(typeof adapter[fn], 'function', `${id}.${fn}`);
+      }
+      for (const cap of ['benchmark', 'followers', 'metricsRefresh']) {
+        assert.equal(typeof adapter.capabilities[cap], 'boolean', `${id}.capabilities.${cap}`);
+      }
+      // Metadata de métricas: exactamente una primaria.
+      assert.equal(adapter.metrics.filter((m) => m.primary).length, 1, `${id}.metrics primaria`);
+      assert.ok(adapter.metrics.every((m) => m.key && m.label && typeof m.primary === 'boolean'));
+    }
 
     assert.throws(() => getPlatform('tiktok'), /Plataforma desconocida/);
   });

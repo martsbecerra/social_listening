@@ -26,7 +26,7 @@ const { dropQuoteOfQuotes, normalizeThread } = require('../src/x/threadNormalize
 const { buildTop6, formatInsightBlock, buildReclamosCsv, buildWhatsAppReport } = require('../src/x/reportBuilder');
 const { EMPTY_INSIGHT } = require('../src/x/validate');
 const { buildReclamosFromAnalysis } = require('../src/x/reclamosFromAnalysis');
-const { extractJsonObject, getFetchConfig, openRouterGrokModel } = require('../src/x/grokFetch');
+const { extractJsonObject, getFetchConfig, openRouterGrokModel, callGrokJson } = require('../src/x/grokFetch');
 
 const NUMERIC_CSV = fs.readFileSync(
   path.join(__dirname, '..', 'config', 'x-influencers', 'antik-pro.csv'),
@@ -282,6 +282,51 @@ describe('x-platform parse/kpis/url', { concurrency: false }, () => {
       else process.env.XAI_MODEL = prevModel;
       if (prevXModel == null) delete process.env.OPENROUTER_X_MODEL;
       else process.env.OPENROUTER_X_MODEL = prevXModel;
+    }
+  });
+
+  test('callGrokJson tipifica clave inválida, rate limit y cuota agotada con `code`', async () => {
+    const prevOr = process.env.OPENROUTER_API_KEY;
+    const prevXai = process.env.XAI_API_KEY;
+    process.env.OPENROUTER_API_KEY = 'or-test';
+    delete process.env.XAI_API_KEY;
+    const originalFetch = global.fetch;
+    const respond = (status, message) => async () => ({
+      ok: status < 400,
+      status,
+      json: async () =>
+        status < 400
+          ? { choices: [{ message: { content: '{"posts":[]}' } }] }
+          : { error: { message } },
+    });
+    try {
+      const cases = [
+        [401, 'invalid api key', 'AUTH_INVALID'],
+        [403, 'forbidden', 'AUTH_INVALID'],
+        [402, 'Insufficient credits', 'QUOTA_EXCEEDED'],
+        [429, 'Rate limit exceeded', 'RATE_LIMITED'],
+        [429, 'Your team has used all available credits or reached its monthly spending limit', 'QUOTA_EXCEEDED'],
+        [403, 'Your newly created team does not have any credits yet', 'QUOTA_EXCEEDED'],
+        [500, 'internal error', undefined], // fallo puntual: sin código
+      ];
+      for (const [status, message, code] of cases) {
+        global.fetch = respond(status, message);
+        await assert.rejects(callGrokJson('prompt'), (err) => {
+          assert.equal(err.code, code, `${status} "${message}"`);
+          assert.ok(err.userMessage, `${status} sin userMessage`);
+          return true;
+        });
+      }
+      global.fetch = respond(200);
+      const ok = await callGrokJson('prompt');
+      assert.deepEqual(ok.parsed, { posts: [] });
+      assert.equal(ok.backend, 'openrouter');
+    } finally {
+      global.fetch = originalFetch;
+      if (prevOr == null) delete process.env.OPENROUTER_API_KEY;
+      else process.env.OPENROUTER_API_KEY = prevOr;
+      if (prevXai == null) delete process.env.XAI_API_KEY;
+      else process.env.XAI_API_KEY = prevXai;
     }
   });
 });

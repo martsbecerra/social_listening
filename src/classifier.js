@@ -5,15 +5,17 @@
 // rápido, no hace falta el modelo de análisis para esto — ver
 // getClassifierModel en src/llm/providerConfig.js):
 //   1. classifyPost: título + sentimiento de un posteo que YA se sabe que es
-//      relevante (coincidió con una palabra clave, o es de una cuenta
-//      trackeada sin caption para analizar).
+//      relevante (coincidió con una palabra clave, llegó por una búsqueda de
+//      keyword, o es de una cuenta trackeada sin caption para analizar).
 //   2. classifyRelevance: para posteos que NO coincidieron con ninguna
 //      palabra clave literal — le pregunta al modelo si el contenido igual
 //      habla del Jefe de Gobierno porteño o de su gestión (detección
 //      semántica), para no depender solo del matching de texto exacto.
 //
-// Pasa por src/llm/, nunca por el SDK de un proveedor: cambiar LLM_PROVIDER
-// tiene que migrar el monitoreo igual que el análisis de publicación.
+// Es el mismo clasificador para todas las plataformas (Instagram, X, ...):
+// solo cambia la etiqueta de la red en el prompt (platformLabel). Pasa por
+// src/llm/, nunca por el SDK de un proveedor: cambiar LLM_PROVIDER tiene que
+// migrar el monitoreo igual que el análisis de publicación.
 //
 // SOBRE LOS FALLOS: antes, cualquier error devolvía un resultado inventado
 // (neutral / relevant:false). Eso hacía que una API caída se viera igual que
@@ -27,9 +29,11 @@
 const { requestText } = require('./llm');
 
 const VALID_SENTIMENTS = ['positivo', 'neutral', 'negativo'];
+const DEFAULT_PLATFORM_LABEL = 'Instagram';
 
-const SYSTEM_PROMPT = `Sos un clasificador rápido de menciones políticas para un equipo de gobierno.
-Te paso el caption de un posteo de Instagram. Respondé SOLO un JSON, sin texto adicional, sin markdown, con exactamente este formato:
+function systemPrompt(platformLabel) {
+  return `Sos un clasificador rápido de menciones políticas para un equipo de gobierno.
+Te paso el texto de un posteo de ${platformLabel}. Respondé SOLO un JSON, sin texto adicional, sin markdown, con exactamente este formato:
 
 {"title": "...", "sentiment": "positivo" | "neutral" | "negativo"}
 
@@ -39,6 +43,7 @@ Te paso el caption de un posteo de Instagram. Respondé SOLO un JSON, sin texto 
   - "negativo" si lo critica, cuestiona o muestra un hecho desfavorable.
   - "neutral" si es puramente informativo, no queda claro, o no podés determinarlo con confianza.
   Ante la duda, usá siempre "neutral".`;
+}
 
 function extractJson(text) {
   const match = text.match(/\{[\s\S]*\}/);
@@ -67,15 +72,17 @@ function logClassifierFailure(tarea, err) {
 /**
  * Clasifica un caption. Si el LLM falla o responde algo inesperado, devuelve
  * unclassified:true en vez de inventar un "neutral".
+ * @param {string} caption
+ * @param {{ platformLabel?: string }} [options] etiqueta de la red para el prompt
  */
-async function classifyPost(caption) {
+async function classifyPost(caption, { platformLabel = DEFAULT_PLATFORM_LABEL } = {}) {
   if (!caption || !caption.trim()) {
     return { title: 'Sin descripción', sentiment: 'neutral' };
   }
 
   try {
     const { text } = await requestText({
-      system: SYSTEM_PROMPT,
+      system: systemPrompt(platformLabel),
       userPrompt: caption.slice(0, 2000),
       maxTokens: 200,
     });
@@ -92,8 +99,9 @@ async function classifyPost(caption) {
   }
 }
 
-const RELEVANCE_SYSTEM_PROMPT = `Sos un clasificador para un equipo de gobierno que monitorea menciones al Jefe de Gobierno de la Ciudad de Buenos Aires (Jorge Macri) y a su gestión.
-Te paso el caption de un posteo de Instagram que NO contiene ninguna palabra clave literal conocida. Tu tarea es juzgar, por el CONTENIDO, si igual se relaciona con él o con la gestión de la Ciudad de Buenos Aires (obras públicas, políticas, anuncios, funcionarios porteños, gestión municipal, etc.), aunque no lo nombre explícitamente.
+function relevanceSystemPrompt(platformLabel) {
+  return `Sos un clasificador para un equipo de gobierno que monitorea menciones al Jefe de Gobierno de la Ciudad de Buenos Aires (Jorge Macri) y a su gestión.
+Te paso el texto de un posteo de ${platformLabel} que NO contiene ninguna palabra clave literal conocida. Tu tarea es juzgar, por el CONTENIDO, si igual se relaciona con él o con la gestión de la Ciudad de Buenos Aires (obras públicas, políticas, anuncios, funcionarios porteños, gestión municipal, etc.), aunque no lo nombre explícitamente.
 
 Respondé SOLO un JSON, sin texto adicional, sin markdown, con exactamente este formato:
 
@@ -102,6 +110,7 @@ Respondé SOLO un JSON, sin texto adicional, sin markdown, con exactamente este 
 - "relevant": true solo si el contenido realmente habla del Jefe de Gobierno porteño o de su gestión. false para cualquier otro tema (contenido genérico, turístico, cultural, de otro distrito o de otro funcionario sin relación).
 - "title": frase corta (máximo 10 palabras) en español de qué habla el posteo. Completala siempre, incluso si relevant es false.
 - "sentiment": solo importa si relevant es true — cómo lo retrata ("positivo", "negativo", o "neutral" ante la duda).`;
+}
 
 /**
  * Para posteos SIN coincidencia literal de palabra clave: le pregunta al
@@ -113,15 +122,17 @@ Respondé SOLO un JSON, sin texto adicional, sin markdown, con exactamente este 
  * error se devuelve relevant:true + unclassified:true, para que el posteo
  * quede guardado y visible y alguien pueda mirarlo. Puede traer ruido; el
  * ruido se ve y se borra, un posteo perdido no.
+ * @param {string} caption
+ * @param {{ platformLabel?: string }} [options]
  */
-async function classifyRelevance(caption) {
+async function classifyRelevance(caption, { platformLabel = DEFAULT_PLATFORM_LABEL } = {}) {
   if (!caption || !caption.trim()) {
     return { relevant: false, title: 'Sin descripción', sentiment: 'neutral' };
   }
 
   try {
     const { text } = await requestText({
-      system: RELEVANCE_SYSTEM_PROMPT,
+      system: relevanceSystemPrompt(platformLabel),
       userPrompt: caption.slice(0, 2000),
       maxTokens: 200,
     });
