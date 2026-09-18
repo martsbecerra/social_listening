@@ -19,6 +19,11 @@
 // pueden stubear instagram.scrapeAccount & co. como siempre. scrapeSearch se
 // expone solo si el proveedor sabe buscar: el orquestador decide por
 // `typeof platform.scrapeSearch === 'function'`, no por el nombre del actor.
+//
+// Única excepción al "un proveedor por IG_ACTOR": fetchPostDetails (detalle
+// de posteos sueltos, para completar los resultados de búsqueda que llegan
+// sin caption) va SIEMPRE por instagramApify.js, que cobra por resultado y
+// acepta varias URLs en un run (0,0023 por posteo contra 0,005 de apidojo).
 // ==========================================================================
 
 const { resolveIgActor } = require('./igActor');
@@ -61,6 +66,8 @@ const adapter = {
   normalizePost: (raw, context) => provider.normalizePost(raw, context),
   buildProfileUrl: (username) => provider.buildProfileUrl(username),
   fetchAccountFollowers: (username) => provider.fetchAccountFollowers(username),
+  // Siempre el actor oficial, con cualquier IG_ACTOR (ver el encabezado).
+  fetchPostDetails: (urls) => PROVIDERS.apify.fetchPostDetails(urls),
   /**
    * Qué métricas expone esta plataforma, para que el frontend arme las
    * columnas leyendo de acá en vez de hardcodearlas, y para que el

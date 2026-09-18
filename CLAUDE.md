@@ -57,6 +57,8 @@ saber antes de tocar algo.
    Una consulta por término y por ciclo (`SEARCH_RESULTS_LIMIT`). Se filtran
    como un hashtag; `sourceType 'search'`, motivo `Búsqueda: <término>`.
    Pocos términos, elegidos a mano; con `IG_ACTOR=apify` se ignoran con aviso.
+   Llegan sin caption ni contadores: a los nuevos se les pide el detalle
+   antes de filtrarlos (ver abajo).
 4. `keywords` sin `#`: NO son una fuente. Son el filtro de texto gratuito
    que decide si lo que trajeron las otras tres habla del tema, más
    `classifyRelevance` (semántica) cuando no hay coincidencia literal. En X,
@@ -69,13 +71,27 @@ posteo llega por varias fuentes gana `keyword` (X) > `account` > `hashtag`
 `account_followers` en cualquier fase (`monitor.rememberFollowers`). Ese
 número es el del perfil CONSULTADO: en un posteo en colaboración (owner
 distinto de la cuenta consultada) el actor lo repite, así que el proveedor
-deja `followers` en null para esos items. Los resultados de búsqueda
-llegan sin caption ni contadores (null).
+deja `followers` en null para esos items.
+
+Los resultados de búsqueda llegan recortados (caption, likes y comentarios
+en null aunque el posteo los tenga). `monitor.enrichSearchResults` pide el
+detalle de los NUEVOS (ni en `detected_posts` ni en `search_seen`) en un
+solo run por ciclo con todas las URLs, `instagram.fetchPostDetails`, fase
+`busqueda`. Ese detalle va SIEMPRE por `apify/instagram-scraper` (0,0023
+por posteo en Starter y varias URLs por run, contra 0,005 de apidojo), con
+cualquier `IG_ACTOR`: es la única función de `instagramApify.js` que la
+fachada expone con apidojo activo. Tope por ciclo `SEARCH_ENRICH_LIMIT`
+(20; 0 lo apaga; los más nuevos primero, el resto al ciclo siguiente).
+`search_seen` anota lo ya pagado (`guardado` | `descartado` | `sin_caption`
+| `sin_detalle`): un descartado no se vuelve a consultar ni a evaluar; se
+purga a los 30 días. Si el run falla entero no se anota nada.
 
 ## Modelo de costo (`src/apifyCost.js`)
 
 - `apify/instagram-scraper` cobra **por resultado devuelto** (items de error
-  incluidos): `APIFY_RATE_{FREE,STARTER,SCALE}` por 1000 y `APIFY_PLAN`.
+  incluidos): `APIFY_RATE_{FREE,STARTER,SCALE}` por 1000 y `APIFY_PLAN`. El
+  detalle de resultados de búsqueda queda registrado con este actor,
+  `query_type` `post`, fase `busqueda`.
 - `apidojo/instagram-scraper-api` cobra **por consulta** con posteos
   incluidos, más `APIDOJO_RATE_ITEM` (0,0005) por posteo de más: perfil
   0,005 (10 incl.), hashtag 0,015 (30), búsqueda 0,015 (20), posteo suelto

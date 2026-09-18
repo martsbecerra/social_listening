@@ -51,6 +51,32 @@ demás sigue igual. El análisis de publicación (`src/apify.js`) no se toca.
   o semántica como un hashtag, con motivo `Búsqueda: <término>`; sin caption
   se descarta. En el dedupe intra-ciclo gana el origen más específico:
   `keyword` (X) > `account` > `hashtag` = `search`.
+- **Detalle de los resultados de búsqueda, por el actor oficial.** La
+  búsqueda de apidojo devuelve objetos recortados: `caption`, `likeCount` y
+  `commentCount` en null en todos los items vistos (fixtures y ciclo real),
+  aunque el posteo tenga texto. Se pidió el mismo reel por URL a los dos
+  actores (US$ 0,0073, `test/fixtures/apidojo/post.json` y
+  `test/fixtures/apify/post-detail.json`): los dos traen caption y
+  contadores, el oficial a 0,0023 por posteo y con varias URLs por run,
+  apidojo a 0,005 por posteo. Por eso `fetchPostDetails(urls)` vive en
+  `instagramApify.js` y la fachada lo expone con cualquier `IG_ACTOR`: es
+  la única excepción a "un proveedor por `IG_ACTOR`".
+  `monitor.enrichSearchResults` corre después del dedupe intra-ciclo y antes
+  de la relevancia: candidatos = `sourceType 'search'` sin caption que no
+  están en `detected_posts` ni en `search_seen`; los más nuevos primero
+  hasta `SEARCH_ENRICH_LIMIT` (20; 0 apaga el paso), el resto queda sin
+  anotar para el ciclo siguiente; UN run con todas las URLs en la fase
+  `busqueda`; el detalle se cruza por id (respaldo: código de la URL) y
+  vuelca caption, hashtags y contadores sobre el posteo de la búsqueda, que
+  conserva `sourceType`, `sourceQuery` y sus seguidores en null. Después
+  corre el pipeline de siempre. `search_seen (post_id, plataforma, url,
+  term, outcome, first_seen_at)` anota todo aquello por lo que se pagó:
+  `sin_detalle` (el run no devolvió ese posteo), `sin_caption` (el detalle
+  tampoco trae texto: se descarta) y, tras la relevancia, `guardado` o
+  `descartado`; un descartado no se vuelve a consultar ni a evaluar. Se
+  purga a los 30 días al empezar cada ciclo. Si el run falla entero no se
+  anota nada (se reintenta); un error de plataforma se trata como el de
+  cualquier fuente.
 - **Costo real por el flujo asincrónico, solo para apidojo, conciliado
   después.** El endpoint sincrónico no devuelve el id del run y el costo
   cobrado solo se lee del objeto del run. `POST
@@ -83,7 +109,11 @@ ciclo (scheduler) ── fase monitoreo ──► monitor.runMonitoringCycle
       → normalizePost (id, url, caption, likes, comments, postedAt, postType, followers, sourceType, sourceQuery)
       → applyWindow (createdAt ≥ ahora − lookback)
    → rememberFollowers → dedupe (keyword > account > hashtag = search)
+   → enrichSearchResults: 'search' sin caption, nuevos y no vistos, hasta SEARCH_ENRICH_LIMIT
+        → instagram.fetchPostDetails(urls) → apify/instagram-scraper { directUrls:[...], resultsType:'posts', resultsLimit:1 }   (fase busqueda)
+        → caption + hashtags + contadores sobre el mismo posteo · search_seen: sin_detalle | sin_caption
    → conocidos: applyMetricsRefresh gratis · nuevos: evaluateRelevance → saveDetectedPost
+        → search_seen: guardado | descartado (solo los que pagaron detalle)
    ── fase benchmark ──► accountStats (scrapeAccount sin until; seguidores de los posteos)
    ── fase refresco  ──► metricsRefresh (scrapeAccount sin until; rememberFollowers)
 
@@ -116,6 +146,7 @@ más viejo.
 | Cuenta por ciclo, sin novedades | 0,0023 | 0,005 |
 | Hashtag por ciclo | 0,0345 | 0,015 |
 | Búsqueda, 50 resultados | — | 0,030 |
+| Detalle de un resultado de búsqueda nuevo | 0,0023 (siempre este actor) | 0,005 (no se usa) |
 | Benchmark (15 posteos + seguidores) | 0,0368 | 0,0075 |
 | Refresco (15 posteos) | 0,0345 | 0,0075 |
 | Validar cuenta / hashtag | 0,0023 / 0,0023 | 0,005 / 0,015 |

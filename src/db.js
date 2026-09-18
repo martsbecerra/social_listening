@@ -580,6 +580,38 @@ const setRefreshStateStmt = db.prepare(`
   ON CONFLICT(key) DO UPDATE SET value = excluded.value
 `);
 
+// Resultados de la búsqueda por palabra clave de Instagram a los que ya se
+// les pidió el detalle (ver enrichSearchResults en src/monitor.js). La
+// búsqueda devuelve los posteos sin caption ni contadores, así que evaluar
+// uno nuevo cuesta una consulta de detalle; esta tabla evita pagarla dos
+// veces por un posteo que terminó descartado (los guardados ya están en
+// detected_posts). outcome: guardado | descartado | sin_caption |
+// sin_detalle. Se purga a los 30 días: la búsqueda trae contenido de la
+// ventana del ciclo, un id viejo no vuelve.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS search_seen (
+    post_id TEXT NOT NULL,
+    plataforma TEXT NOT NULL,
+    url TEXT,
+    term TEXT,
+    outcome TEXT NOT NULL,
+    first_seen_at TEXT NOT NULL,
+    PRIMARY KEY (post_id, plataforma)
+  )
+`);
+const getSearchSeenStmt = db.prepare(`
+  SELECT post_id AS postId, plataforma, url, term, outcome, first_seen_at AS firstSeenAt
+  FROM search_seen WHERE post_id = ? AND plataforma = ?
+`);
+// first_seen_at no se pisa: es la fecha del primer detalle pagado, la que
+// cuenta para la purga.
+const markSearchSeenStmt = db.prepare(`
+  INSERT INTO search_seen (post_id, plataforma, url, term, outcome, first_seen_at)
+  VALUES (@postId, @plataforma, @url, @term, @outcome, @firstSeenAt)
+  ON CONFLICT(post_id, plataforma) DO UPDATE SET outcome = excluded.outcome
+`);
+const purgeSearchSeenStmt = db.prepare('DELETE FROM search_seen WHERE first_seen_at < ?');
+
 // Gasto en Apify (ver src/apifyCost.js): una fila por llamada a runActorSync
 // (src/apify.js) y una por ciclo de monitoreo (src/scheduler.js). Apify
 // cobra por item devuelto, así que `items` cuenta TODO lo que vino en el
@@ -1374,6 +1406,33 @@ function sumApifyCallsSince(sinceIso) {
   return sumApifyCallsSinceStmt.all(sinceIso);
 }
 
+/** @returns {{postId: string, plataforma: string, url: string|null, term: string|null, outcome: string, firstSeenAt: string}|null} */
+function getSearchSeen(postId, plataforma = 'instagram') {
+  const row = getSearchSeenStmt.get(String(postId), plataforma);
+  return row ? { ...row } : null;
+}
+
+function isSearchSeen(postId, plataforma = 'instagram') {
+  return Boolean(getSearchSeenStmt.get(String(postId), plataforma));
+}
+
+/** Anota un resultado de búsqueda al que ya se le pidió el detalle. Si ya estaba, solo cambia el outcome. */
+function markSearchSeen({ postId, plataforma = 'instagram', url = null, term = null, outcome, firstSeenAt }) {
+  markSearchSeenStmt.run({
+    postId: String(postId),
+    plataforma,
+    url: url || null,
+    term: term || null,
+    outcome: String(outcome),
+    firstSeenAt: firstSeenAt || new Date().toISOString(),
+  });
+}
+
+/** Borra los vistos anteriores a olderThanIso. @returns {number} filas borradas */
+function purgeSearchSeen(olderThanIso) {
+  return purgeSearchSeenStmt.run(olderThanIso).changes;
+}
+
 function getRefreshState(key) {
   const row = getRefreshStateStmt.get(key);
   return row ? row.value : null;
@@ -1487,6 +1546,10 @@ module.exports = {
   updateFollowersForAccount,
   getRefreshState,
   setRefreshState,
+  getSearchSeen,
+  isSearchSeen,
+  markSearchSeen,
+  purgeSearchSeen,
   insertApifyCall,
   startMonitoringRun,
   finishMonitoringRun,

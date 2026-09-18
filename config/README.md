@@ -73,6 +73,16 @@ asocia al término mucho contenido ajeno, así que se filtra igual que un
 hashtag (coincidencia literal con alguna keyword, o el clasificador) y
 queda con el motivo `Búsqueda: <término>`. Un posteo sin texto se descarta.
 
+La búsqueda devuelve los posteos **recortados** (sin caption ni contadores),
+así que a cada resultado nuevo se le pide el detalle antes de filtrarlo: un
+solo run por ciclo de `apify/instagram-scraper` con todas las URLs (0,0023
+usd por posteo en Starter), hasta `SEARCH_ENRICH_LIMIT` posteos por ciclo
+(default 20; `0` lo apaga y los resultados sin texto se descartan). Cada
+posteo se consulta una sola vez: lo que se descartó queda anotado en la
+tabla `search_seen` y no se vuelve a pagar ni a evaluar, aunque la búsqueda
+lo siga trayendo. Ojo con eso al sumar keywords: un posteo ya descartado no
+se re-evalúa con las keywords nuevas.
+
 Se administra desde la caja "Búsquedas por palabra clave" de la solapa de
 Instagram (o `POST`/`DELETE /api/monitoring/searches`), sin verificación
 contra Apify al agregar. Con `IG_ACTOR=apify` (el actor anterior) no hay

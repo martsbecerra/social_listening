@@ -13,7 +13,9 @@
 //     cuyo adapter sabe buscar (scrapeSearch: Instagram con IG_ACTOR=apidojo).
 //     Es una lista aparte de las keywords, corta y elegida a mano: cada
 //     término es una consulta cobrada por ciclo. Lo que trae se filtra igual
-//     que un hashtag (relevancia literal o semántica), no entra directo.
+//     que un hashtag (relevancia literal o semántica), no entra directo. La
+//     búsqueda devuelve los posteos sin caption ni contadores: a los nuevos
+//     se les pide el detalle antes de evaluarlos (enrichSearchResults).
 //
 // Un posteo se considera relevante si:
 //   1. Llegó por una búsqueda por término (sourceType 'keyword': una keyword,
@@ -107,6 +109,21 @@ function monitorLimits() {
     hashtag: hashtag || legacy || DEFAULT_LIMITS.hashtag,
     search: search || DEFAULT_LIMITS.search,
   };
+}
+
+// Enriquecimiento de los resultados de búsqueda (ver enrichSearchResults):
+// cuántos detalles de posteo se piden como mucho por ciclo y plataforma
+// (SEARCH_ENRICH_LIMIT; 0 lo apaga) y cuánto se recuerda un resultado ya
+// consultado (tabla search_seen).
+const DEFAULT_SEARCH_ENRICH_LIMIT = 20;
+const SEARCH_SEEN_TTL_DAYS = 30;
+
+/** @returns {number} se lee en cada ciclo, no al cargar. Un valor inválido vale el default. */
+function searchEnrichLimit() {
+  const raw = process.env.SEARCH_ENRICH_LIMIT;
+  if (raw === undefined || String(raw).trim() === '') return DEFAULT_SEARCH_ENRICH_LIMIT;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : DEFAULT_SEARCH_ENRICH_LIMIT;
 }
 
 /**
@@ -440,7 +457,9 @@ function pickMetrics(platform, post) {
  *      (detección semántica), para no depender solo del texto exacto.
  * Un posteo sin caption solo se acepta si viene de una cuenta trackeada
  * (no hay texto que evaluar, pero viene de la fuente que explícitamente
- * querés ver); si viene de un hashtag o una búsqueda, se descarta.
+ * querés ver); si viene de un hashtag o una búsqueda, se descarta. Los de
+ * búsqueda llegan acá con el caption ya completado por enrichSearchResults
+ * cuando el detalle lo trajo.
  * La búsqueda por palabra clave de Instagram (sourceType 'search') NO es el
  * camino 1: Instagram asocia al término mucho contenido que no habla del
  * tema, así que pasa por el 2 y el 3 como un hashtag, con el motivo
@@ -544,6 +563,150 @@ function refreshKnownPost(platform, id, post) {
   return hasMetrics ? db.applyMetricsRefresh(id, metrics) : null;
 }
 
+function hasCaption(post) {
+  return Boolean(post && typeof post.caption === 'string' && post.caption.trim());
+}
+
+/** Código del posteo en una URL de Instagram (/p/{code}/, /reel/{code}/), para cruzar el detalle cuando el id no coincide. */
+function postCodeOf(url) {
+  const match = /\/(?:p|reel|reels|tv)\/([^/?#]+)/.exec(String(url || ''));
+  return match ? match[1] : null;
+}
+
+/** Nunca tira: no poder anotar un visto no puede frenar el ciclo (a lo sumo se vuelve a pedir ese detalle). */
+function markSearchSeen(post, platformId, outcome) {
+  try {
+    db.markSearchSeen({ postId: post.id, plataforma: platformId, url: post.url, term: post.sourceQuery, outcome });
+  } catch (err) {
+    console.error(`[monitor] (${platformId}) no se pudo anotar el resultado de búsqueda ${post.id}:`, err.message);
+  }
+}
+
+/**
+ * La búsqueda por palabra clave de Instagram (apidojo) devuelve objetos
+ * recortados: sin caption ni contadores, aunque el posteo los tenga. Sin
+ * texto no hay relevancia que evaluar, así que a los resultados NUEVOS se les
+ * pide el detalle con platform.fetchPostDetails: UNA consulta por ciclo con
+ * todas las URLs (fase 'busqueda' del registro de gasto), y el caption, los
+ * hashtags y los contadores que vuelven se vuelcan sobre el mismo posteo,
+ * que sigue siendo de la búsqueda (sourceType y sourceQuery no cambian).
+ * Después corre el pipeline de siempre.
+ *
+ * Para no pagar dos veces por lo mismo:
+ *   - No se consulta lo que ya está en detected_posts ni lo anotado en
+ *     search_seen (un posteo descartado no se vuelve a evaluar).
+ *   - Tope por ciclo SEARCH_ENRICH_LIMIT (default 20, 0 apaga el paso): van
+ *     primero los más nuevos; el resto queda SIN anotar y entra en el próximo
+ *     ciclo si la búsqueda lo sigue trayendo.
+ *   - Queda anotado todo aquello por lo que se pagó: 'sin_caption' (el
+ *     detalle tampoco trae texto: se descarta), 'sin_detalle' (la consulta
+ *     no devolvió ese posteo: borrado o privado) y, después de evaluar
+ *     relevancia (runMonitoringCycle), 'guardado' o 'descartado'.
+ *   - Si la consulta falla entera no se anota nada: se reintenta en el
+ *     próximo ciclo. Un error de plataforma (cuota, credenciales, rate limit)
+ *     se devuelve para que el ciclo lo trate como el de cualquier fuente.
+ *
+ * Modifica `postsById` (el Map del dedupe intra-ciclo): reemplaza cada
+ * posteo enriquecido por su versión con texto.
+ * @returns {Promise<{ enriched: Set<string>, platformError: Error|null, stats: object|null }>}
+ *   `enriched`: ids a los que hay que anotarles el resultado de la
+ *   evaluación; `stats` null si no había resultados de búsqueda sin texto.
+ */
+async function enrichSearchResults(platform, platformId, postsById) {
+  const out = { enriched: new Set(), platformError: null, stats: null };
+  if (typeof platform.fetchPostDetails !== 'function') return out;
+
+  const candidates = [];
+  let alreadySeen = 0;
+  for (const post of postsById.values()) {
+    if (post.sourceType !== 'search' || hasCaption(post)) continue;
+    if (db.findExistingPostId(post.id, post.url)) continue;
+    if (db.isSearchSeen(post.id, platformId)) {
+      alreadySeen += 1;
+      continue;
+    }
+    candidates.push(post);
+  }
+  if (candidates.length === 0 && alreadySeen === 0) return out;
+
+  const limit = searchEnrichLimit();
+  const stats = { candidates: candidates.length, alreadySeen, requested: 0, enriched: 0, noCaption: 0, noDetail: 0, deferred: 0, failed: false };
+  out.stats = stats;
+  if (candidates.length === 0) return out;
+  if (limit === 0) {
+    stats.deferred = candidates.length;
+    console.log(
+      `[monitor] ${platformId}: ${candidates.length} resultado(s) de búsqueda sin caption; el detalle está apagado (SEARCH_ENRICH_LIMIT=0), se descartan.`
+    );
+    return out;
+  }
+
+  // Los más nuevos primero; lo que no entra en el tope queda para el próximo ciclo.
+  const timeOf = (post) => Date.parse(post.postedAt || '') || 0;
+  candidates.sort((a, b) => timeOf(b) - timeOf(a));
+  const batch = candidates.slice(0, limit);
+  stats.requested = batch.length;
+  stats.deferred = candidates.length - batch.length;
+
+  let details;
+  try {
+    details = await runWithContext({ phase: 'busqueda' }, () => platform.fetchPostDetails(batch.map((post) => post.url)));
+  } catch (err) {
+    stats.failed = true;
+    if (isPlatformError(err)) {
+      out.platformError = err;
+      console.error(`Monitoreo (${platformId}): la plataforma no se pudo consultar (${err.code}):`, err.message);
+    } else {
+      console.error(`Monitoreo (${platformId}): falló el detalle de los resultados de búsqueda (se reintenta en el próximo ciclo):`, err && err.message);
+    }
+    return out;
+  }
+
+  const byId = new Map();
+  const byCode = new Map();
+  for (const detail of Array.isArray(details) ? details : []) {
+    if (!detail) continue;
+    if (detail.id) byId.set(String(detail.id), detail);
+    const code = postCodeOf(detail.url);
+    if (code) byCode.set(code, detail);
+  }
+
+  for (const post of batch) {
+    const detail = byId.get(String(post.id)) || byCode.get(postCodeOf(post.url));
+    if (!detail) {
+      stats.noDetail += 1;
+      markSearchSeen(post, platformId, 'sin_detalle');
+      continue;
+    }
+    if (!hasCaption(detail)) {
+      stats.noCaption += 1;
+      markSearchSeen(post, platformId, 'sin_caption');
+      continue;
+    }
+    postsById.set(post.id, {
+      ...post,
+      caption: detail.caption,
+      hashtagsText: detail.hashtagsText || post.hashtagsText || '',
+      likes: detail.likes ?? post.likes ?? null,
+      comments: detail.comments ?? post.comments ?? null,
+      account: post.account && post.account !== 'N/D' ? post.account : detail.account,
+      postType: post.postType || detail.postType || null,
+      postedAt: post.postedAt || detail.postedAt || null,
+    });
+    out.enriched.add(post.id);
+    stats.enriched += 1;
+  }
+
+  console.log(
+    `[monitor] ${platformId}: detalle de ${stats.requested} resultado(s) de búsqueda sin caption → ${stats.enriched} con texto, ` +
+      `${stats.noCaption} sin caption, ${stats.noDetail} sin detalle` +
+      (stats.deferred > 0 ? `; ${stats.deferred} quedan para el próximo ciclo (SEARCH_ENRICH_LIMIT=${limit})` : '') +
+      (alreadySeen > 0 ? `; ${alreadySeen} ya consultado(s) antes` : '') +
+      '.'
+  );
+  return out;
+}
+
 function notConfiguredError(platform) {
   const e = new Error(`La plataforma ${platform.id} no tiene credenciales configuradas`);
   e.code = 'NOT_CONFIGURED';
@@ -587,6 +750,13 @@ async function runMonitoringCycle({ plataformas } = {}) {
   const scrapedAccounts = {};
   const porPlataforma = {};
   let metricsRefreshedFree = 0;
+
+  // Resultados de búsqueda ya consultados hace más de SEARCH_SEEN_TTL_DAYS.
+  try {
+    db.purgeSearchSeen(new Date(Date.now() - SEARCH_SEEN_TTL_DAYS * 24 * 60 * 60 * 1000).toISOString());
+  } catch (err) {
+    console.error('[monitor] no se pudieron purgar los resultados de búsqueda vistos:', err.message);
+  }
 
   for (const platformId of ids) {
     const platform = getPlatform(platformId);
@@ -677,6 +847,12 @@ async function runMonitoringCycle({ plataformas } = {}) {
     checked += seenInThisRun.size;
     porPlataforma[platformId].checked = seenInThisRun.size;
 
+    // Los resultados de búsqueda llegan sin caption: a los nuevos se les pide
+    // el detalle (una consulta para todos) antes de evaluar relevancia.
+    const enrichment = await enrichSearchResults(platform, platformId, seenInThisRun);
+    if (enrichment.stats) porPlataforma[platformId].searchEnrichment = enrichment.stats;
+    if (enrichment.platformError && !platformError) platformError = enrichment.platformError;
+
     for (const post of seenInThisRun.values()) {
       // Por id o por url: si el scraper cambia el campo con el que armamos el
       // id, la URL sigue siendo la misma pieza y no hay que re-clasificarla.
@@ -696,7 +872,14 @@ async function runMonitoringCycle({ plataformas } = {}) {
       }
 
       const evaluation = await evaluateRelevance(post, plainKeywords, { platform });
-      if (!evaluation.relevant) continue;
+      // Un resultado de búsqueda con el detalle ya pagado queda anotado con
+      // lo que se decidió: descartado no se vuelve a consultar ni a evaluar.
+      const paidDetail = enrichment.enriched.has(post.id);
+      if (!evaluation.relevant) {
+        if (paidDetail) markSearchSeen(post, platformId, 'descartado');
+        continue;
+      }
+      if (paidDetail) markSearchSeen(post, platformId, 'guardado');
 
       const postWithClassification = {
         ...post,
@@ -810,6 +993,7 @@ module.exports = {
   removeSearch,
   rememberFollowers,
   monitorLimits,
+  searchEnrichLimit,
   // Expuestos para tests.
   evaluateRelevance,
   pickMetrics,

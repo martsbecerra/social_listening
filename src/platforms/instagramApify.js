@@ -12,6 +12,10 @@
 // items de error no_items / not_found) y no ofrece búsqueda por palabra
 // clave: por eso no exporta scrapeSearch.
 //
+// fetchPostDetails (detalle de posteos sueltos por URL) es la única función
+// de este archivo que se usa también con IG_ACTOR=apidojo: la fachada la
+// expone siempre desde acá (ver instagram.js).
+//
 // NOTA sobre nombres de campos: igual que en src/apify.js, los nombres que
 // devuelve el actor pueden variar según la versión (ver README). Si algo
 // aparece vacío, revisar una corrida real en el panel de Apify.
@@ -212,6 +216,36 @@ async function fetchAccountFollowers(username) {
   }
 }
 
+/**
+ * Detalle de posteos sueltos por URL (caption, hashtags, contadores), todos
+ * en UN solo run: un item por URL. Lo usa el orquestador para completar los
+ * resultados de la búsqueda por palabra clave de apidojo, que llegan sin
+ * caption ni contadores (enrichSearchResults en src/monitor.js). Es el mismo
+ * input que usa el análisis de publicación para los datos del posteo.
+ *
+ * Va con ESTE actor aunque IG_ACTOR sea apidojo: cobra por resultado (0,0023
+ * por posteo en Starter contra 0,005 de la consulta de posteo suelto de
+ * apidojo) y acepta varias URLs en un run. Verificado con el mismo reel por
+ * los dos actores (test/fixtures/apify/post-detail.json).
+ *
+ * Los items de error (posteo borrado o privado) se descartan: quien llama
+ * cruza por id o por url y ve cuáles faltan. Tira si el run falla.
+ * @param {string[]} urls URLs de posteos (/p/{code}/)
+ * @returns {Promise<object[]>} posteos normalizados, sourceType 'search'
+ */
+async function fetchPostDetails(urls) {
+  const unique = [...new Set((Array.isArray(urls) ? urls : []).map((u) => String(u || '').trim()).filter(Boolean))];
+  if (unique.length === 0) return [];
+  const items = await runActor({
+    directUrls: unique,
+    resultsType: 'posts',
+    resultsLimit: 1,
+  });
+  return (Array.isArray(items) ? items : [])
+    .filter((raw) => raw && !raw.error && (raw.id || raw.shortCode || raw.code || raw.pk))
+    .map((raw) => normalizePost(raw, { account: null, sourceType: 'search' }));
+}
+
 module.exports = {
   id: PROVIDER_ID,
   ACTOR_ID,
@@ -224,4 +258,5 @@ module.exports = {
   normalizePost,
   derivePostType,
   fetchAccountFollowers,
+  fetchPostDetails,
 };

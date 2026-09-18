@@ -33,6 +33,9 @@ clave.
   (`usd_real`) vía el flujo asincrónico, reportes por actor, línea
   `[costo]` con la fase `busqueda`, `.env.example`, README, CLAUDE.md,
   este SDD (Fase 3)
+- Detalle de los resultados de búsqueda sin caption: un run por ciclo del
+  actor oficial con las URLs nuevas, tope `SEARCH_ENRICH_LIMIT`, tabla
+  `search_seen` (Fase 5, después del primer ciclo real)
 
 ### Out of Scope
 
@@ -105,7 +108,9 @@ clave.
 - En la corrida de fixtures, los dos resultados de búsqueda vinieron con
   `caption`, `likeCount` y `commentCount` en null; si es lo normal de la
   búsqueda, la fuente aportará poco (sin caption se descarta). A mirar en
-  el ciclo real.
+  el ciclo real. RESUELTO: es lo normal de la búsqueda (3 de 3 items); los
+  posteos sí tienen texto y se completa con una consulta de detalle al
+  actor oficial (REQ-IGA-09).
 - `owner.followerCount` viene solo en consultas de perfil: una cuenta que
   aparece por hashtag o búsqueda queda sin seguidores hasta que el
   benchmark consulte su perfil (misma cadencia que antes).

@@ -25,6 +25,9 @@ process.env.MONITORING_CONFIG_PATH = CONFIG_PATH;
 process.env.MONITORING_X_CONFIG_PATH = path.join(tmp, 'monitoring-x.json');
 delete process.env.SEARCH_RESULTS_LIMIT;
 delete process.env.MONITOR_LOOKBACK;
+// Acá se prueba la fuente sola: el detalle de los resultados sin caption
+// (enrichSearchResults) va apagado y se prueba en searchEnrichment.test.js.
+process.env.SEARCH_ENRICH_LIMIT = '0';
 
 fs.writeFileSync(
   CONFIG_PATH,

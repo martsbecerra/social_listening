@@ -32,7 +32,15 @@
 - [x] 4.1 `followers` solo cuando el owner del item es la cuenta consultada (posteos en colaboración)
 - [x] 4.2 `usd_real` conciliado después (`fetchRunCost`, `reconcileRealCosts`, `--conciliar`), no al terminar el run
 - [x] 4.3 Verificado en el ciclo real: el refresco matchea por id (16 de 21 posteos calientes; los 5 restantes quedaron fuera de los 15 más nuevos o de la ventana), `until` convive con posteos fijados, la caché de seguidores se actualiza en detección y refresco
-- [ ] 4.4 Resultados de búsqueda sin caption ni contadores: propuesta de enriquecimiento por consulta de detalle, a decidir por el dueño
+- [x] 4.4 Resultados de búsqueda sin caption ni contadores: detalle del mismo reel por los dos actores (US$ 0,0073), los dos traen el texto; el dueño eligió el actor oficial (0,0023 por posteo, varias URLs por run)
+
+## Phase 5: detalle de los resultados de búsqueda
+
+- [x] 5.1 `search_seen` en `src/db.js` (`getSearchSeen`, `isSearchSeen`, `markSearchSeen`, `purgeSearchSeen`)
+- [x] 5.2 `fetchPostDetails(urls)` en `instagramApify.js`, expuesto por la fachada con cualquier `IG_ACTOR`; contrato en `platforms/index.js`
+- [x] 5.3 `enrichSearchResults` en `src/monitor.js`: un run por ciclo en la fase `busqueda`, `SEARCH_ENRICH_LIMIT` (20, 0 apaga), vistos y purga a 30 días, `porPlataforma[id].searchEnrichment`
+- [x] 5.4 `test/searchEnrichment.test.js` con los fixtures reales de la búsqueda y del detalle; suite en verde con los dos `IG_ACTOR`
+- [x] 5.5 `.env.example`, README, `CLAUDE.md`, `config/README.md`, REQ-IGA-09
 
 ## Pendiente (fuera del código)
 

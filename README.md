@@ -158,7 +158,10 @@ Hace falta `SESSION_SECRET` (string largo aleatorio) y `APP_BASE_URL` (p. ej.
      una consulta por hashtag y por ciclo. Trae todo lo que lo usa: se filtra.
   3. **Búsquedas por palabra clave** (`searches`, actor apidojo): la búsqueda
      nativa de Instagram para ese término, una consulta por término y por
-     ciclo. También se filtra. Pocos términos, elegidos a mano.
+     ciclo. También se filtra. Pocos términos, elegidos a mano. La búsqueda
+     devuelve los posteos recortados (sin caption ni contadores): a los
+     resultados nuevos se les pide el detalle en una sola consulta por ciclo
+     antes de filtrarlos (ver "Detalle de los resultados de búsqueda").
   4. **Keywords sin `#`** (`keywords`): NO son una fuente, son el **filtro de
      texto gratuito** que decide si lo que trajeron las otras tres habla del
      tema (más la detección semántica del clasificador cuando no hay
@@ -212,6 +215,26 @@ Hace falta `SESSION_SECRET` (string largo aleatorio) y `APP_BASE_URL` (p. ej.
      Un posteo sin caption (nada que evaluar) solo se acepta si viene de una
      cuenta trackeada — de un hashtag o una búsqueda se descarta, porque no
      hay ninguna señal de que se relacione con el tema.
+     **Detalle de los resultados de búsqueda**: la búsqueda por palabra clave
+     de apidojo devuelve objetos recortados, con `caption`, likes y
+     comentarios en null aunque el posteo los tenga (verificado con el mismo
+     reel pedido por URL). Antes de evaluar relevancia,
+     `enrichSearchResults` junta los resultados de búsqueda sin texto que
+     son NUEVOS (no están en `detected_posts` ni en la tabla `search_seen`)
+     y pide su detalle en **un solo run por ciclo** de
+     `apify/instagram-scraper` con todas las URLs (`fetchPostDetails`, fase
+     `busqueda`), porque cobra por resultado (0,0023 por posteo en Starter)
+     contra 0,005 de la consulta de posteo suelto de apidojo. El caption,
+     los hashtags y los contadores del detalle se vuelcan sobre el mismo
+     posteo, que sigue siendo de la búsqueda (`Búsqueda: <término>`), y
+     recién ahí corre el filtro de siempre. `SEARCH_ENRICH_LIMIT` (default
+     20, `0` lo apaga) es el tope por ciclo: van los más nuevos y el resto
+     entra en el ciclo siguiente. Cada posteo se paga una sola vez:
+     `search_seen` anota lo consultado con su resultado (`guardado`,
+     `descartado`, `sin_caption`, `sin_detalle`) y un descartado no se vuelve
+     a consultar ni a evaluar; la tabla se purga a los 30 días. Si el run de
+     detalle falla entero no se anota nada y se reintenta en el próximo
+     ciclo.
      La búsqueda por palabra clave de Instagram (`searches`) NO entra por el
      camino 1: Instagram asocia al término mucho contenido ajeno, así que sus
      resultados pasan por el 2 y el 3 como los de un hashtag, con el motivo
@@ -361,6 +384,7 @@ Starter (2,30 por 1.000):
 | Cuenta trackeada por ciclo, sin novedades | 0,0023 (1 item de error) | 0,005 |
 | Hashtag por ciclo | 0,0345 | 0,015 (30 incl.) |
 | Búsqueda por palabra clave, 50 resultados | no existe | 0,030 |
+| Detalle de un resultado de búsqueda nuevo (una sola vez por posteo) | 0,0023, siempre con este actor | — (0,005 si se pidiera acá) |
 | Benchmark de una cuenta (15 posteos + seguidores) | 0,0368 (+1 consulta de perfil) | 0,0075 |
 | Refresco de métricas de una cuenta (15 posteos) | 0,0345 | 0,0075 |
 | Validar una cuenta / un hashtag al agregarlos | 0,0023 / 0,0023 | 0,005 / 0,015 |
@@ -368,8 +392,11 @@ Starter (2,30 por 1.000):
 Con 12 cuentas y 1 hashtag, la detección de un ciclo cuesta 0,075 con
 apidojo contra 0,06 típico (0,45 en el peor caso) con el oficial: el ahorro
 grande está en hashtags, benchmark y refresco, y la búsqueda por palabra
-clave solo existe en apidojo. Para bajar el costo: menos hashtags y
-búsquedas, topes más chicos, o espaciar el cron (`MONITOR_CRON`).
+clave solo existe en apidojo. El detalle de los resultados de búsqueda suma
+como mucho `SEARCH_ENRICH_LIMIT` × 0,0023 por ciclo (0,046 con el default
+de 20) y en régimen mucho menos: solo se paga por posteos que la búsqueda
+trae por primera vez. Para bajar el costo: menos hashtags y búsquedas, topes
+más chicos, o espaciar el cron (`MONITOR_CRON`).
 
 El benchmark por cuenta (`src/accountStats.js`) solo gasta cuando una cuenta
 aparece con un posteo nuevo y nunca se calculó o pasaron
@@ -630,6 +657,14 @@ viejos; topes por tipo de fuente (`MONITOR_ACCOUNT_LIMIT`,
 vez de una consulta de perfil aparte; la lista `searches` y la fase
 `busqueda`. Validar una cuenta o un hashtag al agregarlos cuesta 0,005 y
 0,015 usd respectivamente (antes, un resultado cada uno).
+
+**Lo que quedó en el actor oficial además del análisis**: el detalle de los
+resultados de búsqueda. La búsqueda de apidojo devuelve los posteos sin
+caption ni contadores; se probó pedir el mismo reel por URL a los dos
+actores y los dos traen el texto, pero el oficial cobra 0,0023 por posteo y
+acepta varias URLs en un run, contra 0,005 por posteo de apidojo. Por eso
+`fetchPostDetails` va siempre por `apify/instagram-scraper`, con cualquier
+`IG_ACTOR` (`SEARCH_ENRICH_LIMIT`, tabla `search_seen`).
 
 **Para volver al actor anterior**: `IG_ACTOR=apify` en el `.env` y reiniciar
 el server. Las búsquedas por palabra clave configuradas quedan guardadas

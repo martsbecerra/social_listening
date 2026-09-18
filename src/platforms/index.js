@@ -58,6 +58,13 @@
 //                              asocia al término mucho contenido ajeno, así
 //                              que se filtra como un hashtag (literal o
 //                              semántica), con el término en sourceQuery.
+//   fetchPostDetails(urls)                                [opcional]
+//                 Detalle de posteos sueltos por URL, en una sola consulta:
+//                 posteos normalizados con caption y métricas. El orquestador
+//                 la usa para completar los resultados de 'search' que llegan
+//                 sin caption (Instagram con apidojo) antes de evaluar
+//                 relevancia; los cruza por id o por url. Tira si la consulta
+//                 falla; un posteo que no vino simplemente falta.
 //   buildProfileUrl(username)
 //   fetchAccountFollowers(username) → number | null. Nunca tira. Es el
 //                 camino de respaldo cuando los posteos no traen

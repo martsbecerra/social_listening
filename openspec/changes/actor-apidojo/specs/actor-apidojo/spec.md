@@ -92,7 +92,7 @@ La caché `account_followers` MUST actualizarse con cada respuesta que traiga `f
 
 ### Requirement: REQ-IGA-07 — Búsqueda por palabra clave
 
-La sección de Instagram del config MAY tener `searches`, una lista aparte de `keywords`. En cada ciclo MUST hacerse una llamada por término (fase `busqueda`, tope `SEARCH_RESULTS_LIMIT`) solo si el adapter expone `scrapeSearch`; si hay términos y no la expone, MUST avisarse e ignorarse. Los resultados MUST entrar al mismo pipeline (dedupe, refresco de conocidos, relevancia literal o semántica, clasificación) con `sourceType 'search'` y motivo `Búsqueda: <término>`; sin caption MUST descartarse. Si el mismo posteo llega por cuenta trackeada y por búsqueda, MUST quedar como de la cuenta trackeada. Agregar un término MUST NOT llamar a Apify.
+La sección de Instagram del config MAY tener `searches`, una lista aparte de `keywords`. En cada ciclo MUST hacerse una llamada por término (fase `busqueda`, tope `SEARCH_RESULTS_LIMIT`) solo si el adapter expone `scrapeSearch`; si hay términos y no la expone, MUST avisarse e ignorarse. Los resultados MUST entrar al mismo pipeline (dedupe, refresco de conocidos, relevancia literal o semántica, clasificación) con `sourceType 'search'` y motivo `Búsqueda: <término>`; sin caption (después del detalle de REQ-IGA-09) MUST descartarse. Si el mismo posteo llega por cuenta trackeada y por búsqueda, MUST quedar como de la cuenta trackeada. Agregar un término MUST NOT llamar a Apify.
 
 #### Scenario: Coincidencia literal
 
@@ -123,3 +123,33 @@ La sección de Instagram del config MAY tener `searches`, una lista aparte de `k
 - GIVEN una llamada de hace 20 minutos con `apify_run_id` y sin `usd_real`, cuyo run dice `usageTotalUsd: 0.0065`
 - WHEN corre la conciliación
 - THEN `usd_real` queda en 0,0065 y el usd de su ciclo se recalcula con ese valor en vez del estimado
+
+---
+
+### Requirement: REQ-IGA-09 — Detalle de los resultados de búsqueda sin caption
+
+La búsqueda por palabra clave devuelve los posteos sin caption ni contadores. Antes de evaluar relevancia, el orquestador MUST pedir el detalle de los resultados de búsqueda sin caption que no estén en `detected_posts` ni en `search_seen`, en UN solo run por ciclo y plataforma con todas las URLs (`fetchPostDetails`, fase `busqueda`), y MUST volcar caption, hashtags y contadores del detalle sobre el mismo posteo conservando `sourceType 'search'` y `sourceQuery`. El detalle MUST pedirse a `apify/instagram-scraper` con cualquier `IG_ACTOR`. MUST respetarse el tope `SEARCH_ENRICH_LIMIT` (default 20; 0 MUST apagar el paso sin anotar nada), con los más nuevos primero y el resto sin anotar para el ciclo siguiente. Todo posteo por el que se pagó MUST quedar en `search_seen` con su resultado (`guardado`, `descartado`, `sin_caption`, `sin_detalle`) y MUST NOT volver a consultarse ni a evaluarse. Si el run de detalle falla, MUST NOT anotarse nada; un error de plataforma MUST tratarse como el de cualquier otra fuente. `search_seen` MUST purgarse a los 30 días.
+
+#### Scenario: Resultado nuevo con texto
+
+- GIVEN la búsqueda "jorge macri" devuelve un reel sin caption y su detalle trae "Jorge Macri impulsa…" con 2 likes
+- WHEN corre el ciclo
+- THEN se guarda con `matched_reason` `Búsqueda: jorge macri (coincidencia: "jorge macri")`, 2 likes, y queda en `search_seen` como `guardado`
+
+#### Scenario: Descartado no se vuelve a pagar
+
+- GIVEN un resultado cuyo detalle no resultó relevante en un ciclo anterior (`descartado`)
+- WHEN la búsqueda lo vuelve a traer
+- THEN no se pide su detalle ni se llama al clasificador
+
+#### Scenario: Tope por ciclo
+
+- GIVEN `SEARCH_ENRICH_LIMIT=2` y tres resultados nuevos sin caption
+- WHEN corre el ciclo
+- THEN se pide el detalle de los dos más nuevos en un solo run y el tercero se consulta en el ciclo siguiente
+
+#### Scenario: Run de detalle caído
+
+- GIVEN el run de detalle responde 500
+- WHEN corre el ciclo
+- THEN no se guarda ni se anota nada y en el ciclo siguiente se vuelve a pedir

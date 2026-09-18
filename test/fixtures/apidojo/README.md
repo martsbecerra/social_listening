@@ -62,3 +62,8 @@ Los dos devuelven el mismo id y traen lo que la búsqueda recorta: caption
 #buenosaires #caba"), 2 likes, 0 comentarios y 225 reproducciones. Es decir:
 el posteo SÍ tiene texto y era relevante; la búsqueda devuelve un objeto
 reducido. Ninguno de los dos trae seguidores en esta consulta.
+
+`search.json` y `../apify/post-detail.json` son la entrada de
+`test/searchEnrichment.test.js`: el detalle de los resultados de búsqueda
+sin caption se pide al actor oficial (`fetchPostDetails`), que es el más
+barato de los dos para esta consulta.

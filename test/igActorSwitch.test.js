@@ -147,13 +147,21 @@ describe('IG_ACTOR=apify: el proveedor oficial detrás de la fachada', { concurr
       JSON.stringify({ instagram: { accounts: [], keywords: ['obras'], searches: ['jorge macri'] } }, null, 2) + '\n'
     );
     const originalConfigured = instagram.isConfigured;
+    const originalDetails = instagram.fetchPostDetails;
     const originalWarn = console.warn;
     const warned = [];
     console.warn = (...args) => warned.push(args.join(' '));
     instagram.isConfigured = () => true;
+    // El detalle de posteos existe con los dos actores (siempre va por el
+    // oficial), pero sin búsqueda no hay resultados recortados que completar.
+    assert.equal(typeof originalDetails, 'function');
+    instagram.fetchPostDetails = async () => {
+      throw new Error('sin búsqueda no se pide ningún detalle');
+    };
     try {
       const result = await monitor.runMonitoringCycle({ plataformas: ['instagram'] });
       assert.equal(result.checked, 0, 'sin cuentas ni hashtags y sin búsqueda, no se consulta nada');
+      assert.equal(result.porPlataforma.instagram.searchEnrichment, undefined);
       assert.ok(
         warned.some((w) => /1 búsqueda\(s\) por palabra clave configuradas/.test(w) && /IG_ACTOR=apidojo/.test(w)),
         warned.join('\n')
@@ -166,6 +174,7 @@ describe('IG_ACTOR=apify: el proveedor oficial detrás de la fachada', { concurr
     } finally {
       console.warn = originalWarn;
       instagram.isConfigured = originalConfigured;
+      instagram.fetchPostDetails = originalDetails;
     }
   });
 });
