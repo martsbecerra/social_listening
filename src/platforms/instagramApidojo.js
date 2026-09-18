@@ -42,7 +42,13 @@
 //
 // Seguidores: owner.followerCount viene SOLO en las consultas de perfil
 // (detección de cuentas trackeadas, benchmark, refresco); en los posteos de
-// hashtag y de búsqueda el owner llega sin ese dato. La caché se actualiza
+// hashtag y de búsqueda el owner llega sin ese dato. OJO: ese número es el
+// del PERFIL CONSULTADO, no el del autor de cada item: en un posteo en
+// colaboración (aparece en la grilla de la cuenta consultada pero su owner
+// es otra cuenta) el actor repite los seguidores del perfil consultado
+// (visto en el ciclo real del 2026-09-18: @somos100barrios quedó con los 54
+// de @somoslupaa). Por eso `followers` solo se toma cuando el owner del item
+// ES la cuenta consultada; si no, queda null. La caché se actualiza
 // con cada respuesta que lo trae (monitor.rememberFollowers): una cuenta
 // que apareció por hashtag queda sin seguidores hasta que el benchmark
 // consulte su perfil. No hay consulta aparte de "details":
@@ -177,9 +183,13 @@ function normalizePost(raw, { account = null, sourceType, sourceQuery = null } =
 
   const owner = raw.owner && typeof raw.owner === 'object' ? raw.owner : {};
   const caption = typeof raw.caption === 'string' ? raw.caption : '';
+  // owner.followerCount es del perfil consultado (ver encabezado): solo vale
+  // si el autor del item es esa misma cuenta.
+  const ownerName = pick(owner.username, raw.ownerUsername);
+  const followersAreOwners = !account || !ownerName || String(ownerName).toLowerCase() === String(account).toLowerCase();
   return {
     id,
-    account: pick(owner.username, raw.ownerUsername, account, 'N/D'),
+    account: pick(ownerName, account, 'N/D'),
     url,
     caption,
     hashtagsText: Array.isArray(raw.hashtags) && raw.hashtags.length > 0 ? raw.hashtags.join(' ') : extractHashtags(caption),
@@ -187,7 +197,7 @@ function normalizePost(raw, { account = null, sourceType, sourceQuery = null } =
     comments: countOrNull(raw.commentCount),
     postedAt: toIso(pick(raw.createdAt, raw.timestamp)),
     postType: derivePostType(raw),
-    followers: countOrNull(owner.followerCount),
+    followers: followersAreOwners ? countOrNull(owner.followerCount) : null,
     sourceType,
     sourceQuery,
   };

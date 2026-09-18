@@ -41,7 +41,7 @@ fs.writeFileSync(
 
 const db = require('../src/db');
 const apifyCost = require('../src/apifyCost');
-const { runActorSync } = require('../src/apify');
+const { runActorSync, fetchRunCost } = require('../src/apify');
 const { runWithContext, getContext } = require('../src/usageContext');
 const scheduler = require('../src/scheduler');
 
@@ -187,11 +187,11 @@ describe('costo de Apify', { concurrency: false }, () => {
     }
   });
 
-  test('runActorSync (apidojo, flujo asincrónico): arranca el run, espera, lee el run final y los items; la fila queda con usd estimado, usd_real y run id', async () => {
+  test('runActorSync (apidojo, flujo asincrónico): arranca el run, espera y baja los items; la fila queda con el usd estimado y el run id, sin costo real todavía', async () => {
     const originalFetch = global.fetch;
     const requests = [];
-    let runStatusAfterWait = 'SUCCEEDED';
-    let finalStatus = 'SUCCEEDED';
+    let postStatus = 'RUNNING';
+    let statusAfterWait = 'SUCCEEDED';
     let firstPostStatus = 200;
     const runObject = (status, extra = {}) => ({ data: { id: 'run-1', status, defaultDatasetId: 'ds-1', ...extra } });
     global.fetch = async (url, options = {}) => {
@@ -203,11 +203,11 @@ describe('costo de Apify', { concurrency: false }, () => {
           firstPostStatus = 200;
           return respond(402, JSON.stringify({ error: { type: 'concurrent-runs-limit-exceeded', message: 'too many' } }));
         }
-        return respond(200, '', runObject('RUNNING'));
+        return respond(200, '', runObject(postStatus));
       }
-      if (/\/actor-runs\/run-1\?token=token-de-test&waitForFinish=60$/.test(url)) return respond(200, '', runObject(runStatusAfterWait));
-      if (/\/actor-runs\/run-1\?token=token-de-test$/.test(url)) {
-        return respond(200, '', runObject(finalStatus, { usageTotalUsd: 0.0071, chargedEventCounts: { 'user-query': 1, 'dataset-item': 2 }, statusMessage: finalStatus === 'FAILED' ? 'Actor crashed' : null }));
+      if (/\/actor-runs\/run-1\?token=token-de-test&waitForFinish=60$/.test(url)) {
+        // Al terminar, Apify todavía no asentó el cobro: usageTotalUsd en 0.
+        return respond(200, '', runObject(statusAfterWait, { usageTotalUsd: 0, statusMessage: statusAfterWait === 'FAILED' ? 'Actor crashed' : null }));
       }
       if (/\/datasets\/ds-1\/items\?token=token-de-test$/.test(url)) return respond(200, '', Array.from({ length: 12 }, (_, i) => ({ id: String(i) })));
       throw new Error(`request inesperada: ${url}`);
@@ -221,7 +221,6 @@ describe('costo de Apify', { concurrency: false }, () => {
         [
           'POST https://api.apify.com/v2/acts/apidojo~instagram-scraper-api/runs?token=***&waitForFinish=60',
           'GET https://api.apify.com/v2/actor-runs/run-1?token=***&waitForFinish=60',
-          'GET https://api.apify.com/v2/actor-runs/run-1?token=***',
           'GET https://api.apify.com/v2/datasets/ds-1/items?token=***',
         ]
       );
@@ -235,12 +234,12 @@ describe('costo de Apify', { concurrency: false }, () => {
       assert.equal(row.items, 12);
       assert.equal(row.ok, 1);
       near(row.usd, 0.005 + 2 * 0.0005, 'estimado: consulta de perfil + 2 posteos extra');
-      near(row.usd_real, 0.0071);
+      assert.equal(row.usd_real, null, 'el costo real no se lee al terminar: se concilia después');
       assert.equal(row.apify_run_id, 'run-1');
 
       // El run termina en FAILED: rechaza con el estado y el mensaje de Apify; la fila queda fallida con el run id.
       requests.length = 0;
-      finalStatus = 'FAILED';
+      statusAfterWait = 'FAILED';
       await assert.rejects(runActorSync(input, { actorId: APIDOJO }), (err) => {
         assert.match(err.message, /run run-1 de Apify terminó en FAILED: Actor crashed/);
         assert.match(err.userMessage, /terminó en FAILED/);
@@ -251,8 +250,8 @@ describe('costo de Apify', { concurrency: false }, () => {
       assert.equal(row.usd, 0);
       assert.equal(row.usd_real, null);
       assert.equal(row.apify_run_id, 'run-1');
-      assert.equal(requests.length, 3, 'sin lectura de items');
-      finalStatus = 'SUCCEEDED';
+      assert.equal(requests.length, 2, 'sin lectura de items');
+      statusAfterWait = 'SUCCEEDED';
 
       // 402 por runs simultáneos al arrancar el run: mismo reintento único que el sincrónico.
       requests.length = 0;
@@ -261,13 +260,14 @@ describe('costo de Apify', { concurrency: false }, () => {
       assert.equal(requests.filter((r) => r.method === 'POST').length, 2, 'dos POST: el rechazado y el reintento');
       assert.equal(lastCall().ok, 1);
 
-      // Sin espera intermedia (el POST ya devuelve terminado): igual se hace la lectura final.
+      // El POST ya devuelve el run terminado: no hace falta esperar.
       requests.length = 0;
-      runStatusAfterWait = 'SUCCEEDED';
+      postStatus = 'SUCCEEDED';
       await runActorSync(input, { actorId: APIDOJO });
-      assert.equal(requests.length, 4);
+      assert.deepEqual(requests.map((r) => r.method), ['POST', 'GET'], 'POST + items');
+      postStatus = 'RUNNING';
 
-      // APIFY_REAL_COST=0: vuelve al endpoint sincrónico, sin costo real.
+      // APIFY_REAL_COST=0: vuelve al endpoint sincrónico, sin run id.
       process.env.APIFY_REAL_COST = '0';
       global.fetch = async (url) => {
         requests.push({ method: 'POST', url });
@@ -286,6 +286,72 @@ describe('costo de Apify', { concurrency: false }, () => {
       delete process.env.APIFY_REAL_COST;
       global.fetch = originalFetch;
     }
+  });
+
+  test('fetchRunCost + reconcileRealCosts: el costo real se lee después (llamadas de más de 10 minutos), lo no asentado queda pendiente y se corrige el usd del ciclo', async () => {
+    const originalFetch = global.fetch;
+    try {
+      global.fetch = async (url, options = {}) => {
+        assert.equal(options.method || 'GET', 'GET');
+        assert.match(url, /\/actor-runs\/run-9\?token=token-de-test$/);
+        return respond(200, '', { data: { id: 'run-9', status: 'SUCCEEDED', usageTotalUsd: 0.0065, chargedEventCounts: { 'user-query': 1, 'dataset-item': 3 }, finishedAt: '2026-09-18T06:22:00.000Z' } });
+      };
+      assert.deepEqual(await fetchRunCost('run-9'), {
+        id: 'run-9',
+        status: 'SUCCEEDED',
+        usdReal: 0.0065,
+        chargedEventCounts: { 'user-query': 1, 'dataset-item': 3 },
+        finishedAt: '2026-09-18T06:22:00.000Z',
+      });
+    } finally {
+      global.fetch = originalFetch;
+    }
+
+    const now = Date.now();
+    const minutesAgo = (m) => new Date(now - m * 60 * 1000).toISOString();
+    const runId = db.startMonitoringRun({ trigger: 'cron', plataforma: 'instagram' });
+    const perfil = (u) => ({ startUrls: [`https://www.instagram.com/${u}/`], maxItems: 15 });
+    const call = (apifyRunId, at, extra = {}) =>
+      apifyCost.recordApifyCall({ runId, phase: 'refresco', plataforma: 'instagram', actor: APIDOJO, input: perfil(apifyRunId), items: 15, ok: true, apifyRunId, at, ...extra });
+    call('r-asentado', minutesAgo(20)); // estimado 0.0075, real 0.0065
+    call('r-cero-con-eventos', minutesAgo(20)); // Apify todavía lo muestra en 0: pendiente
+    call('r-falla', minutesAgo(20)); // la relectura falla: pendiente
+    call('r-reciente', minutesAgo(2)); // demasiado nueva: ni se mira
+    call('r-viejisimo', new Date(now - 90 * DAY_MS).toISOString()); // fuera de la ventana de 7 días (y de las ventanas del test de reporte)
+    const closed = db.finishMonitoringRun(runId, { newPosts: 0 });
+    near(closed.usd, 5 * 0.0075, 'al cerrar el ciclo, todo estimado');
+
+    const asked = [];
+    const fetcher = async (id) => {
+      asked.push(id);
+      if (id === 'r-asentado') return { status: 'SUCCEEDED', usdReal: 0.0065, chargedEventCounts: { 'user-query': 1, 'dataset-item': 3 } };
+      if (id === 'r-cero-con-eventos') return { status: 'SUCCEEDED', usdReal: 0, chargedEventCounts: { 'user-query': 1 } };
+      throw new Error('Apify no respondió');
+    };
+    const result = await apifyCost.reconcileRealCosts({ now, fetchRunCost: fetcher });
+    assert.deepEqual(asked.sort(), ['r-asentado', 'r-cero-con-eventos', 'r-falla']);
+    assert.equal(result.checked, 3);
+    assert.equal(result.updated, 1);
+    assert.equal(result.pending, 1);
+    assert.equal(result.failed, 1);
+    near(result.usdReal, 0.0065);
+    near(result.usdEstimado, 0.0075);
+    const rows = Object.fromEntries(allCalls().filter((r) => r.run_id === runId).map((r) => [r.apify_run_id, r.usd_real]));
+    near(rows['r-asentado'], 0.0065);
+    assert.equal(rows['r-cero-con-eventos'], null);
+    assert.equal(rows['r-falla'], null);
+    assert.equal(rows['r-reciente'], null);
+    near(db.getMonitoringRun(runId).usd, 4 * 0.0075 + 0.0065, 'el usd del ciclo se recalcula con el real');
+
+    // Segunda pasada: lo ya conciliado no se vuelve a pedir; un fetcher que tira no rompe nada.
+    asked.length = 0;
+    const again = await apifyCost.reconcileRealCosts({ now, fetchRunCost: async (id) => { asked.push(id); throw new Error('caído'); } });
+    assert.deepEqual(asked.sort(), ['r-cero-con-eventos', 'r-falla']);
+    assert.equal(again.updated, 0);
+    assert.equal(again.failed, 2);
+    // Un run en 0 sin eventos cobrados (perfil inexistente que no cobró nada) sí se da por asentado.
+    const zero = await apifyCost.reconcileRealCosts({ now, fetchRunCost: async () => ({ status: 'SUCCEEDED', usdReal: 0, chargedEventCounts: {} }) });
+    assert.equal(zero.updated, 2);
   });
 
   test('monitoring_runs: los totales suman las apify_calls del ciclo por fase y actor, prefieren el costo real y marcan la cuota; la línea [costo] incluye busqueda', () => {

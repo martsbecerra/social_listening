@@ -655,6 +655,20 @@ const finishMonitoringRunStmt = db.prepare(`
   WHERE id = @id
 `);
 const getMonitoringRunStmt = db.prepare('SELECT * FROM monitoring_runs WHERE id = ?');
+// Conciliación del costo real (apifyCost.reconcileRealCosts): llamadas con
+// run de Apify conocido y sin usd_real todavía, en una ventana de antigüedad.
+const listApifyCallsPendingRealCostStmt = db.prepare(`
+  SELECT id, run_id AS runId, apify_run_id AS apifyRunId, usd, at
+  FROM apify_calls
+  WHERE apify_run_id IS NOT NULL AND usd_real IS NULL AND at <= @olderThanIso AND at >= @newerThanIso
+  ORDER BY id LIMIT @limit
+`);
+const setApifyCallRealCostStmt = db.prepare('UPDATE apify_calls SET usd_real = @usdReal WHERE id = @id');
+const recomputeMonitoringRunUsdStmt = db.prepare(`
+  UPDATE monitoring_runs
+  SET usd = (SELECT COALESCE(SUM(COALESCE(usd_real, usd)), 0) FROM apify_calls WHERE run_id = @id)
+  WHERE id = @id
+`);
 const sumApifyCallsSinceStmt = db.prepare(`
   SELECT phase, COALESCE(actor, ${OFFICIAL_ACTOR_SQL}) AS actor, COUNT(*) AS calls, COALESCE(SUM(items), 0) AS results,
          SUM(CASE WHEN ok = 0 THEN 1 ELSE 0 END) AS failed,
@@ -1336,6 +1350,21 @@ function getMonitoringRun(id) {
   };
 }
 
+/** @returns {{id: number, runId: number|null, apifyRunId: string, usd: number, at: string}[]} llamadas con run conocido y sin costo real, con `at` entre newerThanIso y olderThanIso. */
+function listApifyCallsPendingRealCost({ olderThanIso, newerThanIso, limit = 100 }) {
+  return listApifyCallsPendingRealCostStmt.all({ olderThanIso, newerThanIso, limit: Math.max(1, Math.floor(Number(limit)) || 100) });
+}
+
+/** Guarda lo que Apify cobró de verdad por esa llamada. */
+function setApifyCallRealCost(id, usdReal) {
+  return setApifyCallRealCostStmt.run({ id, usdReal: Number(usdReal) }).changes;
+}
+
+/** Recalcula el usd del ciclo desde sus llamadas (real donde exista, si no estimado). */
+function recomputeMonitoringRunUsd(id) {
+  return recomputeMonitoringRunUsdStmt.run({ id }).changes;
+}
+
 /**
  * apify_calls desde sinceIso, agrupadas por fase y actor.
  * @returns {{phase: string, actor: string, calls: number, results: number, failed: number,
@@ -1463,6 +1492,9 @@ module.exports = {
   finishMonitoringRun,
   getMonitoringRun,
   sumApifyCallsSince,
+  listApifyCallsPendingRealCost,
+  setApifyCallRealCost,
+  recomputeMonitoringRunUsd,
   listAccountsDueForRefresh,
   applyMetricsRefresh,
   upsertReclamo,

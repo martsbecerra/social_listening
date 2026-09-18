@@ -40,9 +40,11 @@ saber antes de tocar algo.
   de `APIFY_MAX_CONCURRENT` runs, un reintento del 402
   `concurrent-runs-limit-exceeded`, y registro de cada llamada en
   `apify_calls`. El actor apidojo va por el flujo asincrónico (arrancar el
-  run, leer el run, bajar los items) para guardar el costo real
-  (`usd_real`, `apify_run_id`); `APIFY_REAL_COST=0` lo apaga. El oficial
-  sigue con `run-sync-get-dataset-items`.
+  run, esperar, bajar los items) para guardar el `apify_run_id`; el costo
+  real (`usd_real`) NO se lee al terminar (Apify lo asienta con demora):
+  lo concilia `apifyCost.reconcileRealCosts` al cerrar el ciclo siguiente
+  o `node scripts/costo-apify.js --conciliar`. `APIFY_REAL_COST=0` lo apaga.
+  El oficial sigue con `run-sync-get-dataset-items`.
 
 ## Las cuatro fuentes de detección (`config/monitoring.json`, sección `instagram`)
 
@@ -64,7 +66,11 @@ Relevancia y dedupe viven en `src/monitor.js` (`evaluateRelevance`; si un
 posteo llega por varias fuentes gana `keyword` (X) > `account` > `hashtag`
 = `search`). Los seguidores vienen en los posteos de perfil de apidojo
 (`owner.followerCount`, solo en consultas de perfil) y actualizan
-`account_followers` en cualquier fase (`monitor.rememberFollowers`).
+`account_followers` en cualquier fase (`monitor.rememberFollowers`). Ese
+número es el del perfil CONSULTADO: en un posteo en colaboración (owner
+distinto de la cuenta consultada) el actor lo repite, así que el proveedor
+deja `followers` en null para esos items. Los resultados de búsqueda
+llegan sin caption ni contadores (null).
 
 ## Modelo de costo (`src/apifyCost.js`)
 

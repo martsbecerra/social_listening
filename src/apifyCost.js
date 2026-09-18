@@ -11,7 +11,8 @@
 //     con 30; búsqueda 0,015 con 20; posteo suelto 0,005) más 0,0005 usd
 //     por cada posteo de más (APIDOJO_RATE_*, APIDOJO_INCLUDED_*). Además,
 //     como estas llamadas van por el flujo asincrónico (src/apify.js), la
-//     fila guarda también lo que Apify cobró de verdad (usd_real).
+//     fila guarda el id del run y, minutos después (reconcileRealCosts),
+//     lo que Apify cobró de verdad (usd_real).
 // Acá viven:
 //   - las tarifas y el plan activo,
 //   - el registro de cada llamada (recordApifyCall, lo llama runActorSync):
@@ -225,6 +226,57 @@ function recordApifyCall(call) {
   }
 }
 
+/**
+ * Concilia el costo real: para las llamadas con run de Apify conocido y sin
+ * usd_real, relee el run (apify.fetchRunCost, una lectura gratis de la API)
+ * y guarda usageTotalUsd; después recalcula el usd de los ciclos afectados.
+ * Solo toca llamadas de hace más de `minAgeMs` (Apify asienta el cobro con
+ * demora: leído al terminar el run da 0 o le faltan los posteos extra) y de
+ * menos de `maxAgeDays`. Un run que todavía figura en 0 habiendo cobrado
+ * eventos se deja pendiente para la próxima pasada. NUNCA tira: lo que
+ * falle queda pendiente.
+ * @param {{ minAgeMs?: number, maxAgeDays?: number, limit?: number, now?: number,
+ *   fetchRunCost?: (runId: string) => Promise<{status: string, usdReal: number|null, chargedEventCounts: object|null}> }} [options]
+ * @returns {Promise<{ checked: number, updated: number, pending: number, failed: number, usdReal: number, usdEstimado: number }>}
+ */
+async function reconcileRealCosts({ minAgeMs = 10 * 60 * 1000, maxAgeDays = 7, limit = 100, now = Date.now(), fetchRunCost } = {}) {
+  const totals = { checked: 0, updated: 0, pending: 0, failed: 0, usdReal: 0, usdEstimado: 0 };
+  try {
+    // require diferido: apify.js ya depende de este módulo.
+    const fetcher = fetchRunCost || require('./apify').fetchRunCost;
+    const rows = db.listApifyCallsPendingRealCost({
+      olderThanIso: new Date(now - minAgeMs).toISOString(),
+      newerThanIso: new Date(now - maxAgeDays * DAY_MS).toISOString(),
+      limit,
+    });
+    const TERMINAL = ['SUCCEEDED', 'FAILED', 'ABORTED', 'TIMED-OUT'];
+    const affectedRuns = new Set();
+    for (const row of rows) {
+      totals.checked += 1;
+      try {
+        const run = await fetcher(row.apifyRunId);
+        const charged = Object.values(run.chargedEventCounts || {}).some((n) => Number(n) > 0);
+        const settled = TERMINAL.includes(run.status) && run.usdReal != null && !(run.usdReal === 0 && charged);
+        if (!settled) {
+          totals.pending += 1;
+          continue;
+        }
+        db.setApifyCallRealCost(row.id, run.usdReal);
+        totals.updated += 1;
+        totals.usdReal += run.usdReal;
+        totals.usdEstimado += row.usd || 0;
+        if (row.runId != null) affectedRuns.add(row.runId);
+      } catch (err) {
+        totals.failed += 1;
+      }
+    }
+    for (const runId of affectedRuns) db.recomputeMonitoringRunUsd(runId);
+  } catch (err) {
+    console.error('[costo] No se pudo conciliar el costo real:', err.message);
+  }
+  return totals;
+}
+
 function startOfTodayIso(now) {
   const d = new Date(now);
   d.setHours(0, 0, 0, 0);
@@ -323,9 +375,10 @@ function summarizeCosts({ days = 30, now = Date.now() } = {}) {
 }
 
 /**
- * Línea de consola al cerrar un ciclo. El total en USD (real donde Apify
- * lo devolvió, si no el estimado del plan activo); el desglose entre
- * paréntesis, en resultados por fase.
+ * Línea de consola al cerrar un ciclo. El total en USD es el ESTIMADO (el
+ * costo real de las llamadas de este ciclo todavía no está asentado en
+ * Apify; se concilia al cerrar el ciclo siguiente y ahí se corrige el usd
+ * de monitoring_runs); el desglose entre paréntesis, en resultados por fase.
  * @param {{ id: number, calls: number, results: number, usd: number, porFase: Object<string, {results: number}> }} run
  */
 function formatCycleCostLine(run) {
@@ -355,6 +408,7 @@ module.exports = {
   queryTypeFor,
   describeInput,
   recordApifyCall,
+  reconcileRealCosts,
   summarizeCosts,
   formatCycleCostLine,
 };

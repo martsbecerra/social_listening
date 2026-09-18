@@ -393,7 +393,7 @@ Apify** (`src/apifyCost.js`, todas pasan por `runActorSync`):
   posteos nuevos, llamadas, resultados, usd y si alguna llamada cortó por
   cuota. Al cerrar cada ciclo el server imprime
   `[costo] ciclo #N: X llamadas, Y resultados ≈ US$ Z (monitoreo A · busqueda B · benchmark C · refresco D)`,
-  con el total en dólares (real donde Apify lo devolvió, si no el estimado)
+  con el total ESTIMADO en dólares (el real se concilia después, ver abajo)
   y el desglose en resultados por fase.
 
 Las fases son `monitoreo`, `busqueda`, `benchmark` y `refresco` dentro del
@@ -406,10 +406,20 @@ hashtag), `recalc-script` (`scripts/recalc-account-stats.js`) y `analisis`
 **Costo real.** El endpoint sincrónico de Apify no devuelve el id del run,
 y lo que Apify cobró de verdad solo se lee del objeto del run. Por eso las
 llamadas al actor apidojo van por el flujo asincrónico (arrancar el run,
-esperar, leer el run y bajar sus items: tres o cuatro requests en vez de
-una, sin costo extra) y la fila queda con `usd_real`. `APIFY_REAL_COST=0`
-lo apaga. El actor oficial sigue con el endpoint sincrónico y sus filas no
-tienen `usd_real`.
+esperar y bajar sus items: dos o tres requests en vez de una, sin costo
+extra) y la fila guarda el `apify_run_id`. El cobro NO está asentado cuando
+el run termina: en el primer ciclo real, leído en ese momento, 10 de 29
+llamadas daban 0 y a las demás les faltaban los posteos extra; minutos
+después el total era 0,1945 usd y no 0,125. Por eso `usd_real` se
+**concilia después**: al cerrar cada ciclo el scheduler relee los runs de
+las llamadas de más de 10 minutos (`apifyCost.reconcileRealCosts`, lecturas
+gratis de la API, no son runs), guarda `usageTotalUsd` y corrige el usd del
+ciclo en `monitoring_runs`. `node scripts/costo-apify.js --conciliar` hace
+lo mismo a mano. `APIFY_REAL_COST=0` lo apaga (vuelve al endpoint
+sincrónico, sin run id). El actor oficial sigue con el sincrónico y sus
+filas no tienen `usd_real`. Dato del ciclo real: la consulta de perfil
+cobró posteos extra recién a partir del 13 (15 posteos = 0,0065), y la
+búsqueda se cobra como consulta de hashtag (`tag-query`).
 
 Tarifas en el `.env`: `APIFY_RATE_FREE` (2.70), `APIFY_RATE_STARTER`
 (2.30), `APIFY_RATE_SCALE` (1.90) y `APIFY_PLAN` (default `starter`) para el
@@ -989,8 +999,12 @@ verificados contra una corrida real del 2026-09-18 y guardados como fixtures
 en `test/fixtures/apidojo/` (ver su README): `id`, `code`, `url`,
 `createdAt`, `caption`, `likeCount`, `commentCount`, `isVideo`,
 `video.playCount`, `isCarousel` + `carouselMedia`, `isPinned`,
-`owner.username` y `owner.followerCount` (este último solo en consultas de
-perfil). Si el actor cambia algo, esas fixtures y
+`owner.username` y `owner.followerCount`. Este último viene solo en
+consultas de perfil y es el del PERFIL CONSULTADO: en un posteo en
+colaboración (owner distinto) el actor repite ese número, así que solo se
+toma cuando el owner del item es la cuenta consultada. En la búsqueda por
+palabra clave los items llegan con `caption`, `likeCount` y `commentCount`
+en null. Si el actor cambia algo, esas fixtures y
 `src/platforms/instagramApidojo.js` son el lugar a mirar.
 
 ### ⚠️ Verificar en la primera corrida real: ids del refresco de métricas

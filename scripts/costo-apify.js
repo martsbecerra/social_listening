@@ -7,21 +7,24 @@
 // 30). Las tres columnas por plan (free, starter, scale) valen solo para el
 // actor oficial apify/instagram-scraper, que cobra por resultado; el actor
 // apidojo/instagram-scraper-api cobra por consulta y muestra el estimado y
-// lo que Apify cobró de verdad (usd_real) donde se registró. Lee
-// apify_calls en data/monitoring.db (src/apifyCost.js); NO llama a Apify.
+// lo que Apify cobró de verdad (usd_real) donde ya se concilió. Lee
+// apify_calls en data/monitoring.db (src/apifyCost.js); NO llama a Apify,
+// salvo con --conciliar, que antes de informar relee en la API de Apify
+// (lecturas gratis, no son runs) el costo real de las llamadas pendientes.
 //
 //   npm run costo
 //   node scripts/costo-apify.js --dias 90
+//   node scripts/costo-apify.js --conciliar
 // ==========================================================================
 
 require('dotenv').config();
 
-const { summarizeCosts } = require('../src/apifyCost');
+const { summarizeCosts, reconcileRealCosts } = require('../src/apifyCost');
 
 function parseArgs(argv) {
   const i = argv.indexOf('--dias');
   const n = i >= 0 ? Number(argv[i + 1]) : NaN;
-  return { dias: Number.isFinite(n) && n > 0 ? Math.floor(n) : 30 };
+  return { dias: Number.isFinite(n) && n > 0 ? Math.floor(n) : 30, conciliar: argv.includes('--conciliar') };
 }
 
 const money = (value) => `US$ ${Number(value || 0).toFixed(3)}`;
@@ -64,7 +67,15 @@ function printWindow(window, report) {
   }
 }
 
-const { dias } = parseArgs(process.argv);
+async function main() {
+const { dias, conciliar } = parseArgs(process.argv);
+if (conciliar) {
+  const r = await reconcileRealCosts({ limit: 500 });
+  console.log(
+    `Conciliación del costo real: ${r.checked} llamadas revisadas, ${r.updated} actualizadas ` +
+      `(US$ ${r.usdReal.toFixed(4)} real vs US$ ${r.usdEstimado.toFixed(4)} estimado), ${r.pending} todavía sin asentar, ${r.failed} fallidas.\n`
+  );
+}
 const report = summarizeCosts({ days: dias });
 
 console.log(
@@ -84,3 +95,9 @@ const p = report.proyeccionMensual;
 console.log(`\n== Proyección mensual (${p.base})`);
 console.log(`  ${p.calls} llamadas, ${p.results} resultados → ${usdColumns(p.usd)}`);
 console.log(`  de eso, ${report.actores.apidojo}: ${p.apidojo.calls} llamadas ≈ ${money(p.apidojo.usd)}`);
+}
+
+main().catch((err) => {
+  console.error(err.message);
+  process.exit(1);
+});

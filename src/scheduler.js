@@ -23,7 +23,7 @@ const { processPendingReclamos } = require('./geoWorker');
 const { refreshStaleAccountStats } = require('./accountStats');
 const { refreshPostMetrics } = require('./metricsRefresh');
 const { runWithContext } = require('./usageContext');
-const { formatCycleCostLine } = require('./apifyCost');
+const { formatCycleCostLine, reconcileRealCosts } = require('./apifyCost');
 
 const DEFAULT_CRON = '0 */4 * * *';
 
@@ -169,6 +169,16 @@ async function runCycleUnlocked(plataformas, trigger = 'manual') {
       } catch (err) {
         console.error('[costo] No se pudo cerrar el registro del ciclo:', err.message);
       }
+    }
+    // Costo real de las llamadas de ciclos ANTERIORES (las de este todavía
+    // no están asentadas en Apify): lecturas gratis de la API, nunca tira.
+    const reconciled = await reconcileRealCosts();
+    if (reconciled.updated > 0) {
+      console.log(
+        `[costo] costo real conciliado en ${reconciled.updated} llamada(s) anteriores: US$ ${reconciled.usdReal.toFixed(4)} ` +
+          `(estimado US$ ${reconciled.usdEstimado.toFixed(4)})` +
+          (reconciled.pending + reconciled.failed > 0 ? `; ${reconciled.pending + reconciled.failed} siguen pendientes` : '')
+      );
     }
   }
 }

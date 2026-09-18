@@ -157,6 +157,25 @@ describe('proveedor apidojo del adapter de Instagram', { concurrency: false }, (
     assert.equal(search[0].followers, null);
   });
 
+  test('posteo en colaboración en la respuesta de un perfil: owner.followerCount es del perfil consultado, así que no se le atribuye al autor del item', () => {
+    // Visto en el ciclo real del 2026-09-18: la consulta de @somoslupaa (54
+    // seguidores) trajo dos posteos cuyo owner es @somos100barrios (19.276),
+    // los dos con followerCount 54.
+    const items = [
+      rawPost({ id: 301, username: 'cuenta_prueba', followerCount: 19276 }),
+      rawPost({ id: 302, username: 'colaboradora', followerCount: 19276 }),
+    ];
+    const posts = provider.normalizeItems(items, { account: 'Cuenta_Prueba', sourceType: 'account' });
+    assert.equal(posts[0].followers, 19276, 'mismo owner, sin distinguir mayúsculas');
+    assert.equal(posts[1].account, 'colaboradora', 'la cuenta sigue siendo la del autor');
+    assert.equal(posts[1].followers, null, 'los seguidores del perfil consultado no son los del autor');
+    assert.equal(monitor.rememberFollowers(posts, 'instagram'), 1);
+    assert.equal(db.getAccountFollowers('cuenta_prueba', 'instagram'), 19276);
+    assert.equal(db.getAccountFollowers('colaboradora', 'instagram'), null);
+    // Sin cuenta consultada (hashtag, búsqueda) el dato, si viniera, es del owner.
+    assert.equal(provider.normalizePost(items[1], { account: null, sourceType: 'hashtag' }).followers, 19276);
+  });
+
   test('descarta lo que no es un posteo: lista vacía (perfil inexistente), noResults, error, sin id, sin url ni code, basura', () => {
     const ctx = { account: 'x', sourceType: 'account' };
     assert.deepEqual(fixture('not-found'), [], 'un perfil inexistente devuelve lista vacía');

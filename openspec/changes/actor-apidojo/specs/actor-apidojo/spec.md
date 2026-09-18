@@ -80,7 +80,7 @@ El orquestador MUST leer `MONITOR_ACCOUNT_LIMIT` (10), `MONITOR_HASHTAG_LIMIT` (
 
 ### Requirement: REQ-IGA-06 — Seguidores desde los posteos
 
-La caché `account_followers` MUST actualizarse con cada respuesta que traiga `followers`, en cualquier fase. El benchmark MUST tomar los seguidores de los posteos si vinieron y consultar aparte solo si no. Un posteo nuevo MUST guardarse con los seguidores que trajo. Una cuenta que no devuelve posteos MUST conservar el último valor conocido.
+La caché `account_followers` MUST actualizarse con cada respuesta que traiga `followers`, en cualquier fase. `owner.followerCount` es el del perfil consultado: el proveedor MUST dejar `followers` en null cuando el owner del item no es la cuenta consultada (posteos en colaboración). El benchmark MUST tomar los seguidores de los posteos si vinieron y consultar aparte solo si no. Un posteo nuevo MUST guardarse con los seguidores que trajo. Una cuenta que no devuelve posteos MUST conservar el último valor conocido.
 
 #### Scenario: Benchmark con apidojo
 
@@ -110,7 +110,7 @@ La sección de Instagram del config MAY tener `searches`, una lista aparte de `k
 
 ### Requirement: REQ-IGA-08 — Costo por actor y costo real
 
-`apify_calls` MUST guardar `actor`, `query_type` (user | hashtag | search | post | details), `usd` estimado (oficial: resultados × tarifa del plan; apidojo: tarifa de la consulta + posteos extra × `APIDOJO_RATE_ITEM`), y para las llamadas por el flujo asincrónico `usd_real` (`usageTotalUsd` del run) y `apify_run_id`. Con apidojo y `APIFY_REAL_COST` distinto de 0, las llamadas MUST ir por el flujo asincrónico. Los reportes MUST desglosar por actor, con las tres columnas por plan solo para el oficial y `usd_real` preferido al estimado para apidojo. La línea `[costo]` MUST incluir la fase `busqueda`.
+`apify_calls` MUST guardar `actor`, `query_type` (user | hashtag | search | post | details), `usd` estimado (oficial: resultados × tarifa del plan; apidojo: tarifa de la consulta + posteos extra × `APIDOJO_RATE_ITEM`), y para las llamadas por el flujo asincrónico `apify_run_id` y, conciliado después, `usd_real` (`usageTotalUsd` del run). `usd_real` MUST NOT leerse al terminar el run (Apify lo asienta con demora): MUST escribirlo la conciliación (llamadas de más de 10 minutos), que además MUST recalcular el usd del ciclo y dejar pendiente un run que figura en 0 con eventos cobrados. Con apidojo y `APIFY_REAL_COST` distinto de 0, las llamadas MUST ir por el flujo asincrónico. Los reportes MUST desglosar por actor, con las tres columnas por plan solo para el oficial y `usd_real` preferido al estimado para apidojo. La línea `[costo]` MUST incluir la fase `busqueda`.
 
 #### Scenario: Consulta de hashtag con extras
 
@@ -120,6 +120,6 @@ La sección de Instagram del config MAY tener `searches`, una lista aparte de `k
 
 #### Scenario: Costo real
 
-- GIVEN el run terminó `SUCCEEDED` con `usageTotalUsd: 0.0071`
-- WHEN se registra la llamada
-- THEN `usd_real` es 0,0071 y el ciclo lo suma en vez del estimado
+- GIVEN una llamada de hace 20 minutos con `apify_run_id` y sin `usd_real`, cuyo run dice `usageTotalUsd: 0.0065`
+- WHEN corre la conciliación
+- THEN `usd_real` queda en 0,0065 y el usd de su ciclo se recalcula con ese valor en vez del estimado

@@ -27,7 +27,13 @@
 - [x] 3.3 Reportes por actor (`npm run costo`, `GET /api/monitoring/costs`), línea `[costo]` con `busqueda`
 - [x] 3.4 `.env.example`, README (costo, fuentes, decisión "Septiembre 2026"), `CLAUDE.md`, `config/README.md`
 
+## Phase 4: correcciones del ciclo real (2026-09-18, US$ 0,1945)
+
+- [x] 4.1 `followers` solo cuando el owner del item es la cuenta consultada (posteos en colaboración)
+- [x] 4.2 `usd_real` conciliado después (`fetchRunCost`, `reconcileRealCosts`, `--conciliar`), no al terminar el run
+- [x] 4.3 Verificado en el ciclo real: el refresco matchea por id (16 de 21 posteos calientes; los 5 restantes quedaron fuera de los 15 más nuevos o de la ventana), `until` convive con posteos fijados, la caché de seguidores se actualiza en detección y refresco
+- [ ] 4.4 Resultados de búsqueda sin caption ni contadores: propuesta de enriquecimiento por consulta de detalle, a decidir por el dueño
+
 ## Pendiente (fuera del código)
 
-- [ ] Ciclo completo real con apidojo (autorización del dueño): verificar `until` con fijados, resultados de búsqueda con caption, `usd_real` contra el panel de Apify
 - [ ] Merge a `main` cuando el dueño lo confirme

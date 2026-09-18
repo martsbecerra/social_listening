@@ -33,6 +33,15 @@ Todo lo demás está tal cual vino.
   ids que sin `until` (los 10 posteos más nuevos de `@clavescom` son de ese
   día), y la cuenta no tiene posteos fijados: cómo se lleva `until` con un
   posteo fijado viejo queda para verlo en el ciclo completo.
+- Ciclo real completo del 2026-09-18 (29 llamadas, US$ 0,1945): `until`
+  convive con posteos fijados (`@nuncavasaverlo` devolvió 5 posteos, 3
+  fijados); el refresco matcheó por id 16 de 21 posteos calientes (los
+  otros 5 quedaron fuera de los 15 más nuevos de cuentas que publican mucho
+  o de la ventana); `owner.followerCount` es el del perfil CONSULTADO
+  incluso en posteos en colaboración con otro owner (no se le atribuye al
+  autor); la consulta de perfil cobró posteos extra recién desde el 13; la
+  búsqueda se cobra como `tag-query`; "jorge macri" devolvió 1 item y
+  "macri ciudad" 0, otra vez sin caption ni contadores.
 - En la búsqueda los dos items vinieron con `caption`, `likeCount` y
   `commentCount` en `null` (dos reels de cuentas de fans). Pocos datos para
   saber si es lo normal de la búsqueda o de esos dos posteos; a mirar en

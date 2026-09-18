@@ -53,13 +53,17 @@
 // conocemos de antemano, las llamadas van por el flujo asincrónico:
 // POST /acts/{id}/runs?waitForFinish=60 (arranca el run y espera hasta 60 s
 // en la misma request), GET del run hasta que termine (dentro de
-// REQUEST_TIMEOUT_MS), una lectura final del run (es el endpoint que trae
-// los números reales) y GET de los items del dataset. Tres o cuatro
-// requests en vez de una, medio segundo más por llamada, sin costo extra:
-// la fila de apify_calls queda con usd_real y apify_run_id.
-// APIFY_REAL_COST=0 lo apaga (vuelve al sincrónico, usd_real vacío). El
-// actor oficial (análisis de publicación e IG_ACTOR=apify) sigue con el
-// sincrónico de siempre: sus filas no tienen usd_real.
+// REQUEST_TIMEOUT_MS) y GET de los items del dataset. Dos o tres requests
+// en vez de una, sin costo extra: la fila de apify_calls queda con el
+// apify_run_id. El costo NO se lee al terminar: Apify asienta el cobro con
+// demora (en el ciclo real del 2026-09-18, leído al terminar el run, 10 de
+// 29 llamadas daban 0 y a las demás les faltaban los posteos extra; minutos
+// después estaba completo). usd_real se concilia más tarde con
+// fetchRunCost (apifyCost.reconcileRealCosts, que el scheduler corre al
+// cerrar cada ciclo para las llamadas de ciclos anteriores).
+// APIFY_REAL_COST=0 lo apaga (vuelve al sincrónico, sin run id ni costo
+// real). El actor oficial (análisis de publicación e IG_ACTOR=apify) sigue
+// con el sincrónico de siempre: sus filas no tienen usd_real.
 // ==========================================================================
 
 const { createLimiter } = require('./concurrencyLimiter');
@@ -157,7 +161,7 @@ async function runActorSync(input, { actorId = APIFY_ACTOR, plataforma = 'instag
         ok: !error,
         error: error ? describeError(error) : null,
         durationMs: Date.now() - startedAt,
-        usdReal: run && run.usdReal != null ? run.usdReal : null,
+        // usd_real queda vacío acá a propósito: se concilia después (ver encabezado).
         apifyRunId: run ? run.id : (error && error.apifyRunId) || null,
       });
     const once = () =>
@@ -201,12 +205,12 @@ async function runActorSyncOnce(input, actorId) {
 }
 
 /**
- * Flujo asincrónico con costo real (ver encabezado): arranca el run y
- * espera hasta 60 s, sigue esperando de a 60 s hasta REQUEST_TIMEOUT_MS,
- * lee el run terminado (usageTotalUsd, chargedEventCounts) y baja los items
- * del dataset. Un run que no termina en SUCCEEDED tira con el estado y el
- * statusMessage de Apify (y err.apifyRunId, para la fila de apify_calls).
- * @returns {Promise<{ items: Array, run: { id: string, usdReal: number|null, chargedEventCounts: object|null } }>}
+ * Flujo asincrónico (ver encabezado): arranca el run y espera hasta 60 s,
+ * sigue esperando de a 60 s hasta REQUEST_TIMEOUT_MS y baja los items del
+ * dataset. Devuelve el id del run para conciliar el costo después. Un run
+ * que no termina en SUCCEEDED tira con el estado y el statusMessage de
+ * Apify (y err.apifyRunId, para la fila de apify_calls).
+ * @returns {Promise<{ items: Array, run: { id: string } }>}
  */
 async function runActorRealCostOnce(input, actorId) {
   const token = encodeURIComponent(process.env.APIFY_API_TOKEN);
@@ -233,9 +237,6 @@ async function runActorRealCostOnce(input, actorId) {
     }
     run = unwrap(await apifyRequest(`${APIFY_BASE}/actor-runs/${run.id}?token=${token}&waitForFinish=${REAL_COST_WAIT_SECS}`, opts));
   }
-  // Lectura final del run: es el endpoint que trae los números reales
-  // (el listado de runs y las respuestas intermedias pueden no traerlos).
-  run = unwrap(await apifyRequest(`${APIFY_BASE}/actor-runs/${run.id}?token=${token}`, opts));
   if (run.status !== 'SUCCEEDED') {
     const e = new Error(`El run ${run.id} de Apify terminó en ${run.status}${run.statusMessage ? `: ${run.statusMessage}` : ''}`);
     e.userMessage = `La corrida de Apify terminó en ${run.status}. Revisá el run ${run.id} en la consola de Apify.`;
@@ -243,10 +244,27 @@ async function runActorRealCostOnce(input, actorId) {
     throw e;
   }
   const items = await apifyRequest(`${APIFY_BASE}/datasets/${run.defaultDatasetId}/items?token=${token}`, opts);
+  return { items: Array.isArray(items) ? items : [], run: { id: run.id } };
+}
+
+/**
+ * Lo que Apify cobró por un run ya terminado: GET /v2/actor-runs/{id}
+ * (usageTotalUsd, chargedEventCounts). Es una lectura de la API, no un run:
+ * no cuesta ni pasa por la cola. La usa apifyCost.reconcileRealCosts
+ * minutos después de que el run terminó, cuando el cobro ya está asentado.
+ * @returns {Promise<{ id: string, status: string, usdReal: number|null, chargedEventCounts: object|null, finishedAt: string|null }>}
+ */
+async function fetchRunCost(runId) {
+  const token = encodeURIComponent(process.env.APIFY_API_TOKEN);
+  const body = await apifyRequest(`${APIFY_BASE}/actor-runs/${encodeURIComponent(runId)}?token=${token}`, { timeoutMs: 30000 });
+  const run = body && typeof body === 'object' && body.data ? body.data : body || {};
   const usd = Number(run.usageTotalUsd);
   return {
-    items: Array.isArray(items) ? items : [],
-    run: { id: run.id, usdReal: Number.isFinite(usd) ? usd : null, chargedEventCounts: run.chargedEventCounts || null },
+    id: run.id || runId,
+    status: run.status || null,
+    usdReal: run.usageTotalUsd !== undefined && run.usageTotalUsd !== null && Number.isFinite(usd) ? usd : null,
+    chargedEventCounts: run.chargedEventCounts || null,
+    finishedAt: run.finishedAt || null,
   };
 }
 
@@ -464,6 +482,7 @@ function normalizeComments(commentItems) {
 module.exports = {
   scrapeInstagram,
   runActorSync,
+  fetchRunCost,
   mapApifyError,
   isQuotaExceededError,
   // Para tests y diagnóstico: el limitador único del proceso y su tope.

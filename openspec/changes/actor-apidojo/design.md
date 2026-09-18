@@ -27,7 +27,11 @@ demás sigue igual. El análisis de publicación (`src/apify.js`) no se toca.
   descarta además lo anterior a la ventana real por `createdAt`, fijados
   incluidos. Sin `lookback` (benchmark, refresco) no hay `until`.
 - **Seguidores desde los posteos.** `owner.followerCount` viene en las
-  consultas de perfil. Cada posteo normalizado lleva `followers`;
+  consultas de perfil y es el del perfil CONSULTADO: en un posteo en
+  colaboración (owner distinto) el actor repite ese número (ciclo real:
+  `@somos100barrios` quedó con los 54 de `@somoslupaa`), así que el
+  proveedor solo lo toma cuando el owner del item es la cuenta consultada.
+  Cada posteo normalizado lleva `followers`;
   `monitor.rememberFollowers` actualiza `account_followers` en detección,
   benchmark y refresco. El adapter no toca la base. `fetchAccountFollowers`
   de apidojo devuelve null sin llamar; el benchmark lo usa solo de respaldo
@@ -47,11 +51,18 @@ demás sigue igual. El análisis de publicación (`src/apify.js`) no se toca.
   o semántica como un hashtag, con motivo `Búsqueda: <término>`; sin caption
   se descarta. En el dedupe intra-ciclo gana el origen más específico:
   `keyword` (X) > `account` > `hashtag` = `search`.
-- **Costo real por el flujo asincrónico, solo para apidojo.** El endpoint
-  sincrónico no devuelve el id del run y el costo cobrado solo se lee del
-  objeto del run. `POST /acts/{id}/runs?waitForFinish=60`, `GET` del run
-  hasta que termine (dentro de `REQUEST_TIMEOUT_MS`), lectura final del run
-  (`usageTotalUsd`, `chargedEventCounts`) y `GET` de los items del dataset.
+- **Costo real por el flujo asincrónico, solo para apidojo, conciliado
+  después.** El endpoint sincrónico no devuelve el id del run y el costo
+  cobrado solo se lee del objeto del run. `POST
+  /acts/{id}/runs?waitForFinish=60`, `GET` del run hasta que termine (dentro
+  de `REQUEST_TIMEOUT_MS`) y `GET` de los items del dataset; la fila guarda
+  `apify_run_id`. El ciclo real del 2026-09-18 mostró que `usageTotalUsd`
+  leído al terminar el run todavía no está asentado (0 en 10 de 29 llamadas,
+  sin los posteos extra en el resto), así que `usd_real` lo escribe
+  `apifyCost.reconcileRealCosts`: relee con `apify.fetchRunCost` los runs de
+  las llamadas de más de 10 minutos y menos de 7 días, deja pendiente lo que
+  figura en 0 con eventos cobrados, y recalcula el usd de los ciclos
+  afectados. Corre al cerrar cada ciclo y con `costo-apify.js --conciliar`.
   Mismo limitador, mismo reintento del 402, mismo registro.
   `APIFY_REAL_COST=0` vuelve al sincrónico. El oficial no cambia.
 - **Costo estimado por actor.** Oficial: resultados × tarifa del plan
@@ -78,8 +89,11 @@ ciclo (scheduler) ── fase monitoreo ──► monitor.runMonitoringCycle
 
 runActorSync(input, { actorId })
    oficial → run-sync-get-dataset-items ──► items
-   apidojo → POST runs?waitForFinish=60 → GET run (hasta terminar) → GET run final → GET dataset items
-   → recordApifyCall { actor, query_type, items, usd estimado, usd_real, apify_run_id }
+   apidojo → POST runs?waitForFinish=60 → GET run (hasta terminar) → GET dataset items
+   → recordApifyCall { actor, query_type, items, usd estimado, apify_run_id }
+
+cierre del ciclo → reconcileRealCosts (llamadas de más de 10 min con apify_run_id y sin usd_real)
+   → apify.fetchRunCost(run) → usd_real → recomputeMonitoringRunUsd
 ```
 
 ## Salida real del actor (2026-09-18)
