@@ -606,6 +606,15 @@ db.exec(`
 `);
 db.exec('CREATE INDEX IF NOT EXISTS idx_apify_calls_at ON apify_calls(at)');
 db.exec('CREATE INDEX IF NOT EXISTS idx_apify_calls_run_id ON apify_calls(run_id)');
+// Costo por actor (ver src/apifyCost.js): qué actor corrió la llamada, el
+// tipo de consulta (user | hashtag | search | post | details), lo que Apify
+// cobró de verdad por el run (usageTotalUsd; solo cuando la llamada fue por
+// el flujo asincrónico, hoy el actor apidojo) y el id del run. Las filas
+// anteriores a estas columnas quedan con actor NULL = el actor oficial.
+const apifyCallsColumns = db.prepare('PRAGMA table_info(apify_calls)').all().map((c) => c.name);
+for (const [col, type] of [['actor', 'TEXT'], ['query_type', 'TEXT'], ['usd_real', 'REAL'], ['apify_run_id', 'TEXT']]) {
+  if (!apifyCallsColumns.includes(col)) db.exec(`ALTER TABLE apify_calls ADD COLUMN ${col} ${type}`);
+}
 // Una fila por ciclo (cron o "Actualizar ahora"); los totales se completan
 // al terminar sumando las filas de apify_calls con ese run_id.
 db.exec(`
@@ -623,16 +632,22 @@ db.exec(`
   )
 `);
 const insertApifyCallStmt = db.prepare(`
-  INSERT INTO apify_calls (at, run_id, phase, plataforma, target, results_type, items, ok, error, duration_ms, usd)
-  VALUES (@at, @runId, @phase, @plataforma, @target, @resultsType, @items, @ok, @error, @durationMs, @usd)
+  INSERT INTO apify_calls (at, run_id, phase, plataforma, actor, query_type, target, results_type, items, ok, error, duration_ms, usd, usd_real, apify_run_id)
+  VALUES (@at, @runId, @phase, @plataforma, @actor, @queryType, @target, @resultsType, @items, @ok, @error, @durationMs, @usd, @usdReal, @apifyRunId)
 `);
+// Las sumas van por fase Y por actor: el actor oficial se valúa por
+// resultados (tres tarifas), apidojo por consulta. usdBest = lo que cobró
+// Apify si se sabe (usd_real), si no el estimado (usd).
+const OFFICIAL_ACTOR_SQL = "'apify~instagram-scraper'";
 const insertMonitoringRunStmt = db.prepare(
   'INSERT INTO monitoring_runs (started_at, "trigger", plataforma) VALUES (@startedAt, @trigger, @plataforma)'
 );
 const sumApifyCallsByRunStmt = db.prepare(`
-  SELECT phase, COUNT(*) AS calls, COALESCE(SUM(items), 0) AS results, COALESCE(SUM(usd), 0) AS usd,
+  SELECT phase, COALESCE(actor, ${OFFICIAL_ACTOR_SQL}) AS actor, COUNT(*) AS calls, COALESCE(SUM(items), 0) AS results,
+         COALESCE(SUM(usd), 0) AS usd, SUM(usd_real) AS usdReal, SUM(usd_real IS NOT NULL) AS withReal,
+         COALESCE(SUM(COALESCE(usd_real, usd)), 0) AS usdBest,
          SUM(CASE WHEN error = 'QUOTA_EXCEEDED' THEN 1 ELSE 0 END) AS quotaErrors
-  FROM apify_calls WHERE run_id = ? GROUP BY phase ORDER BY phase
+  FROM apify_calls WHERE run_id = ? GROUP BY phase, actor ORDER BY phase, actor
 `);
 const finishMonitoringRunStmt = db.prepare(`
   UPDATE monitoring_runs
@@ -641,9 +656,11 @@ const finishMonitoringRunStmt = db.prepare(`
 `);
 const getMonitoringRunStmt = db.prepare('SELECT * FROM monitoring_runs WHERE id = ?');
 const sumApifyCallsSinceStmt = db.prepare(`
-  SELECT phase, COUNT(*) AS calls, COALESCE(SUM(items), 0) AS results,
-         SUM(CASE WHEN ok = 0 THEN 1 ELSE 0 END) AS failed
-  FROM apify_calls WHERE at >= ? GROUP BY phase ORDER BY phase
+  SELECT phase, COALESCE(actor, ${OFFICIAL_ACTOR_SQL}) AS actor, COUNT(*) AS calls, COALESCE(SUM(items), 0) AS results,
+         SUM(CASE WHEN ok = 0 THEN 1 ELSE 0 END) AS failed,
+         COALESCE(SUM(usd), 0) AS usd, SUM(usd_real) AS usdReal, SUM(usd_real IS NOT NULL) AS withReal,
+         COALESCE(SUM(COALESCE(usd_real, usd)), 0) AS usdBest
+  FROM apify_calls WHERE at >= ? GROUP BY phase, actor ORDER BY phase, actor
 `);
 
 // Cuentas con posteos en una ventana de edad (sinceIso, untilIso], agrupadas
@@ -1240,6 +1257,8 @@ function insertApifyCall(row) {
     runId: row.runId ?? null,
     phase: row.phase || 'desconocida',
     plataforma: row.plataforma || 'instagram',
+    actor: row.actor ?? null,
+    queryType: row.queryType ?? null,
     target: row.target ?? null,
     resultsType: row.resultsType ?? null,
     items: Number(row.items) || 0,
@@ -1247,6 +1266,8 @@ function insertApifyCall(row) {
     error: row.error ?? null,
     durationMs: row.durationMs == null ? null : Math.round(row.durationMs),
     usd: Number(row.usd) || 0,
+    usdReal: row.usdReal == null || !Number.isFinite(Number(row.usdReal)) ? null : Number(row.usdReal),
+    apifyRunId: row.apifyRunId ?? null,
   });
   return Number(result.lastInsertRowid);
 }
@@ -1263,20 +1284,28 @@ function startMonitoringRun({ trigger, plataforma, startedAt } = {}) {
 
 /**
  * Cierra la fila del ciclo sumando sus apify_calls: llamadas, resultados,
- * usd y si alguna cortó por cuota. Devuelve los totales con el desglose por
- * fase (para la línea "[costo] ciclo #N ..." del scheduler).
- * @returns {{ id: number, calls: number, results: number, usd: number, quotaExceeded: boolean, porFase: Object<string, {calls: number, results: number, usd: number}> }}
+ * usd (el real donde Apify lo devolvió, si no el estimado) y si alguna
+ * cortó por cuota. Devuelve los totales con el desglose por fase y, dentro
+ * de cada fase, por actor (para la línea "[costo] ciclo #N ..." del
+ * scheduler).
+ * @returns {{ id: number, calls: number, results: number, usd: number, quotaExceeded: boolean,
+ *   porFase: Object<string, {calls: number, results: number, usd: number,
+ *     porActor: Object<string, {calls: number, results: number, usd: number, usdReal: number|null, withReal: number}>}> }}
  */
 function finishMonitoringRun(id, { newPosts = 0, finishedAt } = {}) {
-  const byPhase = sumApifyCallsByRunStmt.all(id);
+  const byPhaseActor = sumApifyCallsByRunStmt.all(id);
   const totals = { calls: 0, results: 0, usd: 0, quotaExceeded: false };
   const porFase = {};
-  for (const row of byPhase) {
+  for (const row of byPhaseActor) {
     totals.calls += row.calls;
     totals.results += row.results;
-    totals.usd += row.usd;
+    totals.usd += row.usdBest;
     if (row.quotaErrors > 0) totals.quotaExceeded = true;
-    porFase[row.phase] = { calls: row.calls, results: row.results, usd: row.usd };
+    const phase = porFase[row.phase] || (porFase[row.phase] = { calls: 0, results: 0, usd: 0, porActor: {} });
+    phase.calls += row.calls;
+    phase.results += row.results;
+    phase.usd += row.usdBest;
+    phase.porActor[row.actor] = { calls: row.calls, results: row.results, usd: row.usd, usdReal: row.usdReal, withReal: row.withReal };
   }
   finishMonitoringRunStmt.run({
     id,
@@ -1307,7 +1336,11 @@ function getMonitoringRun(id) {
   };
 }
 
-/** @returns {{phase: string, calls: number, results: number, failed: number}[]} apify_calls desde sinceIso, agrupadas por fase. */
+/**
+ * apify_calls desde sinceIso, agrupadas por fase y actor.
+ * @returns {{phase: string, actor: string, calls: number, results: number, failed: number,
+ *   usd: number, usdReal: number|null, withReal: number, usdBest: number}[]}
+ */
 function sumApifyCallsSince(sinceIso) {
   return sumApifyCallsSinceStmt.all(sinceIso);
 }

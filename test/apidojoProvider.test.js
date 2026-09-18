@@ -19,6 +19,9 @@ const assert = require('node:assert/strict');
 process.env.IG_ACTOR = 'apidojo';
 process.env.APIFY_API_TOKEN = 'token-de-test';
 process.env.APIFY_RETRY_DELAY_MS = '5';
+// El transporte asincrónico con costo real se prueba en apifyCosts.test.js;
+// acá el stub de fetch simula el endpoint sincrónico.
+process.env.APIFY_REAL_COST = '0';
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sl-apidojo-'));
 process.env.MONITORING_DB_PATH = path.join(tmp, 'monitoring.db');
 process.env.MONITORING_CONFIG_PATH = path.join(tmp, 'monitoring.json');

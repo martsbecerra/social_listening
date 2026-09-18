@@ -41,7 +41,7 @@ social_listening_app/
 │   ├── apify.js              # Extrae comentarios y datos del posteo desde Apify.
 │   ├── analyzeComments.js    # Orquestación del análisis (Apify → LLM → reporte).
 │   ├── x/                    # Análisis de publicación de X: Grok fetch, KPIs, reporte, padrón.
-│   ├── platforms/            # Adapters del monitoreo por red (instagram.js, x.js) + registro y contrato.
+│   ├── platforms/            # Adapters del monitoreo por red (instagram.js con dos proveedores: instagramApidojo.js e instagramApify.js, elegidos por igActor.js; x.js) + registro y contrato.
 │   ├── llm/                  # Proveedores: anthropicProvider, openrouterProvider.
 │   ├── prompt.js             # La metodología de análisis (system prompt).
 │   ├── temasConversacion.js  # Temas emergentes del reporte (IG y X).
@@ -68,11 +68,11 @@ social_listening_app/
 │   ├── scheduler.js          # Agenda el monitoreo cada 4hs (node-cron).
 │   ├── concurrencyLimiter.js # Cola FIFO para los runs simultáneos de Apify.
 │   ├── usageContext.js       # En qué ciclo y fase estamos (AsyncLocalStorage), para medir Apify.
-│   ├── apifyCost.js          # Tarifas, registro de cada llamada a Apify y reporte de gasto.
+│   ├── apifyCost.js          # Tarifas de los dos actores, registro de cada llamada a Apify (estimado y real) y reporte de gasto.
 │   └── notifiers/
 │       └── whatsapp.js       # Placeholder para notificación por WhatsApp (no implementado).
 ├── config/
-│   ├── monitoring.json       # Cuentas y palabras clave/hashtags, una sección por red (instagram, x).
+│   ├── monitoring.json       # Cuentas, palabras clave/hashtags y búsquedas por palabra clave, una sección por red (instagram, x).
 │   ├── categorias-reclamos.json # Categorías y subcategorías del cliente (26/85).
 │   ├── x-influencers/        # CSV ANTIK-PRO (padrón de actores de X).
 │   └── allowed-emails.example.txt  # Plantilla de emails que pueden entrar.
@@ -97,8 +97,9 @@ social_listening_app/
 ├── scripts/
 │   ├── import-reclamos.js       # Importador genérico de Excel/CSV (solo CLI).
 │   ├── migrate-categorias.js    # Migra categorías viejas al esquema de dos niveles.
-│   ├── costo-apify.js           # Gasto en Apify por ventana y fase (npm run costo).
+│   ├── costo-apify.js           # Gasto en Apify por ventana, fase y actor (npm run costo).
 │   └── stop-server.js           # Mata el proceso que ocupa el puerto (npm run stop).
+├── CLAUDE.md                  # Guía corta del proyecto para trabajar con Claude Code.
 ├── .env.example               # Plantilla de las claves (copiala a .env).
 ├── .gitignore                 # Evita subir node_modules, .env y data/.
 └── package.json                # Dependencias y scripts del proyecto.
@@ -142,19 +143,29 @@ Hace falta `SESSION_SECRET` (string largo aleatorio) y `APP_BASE_URL` (p. ej.
 
 - **`config/monitoring.json`**: qué se monitorea, con una sección por red
   registrada en `src/platforms/` (`instagram`, `x`), cada una con sus
-  `accounts` (usuarios de esa red a trackear) y `keywords` (palabras clave o
-  hashtags, estos últimos empezando con `#`). Se puede editar a mano, o desde
-  la propia web (solapa "Monitoreo en vivo" → agregar/quitar; cada solapa
-  escribe su sección). Formato y semántica de cada campo en
-  `config/README.md`. La relevancia de lo que traen esas fuentes se decide
-  igual para todas las redes (ver `src/monitor.js` más abajo).
+  `accounts` (usuarios de esa red a trackear), `keywords` (palabras clave o
+  hashtags, estos últimos empezando con `#`) y, en Instagram, `searches`
+  (búsquedas por palabra clave). Se puede editar a mano, o desde la propia
+  web (solapa "Monitoreo en vivo" → agregar/quitar; cada solapa escribe su
+  sección). Formato y semántica de cada campo en `config/README.md`. La
+  relevancia de lo que traen esas fuentes se decide igual para todas las
+  redes (ver `src/monitor.js` más abajo).
 
-  > **Limitación importante (Instagram)**: las keywords que NO son hashtag
-  > (ej. "Jorge Macri" a secas) no hacen una búsqueda libre en todo Instagram
-  > — Apify no ofrece eso de forma confiable. Solo se buscan dentro de lo que
-  > ya se scrapea: posteos de las cuentas trackeadas y posteos de los hashtags
-  > configurados. En X es al revés: cada keyword, con `#` o sin él, es una
-  > búsqueda de Grok con costo por corrida.
+  **Las cuatro fuentes de detección de Instagram** y qué cuesta cada una:
+  1. **Cuentas trackeadas** (`accounts`): el perfil de cada una, una
+     consulta por cuenta y por ciclo.
+  2. **Hashtags** (`keywords` que empiezan con `#`): la página del hashtag,
+     una consulta por hashtag y por ciclo. Trae todo lo que lo usa: se filtra.
+  3. **Búsquedas por palabra clave** (`searches`, actor apidojo): la búsqueda
+     nativa de Instagram para ese término, una consulta por término y por
+     ciclo. También se filtra. Pocos términos, elegidos a mano.
+  4. **Keywords sin `#`** (`keywords`): NO son una fuente, son el **filtro de
+     texto gratuito** que decide si lo que trajeron las otras tres habla del
+     tema (más la detección semántica del clasificador cuando no hay
+     coincidencia literal). Son 60 y pico; buscarlas todas sería carísimo.
+
+  En X es distinto: cada keyword, con `#` o sin él, es una búsqueda de Grok
+  con costo por corrida, y no hay lista `searches`.
 
 - **`src/db.js`** — ¿qué es SQLite y por qué lo usamos así?: SQLite es una
   base de datos que vive en **un solo archivo** (`data/monitoring.db`), sin
@@ -173,7 +184,8 @@ Hace falta `SESSION_SECRET` (string largo aleatorio) y `APP_BASE_URL` (p. ej.
 - **`src/monitor.js`**: el orquestador del monitoreo, agnóstico de red. Por
   cada plataforma registrada en `src/platforms/` lee su sección de
   `config/monitoring.json` y le pide a su adapter los posteos recientes de
-  cada cuenta trackeada, de cada hashtag y — solo si el adapter sabe
+  cada cuenta trackeada, de cada hashtag, de cada búsqueda por palabra clave
+  (`searches`, solo si el adapter sabe buscar) y — solo si el adapter sabe
   buscarlas — de cada keyword suelta. Compara todo contra `src/db.js` para
   no volver a evaluar ni guardar algo que ya se vio. Antes de guardar una
   cuenta o hashtag nuevo (al agregarlo desde la interfaz) el adapter valida
@@ -200,13 +212,25 @@ Hace falta `SESSION_SECRET` (string largo aleatorio) y `APP_BASE_URL` (p. ej.
      Un posteo sin caption (nada que evaluar) solo se acepta si viene de una
      cuenta trackeada — de un hashtag o una búsqueda se descarta, porque no
      hay ninguna señal de que se relacione con el tema.
+     La búsqueda por palabra clave de Instagram (`searches`) NO entra por el
+     camino 1: Instagram asocia al término mucho contenido ajeno, así que sus
+     resultados pasan por el 2 y el 3 como los de un hashtag, con el motivo
+     `Búsqueda: <término>`. Si el mismo posteo llega por una cuenta trackeada
+     y por una búsqueda en el mismo ciclo, queda como de la cuenta trackeada.
 
 - **`src/platforms/`**: un adapter por red, con el contrato documentado en
   `index.js` (`id`, `label`, `capabilities`, `isConfigured`, `scrapeAccount`,
   `scrapeHashtag`, `scrapeKeyword` opcional, `normalizePost`, `metrics`,
   errores con `code`). Sumar una red es escribir su adapter y registrarlo.
-  - **`instagram.js`**: trae con Apify. Tiene todas las capabilities:
-    benchmark por cuenta, seguidores y refresco de métricas.
+  - **`instagram.js`**: fachada sobre dos proveedores con la misma interfaz,
+    elegidos por `IG_ACTOR` (`src/platforms/igActor.js`): `instagramApidojo.js`
+    (default, actor `apidojo/instagram-scraper-api`: cobra por consulta, trae
+    los seguidores en cada posteo de perfil y busca por palabra clave con
+    `scrapeSearch`) e `instagramApify.js` (actor `apify/instagram-scraper`, el
+    de siempre: cobra por resultado, seguidores por consulta aparte, sin
+    búsqueda). Tiene todas las capabilities: benchmark por cuenta, seguidores
+    y refresco de métricas. Ver "Septiembre 2026: cambio de actor de
+    monitoreo" en las decisiones técnicas.
   - **`x.js`**: trae con **Grok** (búsqueda en X vía OpenRouter o xAI):
     `from:handle` por cuenta, `#hashtag` y el texto literal de cada keyword;
     hashtags y keywords son búsquedas por término, así que lo que traen es
@@ -312,62 +336,89 @@ Hace falta `SESSION_SECRET` (string largo aleatorio) y `APP_BASE_URL` (p. ej.
   placeholder sin implementar todavía, a la espera de definir el proveedor
   (WhatsApp Business API, Twilio, etc.).
 
-### 💸 Costo adicional en Apify del monitoreo
+### 💸 Costo en Apify del monitoreo
 
-`apify/instagram-scraper` cobra **por resultado obtenido** (no por tiempo de
-cómputo): ronda entre US$1,50 y US$2,70 por cada 1.000 resultados según tu
-plan de Apify (verificado mayo 2026). El monitoreo agrega scraping de
-**posts** cada 4hs, adicional a los análisis puntuales de siempre.
+El monitoreo de Instagram corre con el actor que elija `IG_ACTOR`
+(`apidojo/instagram-scraper-api` por defecto; `apify/instagram-scraper` con
+`IG_ACTOR=apify`). Cobran distinto:
 
-```
-costo diario ≈ (nº de fuentes) × (resultsLimit) × (corridas por día) × tarifa/1000
-```
+- **apify/instagram-scraper** cobra **por resultado devuelto** (item del
+  dataset, incluidos los items de error `no_items` / `not_found`): entre
+  US$ 1,90 y 2,70 por cada 1.000 según el plan (`APIFY_RATE_*`).
+- **apidojo/instagram-scraper-api** cobra **por consulta**, con posteos
+  incluidos, más US$ 0,0005 por cada posteo de más (`APIDOJO_*` en el
+  `.env`): perfil 0,005 con 10 incluidos, hashtag 0,015 con 30, búsqueda por
+  palabra clave 0,015 con 20, posteo suelto 0,005. Uso de plataforma incluido.
 
-Con la config por defecto (`MONITOR_RESULTS_LIMIT=15`, cron cada 4hs = 6
-corridas/día) y un ejemplo de 5 cuentas + 3 hashtags: `8 × 15 × 6 = 720
-resultados/día ≈ $1,66/día ≈ ~$50/mes` (plan Starter) **en el peor caso**.
+Con los topes por defecto (`MONITOR_ACCOUNT_LIMIT=10`,
+`MONITOR_HASHTAG_LIMIT=30`, `SEARCH_RESULTS_LIMIT=50`,
+`BENCHMARK_POST_LIMIT=15`), una llamada por fuente y el oficial en plan
+Starter (2,30 por 1.000):
 
-En la práctica es bastante menos: las cuentas trackeadas usan
-`onlyPostsNewerThan` + `skipPinnedPosts`, así que si no publicaron nada nuevo
-esa corrida devuelve ~0 resultados (no se paga por posteos viejos ya vistos).
-Los hashtags sí pagan siempre el `resultsLimit` completo. Para bajar el costo:
-reducí `MONITOR_RESULTS_LIMIT`, sacá hashtags, o espaciá el cron
-(`MONITOR_CRON` en el `.env`, ej. cada 6-8hs).
+| Operación | apify/instagram-scraper | apidojo/instagram-scraper-api |
+|---|---|---|
+| Cuenta trackeada por ciclo, con posteos nuevos | hasta 0,0345 (15 res.) | 0,005 (10 incl.) |
+| Cuenta trackeada por ciclo, sin novedades | 0,0023 (1 item de error) | 0,005 |
+| Hashtag por ciclo | 0,0345 | 0,015 (30 incl.) |
+| Búsqueda por palabra clave, 50 resultados | no existe | 0,030 |
+| Benchmark de una cuenta (15 posteos + seguidores) | 0,0368 (+1 consulta de perfil) | 0,0075 |
+| Refresco de métricas de una cuenta (15 posteos) | 0,0345 | 0,0075 |
+| Validar una cuenta / un hashtag al agregarlos | 0,0023 / 0,0023 | 0,005 / 0,015 |
+
+Con 12 cuentas y 1 hashtag, la detección de un ciclo cuesta 0,075 con
+apidojo contra 0,06 típico (0,45 en el peor caso) con el oficial: el ahorro
+grande está en hashtags, benchmark y refresco, y la búsqueda por palabra
+clave solo existe en apidojo. Para bajar el costo: menos hashtags y
+búsquedas, topes más chicos, o espaciar el cron (`MONITOR_CRON`).
 
 El benchmark por cuenta (`src/accountStats.js`) solo gasta cuando una cuenta
 aparece con un posteo nuevo y nunca se calculó o pasaron
-`BENCHMARK_RECALC_DAYS` desde el último cálculo: `BENCHMARK_POST_LIMIT`
-resultados más una consulta de perfil por cuenta, como mucho
-`MAX_ACCOUNTS_PER_CYCLE` cuentas por ciclo. Una cuenta que no vuelve a
-aparecer no cuesta nada.
+`BENCHMARK_RECALC_DAYS` desde el último cálculo, como mucho
+`MAX_ACCOUNTS_PER_CYCLE` cuentas por ciclo. Con apidojo los seguidores
+vienen en esa misma consulta; con el oficial es una consulta de perfil
+aparte. Una cuenta que no vuelve a aparecer no cuesta nada.
 
 #### Medir lo que se gasta de verdad
 
 Lo de arriba es la estimación; la app además **registra cada llamada a
 Apify** (`src/apifyCost.js`, todas pasan por `runActorSync`):
 
-- `apify_calls`: una fila por llamada, con la fase, el ciclo (`run_id`), qué
-  se pidió (`target`, `results_type`), cuántos items devolvió Apify (los
-  items de error `no_items` / `not_found` también, porque se cobran igual),
+- `apify_calls`: una fila por llamada, con la fase, el ciclo (`run_id`), el
+  `actor`, el tipo de consulta (`query_type`: `user`, `hashtag`, `search`,
+  `post`, `details`), qué se pidió (`target`), cuántos items devolvió Apify,
   si salió bien, el error si no (`QUOTA_EXCEEDED` cuando fue la cuota), la
-  duración y el `usd` con la tarifa del plan activo.
+  duración, el `usd` estimado y, para el actor apidojo, `usd_real` (lo que
+  Apify cobró por ese run, `usageTotalUsd`) y `apify_run_id`.
 - `monitoring_runs`: una fila por ciclo (cron o "Actualizar ahora"), con
   posteos nuevos, llamadas, resultados, usd y si alguna llamada cortó por
   cuota. Al cerrar cada ciclo el server imprime
-  `[costo] ciclo #N: X llamadas, Y resultados ≈ US$ Z (monitoreo A · benchmark B · refresco C)`,
-  con el total en dólares del plan activo y el desglose en resultados.
+  `[costo] ciclo #N: X llamadas, Y resultados ≈ US$ Z (monitoreo A · busqueda B · benchmark C · refresco D)`,
+  con el total en dólares (real donde Apify lo devolvió, si no el estimado)
+  y el desglose en resultados por fase.
 
-Las fases son `monitoreo`, `benchmark` y `refresco` dentro del ciclo
-(`src/scheduler.js` las marca con `src/usageContext.js`), y fuera de él
-`validacion` (agregar cuenta o hashtag), `recalc-script`
-(`scripts/recalc-account-stats.js`) y `analisis` (análisis de una
-publicación). Una llamada sin fase conocida queda como `desconocida`.
+Las fases son `monitoreo`, `busqueda`, `benchmark` y `refresco` dentro del
+ciclo (`src/scheduler.js` y `src/monitor.js` las marcan con
+`src/usageContext.js`), y fuera de él `validacion` (agregar cuenta o
+hashtag), `recalc-script` (`scripts/recalc-account-stats.js`) y `analisis`
+(análisis de una publicación). Una llamada sin fase conocida queda como
+`desconocida`.
 
-Tarifas por 1000 resultados en el `.env`: `APIFY_RATE_FREE` (2.70),
-`APIFY_RATE_STARTER` (2.30), `APIFY_RATE_SCALE` (1.90) y `APIFY_PLAN`
-(default `starter`) para el plan activo. El reporte recalcula desde los
-resultados guardados con las tres tarifas a la vez, así cambiar de plan no
-invalida el histórico:
+**Costo real.** El endpoint sincrónico de Apify no devuelve el id del run,
+y lo que Apify cobró de verdad solo se lee del objeto del run. Por eso las
+llamadas al actor apidojo van por el flujo asincrónico (arrancar el run,
+esperar, leer el run y bajar sus items: tres o cuatro requests en vez de
+una, sin costo extra) y la fila queda con `usd_real`. `APIFY_REAL_COST=0`
+lo apaga. El actor oficial sigue con el endpoint sincrónico y sus filas no
+tienen `usd_real`.
+
+Tarifas en el `.env`: `APIFY_RATE_FREE` (2.70), `APIFY_RATE_STARTER`
+(2.30), `APIFY_RATE_SCALE` (1.90) y `APIFY_PLAN` (default `starter`) para el
+oficial; `APIDOJO_RATE_USER` (0.005), `APIDOJO_RATE_HASHTAG` (0.015),
+`APIDOJO_RATE_SEARCH` (0.015), `APIDOJO_RATE_POST` (0.005),
+`APIDOJO_RATE_ITEM` (0.0005) y `APIDOJO_INCLUDED_USER` (10), `_HASHTAG`
+(30), `_SEARCH` (20) para apidojo. El reporte recalcula las filas del
+oficial desde los resultados con las tres tarifas a la vez (cambiar de plan
+no invalida el histórico) y para apidojo usa `usd_real` cuando existe:
 
 ```bash
 npm run costo
@@ -378,9 +429,11 @@ node scripts/costo-apify.js --dias 90
 ```
 
 Muestra hoy, últimos 7 días y últimos N días (30 por defecto) con llamadas,
-resultados y usd por plan, desglosado por fase, más la proyección mensual
-(promedio diario de los últimos 7 días × 30). `GET /api/monitoring/costs?days=30`
-devuelve lo mismo en JSON. Nada de esto llama a Apify.
+resultados y usd, desglosado por actor (las tres columnas por plan solo
+aplican al oficial; apidojo muestra estimado y real) y por fase, más la
+proyección mensual (promedio diario de los últimos 7 días × 30).
+`GET /api/monitoring/costs?days=30` devuelve lo mismo en JSON. Nada de esto
+llama a Apify.
 
 ---
 
@@ -530,6 +583,47 @@ y se sigue.
 Efecto en el tiempo: con 13 fuentes y tope 3, un ciclo de Instagram pasa de
 un minuto a unos 3-5 (cada corrida de 15 posteos tarda 30-60 s). El botón
 "Actualizar ahora" espera esa respuesta, como siempre.
+
+### Septiembre 2026: cambio de actor de monitoreo
+
+El monitoreo de Instagram pasó de `apify/instagram-scraper` a
+`apidojo/instagram-scraper-api` (rama `actor_apidojo`). **Por qué**: el actor
+oficial cobra por resultado (2,30 usd por 1.000 en plan Starter, y un
+hashtag paga siempre el tope completo) y no tiene búsqueda por palabra
+clave, que es la fuente que faltaba para ver menciones fuera de las cuentas
+y hashtags que ya conocíamos. apidojo cobra por consulta con posteos
+incluidos (una cuenta o un hashtag cuestan lo mismo traigan lo que traigan),
+no necesita login ni cookies, trae los seguidores del autor en cada posteo
+de perfil y tiene la búsqueda nativa de Instagram.
+
+**Qué se conservó**:
+
+- El análisis de una publicación (comentarios, `src/apify.js`) sigue con
+  `apify/instagram-scraper`: apidojo no devuelve comentarios.
+- La forma de los datos: `detected_posts.id` (id numérico de Instagram) y
+  `url` (`/p/{code}/`) son los mismos en los dos actores, verificado contra
+  una corrida real; el dedupe y el refresco de métricas siguen matcheando y
+  `post_type` usa los mismos valores (`reel`, `imagen`, `carrusel`). No se
+  migró ningún dato.
+- El contrato del adapter: el orquestador, el benchmark, el refresco, la
+  base y el frontend no saben qué actor hay abajo. `IG_ACTOR=apify` vuelve
+  al actor anterior con el comportamiento exacto de antes
+  (`src/platforms/instagramApify.js` es el código viejo movido sin cambios).
+- La cola de runs simultáneos, el reintento del 402 y el registro de costo,
+  que ahora distingue actor y tipo de consulta y guarda el costo real.
+
+**Qué cambió al pasar**: `until` (fecha) en vez de `onlyPostsNewerThan`, con
+descarte del lado nuestro de lo anterior a la ventana real y de los fijados
+viejos; topes por tipo de fuente (`MONITOR_ACCOUNT_LIMIT`,
+`MONITOR_HASHTAG_LIMIT`, `SEARCH_RESULTS_LIMIT`) en vez de
+`MONITOR_RESULTS_LIMIT`; seguidores desde los posteos en cualquier fase en
+vez de una consulta de perfil aparte; la lista `searches` y la fase
+`busqueda`. Validar una cuenta o un hashtag al agregarlos cuesta 0,005 y
+0,015 usd respectivamente (antes, un resultado cada uno).
+
+**Para volver al actor anterior**: `IG_ACTOR=apify` en el `.env` y reiniciar
+el server. Las búsquedas por palabra clave configuradas quedan guardadas
+pero se ignoran (con un aviso por ciclo) hasta volver a apidojo.
 
 ### ¿Qué modelo usa cada tarea?
 
@@ -889,6 +983,15 @@ variar según la versión. El código en `src/apify.js` intenta varias alternati
 (`ownerUsername`, `owner.is_verified`, `videoPlayCount`/`videoViewCount`, etc.).
 Si algún dato aparece como `N/D`, revisá una corrida real en el panel de Apify
 para ver el nombre exacto del campo y ajustá `normalizePost` / `normalizeComments`.
+
+Para el actor `apidojo/instagram-scraper-api` (monitoreo) los nombres están
+verificados contra una corrida real del 2026-09-18 y guardados como fixtures
+en `test/fixtures/apidojo/` (ver su README): `id`, `code`, `url`,
+`createdAt`, `caption`, `likeCount`, `commentCount`, `isVideo`,
+`video.playCount`, `isCarousel` + `carouselMedia`, `isPinned`,
+`owner.username` y `owner.followerCount` (este último solo en consultas de
+perfil). Si el actor cambia algo, esas fixtures y
+`src/platforms/instagramApidojo.js` son el lugar a mirar.
 
 ### ⚠️ Verificar en la primera corrida real: ids del refresco de métricas
 
