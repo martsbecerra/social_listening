@@ -46,3 +46,19 @@ Todo lo demás está tal cual vino.
   `commentCount` en `null` (dos reels de cuentas de fans). Pocos datos para
   saber si es lo normal de la búsqueda o de esos dos posteos; a mirar en
   el ciclo real de la Fase 2.
+
+## Detalle de un posteo (2026-09-18, US$ 0,0073)
+
+El reel que la búsqueda "jorge macri" devolvió sin caption ni contadores
+(`3988633620029857812`, `/p/DdaeSUND2AU/`), pedido por URL a los dos actores:
+
+- `post.json` (este directorio): apidojo, `{ startUrls: [url], maxItems: 1 }`,
+  consulta de posteo suelto (0,005 usd).
+- `../apify/post-detail.json`: apify/instagram-scraper,
+  `{ directUrls: [url], resultsType: 'posts', resultsLimit: 1 }` (0,0023 usd).
+
+Los dos devuelven el mismo id y traen lo que la búsqueda recorta: caption
+("Jorge Macri impulsa darle un FIN AL KIRCHNERISMO #jorgemacri2027
+#buenosaires #caba"), 2 likes, 0 comentarios y 225 reproducciones. Es decir:
+el posteo SÍ tiene texto y era relevante; la búsqueda devuelve un objeto
+reducido. Ninguno de los dos trae seguidores en esta consulta.

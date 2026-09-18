@@ -1,0 +1,51 @@
+[
+  {
+    "inputSource": "https://www.instagram.com/p/DdaeSUND2AU/",
+    "type": "post",
+    "id": "3988633620029857812",
+    "code": "DdaeSUND2AU",
+    "url": "https://www.instagram.com/p/DdaeSUND2AU/",
+    "createdAt": "2026-09-18T03:30:29.000Z",
+    "likeCount": 2,
+    "commentCount": 0,
+    "isAvailable": true,
+    "caption": "Jorge Macri impulsa darle un FIN AL KIRCHNERISMO #jorgemacri2027 #buenosaires #caba",
+    "isLikeAndViewCountsDisabled": false,
+    "isPinned": false,
+    "isPaidPartnership": false,
+    "owner": {
+      "id": "35184048041",
+      "username": "jorge2027macri",
+      "fullName": "Jorge Macri",
+      "profilePicUrl": "https://cdn.invalid/profilePicUrl",
+      "isPrivate": false,
+      "isVerified": false
+    },
+    "coowners": null,
+    "location": {
+      "id": "106423786059675",
+      "name": "Buenos Aires, Argentina",
+      "slug": "Buenos Aires",
+      "address": "",
+      "city": "",
+      "lat": -34.6086,
+      "lng": -58.4215
+    },
+    "isCarousel": false,
+    "isVideo": true,
+    "video": {
+      "id": "18098986142168042v",
+      "url": "https://cdn.invalid/url",
+      "width": 720,
+      "height": 1280,
+      "duration": 19.600000381469727,
+      "playCount": 225
+    },
+    "image": {
+      "url": "https://cdn.invalid/url",
+      "width": 360,
+      "height": 640
+    },
+    "audio": null
+  }
+]
