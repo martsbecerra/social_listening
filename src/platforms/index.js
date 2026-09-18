@@ -31,8 +31,12 @@
 //                 de la plataforma entera, no de esa fuente.
 //   normalizePost(raw, { account, sourceType, sourceQuery })
 //                 → { id, account, url, caption, hashtagsText, likes,
-//                     comments, postedAt, postType, sourceType, sourceQuery,
-//                     ...métricas propias (retweets, views) }
+//                     comments, postedAt, postType, followers, sourceType,
+//                     sourceQuery, ...métricas propias (retweets, views) }
+//                 `followers`: seguidores del autor si la fuente los trae en
+//                 el mismo posteo (Instagram con apidojo), si no null. El
+//                 orquestador los usa como snapshot del posteo nuevo y para
+//                 actualizar la caché account_followers (rememberFollowers).
 //                 `id` tiene que ser único ENTRE plataformas (X usa el
 //                 prefijo "x:").
 //                 sourceType le dice al orquestador cómo evaluar relevancia:
@@ -46,7 +50,10 @@
 //                              hashtag es una búsqueda más), con el término
 //                              en sourceQuery.
 //   buildProfileUrl(username)
-//   fetchAccountFollowers(username) → number | null. Nunca tira.
+//   fetchAccountFollowers(username) → number | null. Nunca tira. Es el
+//                 camino de respaldo cuando los posteos no traen
+//                 `followers`; un adapter cuya fuente los trae en cada
+//                 posteo puede devolver null sin consultar nada.
 //   metrics       [{ key, label, primary }]: qué métricas del posteo expone
 //                 la plataforma. El orquestador guarda y refresca solo esas
 //                 claves; el frontend va a armar las columnas leyendo de acá.

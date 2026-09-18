@@ -1,0 +1,25 @@
+[
+  {
+    "id": "3900000000000000101",
+    "code": "Dhashtag0101",
+    "url": "https://www.instagram.com/p/Dhashtag0101/",
+    "createdAt": "2026-09-17T18:00:00.000Z",
+    "caption": "El jefe de gobierno recorrió la obra #JorgeMacri",
+    "likeCount": 50,
+    "commentCount": 7,
+    "isVideo": false,
+    "owner": { "username": "otra_cuenta", "fullName": "Otra Cuenta", "isVerified": false, "followerCount": 980 }
+  },
+  {
+    "id": "3900000000000000102",
+    "code": "Dhashtag0102",
+    "url": "https://www.instagram.com/p/Dhashtag0102/",
+    "createdAt": "2026-06-01T10:00:00.000Z",
+    "caption": "Posteo fijado viejo #JorgeMacri",
+    "likeCount": 3000,
+    "commentCount": 120,
+    "isVideo": false,
+    "isPinned": true,
+    "owner": { "username": "medio_local", "fullName": "Medio Local", "isVerified": true, "followerCount": 45000 }
+  }
+]

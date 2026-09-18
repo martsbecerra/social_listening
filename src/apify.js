@@ -4,7 +4,14 @@
 // Se encarga de hablar con Apify para extraer (scrapear) los datos de
 // Instagram: los comentarios de la publicación y los datos del posteo en sí.
 //
-// Usamos el actor oficial "apify/instagram-scraper".
+// El ANÁLISIS de una publicación (scrapeInstagram, abajo) usa siempre el
+// actor oficial "apify/instagram-scraper": es el único que devuelve
+// comentarios. El MONITOREO de Instagram (src/platforms/instagram.js) pasa
+// por el mismo runActorSync pero con el actor que elija IG_ACTOR
+// (apidojo/instagram-scraper-api por defecto, ver src/platforms/igActor.js):
+// runActorSync recibe el id del actor como parámetro y no sabe cuál de los
+// dos está corriendo; la cola, el reintento del 402 y el registro de costo
+// valen para ambos.
 //
 // DECISIÓN: endpoint SINCRÓNICO (run-sync-get-dataset-items)
 // --------------------------------------------------------------------------

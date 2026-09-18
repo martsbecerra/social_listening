@@ -1,0 +1,24 @@
+[
+  {
+    "id": "3900000000000000201",
+    "code": "Dsearch0201",
+    "url": "https://www.instagram.com/p/Dsearch0201/",
+    "createdAt": "2026-09-17T15:30:00.000Z",
+    "caption": "Jorge Macri anunció el plan de veredas",
+    "likeCount": 210,
+    "commentCount": 18,
+    "isVideo": true,
+    "video": { "url": "https://example.invalid/reel.mp4", "duration": 12.0, "playCount": 4000 },
+    "owner": { "username": "vecino_porteno", "fullName": "Vecino Porteño", "isVerified": false, "followerCount": 310 }
+  },
+  {
+    "id": "3900000000000000202",
+    "code": "Dsearch0202",
+    "url": "https://www.instagram.com/p/Dsearch0202/",
+    "createdAt": "2026-09-17T14:00:00.000Z",
+    "likeCount": 5,
+    "commentCount": 0,
+    "isVideo": false,
+    "owner": { "username": "sin_caption", "fullName": "Sin Caption", "isVerified": false, "followerCount": 12 }
+  }
+]

@@ -36,7 +36,7 @@ const db = require('./db');
 const { getPlatform, listPlatformIds } = require('./platforms');
 const { isQuotaExceeded } = require('./platforms/errors');
 const { BENCHMARK_POST_LIMIT } = require('./accountStats');
-const { pickMetrics } = require('./monitor');
+const { pickMetrics, rememberFollowers } = require('./monitor');
 const { checkAndLogJump } = require('./viralJumpDetector');
 
 const REFRESH_HOT_HOURS = Number(process.env.REFRESH_HOT_HOURS) || 48;
@@ -155,6 +155,9 @@ async function refreshPostMetricsFor(plataforma, skipSet) {
     }
     accountsChecked += 1;
     resultsConsumed += posts.length;
+    // Seguidores que vinieron con los posteos (apidojo): solo la caché;
+    // propagarlos a las filas guardadas sigue siendo cosa del benchmark.
+    rememberFollowers(posts, plataforma);
 
     for (const post of posts) {
       const result = db.applyMetricsRefresh(post.id, pickMetrics(platform, post));

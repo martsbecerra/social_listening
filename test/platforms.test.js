@@ -108,7 +108,10 @@ describe('platforms', { concurrency: false }, () => {
     assert.equal(ig.id, 'instagram');
     assert.equal(ig.label, 'Instagram');
     // Apify es un detalle interno de este adapter, no parte del contrato.
-    assert.equal(ig.actorId, 'apify~instagram-scraper');
+    // El actor depende de IG_ACTOR (default apidojo): lo que se fija acá es la
+    // coherencia proveedor <-> actor; cada proveedor tiene su propio test.
+    assert.ok(['apidojo', 'apify'].includes(ig.provider), ig.provider);
+    assert.equal(ig.actorId, ig.provider === 'apidojo' ? 'apidojo~instagram-scraper-api' : 'apify~instagram-scraper');
     assert.equal(ig.buildProfileUrl('pepe'), 'https://www.instagram.com/pepe/');
     assert.deepEqual(ig.capabilities, { benchmark: true, followers: true, metricsRefresh: true });
 

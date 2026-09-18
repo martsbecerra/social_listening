@@ -1,0 +1,401 @@
+'use strict';
+
+// Proveedor apidojo/instagram-scraper-api del adapter de Instagram
+// (src/platforms/instagramApidojo.js, detrás de la fachada
+// src/platforms/instagram.js con IG_ACTOR=apidojo): normalización contra las
+// fixtures de test/fixtures/apidojo/, mapeo de post_type a los valores de
+// account_stats, ventana de fecha (until + descarte del lado nuestro), forma
+// del input de cada consulta, validación con maxItems 1, seguidores que
+// vienen en los posteos (caché en cualquier fase, benchmark sin consulta
+// aparte) y los topes por tipo de fuente. Sin red: fetch stubeado. Base y
+// config temporales; clasificador stubeado.
+
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { describe, test } = require('node:test');
+const assert = require('node:assert/strict');
+
+process.env.IG_ACTOR = 'apidojo';
+process.env.APIFY_API_TOKEN = 'token-de-test';
+process.env.APIFY_RETRY_DELAY_MS = '5';
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sl-apidojo-'));
+process.env.MONITORING_DB_PATH = path.join(tmp, 'monitoring.db');
+process.env.MONITORING_CONFIG_PATH = path.join(tmp, 'monitoring.json');
+process.env.MONITORING_X_CONFIG_PATH = path.join(tmp, 'monitoring-x.json');
+delete process.env.MONITOR_RESULTS_LIMIT;
+delete process.env.MONITOR_ACCOUNT_LIMIT;
+delete process.env.MONITOR_HASHTAG_LIMIT;
+delete process.env.SEARCH_RESULTS_LIMIT;
+
+fs.writeFileSync(
+  process.env.MONITORING_CONFIG_PATH,
+  JSON.stringify({ instagram: { accounts: ['cuenta_prueba'], keywords: ['obras'] } }, null, 2) + '\n'
+);
+
+// Clasificador stubeado ANTES de cargar monitor.js (que lo destructura).
+const classifier = require('../src/classifier');
+classifier.classifyPost = async (caption) => ({ title: `titulo: ${String(caption).slice(0, 12)}`, sentiment: 'neutral' });
+classifier.classifyRelevance = async () => ({ relevant: false });
+
+const db = require('../src/db');
+const monitor = require('../src/monitor');
+const accountStats = require('../src/accountStats');
+const { getPlatform } = require('../src/platforms');
+const provider = require('../src/platforms/instagramApidojo');
+const instagram = getPlatform('instagram');
+
+const fixture = (name) => JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'apidojo', `${name}.json`), 'utf8'));
+const respond = (items) => ({ ok: true, status: 200, text: async () => '', json: async () => items });
+const DAY_MS = 24 * 60 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
+
+/** Stub de fetch que captura URL y body de cada llamada y responde con lo que devuelva `reply(body)`. */
+function stubFetch(reply) {
+  const calls = [];
+  global.fetch = async (url, options) => {
+    const body = JSON.parse(options.body);
+    calls.push({ url, body });
+    return respond(await reply(body, calls.length));
+  };
+  return calls;
+}
+
+/** Item con la forma del actor y fecha relativa a ahora. */
+function rawPost({ id, hoursAgo = 1, username = 'cuenta_prueba', followerCount = 123456, caption = 'obras nuevas', ...rest }) {
+  return {
+    id: String(id),
+    code: `C${id}`,
+    url: `https://www.instagram.com/p/C${id}/`,
+    createdAt: new Date(Date.now() - hoursAgo * HOUR_MS).toISOString(),
+    caption,
+    likeCount: 10,
+    commentCount: 2,
+    isVideo: false,
+    owner: { username, fullName: username, isVerified: false, followerCount },
+    ...rest,
+  };
+}
+
+describe('proveedor apidojo del adapter de Instagram', { concurrency: false }, () => {
+  test('normalizePost: la fixture de perfil queda en la forma del orquestador (id numérico, url /p/, null donde falta el dato, seguidores del autor)', () => {
+    const [video, carrusel, sinLikes] = provider.normalizeItems(fixture('profile'), { account: 'cuenta_prueba', sourceType: 'account' });
+
+    assert.deepEqual(video, {
+      id: '3900000000000000001',
+      account: 'cuenta_prueba',
+      url: 'https://www.instagram.com/p/Dprueba0001/',
+      caption: 'Obras en la Ciudad: nuevo túnel #JorgeMacri #CABA',
+      hashtagsText: '#JorgeMacri #CABA',
+      likes: 1200,
+      comments: 45,
+      postedAt: '2026-09-17T21:25:36.000Z',
+      postType: 'reel',
+      followers: 123456,
+      sourceType: 'account',
+      sourceQuery: null,
+    });
+    assert.equal(carrusel.postType, 'carrusel');
+    assert.equal(carrusel.comments, 0, 'un 0 real se conserva');
+    assert.equal(carrusel.hashtagsText, '');
+    assert.equal(sinLikes.likes, null, 'likeCount ausente = sin dato, nunca 0');
+    assert.equal(sinLikes.comments, 3);
+    assert.equal(sinLikes.postType, 'imagen');
+    // El id es el numérico de Instagram tal cual (string), nunca el code.
+    assert.match(video.id, /^\d+$/);
+    assert.equal(typeof video.id, 'string');
+  });
+
+  test('normalizePost: hashtag y búsqueda toman la cuenta del autor y llevan sourceType/sourceQuery; sin caption queda caption vacío', () => {
+    const hashtag = provider.normalizeItems(fixture('hashtag'), { account: null, sourceType: 'hashtag' });
+    assert.equal(hashtag.length, 2);
+    assert.equal(hashtag[0].account, 'otra_cuenta');
+    assert.equal(hashtag[0].followers, 980);
+    assert.equal(hashtag[0].sourceType, 'hashtag');
+    assert.equal(hashtag[1].account, 'medio_local');
+
+    const search = provider.normalizeItems(fixture('search'), { account: null, sourceType: 'search', sourceQuery: 'jorge macri' });
+    assert.equal(search[0].sourceType, 'search');
+    assert.equal(search[0].sourceQuery, 'jorge macri');
+    assert.equal(search[0].postType, 'reel');
+    assert.equal(search[1].caption, '');
+    assert.equal(search[1].account, 'sin_caption');
+  });
+
+  test('descarta lo que no es un posteo: noResults, error, sin id, sin url ni code, basura', () => {
+    const ctx = { account: 'x', sourceType: 'account' };
+    assert.equal(provider.normalizePost(fixture('not-found')[0], ctx), null);
+    assert.equal(provider.normalizePost({ error: 'not_found', id: '1', url: 'u' }, ctx), null);
+    assert.equal(provider.normalizePost({ code: 'abc', url: 'https://www.instagram.com/p/abc/' }, ctx), null, 'sin id');
+    assert.equal(provider.normalizePost({ id: '', url: 'https://www.instagram.com/p/abc/' }, ctx), null, 'id vacío');
+    assert.equal(provider.normalizePost({ id: '5', caption: 'sin url ni code' }, ctx), null);
+    assert.equal(provider.normalizePost(null, ctx), null);
+    assert.equal(provider.normalizePost('texto', ctx), null);
+    // Con code pero sin url, la url se arma; con id numérico también.
+    const armado = provider.normalizePost({ id: 77, code: 'Cod77', createdAt: 1758150000 }, ctx);
+    assert.equal(armado.url, 'https://www.instagram.com/p/Cod77/');
+    assert.equal(armado.id, '77');
+    assert.equal(armado.postedAt, new Date(1758150000 * 1000).toISOString(), 'epoch en segundos');
+    assert.equal(armado.likes, null);
+    assert.equal(armado.followers, null);
+    assert.equal(provider.normalizeItems([null, fixture('not-found')[0], ...fixture('search')], ctx).length, 2);
+    assert.deepEqual(provider.normalizeItems(undefined, ctx), []);
+  });
+
+  test('derivePostType: mismos valores que account_stats; el carrusel se mira antes que el video; sin indicadores, null', () => {
+    const t = provider.derivePostType;
+    assert.equal(t({ isVideo: true }), 'reel');
+    assert.equal(t({ video: { url: 'v', playCount: 1 } }), 'reel');
+    assert.equal(t({ isVideo: false }), 'imagen');
+    assert.equal(t({ isVideo: false, isCarousel: true }), 'carrusel');
+    assert.equal(t({ isVideo: true, isCarousel: true }), 'carrusel', 'carrusel con video adentro');
+    assert.equal(t({ isVideo: false, carouselMedia: [{}, {}] }), 'carrusel');
+    assert.equal(t({ isVideo: false, carouselMedia: [{}] }), 'imagen', 'un solo hijo no es carrusel');
+    assert.equal(t({ productType: 'clips' }), 'reel');
+    assert.equal(t({ productType: 'carousel_container' }), 'carrusel');
+    assert.equal(t({ type: 'Sidecar' }), 'carrusel');
+    assert.equal(t({ type: 'Image' }), 'imagen');
+    assert.equal(t({}), null);
+    assert.equal(t({ caption: 'nada' }), null);
+  });
+
+  test('parseLookbackMs / untilDateFor / applyWindow: until es el día UTC en que arranca la ventana; lo anterior a la ventana real se descarta', () => {
+    const now = Date.UTC(2026, 8, 18, 3, 0, 0); // 2026-09-18 03:00 UTC
+    assert.equal(provider.parseLookbackMs('1 day'), DAY_MS);
+    assert.equal(provider.parseLookbackMs('6 hours'), 6 * HOUR_MS);
+    assert.equal(provider.parseLookbackMs('2 weeks'), 14 * DAY_MS);
+    assert.equal(provider.parseLookbackMs('30 minutes'), 30 * 60 * 1000);
+    assert.equal(provider.parseLookbackMs('  3 days '), 3 * DAY_MS);
+    assert.equal(provider.parseLookbackMs('ayer'), null);
+    assert.equal(provider.parseLookbackMs('0 days'), null);
+    assert.equal(provider.parseLookbackMs(undefined), null);
+    assert.equal(provider.parseLookbackMs(''), null);
+
+    assert.equal(provider.untilDateFor('1 day', now), '2026-09-17', 'con "1 day" es la fecha UTC de ayer');
+    assert.equal(provider.untilDateFor('6 hours', now), '2026-09-17', 'cruza la medianoche UTC hacia atrás');
+    assert.equal(provider.untilDateFor('2 weeks', now), '2026-09-04');
+    assert.equal(provider.untilDateFor(undefined, now), undefined, 'sin lookback no hay until (benchmark, refresco)');
+    assert.equal(provider.untilDateFor('ayer', now), undefined);
+
+    const posts = [
+      { id: 'a', postedAt: new Date(now - 2 * HOUR_MS).toISOString() },
+      { id: 'b', postedAt: new Date(now - 23 * HOUR_MS).toISOString() },
+      { id: 'c', postedAt: new Date(now - 25 * HOUR_MS).toISOString() }, // mismo día UTC que until, fuera de la ventana real
+      { id: 'd', postedAt: '2026-06-01T10:00:00.000Z' }, // fijado viejo
+      { id: 'e', postedAt: null },
+    ];
+    assert.deepEqual(provider.applyWindow(posts, '1 day', now).map((p) => p.id), ['a', 'b']);
+    assert.deepEqual(provider.applyWindow(posts, '3 hours', now).map((p) => p.id), ['a']);
+    assert.equal(provider.applyWindow(posts, undefined, now).length, 5, 'sin lookback pasa todo');
+  });
+
+  test('scrapeAccount: una URL de perfil por run, maxItems = resultsLimit, until solo con lookback, ventana aplicada del lado nuestro', async () => {
+    const originalFetch = global.fetch;
+    try {
+      const calls = stubFetch(() => [rawPost({ id: 1, hoursAgo: 1 }), rawPost({ id: 2, hoursAgo: 72 }), fixture('not-found')[0]]);
+      const posts = await instagram.scrapeAccount('cuenta_prueba', { resultsLimit: 10, lookback: '1 day' });
+      assert.equal(calls.length, 1);
+      assert.match(calls[0].url, /\/acts\/apidojo~instagram-scraper-api\/run-sync-get-dataset-items\?token=token-de-test$/);
+      assert.deepEqual(calls[0].body, {
+        startUrls: ['https://www.instagram.com/cuenta_prueba/'],
+        maxItems: 10,
+        until: provider.untilDateFor('1 day'),
+      });
+      assert.deepEqual(posts.map((p) => p.id), ['1'], 'el de hace 3 días y el item sin resultados quedan afuera');
+      assert.equal(posts[0].sourceType, 'account');
+      assert.equal(posts[0].account, 'cuenta_prueba');
+
+      // Sin lookback (benchmark / refresco): sin until y sin ventana.
+      const all = await instagram.scrapeAccount('cuenta_prueba', { resultsLimit: 15 });
+      assert.deepEqual(calls[1].body, { startUrls: ['https://www.instagram.com/cuenta_prueba/'], maxItems: 15 });
+      assert.deepEqual(all.map((p) => p.id), ['1', '2']);
+
+      // resultsLimit inválido: nunca un run sin maxItems.
+      const originalWarn = console.warn;
+      const warned = [];
+      console.warn = (...args) => warned.push(args.join(' '));
+      try {
+        await instagram.scrapeAccount('cuenta_prueba', { resultsLimit: undefined });
+      } finally {
+        console.warn = originalWarn;
+      }
+      assert.equal(calls[2].body.maxItems, 10);
+      assert.ok(warned.some((w) => w.includes('maxItems=10')));
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  test('scrapeHashtag y scrapeSearch: URL de hashtag o keywords, sourceType propio, mismo until y ventana', async () => {
+    const originalFetch = global.fetch;
+    try {
+      const calls = stubFetch((body) => (body.keywords ? fixture('search').map((r, i) => ({ ...r, createdAt: new Date(Date.now() - (i + 1) * HOUR_MS).toISOString() })) : [rawPost({ id: 9, username: 'otra_cuenta', followerCount: 980 })]));
+      const hashtag = await instagram.scrapeHashtag('JorgeMacri', { resultsLimit: 30, lookback: '1 day' });
+      assert.deepEqual(calls[0].body, {
+        startUrls: ['https://www.instagram.com/explore/tags/JorgeMacri/'],
+        maxItems: 30,
+        until: provider.untilDateFor('1 day'),
+      });
+      assert.equal(hashtag.length, 1);
+      assert.equal(hashtag[0].sourceType, 'hashtag');
+      assert.equal(hashtag[0].account, 'otra_cuenta');
+      assert.equal(hashtag[0].followers, 980);
+
+      assert.equal(typeof instagram.scrapeSearch, 'function', 'la fachada expone scrapeSearch con apidojo');
+      const search = await instagram.scrapeSearch('  jorge macri ', { resultsLimit: 50, lookback: '1 day' });
+      assert.deepEqual(calls[1].body, { keywords: ['jorge macri'], maxItems: 50, until: provider.untilDateFor('1 day') });
+      assert.equal(search.length, 2);
+      assert.equal(search[0].sourceType, 'search');
+      assert.equal(search[0].sourceQuery, 'jorge macri');
+      assert.equal(search[1].caption, '');
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  test('validateAccount / validateHashtag: una consulta con maxItems 1; sin items o con noResults rechazan con userMessage', async () => {
+    const originalFetch = global.fetch;
+    try {
+      let reply = () => fixture('not-found');
+      const calls = stubFetch(() => reply());
+      await assert.rejects(instagram.validateAccount('cuenta_que_no_existe_123456'), (err) => {
+        assert.match(err.userMessage, /No encontramos la cuenta @cuenta_que_no_existe_123456/);
+        return true;
+      });
+      assert.deepEqual(calls[0].body, { startUrls: ['https://www.instagram.com/cuenta_que_no_existe_123456/'], maxItems: 1 });
+
+      reply = () => [];
+      await assert.rejects(instagram.validateAccount('vacia'), /Cuenta no encontrada/);
+      reply = () => [{ error: 'not_found' }];
+      await assert.rejects(instagram.validateHashtag('nadadenada'), (err) => {
+        assert.match(err.userMessage, /No encontramos contenido para el hashtag #nadadenada/);
+        return true;
+      });
+      assert.deepEqual(calls.at(-1).body, { startUrls: ['https://www.instagram.com/explore/tags/nadadenada/'], maxItems: 1 });
+
+      reply = () => fixture('profile').slice(0, 1);
+      await instagram.validateAccount('cuenta_prueba');
+      await instagram.validateHashtag('JorgeMacri');
+      assert.equal(calls.length, 5);
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  test('fetchAccountFollowers no llama a Apify: los seguidores vienen en los posteos', async () => {
+    const originalFetch = global.fetch;
+    global.fetch = async () => {
+      throw new Error('no debería llamarse');
+    };
+    try {
+      assert.equal(await instagram.fetchAccountFollowers('cuenta_prueba'), null);
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  test('fachada: proveedor apidojo activo, actor y delegación de normalizePost', () => {
+    assert.equal(instagram.provider, 'apidojo');
+    assert.equal(instagram.actorId, 'apidojo~instagram-scraper-api');
+    assert.equal(instagram.id, 'instagram');
+    assert.deepEqual(instagram.capabilities, { benchmark: true, followers: true, metricsRefresh: true });
+    const raw = fixture('profile')[0];
+    assert.deepEqual(instagram.normalizePost(raw, { account: 'x', sourceType: 'account' }), provider.normalizePost(raw, { account: 'x', sourceType: 'account' }));
+    assert.equal(instagram.buildProfileUrl('pepe'), 'https://www.instagram.com/pepe/');
+  });
+
+  test('rememberFollowers: la caché account_followers se actualiza con lo que trajo cada respuesta, una vez por cuenta; sin capability no hace nada', () => {
+    const posts = [
+      { id: '1', account: 'cuenta_prueba', followers: 100 },
+      { id: '2', account: 'Cuenta_Prueba', followers: 200 }, // misma cuenta, otra capitalización: gana la primera
+      { id: '3', account: 'otra_cuenta', followers: null }, // sin dato: no toca
+      { id: '4', account: 'N/D', followers: 5 },
+      { id: '5', account: 'medio_local', followers: 45000 },
+      null,
+    ];
+    assert.equal(monitor.rememberFollowers(posts, 'instagram'), 2);
+    assert.equal(db.getAccountFollowers('cuenta_prueba', 'instagram'), 100);
+    assert.equal(db.getAccountFollowers('medio_local', 'instagram'), 45000);
+    assert.equal(db.getAccountFollowers('otra_cuenta', 'instagram'), null);
+    assert.equal(monitor.rememberFollowers([{ id: '9', account: 'vecino', followers: 7 }], 'x'), 0, 'X no tiene seguidores');
+    assert.equal(db.getAccountFollowers('vecino', 'x'), null);
+    assert.equal(monitor.rememberFollowers([], 'instagram'), 0);
+    assert.equal(monitor.rememberFollowers(undefined, 'instagram'), 0);
+  });
+
+  test('computeAccountStats: seguidores desde los posteos sin consulta aparte; si ningún posteo los trae, la consulta de respaldo', async () => {
+    const originals = { scrapeAccount: instagram.scrapeAccount, fetchAccountFollowers: instagram.fetchAccountFollowers };
+    try {
+      instagram.scrapeAccount = async () => Array.from({ length: 6 }, (_, i) => provider.normalizePost(rawPost({ id: 100 + i, hoursAgo: 24 * (i + 1), username: 'cuentax', followerCount: 555 }), { account: 'cuentax', sourceType: 'account' }));
+      instagram.fetchAccountFollowers = async () => {
+        throw new Error('no debería consultarse: los posteos traen seguidores');
+      };
+      const result = await accountStats.computeAccountStats('cuentax', 'instagram');
+      assert.equal(result.followersChecked, 0);
+      assert.equal(result.followersFound, true);
+      assert.equal(result.groupsSaved > 0, true);
+      assert.equal(db.getAccountFollowers('cuentax', 'instagram'), 555);
+
+      // Sin posteos (o sin el dato): consulta de respaldo del adapter.
+      instagram.scrapeAccount = async () => [];
+      instagram.fetchAccountFollowers = async () => 777;
+      const fallback = await accountStats.computeAccountStats('cuentax', 'instagram');
+      assert.equal(fallback.followersChecked, 1);
+      assert.equal(fallback.followersFound, true);
+      assert.equal(db.getAccountFollowers('cuentax', 'instagram'), 777);
+      assert.equal(fallback.referenceKept, true, 'la referencia anterior se conserva');
+    } finally {
+      instagram.scrapeAccount = originals.scrapeAccount;
+      instagram.fetchAccountFollowers = originals.fetchAccountFollowers;
+    }
+  });
+
+  test('ciclo de monitoreo: el posteo nuevo sale con los seguidores que vinieron en el posteo y la caché queda al día', async () => {
+    const originals = { scrapeAccount: instagram.scrapeAccount, isConfigured: instagram.isConfigured };
+    try {
+      instagram.isConfigured = () => true;
+      instagram.scrapeAccount = async (account, { resultsLimit, lookback }) => {
+        assert.equal(resultsLimit, 10, 'tope por cuenta (default)');
+        assert.equal(lookback, process.env.MONITOR_LOOKBACK || '1 day');
+        return [provider.normalizePost(rawPost({ id: 500, caption: 'arrancan las obras del bajo', followerCount: 4321 }), { account, sourceType: 'account' })];
+      };
+      const result = await monitor.runMonitoringCycle({ plataformas: ['instagram'] });
+      assert.equal(result.newPosts.length, 1);
+      assert.equal(result.newPosts[0].followers, 4321);
+      const saved = db.listDetectedPosts({ page: 1, pageSize: 10, plataforma: 'instagram' }).posts.find((p) => p.id === '500');
+      assert.equal(saved.followers, 4321);
+      assert.equal(saved.post_type, 'imagen');
+      assert.equal(db.getAccountFollowers('cuenta_prueba', 'instagram'), 4321);
+    } finally {
+      instagram.scrapeAccount = originals.scrapeAccount;
+      instagram.isConfigured = originals.isConfigured;
+    }
+  });
+
+  test('monitorLimits: defaults por tipo de fuente, topes nuevos, y MONITOR_RESULTS_LIMIT solo como respaldo con aviso', () => {
+    const originalWarn = console.warn;
+    const warned = [];
+    console.warn = (...args) => warned.push(args.join(' '));
+    try {
+      assert.deepEqual(monitor.monitorLimits(), { account: 10, hashtag: 30, search: 50 });
+      process.env.MONITOR_RESULTS_LIMIT = '15';
+      assert.deepEqual(monitor.monitorLimits(), { account: 15, hashtag: 15, search: 50 }, 'un .env viejo sigue igual que antes');
+      assert.equal(warned.filter((w) => w.includes('MONITOR_RESULTS_LIMIT=15')).length, 1);
+      monitor.monitorLimits();
+      assert.equal(warned.length, 1, 'avisa una sola vez');
+      process.env.MONITOR_ACCOUNT_LIMIT = '8';
+      process.env.MONITOR_HASHTAG_LIMIT = '20';
+      process.env.SEARCH_RESULTS_LIMIT = '40';
+      assert.deepEqual(monitor.monitorLimits(), { account: 8, hashtag: 20, search: 40 }, 'los topes nuevos ganan');
+      process.env.MONITOR_ACCOUNT_LIMIT = 'nada';
+      process.env.SEARCH_RESULTS_LIMIT = '0';
+      assert.deepEqual(monitor.monitorLimits(), { account: 15, hashtag: 20, search: 50 }, 'inválidos: respaldo o default');
+    } finally {
+      console.warn = originalWarn;
+      delete process.env.MONITOR_RESULTS_LIMIT;
+      delete process.env.MONITOR_ACCOUNT_LIMIT;
+      delete process.env.MONITOR_HASHTAG_LIMIT;
+      delete process.env.SEARCH_RESULTS_LIMIT;
+    }
+  });
+});

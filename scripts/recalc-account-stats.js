@@ -36,6 +36,7 @@ const { stdin, stdout } = require('node:process');
 
 const accountStats = require('../src/accountStats');
 const db = require('../src/db');
+const { getPlatform } = require('../src/platforms');
 const { isQuotaExceeded } = require('../src/platforms/errors');
 const { runWithContext } = require('../src/usageContext');
 
@@ -155,11 +156,15 @@ async function runAccountList(accounts, { si, sourceLabel } = {}) {
     return { quotaExceeded: false };
   }
 
-  console.log(
-    `Se van a procesar ${accounts.length} cuentas${sourceLabel ? ` (${sourceLabel})` : ''}. Estimado: hasta ` +
-      `${accounts.length} x ${accountStats.BENCHMARK_POST_LIMIT} resultados de Apify, más ${accounts.length} ` +
-      `consultas de perfil.`
-  );
+  // Con apidojo cada cuenta es UNA consulta de perfil que ya trae los
+  // seguidores; con el actor oficial son resultados más una consulta de
+  // perfil aparte por cuenta.
+  const ig = getPlatform('instagram');
+  const estimate =
+    ig.provider === 'apidojo'
+      ? `${accounts.length} consultas de perfil de ${accountStats.BENCHMARK_POST_LIMIT} posteos (actor ${ig.actorId}; los seguidores vienen en la misma consulta).`
+      : `hasta ${accounts.length} x ${accountStats.BENCHMARK_POST_LIMIT} resultados de Apify, más ${accounts.length} consultas de perfil (actor ${ig.actorId}).`;
+  console.log(`Se van a procesar ${accounts.length} cuentas${sourceLabel ? ` (${sourceLabel})` : ''}. Estimado: ${estimate}`);
   if (!si) {
     const ok = await confirm('¿Continuar? (S/N)');
     if (!ok) {

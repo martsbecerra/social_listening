@@ -65,14 +65,18 @@ function usdByPlan(items) {
 }
 
 /**
- * target / results_type para la fila, a partir del input del actor. Todas
- * las llamadas de la app usan directUrls; el resto es por si algún actor
- * futuro identifica la corrida de otra forma.
+ * target / results_type para la fila, a partir del input del actor. El actor
+ * oficial usa directUrls + resultsType; apidojo usa startUrls (URLs planas)
+ * o keywords (búsqueda por palabra clave) y no tiene resultsType. El resto
+ * es por si algún actor futuro identifica la corrida de otra forma.
  */
 function describeInput(input) {
   const i = input || {};
+  const urlOf = (u) => (typeof u === 'string' ? u : u && typeof u === 'object' ? u.url : null);
   let target = null;
   if (Array.isArray(i.directUrls) && i.directUrls.length > 0) target = i.directUrls.join(', ');
+  else if (Array.isArray(i.startUrls) && i.startUrls.length > 0) target = i.startUrls.map(urlOf).filter(Boolean).join(', ');
+  else if (Array.isArray(i.keywords) && i.keywords.length > 0) target = i.keywords.join(', ');
   else if (typeof i.username === 'string') target = i.username;
   else if (Array.isArray(i.usernames) && i.usernames.length > 0) target = i.usernames.join(', ');
   else if (typeof i.search === 'string') target = i.search;

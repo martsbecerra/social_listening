@@ -61,6 +61,42 @@ const LEGACY_X_CONFIG_PATH =
 // desconocidos).
 const METRIC_COLUMNS = ['likes', 'comments', 'retweets', 'views'];
 
+// Topes de posteos por tipo de fuente en cada corrida (uno por llamada:
+// cada cuenta, hashtag o búsqueda es un run aparte). Los defaults coinciden
+// con los posteos incluidos en cada consulta del actor apidojo (perfil 10,
+// hashtag 30, búsqueda 20 incluidos de los 50 que se piden): por encima se
+// cobra por posteo. Con IG_ACTOR=apify son el resultsLimit de siempre.
+// MONITOR_RESULTS_LIMIT (un solo tope para todo) ya no se usa; si sigue en
+// el .env y faltan los topes nuevos, vale para cuentas y hashtags con un
+// aviso, así un .env viejo se comporta igual que antes.
+const DEFAULT_LIMITS = { account: 10, hashtag: 30, search: 50 };
+let warnedLegacyLimit = false;
+
+function positiveInt(raw) {
+  const n = Number(raw);
+  return raw !== undefined && raw !== '' && Number.isFinite(n) && n > 0 ? Math.floor(n) : null;
+}
+
+/** @returns {{ account: number, hashtag: number, search: number }} se lee en cada ciclo, no al cargar. */
+function monitorLimits() {
+  const legacy = positiveInt(process.env.MONITOR_RESULTS_LIMIT);
+  const account = positiveInt(process.env.MONITOR_ACCOUNT_LIMIT);
+  const hashtag = positiveInt(process.env.MONITOR_HASHTAG_LIMIT);
+  const search = positiveInt(process.env.SEARCH_RESULTS_LIMIT);
+  if (legacy && (!account || !hashtag) && !warnedLegacyLimit) {
+    warnedLegacyLimit = true;
+    console.warn(
+      `[monitor] MONITOR_RESULTS_LIMIT=${legacy} quedó reemplazado por MONITOR_ACCOUNT_LIMIT y MONITOR_HASHTAG_LIMIT; ` +
+        `mientras falten, se usa ${legacy} para cuentas y hashtags.`
+    );
+  }
+  return {
+    account: account || legacy || DEFAULT_LIMITS.account,
+    hashtag: hashtag || legacy || DEFAULT_LIMITS.hashtag,
+    search: search || DEFAULT_LIMITS.search,
+  };
+}
+
 /**
  * Las cuentas son simplemente el nombre de usuario. Acepta también el
  * formato { username, onlyIfKeywordMatch } que se usó brevemente, por si
@@ -269,6 +305,37 @@ function textIncludesAny(text, needles) {
 }
 
 /**
+ * Actualiza la caché de seguidores (account_followers) con lo que trajo una
+ * respuesta del adapter, en cualquier fase (detección, benchmark,
+ * refresco): cada posteo normalizado puede venir con `followers` del autor
+ * (Instagram con apidojo los trae en cada posteo; el actor oficial no). Una
+ * cuenta por respuesta, con el primer valor que aparece. Solo en plataformas
+ * con capabilities.followers. Nunca tira: un fallo al cachear se loguea y no
+ * afecta a quien llamó.
+ * @returns {number} cuentas actualizadas
+ */
+function rememberFollowers(posts, platformId) {
+  try {
+    const platform = getPlatform(platformId);
+    if (!(platform.capabilities && platform.capabilities.followers)) return 0;
+    const byAccount = new Map();
+    for (const post of posts || []) {
+      if (!post || !post.account || post.account === 'N/D' || post.followers == null) continue;
+      const key = String(post.account).toLowerCase();
+      if (!byAccount.has(key)) byAccount.set(key, post);
+    }
+    const updatedAt = new Date().toISOString();
+    for (const post of byAccount.values()) {
+      db.upsertAccountFollowers({ account: post.account, plataforma: platformId, followers: post.followers, updatedAt });
+    }
+    return byAccount.size;
+  } catch (err) {
+    console.error(`[monitor] (${platformId}) no se pudo actualizar la caché de seguidores:`, err.message);
+    return 0;
+  }
+}
+
+/**
  * Métricas de un posteo según lo que declara el adapter, limitadas a las
  * columnas que existen en detected_posts. Es lo que se pasa a
  * db.applyMetricsRefresh: las claves ausentes se conservan como estaban
@@ -410,7 +477,7 @@ function notConfiguredError(platform) {
  */
 async function runMonitoringCycle({ plataformas } = {}) {
   const all = loadConfigAll();
-  const resultsLimit = Number(process.env.MONITOR_RESULTS_LIMIT || 15);
+  const limits = monitorLimits();
   const lookback = process.env.MONITOR_LOOKBACK || '1 day';
   const ids = listPlatformIds().filter((id) => !plataformas || plataformas.includes(id));
   const singlePlatformRun = Boolean(plataformas && plataformas.length === 1);
@@ -441,10 +508,10 @@ async function runMonitoringCycle({ plataformas } = {}) {
     const canSearchKeywords = typeof platform.scrapeKeyword === 'function';
 
     const sourceResults = await Promise.allSettled([
-      ...accounts.map((account) => platform.scrapeAccount(account, { resultsLimit, lookback })),
-      ...hashtagTags.map((tag) => platform.scrapeHashtag(tag, { resultsLimit, lookback })),
+      ...accounts.map((account) => platform.scrapeAccount(account, { resultsLimit: limits.account, lookback })),
+      ...hashtagTags.map((tag) => platform.scrapeHashtag(tag, { resultsLimit: limits.hashtag, lookback })),
       ...(canSearchKeywords
-        ? textKeywords.map((keyword) => platform.scrapeKeyword(keyword, { resultsLimit, lookback }))
+        ? textKeywords.map((keyword) => platform.scrapeKeyword(keyword, { resultsLimit: limits.search, lookback }))
         : []),
     ]);
 
@@ -467,6 +534,10 @@ async function runMonitoringCycle({ plataformas } = {}) {
         console.error(`Monitoreo (${platformId}): falló una fuente:`, result.reason && result.reason.message);
       }
     }
+
+    // Seguidores que vinieron con los posteos (apidojo): a la caché antes de
+    // guardar, así el snapshot del posteo nuevo ya sale con el dato fresco.
+    rememberFollowers(allCandidates, platformId);
 
     // Dedupe por id dentro de esta misma corrida (una cuenta trackeada podría
     // aparecer también en un hashtag o en una búsqueda). Si el mismo posteo
@@ -514,15 +585,18 @@ async function runMonitoringCycle({ plataformas } = {}) {
         title: evaluation.title,
         sentiment: evaluation.sentiment,
         matchedReason: evaluation.matchedReason,
-        // Snapshot de la caché (account_followers), no un llamado al scraper
-        // acá: eso encarecería cada corrida de 4hs. Se refresca por afuera,
-        // en accountStats.computeAccountStats. Posts sin cuenta (hashtag),
-        // de cuentas todavía sin caché o de plataformas sin seguidores
-        // quedan null -> "-" en la tabla.
+        // Snapshot de seguidores: el dato que vino con el posteo (apidojo)
+        // o, si no, la caché account_followers (nunca un llamado al scraper
+        // acá: eso encarecería cada corrida de 4hs; la caché se refresca con
+        // cada respuesta que trae el dato y en accountStats.computeAccountStats).
+        // Posts sin cuenta (hashtag), de cuentas todavía sin caché o de
+        // plataformas sin seguidores quedan null -> "-" en la tabla.
         followers:
-          post.account && platform.capabilities && platform.capabilities.followers
-            ? db.getAccountFollowers(post.account, platformId)
-            : null,
+          post.followers != null
+            ? post.followers
+            : post.account && platform.capabilities && platform.capabilities.followers
+              ? db.getAccountFollowers(post.account, platformId)
+              : null,
       };
 
       const inserted = db.saveDetectedPost(postWithClassification);
@@ -613,6 +687,8 @@ module.exports = {
   removeAccount,
   addKeyword,
   removeKeyword,
+  rememberFollowers,
+  monitorLimits,
   // Expuestos para tests.
   evaluateRelevance,
   pickMetrics,

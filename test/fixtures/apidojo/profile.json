@@ -1,0 +1,36 @@
+[
+  {
+    "id": "3900000000000000001",
+    "code": "Dprueba0001",
+    "url": "https://www.instagram.com/p/Dprueba0001/",
+    "createdAt": "2026-09-17T21:25:36.000Z",
+    "caption": "Obras en la Ciudad: nuevo túnel #JorgeMacri #CABA",
+    "likeCount": 1200,
+    "commentCount": 45,
+    "isVideo": true,
+    "video": { "url": "https://example.invalid/video.mp4", "duration": 30.5, "playCount": 15000 },
+    "owner": { "username": "cuenta_prueba", "fullName": "Cuenta Prueba", "isVerified": true, "followerCount": 123456 }
+  },
+  {
+    "id": "3900000000000000002",
+    "code": "Dprueba0002",
+    "url": "https://www.instagram.com/p/Dprueba0002/",
+    "createdAt": "2026-09-16T23:38:49.000Z",
+    "caption": "Carrusel de la semana",
+    "likeCount": 800,
+    "commentCount": 0,
+    "isVideo": false,
+    "isCarousel": true,
+    "owner": { "username": "cuenta_prueba", "fullName": "Cuenta Prueba", "isVerified": true, "followerCount": 123456 }
+  },
+  {
+    "id": "3900000000000000003",
+    "code": "Dprueba0003",
+    "url": "https://www.instagram.com/p/Dprueba0003/",
+    "createdAt": "2026-09-10T12:00:00.000Z",
+    "caption": "Foto con el contador de likes oculto",
+    "commentCount": 3,
+    "isVideo": false,
+    "owner": { "username": "cuenta_prueba", "fullName": "Cuenta Prueba", "isVerified": true, "followerCount": 123456 }
+  }
+]

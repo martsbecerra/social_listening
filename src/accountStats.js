@@ -29,8 +29,9 @@ const db = require('./db');
 const monitor = require('./monitor');
 const { getPlatform, listPlatformIds } = require('./platforms');
 
-// Plan gratuito de Apify: ~15 resultados por corrida. Al pasar a plan pago,
-// subir esto en el .env alcanza — no hace falta tocar código.
+// Cuántos posteos recientes pedir por cuenta. Con apidojo la consulta de
+// perfil incluye 10 y cobra 0,0005 usd por cada uno de más; con el actor
+// oficial cada uno es un resultado. Se cambia en el .env, sin tocar código.
 const BENCHMARK_POST_LIMIT = Number(process.env.BENCHMARK_POST_LIMIT) || 15;
 // Una mediana sobre menos de esto no significa nada.
 const BENCHMARK_MIN_POSTS = 5;
@@ -162,23 +163,32 @@ async function computeAccountStats(account, plataforma = PLATAFORMA) {
     }
   }
 
-  // Seguidores: solo si la plataforma los expone. fetchAccountFollowers ya
-  // nunca tira (devuelve null sin token/cuenta privada/etc.), pero el
-  // try/catch queda igual acá: si algo inesperado fallara guardando la
-  // caché, no tiene que tirar abajo el cálculo del benchmark — la cuenta
-  // simplemente sigue sin seguidores cacheados (columna en "-" hasta el
-  // próximo recálculo).
+  // Seguidores: solo si la plataforma los expone. Primero los que vinieron
+  // con los posteos de esta misma pasada (Instagram con apidojo trae
+  // owner.followerCount en cada uno: cero consultas extra); si ninguno lo
+  // trajo, la consulta aparte del adapter (actor oficial), que cuenta como
+  // followersChecked. fetchAccountFollowers ya nunca tira (devuelve null sin
+  // token/cuenta privada/etc.), pero el try/catch queda igual acá: si algo
+  // inesperado fallara guardando la caché, no tiene que tirar abajo el
+  // cálculo del benchmark — la cuenta simplemente sigue sin seguidores
+  // cacheados (columna en "-" hasta el próximo recálculo).
   let followersChecked = 0;
   let followersFound = false;
   if (capabilities.followers) {
     try {
-      const followers = await adapter.fetchAccountFollowers(account);
+      const fromPosts = posts.find((p) => p && p.followers != null);
+      let followers;
+      if (fromPosts) {
+        followers = fromPosts.followers;
+      } else {
+        followers = await adapter.fetchAccountFollowers(account);
+        followersChecked = 1;
+      }
       if (followers != null) {
         db.upsertAccountFollowers({ account, plataforma, followers, updatedAt: new Date().toISOString() });
         db.updateFollowersForAccount(account, followers, plataforma);
         followersFound = true;
       }
-      followersChecked = 1;
     } catch (err) {
       console.error(`[accountStats] No se pudo traer seguidores de @${account}:`, err.message);
     }
