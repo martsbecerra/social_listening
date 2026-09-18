@@ -531,6 +531,19 @@ async function evaluateRelevance(post, keywords, { platform } = {}) {
   return { relevant: true, title: result.title, sentiment: result.sentiment, matchedReason };
 }
 
+/**
+ * Refresco "gratis" de un posteo ya guardado con las métricas que trajo
+ * esta misma respuesta. Una respuesta SIN ninguna métrica no refresca nada:
+ * los resultados de la búsqueda por palabra clave de Instagram llegan con
+ * los contadores en null, y escribirlos pisaría con NULL lo ya guardado.
+ * @returns lo mismo que db.applyMetricsRefresh, o null si no había métricas.
+ */
+function refreshKnownPost(platform, id, post) {
+  const metrics = pickMetrics(platform, post);
+  const hasMetrics = Object.values(metrics).some((v) => v !== null && v !== undefined);
+  return hasMetrics ? db.applyMetricsRefresh(id, metrics) : null;
+}
+
 function notConfiguredError(platform) {
   const e = new Error(`La plataforma ${platform.id} no tiene credenciales configuradas`);
   e.code = 'NOT_CONFIGURED';
@@ -673,7 +686,7 @@ async function runMonitoringCycle({ plataformas } = {}) {
         // no re-detectar). No reclasificar. Si no está ignorado, esta misma
         // respuesta del scraper trae las métricas actuales — refrescar la
         // fila sale gratis. Si está ignorado, applyMetricsRefresh es no-op.
-        const refresh = db.applyMetricsRefresh(existingId, pickMetrics(platform, post));
+        const refresh = refreshKnownPost(platform, existingId, post);
         if (refresh) {
           metricsRefreshedFree += 1;
           checkAndLogJump({ account: refresh.account, id: existingId, postedAt: refresh.postedAt, metric: 'comentarios', previous: refresh.previousComments, current: refresh.comments });
@@ -711,7 +724,7 @@ async function runMonitoringCycle({ plataformas } = {}) {
         // proceso ya lo guardó. No es un posteo nuevo para notificar.
         const racedId = db.findExistingPostId(post.id, post.url);
         if (racedId) {
-          db.applyMetricsRefresh(racedId, pickMetrics(platform, post));
+          refreshKnownPost(platform, racedId, post);
         }
         continue;
       }

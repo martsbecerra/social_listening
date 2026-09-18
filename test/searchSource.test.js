@@ -163,6 +163,15 @@ describe('búsqueda por palabra clave (fuente search)', { concurrency: false }, 
       assert.equal(result.porPlataforma.instagram.newCount, 0);
       assert.equal(savedPost('s1').likes, 99);
       assert.deepEqual(classifierCalls, before, 'nada que clasificar');
+
+      // Así llega de verdad un resultado de búsqueda: contadores en null. No
+      // puede pisar con NULL las métricas ya guardadas.
+      instagram.scrapeSearch = async () => [{ ...post({ id: 's1', caption: '' }), likes: null, comments: null }];
+      const updatedAtBefore = savedPost('s1').metrics_updated_at;
+      await monitor.runMonitoringCycle({ plataformas: ['instagram'] });
+      assert.equal(savedPost('s1').likes, 99, 'los likes guardados se conservan');
+      assert.equal(savedPost('s1').comments, 1);
+      assert.equal(savedPost('s1').metrics_updated_at, updatedAtBefore, 'sin métricas no cuenta como refresco');
     } finally {
       Object.assign(instagram, originals);
     }
