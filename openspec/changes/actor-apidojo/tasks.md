@@ -41,6 +41,7 @@
 - [x] 5.3 `enrichSearchResults` en `src/monitor.js`: un run por ciclo en la fase `busqueda`, `SEARCH_ENRICH_LIMIT` (20, 0 apaga), vistos y purga a 30 días, `porPlataforma[id].searchEnrichment`
 - [x] 5.4 `test/searchEnrichment.test.js` con los fixtures reales de la búsqueda y del detalle; suite en verde con los dos `IG_ACTOR`
 - [x] 5.5 `.env.example`, README, `CLAUDE.md`, `config/README.md`, REQ-IGA-09
+- [x] 5.6 Verificado contra Apify real (2026-09-18, US$ 0,0046): un run con 2 URLs devuelve un item por URL (`resultsLimit` es por URL), en otro orden que el pedido, con los ids de la búsqueda; fixture `test/fixtures/apify/post-details-2urls.json`
 
 ## Pendiente (fuera del código)
 

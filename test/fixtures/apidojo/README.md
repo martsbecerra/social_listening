@@ -67,3 +67,10 @@ reducido. Ninguno de los dos trae seguidores en esta consulta.
 `test/searchEnrichment.test.js`: el detalle de los resultados de búsqueda
 sin caption se pide al actor oficial (`fetchPostDetails`), que es el más
 barato de los dos para esta consulta.
+
+`../apify/post-details-2urls.json` (2026-09-18, US$ 0,0046) es la salida de
+`instagram.fetchPostDetails` con las dos URLs de `search.json` en UN run,
+`{ directUrls: [url1, url2], resultsType: 'posts', resultsLimit: 1 }`:
+`resultsLimit` es por URL (volvieron 2 items, uno por posteo), en otro
+orden que el pedido (por eso el cruce es por id), con los mismos ids que la
+búsqueda y los dos con caption y contadores. Tardó 8 segundos.

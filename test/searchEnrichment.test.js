@@ -7,8 +7,9 @@
 // todas las URLs, fase 'busqueda'), con tope por ciclo (SEARCH_ENRICH_LIMIT)
 // y una tabla de vistos (search_seen) para no pagar dos veces por lo mismo.
 // Fixtures REALES: test/fixtures/apidojo/search.json (lo que devuelve la
-// búsqueda) y test/fixtures/apify/post-detail.json (el detalle del mismo
-// reel por el actor oficial). Base y config temporales; nada llama a Apify.
+// búsqueda), test/fixtures/apify/post-detail.json (el detalle del mismo
+// reel por el actor oficial) y post-details-2urls.json (un run con las dos
+// URLs). Base y config temporales; nada llama a Apify.
 
 const fs = require('fs');
 const os = require('os');
@@ -59,6 +60,7 @@ const instagram = getPlatform('instagram');
 
 const SEARCH_FIXTURE = require('./fixtures/apidojo/search.json');
 const DETAIL_FIXTURE = require('./fixtures/apify/post-detail.json');
+const DETAILS_2URLS_FIXTURE = require('./fixtures/apify/post-details-2urls.json');
 const REEL_ID = '3988633620029857812';
 const REEL_URL = 'https://www.instagram.com/p/DdaeSUND2AU/';
 const OTHER_ID = '3987834510674106895';
@@ -217,7 +219,9 @@ describe('detalle de los resultados de búsqueda sin caption', { concurrency: fa
       scrapeSearch: async () => results.map((p) => ({ ...p })),
       fetchPostDetails: async (urls) => {
         detailCalls.push({ urls, phase: (getContext() || {}).phase });
-        return urls.map((url) => details[url.split('/p/')[1].replace('/', '')]);
+        // El actor no devuelve los items en el orden de las URLs (visto en la
+        // corrida real): el cruce es por id, no por posición.
+        return urls.map((url) => details[url.split('/p/')[1].replace('/', '')]).reverse();
       },
     });
     process.env.SEARCH_ENRICH_LIMIT = '2';
@@ -409,6 +413,19 @@ describe('detalle de los resultados de búsqueda sin caption', { concurrency: fa
       assert.equal(row.query_type, 'post');
       assert.equal(row.items, 2);
       near(row.usd, 0.0046);
+
+      // Corrida real con las dos URLs de la búsqueda: un item POR URL con
+      // resultsLimit 1, en otro orden que el pedido, con los mismos ids que
+      // devuelve la búsqueda de apidojo.
+      global.fetch = async () => respond(200, '', DETAILS_2URLS_FIXTURE);
+      const both = await instagram.fetchPostDetails([REEL_URL, OTHER_URL]);
+      assert.deepEqual(both.map((p) => p.id), [OTHER_ID, REEL_ID]);
+      assert.deepEqual(both.map((p) => p.id).sort(), fixtureSearchPosts().map((p) => p.id).sort());
+      assert.deepEqual(both.map((p) => p.url), [OTHER_URL, REEL_URL]);
+      assert.equal(both.every((p) => p.caption.trim() && p.postType === 'reel' && p.comments === 0), true);
+      assert.equal(both[0].account, 'jorgemacrifans');
+      assert.equal(both[0].likes, 3);
+      assert.equal(both[0].hashtagsText, 'jorgemacri milei gobierno pro');
 
       global.fetch = async () => respond(500, 'boom');
       await assert.rejects(instagram.fetchPostDetails([REEL_URL]), /Apify respondió 500/);
