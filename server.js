@@ -13,6 +13,8 @@ const express = require('express');
 const path = require('path');
 
 const { scrapeInstagram } = require('./src/apify');
+const apifyCost = require('./src/apifyCost');
+const { runWithContext } = require('./src/usageContext');
 const { analyzeComments } = require('./src/analyzeComments');
 const { resolveMaxCommentsLimit } = require('./src/commentSample');
 const { isValidXPostUrl } = require('./src/x/url');
@@ -246,7 +248,8 @@ app.post('/api/analyze', async (req, res) => {
     // 2) Extraemos datos con Apify (comentarios + datos del posteo).
     logTask('extracción Apify iniciada');
     const scrapeStartedAt = Date.now();
-    const { post, comments, scrapeMeta } = await scrapeInstagram(url);
+    // Fase 'analisis' para el registro de gasto en Apify (src/apifyCost.js).
+    const { post, comments, scrapeMeta } = await runWithContext({ phase: 'analisis' }, () => scrapeInstagram(url));
     logTask('extracción Apify completada', {
       ms: Date.now() - scrapeStartedAt,
       comentariosExtraidos: comments?.length ?? 0,
@@ -545,6 +548,15 @@ app.post('/api/monitoring/keywords', async (req, res) => {
 
 app.delete('/api/monitoring/keywords/:keyword', (req, res) => {
   res.json(monitor.removeKeyword(req.params.keyword, monitoringPlataforma(req)));
+});
+
+// Gasto en Apify por ventana (hoy, últimos 7 días, últimos `days` días) y
+// por fase, con el usd en las tres tarifas (free, starter, scale) y la
+// proyección mensual: lo mismo que imprime `npm run costo`, en JSON, para
+// una tarjeta en la UI. Ver src/apifyCost.js.
+app.get('/api/monitoring/costs', (req, res) => {
+  const days = Math.min(365, Math.max(1, Math.floor(Number(req.query.days)) || 30));
+  res.json(apifyCost.summarizeCosts({ days }));
 });
 
 // Dispara un ciclo de monitoreo a mano, sin esperar los 4hs del cron

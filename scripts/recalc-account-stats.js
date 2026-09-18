@@ -37,6 +37,7 @@ const { stdin, stdout } = require('node:process');
 const accountStats = require('../src/accountStats');
 const db = require('../src/db');
 const { isQuotaExceeded } = require('../src/platforms/errors');
+const { runWithContext } = require('../src/usageContext');
 
 const PENDIENTES_PATH = path.join(__dirname, 'pendientes-benchmark.txt');
 
@@ -260,7 +261,8 @@ async function main() {
   );
 }
 
-main().catch((err) => {
+// Fase 'recalc-script' para el registro de gasto en Apify (src/apifyCost.js).
+runWithContext({ phase: 'recalc-script' }, () => main()).catch((err) => {
   console.error(err.userMessage || err.message);
   process.exit(1);
 });

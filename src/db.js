@@ -580,6 +580,72 @@ const setRefreshStateStmt = db.prepare(`
   ON CONFLICT(key) DO UPDATE SET value = excluded.value
 `);
 
+// Gasto en Apify (ver src/apifyCost.js): una fila por llamada a runActorSync
+// (src/apify.js) y una por ciclo de monitoreo (src/scheduler.js). Apify
+// cobra por item devuelto, así que `items` cuenta TODO lo que vino en el
+// dataset, incluidos los items de error (no_items / not_found), que se
+// cobran igual. Una llamada fallida también se registra (items 0, ok 0,
+// error con el mensaje, o 'QUOTA_EXCEEDED' si fue la cuota). `usd` va con
+// la tarifa del plan activo al momento de registrar; los reportes
+// recalculan desde `items` con las tres tarifas.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS apify_calls (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    at TEXT NOT NULL,
+    run_id INTEGER,
+    phase TEXT NOT NULL,
+    plataforma TEXT NOT NULL,
+    target TEXT,
+    results_type TEXT,
+    items INTEGER NOT NULL DEFAULT 0,
+    ok INTEGER NOT NULL DEFAULT 0,
+    error TEXT,
+    duration_ms INTEGER,
+    usd REAL NOT NULL DEFAULT 0
+  )
+`);
+db.exec('CREATE INDEX IF NOT EXISTS idx_apify_calls_at ON apify_calls(at)');
+db.exec('CREATE INDEX IF NOT EXISTS idx_apify_calls_run_id ON apify_calls(run_id)');
+// Una fila por ciclo (cron o "Actualizar ahora"); los totales se completan
+// al terminar sumando las filas de apify_calls con ese run_id.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS monitoring_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    started_at TEXT NOT NULL,
+    finished_at TEXT,
+    "trigger" TEXT NOT NULL,
+    plataforma TEXT NOT NULL,
+    new_posts INTEGER NOT NULL DEFAULT 0,
+    calls INTEGER NOT NULL DEFAULT 0,
+    results INTEGER NOT NULL DEFAULT 0,
+    usd REAL NOT NULL DEFAULT 0,
+    quota_exceeded INTEGER NOT NULL DEFAULT 0
+  )
+`);
+const insertApifyCallStmt = db.prepare(`
+  INSERT INTO apify_calls (at, run_id, phase, plataforma, target, results_type, items, ok, error, duration_ms, usd)
+  VALUES (@at, @runId, @phase, @plataforma, @target, @resultsType, @items, @ok, @error, @durationMs, @usd)
+`);
+const insertMonitoringRunStmt = db.prepare(
+  'INSERT INTO monitoring_runs (started_at, "trigger", plataforma) VALUES (@startedAt, @trigger, @plataforma)'
+);
+const sumApifyCallsByRunStmt = db.prepare(`
+  SELECT phase, COUNT(*) AS calls, COALESCE(SUM(items), 0) AS results, COALESCE(SUM(usd), 0) AS usd,
+         SUM(CASE WHEN error = 'QUOTA_EXCEEDED' THEN 1 ELSE 0 END) AS quotaErrors
+  FROM apify_calls WHERE run_id = ? GROUP BY phase ORDER BY phase
+`);
+const finishMonitoringRunStmt = db.prepare(`
+  UPDATE monitoring_runs
+  SET finished_at = @finishedAt, new_posts = @newPosts, calls = @calls, results = @results, usd = @usd, quota_exceeded = @quotaExceeded
+  WHERE id = @id
+`);
+const getMonitoringRunStmt = db.prepare('SELECT * FROM monitoring_runs WHERE id = ?');
+const sumApifyCallsSinceStmt = db.prepare(`
+  SELECT phase, COUNT(*) AS calls, COALESCE(SUM(items), 0) AS results,
+         SUM(CASE WHEN ok = 0 THEN 1 ELSE 0 END) AS failed
+  FROM apify_calls WHERE at >= ? GROUP BY phase ORDER BY phase
+`);
+
 // Cuentas con posteos en una ventana de edad (sinceIso, untilIso], agrupadas
 // con el conteo de posteos y el más reciente — para poder priorizar y armar
 // el log de "N posteos en tramo X" sin una query aparte por cuenta. Un solo
@@ -1167,6 +1233,85 @@ function updateFollowersForAccount(account, followers, plataforma = 'instagram')
   updateFollowersForAccountStmt.run(followers ?? null, account, plataforma);
 }
 
+/** @returns {number} id de la fila nueva en apify_calls. Ver src/apifyCost.js (recordApifyCall), que es quien la llama. */
+function insertApifyCall(row) {
+  const result = insertApifyCallStmt.run({
+    at: row.at || new Date().toISOString(),
+    runId: row.runId ?? null,
+    phase: row.phase || 'desconocida',
+    plataforma: row.plataforma || 'instagram',
+    target: row.target ?? null,
+    resultsType: row.resultsType ?? null,
+    items: Number(row.items) || 0,
+    ok: row.ok ? 1 : 0,
+    error: row.error ?? null,
+    durationMs: row.durationMs == null ? null : Math.round(row.durationMs),
+    usd: Number(row.usd) || 0,
+  });
+  return Number(result.lastInsertRowid);
+}
+
+/** Abre la fila del ciclo en monitoring_runs. @returns {number} id (el run_id de sus apify_calls). */
+function startMonitoringRun({ trigger, plataforma, startedAt } = {}) {
+  const result = insertMonitoringRunStmt.run({
+    startedAt: startedAt || new Date().toISOString(),
+    trigger: trigger || 'manual',
+    plataforma: plataforma || 'todas',
+  });
+  return Number(result.lastInsertRowid);
+}
+
+/**
+ * Cierra la fila del ciclo sumando sus apify_calls: llamadas, resultados,
+ * usd y si alguna cortó por cuota. Devuelve los totales con el desglose por
+ * fase (para la línea "[costo] ciclo #N ..." del scheduler).
+ * @returns {{ id: number, calls: number, results: number, usd: number, quotaExceeded: boolean, porFase: Object<string, {calls: number, results: number, usd: number}> }}
+ */
+function finishMonitoringRun(id, { newPosts = 0, finishedAt } = {}) {
+  const byPhase = sumApifyCallsByRunStmt.all(id);
+  const totals = { calls: 0, results: 0, usd: 0, quotaExceeded: false };
+  const porFase = {};
+  for (const row of byPhase) {
+    totals.calls += row.calls;
+    totals.results += row.results;
+    totals.usd += row.usd;
+    if (row.quotaErrors > 0) totals.quotaExceeded = true;
+    porFase[row.phase] = { calls: row.calls, results: row.results, usd: row.usd };
+  }
+  finishMonitoringRunStmt.run({
+    id,
+    finishedAt: finishedAt || new Date().toISOString(),
+    newPosts: Number(newPosts) || 0,
+    calls: totals.calls,
+    results: totals.results,
+    usd: totals.usd,
+    quotaExceeded: totals.quotaExceeded ? 1 : 0,
+  });
+  return { id, ...totals, porFase };
+}
+
+function getMonitoringRun(id) {
+  const row = getMonitoringRunStmt.get(id);
+  if (!row) return null;
+  return {
+    id: row.id,
+    startedAt: row.started_at,
+    finishedAt: row.finished_at,
+    trigger: row.trigger,
+    plataforma: row.plataforma,
+    newPosts: row.new_posts,
+    calls: row.calls,
+    results: row.results,
+    usd: row.usd,
+    quotaExceeded: Boolean(row.quota_exceeded),
+  };
+}
+
+/** @returns {{phase: string, calls: number, results: number, failed: number}[]} apify_calls desde sinceIso, agrupadas por fase. */
+function sumApifyCallsSince(sinceIso) {
+  return sumApifyCallsSinceStmt.all(sinceIso);
+}
+
 function getRefreshState(key) {
   const row = getRefreshStateStmt.get(key);
   return row ? row.value : null;
@@ -1280,6 +1425,11 @@ module.exports = {
   updateFollowersForAccount,
   getRefreshState,
   setRefreshState,
+  insertApifyCall,
+  startMonitoringRun,
+  finishMonitoringRun,
+  getMonitoringRun,
+  sumApifyCallsSince,
   listAccountsDueForRefresh,
   applyMetricsRefresh,
   upsertReclamo,

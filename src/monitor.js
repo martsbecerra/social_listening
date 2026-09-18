@@ -40,6 +40,7 @@ const { classifyPost, classifyRelevance } = require('./classifier');
 const { checkAndLogJump } = require('./viralJumpDetector');
 const { getPlatform, listPlatformIds, DEFAULT_PLATFORM_ID } = require('./platforms');
 const { isPlatformError } = require('./platforms/errors');
+const { runWithContext } = require('./usageContext');
 const db = require('./db');
 
 // MONITORING_CONFIG_PATH: solo para tests (tempfile), mismo patrón que
@@ -203,7 +204,8 @@ async function addAccount(account, platformId = DEFAULT_PLATFORM_ID) {
     throw e;
   }
   const platform = getPlatform(platformId);
-  await platform.validateAccount(clean);
+  // Fase 'validacion' para el registro de gasto en Apify (src/apifyCost.js).
+  await runWithContext({ phase: 'validacion' }, () => platform.validateAccount(clean));
   const all = loadConfigAll();
   const config = all[platformId] || (all[platformId] = { accounts: [], keywords: [] });
   const isNew = !config.accounts.some((a) => a.toLowerCase() === clean.toLowerCase());
@@ -242,7 +244,7 @@ async function addKeyword(keyword, platformId = DEFAULT_PLATFORM_ID) {
   }
   const platform = getPlatform(platformId);
   if (clean.startsWith('#')) {
-    await platform.validateHashtag(clean.slice(1));
+    await runWithContext({ phase: 'validacion' }, () => platform.validateHashtag(clean.slice(1)));
   }
   const all = loadConfigAll();
   const config = all[platformId] || (all[platformId] = { accounts: [], keywords: [] });

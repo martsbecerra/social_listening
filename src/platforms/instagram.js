@@ -40,7 +40,7 @@ function isConfigured() {
  */
 async function runActor(input) {
   try {
-    return await runActorSync(input, { actorId: ACTOR_ID });
+    return await runActorSync(input, { actorId: ACTOR_ID, plataforma: 'instagram' });
   } catch (err) {
     if (err && !err.code && isQuotaExceededError(err)) err.code = 'QUOTA_EXCEEDED';
     throw err;

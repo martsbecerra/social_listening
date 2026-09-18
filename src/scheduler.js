@@ -17,10 +17,13 @@
 // ==========================================================================
 
 const cron = require('node-cron');
+const db = require('./db');
 const { runMonitoringCycle } = require('./monitor');
 const { processPendingReclamos } = require('./geoWorker');
 const { refreshStaleAccountStats } = require('./accountStats');
 const { refreshPostMetrics } = require('./metricsRefresh');
+const { runWithContext } = require('./usageContext');
+const { formatCycleCostLine } = require('./apifyCost');
 
 const DEFAULT_CRON = '0 */4 * * *';
 
@@ -114,11 +117,13 @@ function getNextRunAt(cronExpression, from = new Date()) {
  * (en las plataformas que lo soportan). Exportada aparte para poder
  * llamarla a mano (botón "Actualizar ahora").
  *
- * @param {{ ifBusy?: 'throw'|'skip', plataforma?: string }} [options]
+ * @param {{ ifBusy?: 'throw'|'skip', plataforma?: string, trigger?: 'cron'|'manual' }} [options]
  *   plataforma: acota el ciclo a esa sola (la solapa que apretó el botón);
  *   sin ella corre todo el registro (cron).
+ *   trigger: quién disparó el ciclo, para la fila de monitoring_runs (el
+ *   cron pasa 'cron'; el botón "Actualizar ahora" queda en 'manual').
  */
-async function runCycle({ ifBusy = 'throw', plataforma } = {}) {
+async function runCycle({ ifBusy = 'throw', plataforma, trigger = 'manual' } = {}) {
   if (cycleInProgress) {
     if (ifBusy === 'skip') {
       console.log('[monitor] ya hay un ciclo en curso; se saltea este disparo.');
@@ -132,9 +137,39 @@ async function runCycle({ ifBusy = 'throw', plataforma } = {}) {
 
   cycleInProgress = true;
   try {
-    return await runCycleUnlocked(plataforma ? [plataforma] : undefined);
+    return await runCycleUnlocked(plataforma ? [plataforma] : undefined, trigger);
   } finally {
     cycleInProgress = false;
+  }
+}
+
+/**
+ * Abre la fila del ciclo en monitoring_runs, corre las fases y la cierra con
+ * los totales de gasto en Apify (ver src/apifyCost.js), pase lo que pase.
+ * El registro nunca frena el ciclo: si la base falla al abrir, el ciclo
+ * corre igual sin run_id; si falla al cerrar, se loguea.
+ */
+async function runCycleUnlocked(plataformas, trigger = 'manual') {
+  let runId = null;
+  try {
+    runId = db.startMonitoringRun({ trigger, plataforma: plataformas ? plataformas.join(',') : 'todas' });
+  } catch (err) {
+    console.error('[costo] No se pudo abrir el registro del ciclo:', err.message);
+  }
+
+  let newCount = 0;
+  try {
+    const result = await runCyclePhases(plataformas, runId);
+    newCount = result.newCount;
+    return result;
+  } finally {
+    if (runId != null) {
+      try {
+        console.log(formatCycleCostLine(db.finishMonitoringRun(runId, { newPosts: newCount })));
+      } catch (err) {
+        console.error('[costo] No se pudo cerrar el registro del ciclo:', err.message);
+      }
+    }
   }
 }
 
@@ -149,8 +184,15 @@ function mergeSkipAccounts(...sources) {
   return merged;
 }
 
-async function runCycleUnlocked(plataformas) {
-  const { checked, newPosts, scrapedAccounts, porPlataforma } = await runMonitoringCycle({ plataformas });
+// Las tres fases con Apify van envueltas en su contexto ('monitoreo',
+// 'benchmark', 'refresco') para que cada llamada a Apify se registre con
+// su ciclo y su fase (src/usageContext.js). Solo medición: la lógica de
+// cada fase no cambia.
+async function runCyclePhases(plataformas, runId) {
+  const { checked, newPosts, scrapedAccounts, porPlataforma } = await runWithContext(
+    { runId, phase: 'monitoreo' },
+    () => runMonitoringCycle({ plataformas })
+  );
   const newCount = (newPosts || []).length;
 
   try {
@@ -167,7 +209,7 @@ async function runCycleUnlocked(plataformas) {
   // "Actualizar ahora" en una solapa sin benchmark no gasta nada acá.
   let recalculatedAccounts = {};
   try {
-    ({ recalculatedAccounts } = await refreshStaleAccountStats({ plataformas }));
+    ({ recalculatedAccounts } = await runWithContext({ runId, phase: 'benchmark' }, () => refreshStaleAccountStats({ plataformas })));
   } catch (err) {
     console.error('Error recalculando el benchmark de cuentas:', err.message);
   }
@@ -177,7 +219,9 @@ async function runCycleUnlocked(plataformas) {
   // benchmark (computeAccountStats actualiza sus posteos con esa misma
   // pasada, no hay que pagarla dos veces).
   try {
-    await refreshPostMetrics({ plataformas, skipAccounts: mergeSkipAccounts(scrapedAccounts, recalculatedAccounts) });
+    await runWithContext({ runId, phase: 'refresco' }, () =>
+      refreshPostMetrics({ plataformas, skipAccounts: mergeSkipAccounts(scrapedAccounts, recalculatedAccounts) })
+    );
   } catch (err) {
     console.error('Error refrescando métricas de posteos:', err.message);
   }
@@ -191,7 +235,7 @@ function startScheduler() {
   const cronExpression = getCronExpression();
 
   cron.schedule(cronExpression, () => {
-    runCycle({ ifBusy: 'skip' }).catch((err) => {
+    runCycle({ ifBusy: 'skip', trigger: 'cron' }).catch((err) => {
       console.error('Error en el ciclo de monitoreo agendado:', err.message);
     });
   });

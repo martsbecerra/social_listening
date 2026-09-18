@@ -66,6 +66,9 @@ social_listening_app/
 │   ├── auth/                 # Allowlist, magic link, sesión, rate limit, gate.
 │   ├── notify.js             # Orquesta las notificaciones (email + WhatsApp a futuro).
 │   ├── scheduler.js          # Agenda el monitoreo cada 4hs (node-cron).
+│   ├── concurrencyLimiter.js # Cola FIFO para los runs simultáneos de Apify.
+│   ├── usageContext.js       # En qué ciclo y fase estamos (AsyncLocalStorage), para medir Apify.
+│   ├── apifyCost.js          # Tarifas, registro de cada llamada a Apify y reporte de gasto.
 │   └── notifiers/
 │       └── whatsapp.js       # Placeholder para notificación por WhatsApp (no implementado).
 ├── config/
@@ -94,6 +97,7 @@ social_listening_app/
 ├── scripts/
 │   ├── import-reclamos.js       # Importador genérico de Excel/CSV (solo CLI).
 │   ├── migrate-categorias.js    # Migra categorías viejas al esquema de dos niveles.
+│   ├── costo-apify.js           # Gasto en Apify por ventana y fase (npm run costo).
 │   └── stop-server.js           # Mata el proceso que ocupa el puerto (npm run stop).
 ├── .env.example               # Plantilla de las claves (copiala a .env).
 ├── .gitignore                 # Evita subir node_modules, .env y data/.
@@ -336,6 +340,47 @@ aparece con un posteo nuevo y nunca se calculó o pasaron
 resultados más una consulta de perfil por cuenta, como mucho
 `MAX_ACCOUNTS_PER_CYCLE` cuentas por ciclo. Una cuenta que no vuelve a
 aparecer no cuesta nada.
+
+#### Medir lo que se gasta de verdad
+
+Lo de arriba es la estimación; la app además **registra cada llamada a
+Apify** (`src/apifyCost.js`, todas pasan por `runActorSync`):
+
+- `apify_calls`: una fila por llamada, con la fase, el ciclo (`run_id`), qué
+  se pidió (`target`, `results_type`), cuántos items devolvió Apify (los
+  items de error `no_items` / `not_found` también, porque se cobran igual),
+  si salió bien, el error si no (`QUOTA_EXCEEDED` cuando fue la cuota), la
+  duración y el `usd` con la tarifa del plan activo.
+- `monitoring_runs`: una fila por ciclo (cron o "Actualizar ahora"), con
+  posteos nuevos, llamadas, resultados, usd y si alguna llamada cortó por
+  cuota. Al cerrar cada ciclo el server imprime
+  `[costo] ciclo #N: X llamadas, Y resultados ≈ US$ Z (monitoreo A · benchmark B · refresco C)`,
+  con el total en dólares del plan activo y el desglose en resultados.
+
+Las fases son `monitoreo`, `benchmark` y `refresco` dentro del ciclo
+(`src/scheduler.js` las marca con `src/usageContext.js`), y fuera de él
+`validacion` (agregar cuenta o hashtag), `recalc-script`
+(`scripts/recalc-account-stats.js`) y `analisis` (análisis de una
+publicación). Una llamada sin fase conocida queda como `desconocida`.
+
+Tarifas por 1000 resultados en el `.env`: `APIFY_RATE_FREE` (2.70),
+`APIFY_RATE_STARTER` (2.30), `APIFY_RATE_SCALE` (1.90) y `APIFY_PLAN`
+(default `starter`) para el plan activo. El reporte recalcula desde los
+resultados guardados con las tres tarifas a la vez, así cambiar de plan no
+invalida el histórico:
+
+```bash
+npm run costo
+```
+
+```bash
+node scripts/costo-apify.js --dias 90
+```
+
+Muestra hoy, últimos 7 días y últimos N días (30 por defecto) con llamadas,
+resultados y usd por plan, desglosado por fase, más la proyección mensual
+(promedio diario de los últimos 7 días × 30). `GET /api/monitoring/costs?days=30`
+devuelve lo mismo en JSON. Nada de esto llama a Apify.
 
 ---
 

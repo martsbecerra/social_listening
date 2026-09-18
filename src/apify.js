@@ -39,6 +39,8 @@
 // ==========================================================================
 
 const { createLimiter } = require('./concurrencyLimiter');
+const { getContext } = require('./usageContext');
+const { recordApifyCall } = require('./apifyCost');
 
 // Nombre del actor en la API (el "/" se escribe como "~")
 const APIFY_ACTOR = 'apify~instagram-scraper';
@@ -80,27 +82,62 @@ function isConcurrentRunsError(err) {
  * simultáneos se reintenta una vez después de APIFY_RETRY_DELAY_MS, sin
  * soltar el lugar en la cola; si vuelve a fallar, tira con code RATE_LIMITED.
  *
+ * Cada llamada queda registrada en apify_calls (src/apifyCost.js) con el
+ * ciclo y la fase que vienen del contexto (src/usageContext.js), la cantidad
+ * de items devueltos (los de error también: Apify los cobra) y, si falló,
+ * el error. Una fila por llamada: el reintento del 402 no suma otra. La
+ * duración se mide desde que la llamada obtiene su lugar en la cola.
+ *
  * @param {object} input - La configuración (input) que espera el actor.
- * @param {{ actorId?: string }} [options] - Actor a correr. Por defecto el de
- *   Instagram (scrapeInstagram, abajo, no lo pasa); los adapters de
- *   src/platforms/ pasan el suyo, así este módulo queda genérico.
+ * @param {{ actorId?: string, plataforma?: string }} [options] - Actor a
+ *   correr. Por defecto el de Instagram (scrapeInstagram, abajo, no lo pasa);
+ *   los adapters de src/platforms/ pasan el suyo, así este módulo queda
+ *   genérico. plataforma: para la fila de apify_calls (default instagram).
  * @returns {Promise<Array>} Lista de items scrapeados.
  */
-async function runActorSync(input, { actorId = APIFY_ACTOR } = {}) {
+async function runActorSync(input, { actorId = APIFY_ACTOR, plataforma = 'instagram' } = {}) {
   return apifyLimiter.run(async () => {
+    const context = getContext();
+    const startedAt = Date.now();
+    const record = ({ items, error }) =>
+      recordApifyCall({
+        runId: context && context.runId != null ? context.runId : null,
+        phase: (context && context.phase) || 'desconocida',
+        plataforma,
+        input,
+        items: Array.isArray(items) ? items.length : 0,
+        ok: !error,
+        error: error ? describeError(error) : null,
+        durationMs: Date.now() - startedAt,
+      });
+
+    let items;
     try {
-      return await runActorSyncOnce(input, actorId);
+      try {
+        items = await runActorSyncOnce(input, actorId);
+      } catch (err) {
+        if (!isConcurrentRunsError(err)) throw err;
+        console.warn(
+          `[apify] Apify rechazó la corrida por runs simultáneos (${CONCURRENT_RUNS_ERROR}); ` +
+            `se reintenta una vez en ${APIFY_RETRY_DELAY_MS} ms ` +
+            `(${apifyLimiter.inFlight()} en vuelo acá, tope APIFY_MAX_CONCURRENT=${APIFY_MAX_CONCURRENT}).`
+        );
+        await sleep(APIFY_RETRY_DELAY_MS);
+        items = await runActorSyncOnce(input, actorId);
+      }
     } catch (err) {
-      if (!isConcurrentRunsError(err)) throw err;
-      console.warn(
-        `[apify] Apify rechazó la corrida por runs simultáneos (${CONCURRENT_RUNS_ERROR}); ` +
-          `se reintenta una vez en ${APIFY_RETRY_DELAY_MS} ms ` +
-          `(${apifyLimiter.inFlight()} en vuelo acá, tope APIFY_MAX_CONCURRENT=${APIFY_MAX_CONCURRENT}).`
-      );
-      await sleep(APIFY_RETRY_DELAY_MS);
-      return runActorSyncOnce(input, actorId);
+      record({ error: err });
+      throw err;
     }
+    record({ items });
+    return items;
   });
+}
+
+/** Texto de la columna `error` de apify_calls: 'QUOTA_EXCEEDED' para la cuota, si no el mensaje acotado. */
+function describeError(err) {
+  if (err && (err.code === 'QUOTA_EXCEEDED' || isQuotaExceededError(err))) return 'QUOTA_EXCEEDED';
+  return String((err && err.message) || err || 'error').slice(0, 300);
 }
 
 /** Una sola llamada HTTP al endpoint sincrónico, sin cola ni reintento. */

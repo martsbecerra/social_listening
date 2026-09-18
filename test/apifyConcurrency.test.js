@@ -7,9 +7,18 @@
 // stubeado. Los env se fijan ANTES del require porque apify.js los lee al
 // cargar (cada archivo de test es un proceso aparte).
 
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+
 process.env.APIFY_MAX_CONCURRENT = '2';
 process.env.APIFY_RETRY_DELAY_MS = '20';
 process.env.APIFY_API_TOKEN = 'token-de-test';
+// apify.js registra cada llamada en la base (src/apifyCost.js): base temporal.
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sl-apify-conc-'));
+process.env.MONITORING_DB_PATH = path.join(tmp, 'monitoring.db');
+process.env.MONITORING_CONFIG_PATH = path.join(tmp, 'monitoring.json');
+process.env.MONITORING_X_CONFIG_PATH = path.join(tmp, 'monitoring-x.json');
 
 const { describe, test } = require('node:test');
 const assert = require('node:assert/strict');
