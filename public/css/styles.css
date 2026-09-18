@@ -1091,11 +1091,20 @@ pre.report a:hover {
 .config > div:first-child {
   border-right: 1px solid var(--line);
 }
+/* Tres columnas cuando la red tiene búsqueda por palabra clave (Instagram). */
+.card.config.config-3 {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+.config-3 > div:not(:last-child) {
+  border-right: 1px solid var(--line);
+}
 @media (max-width: 860px) {
-  .card.config {
+  .card.config,
+  .card.config.config-3 {
     grid-template-columns: 1fr;
   }
-  .config > div:first-child {
+  .config > div:first-child,
+  .config-3 > div:not(:last-child) {
     border-right: none;
     border-bottom: 1px solid var(--line);
   }

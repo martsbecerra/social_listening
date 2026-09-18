@@ -13,6 +13,21 @@ const keywordErrorEl = document.getElementById('keywordError');
 const keywordsModal = document.getElementById('keywordsModal');
 const keywordsModalCloseBtn = document.getElementById('keywordsModalCloseBtn');
 
+// Búsquedas por palabra clave (lista `searches`): la caja existe solo en la
+// solapa de Instagram (x.html no la tiene), así que todo lo que las usa
+// chequea HAS_SEARCHES.
+const newSearchInput = document.getElementById('newSearch');
+const addSearchBtn = document.getElementById('addSearchBtn');
+const searchListPreviewEl = document.getElementById('searchListPreview');
+const searchListFullEl = document.getElementById('searchListFull');
+const viewAllSearchesBtn = document.getElementById('viewAllSearchesBtn');
+const searchErrorEl = document.getElementById('searchError');
+const searchesModal = document.getElementById('searchesModal');
+const searchesModalCloseBtn = document.getElementById('searchesModalCloseBtn');
+const HAS_SEARCHES = Boolean(
+  newSearchInput && addSearchBtn && searchListPreviewEl && searchListFullEl && viewAllSearchesBtn && searchErrorEl && searchesModal && searchesModalCloseBtn
+);
+
 const ignoreModal = document.getElementById('ignoreModal');
 const ignoreCancelBtn = document.getElementById('ignoreCancelBtn');
 const ignoreConfirmBtn = document.getElementById('ignoreConfirmBtn');
@@ -91,21 +106,45 @@ function renderTagList(listEl, items, onRemove, extraClass) {
   });
 }
 
-function renderKeywordLists(keywords) {
-  const preview = keywords.slice(0, KEYWORDS_PREVIEW_COUNT);
-  renderTagList(keywordListPreviewEl, preview, removeKeyword, 'kw');
-  renderTagList(keywordListFullEl, keywords, removeKeyword, 'kw');
+// Lista con vista previa + "Ver todas (N)" + listado completo en un modal.
+// El mismo componente para las palabras clave y para las búsquedas.
+function renderPreviewLists({ previewEl, fullEl, viewAllBtn, items, onRemove, extraClass }) {
+  const preview = items.slice(0, KEYWORDS_PREVIEW_COUNT);
+  renderTagList(previewEl, preview, onRemove, extraClass);
+  renderTagList(fullEl, items, onRemove, extraClass);
 
   // renderTagList reemplaza todo el contenido del contenedor, así que el
   // botón "Ver todas" (que vive ahí adentro para quedar en la misma fila
   // que los chips) hay que volver a engancharlo después.
-  if (keywords.length > KEYWORDS_PREVIEW_COUNT) {
-    viewAllKeywordsBtn.textContent = `Ver todas (${keywords.length})`;
-    viewAllKeywordsBtn.classList.remove('hidden');
+  if (items.length > KEYWORDS_PREVIEW_COUNT) {
+    viewAllBtn.textContent = `Ver todas (${items.length})`;
+    viewAllBtn.classList.remove('hidden');
   } else {
-    viewAllKeywordsBtn.classList.add('hidden');
+    viewAllBtn.classList.add('hidden');
   }
-  keywordListPreviewEl.appendChild(viewAllKeywordsBtn);
+  previewEl.appendChild(viewAllBtn);
+}
+
+function renderKeywordLists(keywords) {
+  renderPreviewLists({
+    previewEl: keywordListPreviewEl,
+    fullEl: keywordListFullEl,
+    viewAllBtn: viewAllKeywordsBtn,
+    items: keywords,
+    onRemove: removeKeyword,
+    extraClass: 'kw',
+  });
+}
+
+function renderSearchLists(searches) {
+  renderPreviewLists({
+    previewEl: searchListPreviewEl,
+    fullEl: searchListFullEl,
+    viewAllBtn: viewAllSearchesBtn,
+    items: searches,
+    onRemove: removeSearch,
+    extraClass: 'kw',
+  });
 }
 
 async function loadConfig() {
@@ -115,9 +154,11 @@ async function loadConfig() {
     const config = await resp.json();
     renderTagList(accountListEl, config.accounts, removeAccount);
     renderKeywordLists(config.keywords);
+    if (HAS_SEARCHES) renderSearchLists(config.searches || []);
   } catch (err) {
     accountListEl.innerHTML = '<span class="muted">No se pudo cargar. Reiniciá el servidor y recargá la página.</span>';
     keywordListPreviewEl.innerHTML = '<span class="muted">No se pudo cargar. Reiniciá el servidor y recargá la página.</span>';
+    if (HAS_SEARCHES) searchListPreviewEl.innerHTML = '<span class="muted">No se pudo cargar. Reiniciá el servidor y recargá la página.</span>';
     console.error('Error cargando config de monitoreo:', err);
   }
 }
@@ -196,6 +237,47 @@ async function removeKeyword(keyword) {
 
 function openKeywordsModal() { keywordsModal.classList.remove('hidden'); }
 function closeKeywordsModal() { keywordsModal.classList.add('hidden'); }
+
+// Búsquedas por palabra clave: sin verificación contra Apify al agregar
+// (el backend solo rechaza si el actor activo no busca).
+async function addSearch() {
+  const search = newSearchInput.value.trim();
+  if (!search) return;
+
+  searchErrorEl.classList.add('hidden');
+  addSearchBtn.disabled = true;
+  addSearchBtn.textContent = 'Agregando…';
+
+  try {
+    const resp = await fetch(withPlataforma('/api/monitoring/searches'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ search, plataforma: MONITOR_PLATFORM }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'No se pudo agregar la búsqueda.');
+    newSearchInput.value = '';
+    loadConfig();
+  } catch (err) {
+    searchErrorEl.textContent = err.message;
+    searchErrorEl.classList.remove('hidden');
+  } finally {
+    addSearchBtn.disabled = false;
+    addSearchBtn.textContent = 'Agregar';
+  }
+}
+
+async function removeSearch(search) {
+  try {
+    await fetch(withPlataforma(`/api/monitoring/searches/${encodeURIComponent(search)}`), { method: 'DELETE' });
+  } catch (err) {
+    console.error('Error quitando búsqueda:', err);
+  }
+  loadConfig();
+}
+
+function openSearchesModal() { searchesModal.classList.remove('hidden'); }
+function closeSearchesModal() { searchesModal.classList.add('hidden'); }
 
 // --------------------------------------------------------------------
 // Tabla de posteos detectados, con Tabulator.
@@ -1108,6 +1190,13 @@ newKeywordInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') addK
 viewAllKeywordsBtn.addEventListener('click', openKeywordsModal);
 keywordsModalCloseBtn.addEventListener('click', closeKeywordsModal);
 keywordsModal.addEventListener('click', (e) => { if (e.target === keywordsModal) closeKeywordsModal(); });
+if (HAS_SEARCHES) {
+  addSearchBtn.addEventListener('click', addSearch);
+  newSearchInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') addSearch(); });
+  viewAllSearchesBtn.addEventListener('click', openSearchesModal);
+  searchesModalCloseBtn.addEventListener('click', closeSearchesModal);
+  searchesModal.addEventListener('click', (e) => { if (e.target === searchesModal) closeSearchesModal(); });
+}
 ignoreCancelBtn.addEventListener('click', closeIgnoreModal);
 ignoreConfirmBtn.addEventListener('click', confirmIgnore);
 ignoreModal.addEventListener('click', (e) => { if (e.target === ignoreModal) closeIgnoreModal(); });

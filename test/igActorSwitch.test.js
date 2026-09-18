@@ -30,6 +30,7 @@ classifier.classifyRelevance = async () => ({ relevant: false });
 
 const { resolveIgActor, IG_ACTORS, DEFAULT_IG_ACTOR } = require('../src/platforms/igActor');
 const db = require('../src/db');
+const monitor = require('../src/monitor');
 const accountStats = require('../src/accountStats');
 const { getPlatform } = require('../src/platforms');
 const instagram = getPlatform('instagram');
@@ -137,6 +138,34 @@ describe('IG_ACTOR=apify: el proveedor oficial detrás de la fachada', { concurr
     } finally {
       instagram.scrapeAccount = originals.scrapeAccount;
       instagram.fetchAccountFollowers = originals.fetchAccountFollowers;
+    }
+  });
+
+  test('búsquedas por palabra clave con el actor oficial: un término configurado se ignora con aviso y agregar uno se rechaza', async () => {
+    fs.writeFileSync(
+      process.env.MONITORING_CONFIG_PATH,
+      JSON.stringify({ instagram: { accounts: [], keywords: ['obras'], searches: ['jorge macri'] } }, null, 2) + '\n'
+    );
+    const originalConfigured = instagram.isConfigured;
+    const originalWarn = console.warn;
+    const warned = [];
+    console.warn = (...args) => warned.push(args.join(' '));
+    instagram.isConfigured = () => true;
+    try {
+      const result = await monitor.runMonitoringCycle({ plataformas: ['instagram'] });
+      assert.equal(result.checked, 0, 'sin cuentas ni hashtags y sin búsqueda, no se consulta nada');
+      assert.ok(
+        warned.some((w) => /1 búsqueda\(s\) por palabra clave configuradas/.test(w) && /IG_ACTOR=apidojo/.test(w)),
+        warned.join('\n')
+      );
+      assert.throws(() => monitor.addSearch('otra', 'instagram'), (err) => {
+        assert.match(err.userMessage, /IG_ACTOR=apidojo/);
+        return true;
+      });
+      assert.deepEqual(monitor.loadConfig('instagram').searches, ['jorge macri'], 'lo configurado se conserva');
+    } finally {
+      console.warn = originalWarn;
+      instagram.isConfigured = originalConfigured;
     }
   });
 });

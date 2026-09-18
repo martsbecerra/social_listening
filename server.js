@@ -561,6 +561,21 @@ app.delete('/api/monitoring/keywords/:keyword', (req, res) => {
   res.json(monitor.removeKeyword(req.params.keyword, monitoringPlataforma(req)));
 });
 
+// Búsquedas por palabra clave (lista `searches`, ver monitor.addSearch): sin
+// validación contra Apify; se rechaza solo si la plataforma no sabe buscar
+// (Instagram con IG_ACTOR=apify, o X).
+app.post('/api/monitoring/searches', (req, res) => {
+  try {
+    res.json(monitor.addSearch(req.body && req.body.search, monitoringPlataforma(req)));
+  } catch (err) {
+    res.status(400).json({ error: err.userMessage || err.message });
+  }
+});
+
+app.delete('/api/monitoring/searches/:search', (req, res) => {
+  res.json(monitor.removeSearch(req.params.search, monitoringPlataforma(req)));
+});
+
 // Gasto en Apify por ventana (hoy, últimos 7 días, últimos `days` días) y
 // por fase, con el usd en las tres tarifas (free, starter, scale) y la
 // proyección mensual: lo mismo que imprime `npm run costo`, en JSON, para

@@ -8,7 +8,12 @@
 //   - Hashtags (las keywords que empiezan con "#").
 //   - Keywords planas, SOLO en las plataformas cuyo adapter sabe buscarlas
 //     (scrapeKeyword, por ejemplo X). En las demás son un filtro de texto
-//     sobre lo que ya se scrapeó por cuenta o hashtag.
+//     sobre lo que ya se scrapeó por cuenta, hashtag o búsqueda.
+//   - Búsquedas por palabra clave (`searches`), SOLO en las plataformas
+//     cuyo adapter sabe buscar (scrapeSearch: Instagram con IG_ACTOR=apidojo).
+//     Es una lista aparte de las keywords, corta y elegida a mano: cada
+//     término es una consulta cobrada por ciclo. Lo que trae se filtra igual
+//     que un hashtag (relevancia literal o semántica), no entra directo.
 //
 // Un posteo se considera relevante si:
 //   1. Llegó por una búsqueda por término (sourceType 'keyword': una keyword,
@@ -60,6 +65,13 @@ const LEGACY_X_CONFIG_PATH =
 // solo pasan las que existen en la tabla (node:sqlite rechaza parámetros
 // desconocidos).
 const METRIC_COLUMNS = ['likes', 'comments', 'retweets', 'views'];
+
+// Si el mismo posteo llega por más de una fuente en la misma corrida, gana
+// el origen más específico (ver el dedupe en runMonitoringCycle).
+const SOURCE_PRIORITY = { keyword: 3, account: 2, hashtag: 1, search: 1 };
+function sourcePriority(post) {
+  return SOURCE_PRIORITY[post.sourceType] || 0;
+}
 
 // Topes de posteos por tipo de fuente en cada corrida (uno por llamada:
 // cada cuenta, hashtag o búsqueda es un run aparte). Los defaults coinciden
@@ -171,11 +183,15 @@ function readConfigAll() {
   }
 
   // Formato actual: cada clave de la raíz es una sección de plataforma.
+  // `searches` (búsquedas por palabra clave) es opcional: solo existe en
+  // las secciones donde alguien agregó un término (ver addSearch); las
+  // demás no se tocan.
   const all = {};
   for (const [platformId, section] of Object.entries(parsed)) {
     all[platformId] = {
       accounts: (Array.isArray(section.accounts) ? section.accounts : []).map(normalizeAccount),
       keywords: Array.isArray(section.keywords) ? section.keywords : [],
+      ...(Array.isArray(section.searches) ? { searches: cleanList(section.searches) } : {}),
     };
   }
   return all;
@@ -217,9 +233,14 @@ function loadConfigAll() {
   return absorbLegacyXConfig(readConfigAll());
 }
 
-/** Config de UNA plataforma, con la misma forma { accounts, keywords } de siempre. */
+/**
+ * Config de UNA plataforma para la API y el resto de la app:
+ * { accounts, keywords, searches }. `searches` se devuelve siempre como
+ * lista, exista o no en el archivo (ver addSearch).
+ */
 function loadConfig(platformId = DEFAULT_PLATFORM_ID) {
-  return loadConfigAll()[platformId] || { accounts: [], keywords: [] };
+  const section = loadConfigAll()[platformId] || { accounts: [], keywords: [] };
+  return { accounts: section.accounts, keywords: section.keywords, searches: cleanList(section.searches) };
 }
 
 function saveConfig(configAll) {
@@ -299,9 +320,62 @@ function removeKeyword(keyword, platformId = DEFAULT_PLATFORM_ID) {
   return config;
 }
 
+/**
+ * Agrega un término a la lista `searches` (búsqueda por palabra clave).
+ * Es una lista DISTINTA de `keywords`: las keywords son filtros de texto
+ * gratis sobre lo que ya se scrapeó; cada término de `searches` es una
+ * consulta cobrada por ciclo (Instagram con apidojo: 0,015 usd con 20
+ * posteos incluidos), así que va corta y elegida a mano. No se valida
+ * contra Apify (una búsqueda sin resultados no es un error); solo se
+ * chequea que la plataforma sepa buscar: con IG_ACTOR=apify no hay
+ * búsqueda y se rechaza con un mensaje claro en vez de guardar algo que
+ * nunca se va a usar. `searches` recién aparece en el archivo cuando se
+ * agrega el primero; las secciones de las demás redes no se tocan.
+ */
+function addSearch(term, platformId = DEFAULT_PLATFORM_ID) {
+  const clean = String(term || '').trim();
+  if (!clean) {
+    const e = new Error('Búsqueda vacía');
+    e.userMessage = 'Escribí un término de búsqueda.';
+    throw e;
+  }
+  const platform = getPlatform(platformId);
+  if (typeof platform.scrapeSearch !== 'function') {
+    const e = new Error(`La plataforma ${platformId} no busca por palabra clave`);
+    e.userMessage =
+      platformId === DEFAULT_PLATFORM_ID
+        ? 'El actor activo de Instagram no busca por palabra clave. Poné IG_ACTOR=apidojo en el .env y reiniciá el servidor.'
+        : `${platform.label || platformId} no tiene búsqueda por palabra clave aparte: usá las palabras clave.`;
+    throw e;
+  }
+  const all = loadConfigAll();
+  const config = all[platformId] || (all[platformId] = { accounts: [], keywords: [] });
+  config.searches = cleanList(config.searches);
+  if (!config.searches.some((s) => s.toLowerCase() === clean.toLowerCase())) {
+    config.searches.push(clean);
+    saveConfig(all);
+  }
+  return loadConfig(platformId);
+}
+
+function removeSearch(term, platformId = DEFAULT_PLATFORM_ID) {
+  const all = loadConfigAll();
+  const config = all[platformId];
+  if (config && Array.isArray(config.searches)) {
+    config.searches = config.searches.filter((s) => s.toLowerCase() !== String(term).toLowerCase());
+    saveConfig(all);
+  }
+  return loadConfig(platformId);
+}
+
 function textIncludesAny(text, needles) {
   const lower = (text || '').toLowerCase();
   return needles.find((needle) => lower.includes(needle.toLowerCase()));
+}
+
+/** Motivo base de un posteo que llegó por búsqueda por palabra clave (Instagram): "Búsqueda: jorge macri". */
+function searchBase(post) {
+  return `Búsqueda: ${post.sourceQuery || 'palabra clave'}`;
 }
 
 /**
@@ -367,6 +441,10 @@ function pickMetrics(platform, post) {
  * Un posteo sin caption solo se acepta si viene de una cuenta trackeada
  * (no hay texto que evaluar, pero viene de la fuente que explícitamente
  * querés ver); si viene de un hashtag o una búsqueda, se descarta.
+ * La búsqueda por palabra clave de Instagram (sourceType 'search') NO es el
+ * camino 1: Instagram asocia al término mucho contenido que no habla del
+ * tema, así que pasa por el 2 y el 3 como un hashtag, con el motivo
+ * "Búsqueda: <término>" (searchBase).
  *
  * @param {object} post posteo normalizado por el adapter
  * @param {string[]} keywords keywords planas (sin "#") de la plataforma
@@ -407,9 +485,12 @@ async function evaluateRelevance(post, keywords, { platform } = {}) {
     // La relevancia acá NO depende del LLM: ya matcheó una palabra clave. Si
     // el clasificador falla, el posteo entra igual, sin título ni sentimiento.
     const { title, sentiment, unclassified } = await classifyPost(post.caption, { platformLabel });
-    const base = post.sourceType === 'account'
-      ? `Cuenta trackeada: @${post.account} (coincidencia: "${literalMatch}")`
-      : `Coincidencia con palabra clave: "${literalMatch}"`;
+    const base =
+      post.sourceType === 'account'
+        ? `Cuenta trackeada: @${post.account} (coincidencia: "${literalMatch}")`
+        : post.sourceType === 'search'
+          ? `${searchBase(post)} (coincidencia: "${literalMatch}")`
+          : `Coincidencia con palabra clave: "${literalMatch}"`;
     return {
       relevant: true,
       title,
@@ -426,9 +507,12 @@ async function evaluateRelevance(post, keywords, { platform } = {}) {
   // relevante. Se guarda igual, marcado, para que alguien lo revise: un falso
   // positivo se ve y se borra; uno descartado en silencio no vuelve nunca.
   if (result.unclassified) {
-    const origen = post.sourceType === 'account'
-      ? `Cuenta trackeada: @${post.account}`
-      : 'Hashtag monitoreado';
+    const origen =
+      post.sourceType === 'account'
+        ? `Cuenta trackeada: @${post.account}`
+        : post.sourceType === 'search'
+          ? searchBase(post)
+          : 'Hashtag monitoreado';
     return {
       relevant: true,
       title: null,
@@ -438,9 +522,12 @@ async function evaluateRelevance(post, keywords, { platform } = {}) {
     };
   }
 
-  const matchedReason = post.sourceType === 'account'
-    ? `Cuenta trackeada: @${post.account} (relacionado por contenido)`
-    : 'Relacionado por contenido (sin palabra clave literal)';
+  const matchedReason =
+    post.sourceType === 'account'
+      ? `Cuenta trackeada: @${post.account} (relacionado por contenido)`
+      : post.sourceType === 'search'
+        ? `${searchBase(post)} (relacionado por contenido)`
+        : 'Relacionado por contenido (sin palabra clave literal)';
   return { relevant: true, title: result.title, sentiment: result.sentiment, matchedReason };
 }
 
@@ -501,17 +588,35 @@ async function runMonitoringCycle({ plataformas } = {}) {
     }
 
     const { accounts, keywords } = config;
+    const searches = cleanList(config.searches);
     const hashtagTags = keywords.filter((k) => k.startsWith('#')).map((k) => k.slice(1));
     const textKeywords = keywords.filter((k) => !k.startsWith('#'));
     // Para filtrar por substring usamos la lista completa de keywords, sin el "#".
     const plainKeywords = keywords.map((k) => (k.startsWith('#') ? k.slice(1) : k));
     const canSearchKeywords = typeof platform.scrapeKeyword === 'function';
+    // Búsqueda por palabra clave (lista `searches`): solo si el adapter
+    // sabe buscar. Con IG_ACTOR=apify no hay búsqueda: los términos quedan
+    // configurados, pero se avisa y se ignoran en esta corrida.
+    const canSearch = typeof platform.scrapeSearch === 'function';
+    if (searches.length > 0 && !canSearch) {
+      console.warn(
+        `[monitor] ${platformId}: hay ${searches.length} búsqueda(s) por palabra clave configuradas pero el proveedor activo ` +
+          `no busca (en Instagram hace falta IG_ACTOR=apidojo): se ignoran en esta corrida.`
+      );
+    }
 
+    // Cada búsqueda va en la fase 'busqueda' del registro de gasto
+    // (src/apifyCost.js), heredando el ciclo del contexto del scheduler.
     const sourceResults = await Promise.allSettled([
       ...accounts.map((account) => platform.scrapeAccount(account, { resultsLimit: limits.account, lookback })),
       ...hashtagTags.map((tag) => platform.scrapeHashtag(tag, { resultsLimit: limits.hashtag, lookback })),
       ...(canSearchKeywords
         ? textKeywords.map((keyword) => platform.scrapeKeyword(keyword, { resultsLimit: limits.search, lookback }))
+        : []),
+      ...(canSearch
+        ? searches.map((term) =>
+            runWithContext({ phase: 'busqueda' }, () => platform.scrapeSearch(term, { resultsLimit: limits.search, lookback }))
+          )
         : []),
     ]);
 
@@ -541,17 +646,18 @@ async function runMonitoringCycle({ plataformas } = {}) {
 
     // Dedupe por id dentro de esta misma corrida (una cuenta trackeada podría
     // aparecer también en un hashtag o en una búsqueda). Si el mismo posteo
-    // llega por más de una fuente gana la versión que vino por búsqueda
-    // (sourceType 'keyword'): esa ya está validada por la búsqueda y entra
-    // sin classifyRelevance, mientras que la versión 'account' podría ser
-    // descartada por el clasificador. La cuenta no se pierde: post.account
-    // es el mismo handle en las dos. Por plataforma: dos plataformas
-    // distintas nunca comparten id.
+    // llega por más de una fuente gana el origen más específico
+    // (SOURCE_PRIORITY): la búsqueda por término de X ('keyword') ya lo
+    // validó y entra sin classifyRelevance; la cuenta trackeada ('account')
+    // le gana al hashtag y a la búsqueda de Instagram ('search'), que son
+    // descubrimiento y se filtran igual. A igual prioridad, el primero. La
+    // cuenta no se pierde: post.account es el mismo handle en todas. Por
+    // plataforma: dos plataformas distintas nunca comparten id.
     const seenInThisRun = new Map();
     for (const post of allCandidates) {
       if (!post.url) continue;
       const prev = seenInThisRun.get(post.id);
-      if (!prev || (prev.sourceType !== 'keyword' && post.sourceType === 'keyword')) {
+      if (!prev || sourcePriority(post) > sourcePriority(prev)) {
         seenInThisRun.set(post.id, post);
       }
     }
@@ -687,6 +793,8 @@ module.exports = {
   removeAccount,
   addKeyword,
   removeKeyword,
+  addSearch,
+  removeSearch,
   rememberFollowers,
   monitorLimits,
   // Expuestos para tests.

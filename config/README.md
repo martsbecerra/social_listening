@@ -11,10 +11,13 @@ cada una con sus propias cuentas y keywords:
 
 ```json
 {
-  "instagram": { "accounts": ["..."], "keywords": ["...", "#hashtag"] },
+  "instagram": { "accounts": ["..."], "keywords": ["...", "#hashtag"], "searches": ["jorge macri"] },
   "x": { "accounts": ["..."], "keywords": ["Jorge Macri"] }
 }
 ```
+
+`searches` es opcional y hoy solo tiene sentido en Instagram (ver abajo);
+aparece en el archivo recién cuando se agrega el primer término.
 
 Es el único formato que el código escribe; los anteriores se migran solos
 (ver al final).
@@ -56,6 +59,26 @@ términos y apodos que circulan en la conversación pública real — algunos
 informales y con connotación peyorativa/racial. Se registran **para poder
 detectar** posteos que los usan, no porque sean "objetivo" de nada: es una
 lista de términos de búsqueda, no de personas.
+
+## `searches` (Instagram)
+
+Búsquedas por palabra clave, la cuarta fuente de detección. Es una lista
+**distinta** de `keywords`: las keywords son filtros de texto gratis sobre
+lo que ya se scrapeó; cada término de `searches` dispara **una consulta
+cobrada por ciclo** a la búsqueda nativa de Instagram (actor
+`apidojo/instagram-scraper-api`: 0,015 usd con 20 posteos incluidos, hasta
+`SEARCH_RESULTS_LIMIT`). Por eso va corta y elegida a mano: buscar las 60 y
+pico keywords sería carísimo. Lo que trae **no entra directo**: Instagram
+asocia al término mucho contenido ajeno, así que se filtra igual que un
+hashtag (coincidencia literal con alguna keyword, o el clasificador) y
+queda con el motivo `Búsqueda: <término>`. Un posteo sin texto se descarta.
+
+Se administra desde la caja "Búsquedas por palabra clave" de la solapa de
+Instagram (o `POST`/`DELETE /api/monitoring/searches`), sin verificación
+contra Apify al agregar. Con `IG_ACTOR=apify` (el actor anterior) no hay
+búsqueda: los términos quedan guardados pero el ciclo avisa y los ignora,
+y agregar uno nuevo se rechaza con ese mensaje. X no usa esta lista: allá
+cada keyword ya es una búsqueda.
 
 ## Lo que las keywords NO cubren
 

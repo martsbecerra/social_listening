@@ -22,6 +22,10 @@
 //   scrapeAccount(username, { resultsLimit, lookback })
 //   scrapeHashtag(tag, { resultsLimit, lookback })
 //   scrapeKeyword(keyword, { resultsLimit, lookback })   [opcional]
+//   scrapeSearch(term, { resultsLimit, lookback })        [opcional]
+//                 Búsqueda por palabra clave de la lista `searches` del
+//                 config (Instagram con apidojo). Si el adapter no la
+//                 expone, el orquestador avisa e ignora los términos.
 //                 Devuelven posteos normalizados (ver normalizePost). Los
 //                 dos parámetros son sugerencias del orquestador; cada
 //                 adapter los traduce a su fuente o los pisa con su propio
@@ -49,6 +53,11 @@
 //                              keywords como para los hashtags (allá un
 //                              hashtag es una búsqueda más), con el término
 //                              en sourceQuery.
+//                   'search'   búsqueda por palabra clave de Instagram
+//                              (lista `searches`, scrapeSearch): Instagram
+//                              asocia al término mucho contenido ajeno, así
+//                              que se filtra como un hashtag (literal o
+//                              semántica), con el término en sourceQuery.
 //   buildProfileUrl(username)
 //   fetchAccountFollowers(username) → number | null. Nunca tira. Es el
 //                 camino de respaldo cuando los posteos no traen
