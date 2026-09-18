@@ -27,17 +27,25 @@
 //     actor oficial lo hacía con skipPinnedPosts).
 //   - customMapFunction: NO se usa. Filtrar ahí está penalizado por el actor.
 //
-// Salida por posteo: id (el id numérico de Instagram, el mismo que devuelve
-// el actor oficial: detected_posts dedupea por ese id y el refresco de
-// métricas cruza por él), code, url, createdAt (ISO), caption, likeCount y
-// commentCount (pueden faltar: quedan null, nunca 0), isVideo, video
-// { playCount }, indicadores de carrusel y fijado, owner { username,
-// followerCount }. Un item con noResults (o sin id/url) no es un posteo y
-// se descarta.
+// Salida por posteo (verificada contra una corrida real el 2026-09-18, ver
+// test/fixtures/apidojo/): type "post", id (el id numérico de Instagram, el
+// MISMO que devuelve el actor oficial: detected_posts dedupea por ese id y
+// el refresco de métricas cruza por él), code, url (/p/{code}/, también
+// igual), createdAt (ISO), caption (puede venir null), likeCount y
+// commentCount (pueden venir null: quedan null, nunca 0), isVideo, video
+// { playCount, duration }, isCarousel + carouselMedia[], isPinned,
+// isPaidPartnership, isLikeAndViewCountsDisabled, location, audio, owner
+// { username, isVerified, ... }. Los posteos de un perfil vienen del más
+// nuevo al más viejo. Un perfil inexistente devuelve una lista vacía (no un
+// item de error); igual se descarta cualquier item con noResults/error o
+// sin id/url, por si el actor cambia.
 //
-// Seguidores: salen de owner.followerCount de los posteos devueltos, en
-// cualquier fase (el orquestador y el benchmark actualizan la caché con
-// monitor.rememberFollowers). No hay consulta aparte de "details":
+// Seguidores: owner.followerCount viene SOLO en las consultas de perfil
+// (detección de cuentas trackeadas, benchmark, refresco); en los posteos de
+// hashtag y de búsqueda el owner llega sin ese dato. La caché se actualiza
+// con cada respuesta que lo trae (monitor.rememberFollowers): una cuenta
+// que apareció por hashtag queda sin seguidores hasta que el benchmark
+// consulte su perfil. No hay consulta aparte de "details":
 // fetchAccountFollowers devuelve null sin llamar a nadie, y una cuenta que
 // no devuelve posteos se queda con el último valor conocido.
 // ==========================================================================
@@ -105,7 +113,7 @@ function maxItemsFor(resultsLimit) {
   return FALLBACK_MAX_ITEMS;
 }
 
-/** Item que no es un posteo: vacío, o con noResults / error (perfil inexistente, privado o sin posteos en la ventana). */
+/** Item que no es un posteo: vacío, o con noResults / error. (Un perfil inexistente devuelve lista vacía; esto es por si el actor cambia.) */
 function isNoResults(raw) {
   if (!raw || typeof raw !== 'object') return true;
   if (raw.noResults === true) return true;
@@ -131,22 +139,21 @@ function extractHashtags(caption) {
 
 /**
  * Tipo de posteo con los MISMOS valores que account_stats (reel | imagen |
- * carrusel), para que el benchmark existente siga sirviendo. El carrusel
- * se mira antes que el video (un carrusel puede contener un video). Los
- * nombres de los indicadores se verifican contra la salida real del actor
- * (fixtures en test/fixtures/apidojo/); se conservan alternativas por si
- * cambian. Sin ningún indicador: null (cae a la mediana global).
+ * carrusel), para que el benchmark existente siga sirviendo. Nombres
+ * verificados en la salida real: isCarousel (+ carouselMedia[]) e isVideo;
+ * `type` es siempre "post". El carrusel se mira antes que el video (un
+ * carrusel puede contener un video). Los nombres del actor oficial quedan
+ * como respaldo por si este cambia; sin ningún indicador, null (cae a la
+ * mediana global).
  */
 function derivePostType(raw) {
-  const productType = String(raw.productType || raw.product_type || raw.mediaType || raw.type || '').toLowerCase();
-  if (['carousel_container', 'carousel', 'sidecar', 'graphsidecar'].includes(productType)) return 'carrusel';
-  if (raw.isCarousel === true || raw.carousel === true || raw.isSidecar === true || raw.sidecar === true) return 'carrusel';
-  for (const key of ['carouselMedia', 'carousel_media', 'children', 'sidecarChildren', 'childPosts']) {
-    if (Array.isArray(raw[key]) && raw[key].length > 1) return 'carrusel';
-  }
-  if (['clips', 'reel', 'reels', 'video'].includes(productType)) return 'reel';
-  if (raw.isVideo === true || (raw.video && typeof raw.video === 'object' && raw.video.url)) return 'reel';
-  if (productType === 'image' || productType === 'photo' || raw.isVideo === false) return 'imagen';
+  if (raw.isCarousel === true || (Array.isArray(raw.carouselMedia) && raw.carouselMedia.length > 1)) return 'carrusel';
+  if (raw.isVideo === true || (raw.video && typeof raw.video === 'object')) return 'reel';
+  if (raw.isVideo === false) return 'imagen';
+  const type = String(raw.productType || raw.type || '').toLowerCase();
+  if (type === 'carousel_container' || type === 'sidecar') return 'carrusel';
+  if (type === 'clips' || type === 'video') return 'reel';
+  if (type === 'image') return 'imagen';
   return null;
 }
 

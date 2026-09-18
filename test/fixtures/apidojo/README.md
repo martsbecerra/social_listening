@@ -1,19 +1,39 @@
 # Fixtures del actor apidojo/instagram-scraper-api
 
-Salida del actor para cada tipo de consulta, usada por
-`test/apidojoProvider.test.js` para probar la normalización
-(`src/platforms/instagramApidojo.js`), el mapeo de `post_type` y la ventana
-de fecha sin llamar a Apify.
+Salida REAL del actor, de una corrida chica autorizada el 2026-09-18
+(cinco runs, US$ 0,045), usada por `test/apidojoProvider.test.js` para
+probar la normalización (`src/platforms/instagramApidojo.js`), el mapeo de
+`post_type` y la ventana de fecha sin llamar a Apify.
 
-- `profile.json`: consulta de perfil (`startUrls` con la URL del perfil).
-- `hashtag.json`: consulta de hashtag (`startUrls` con `/explore/tags/`).
-- `search.json`: búsqueda por palabra clave (`keywords`).
-- `not-found.json`: respuesta para un perfil inexistente (`maxItems: 1`).
+| Archivo | Input | Items |
+|---|---|---|
+| `profile.json` | `{ startUrls: ["https://www.instagram.com/clavescom/"], maxItems: 10 }` | 10 |
+| `hashtag.json` | `{ startUrls: [".../explore/tags/JorgeMacri/"], maxItems: 10, until: "2026-09-17" }` | 7 |
+| `search.json` | `{ keywords: ["jorge macri"], maxItems: 10, until: "2026-09-17" }` | 2 |
+| `not-found.json` | `{ startUrls: [".../cuenta_que_no_existe_123456/"], maxItems: 1 }` | 0 |
 
-**Estado: PROVISORIAS.** Están armadas a mano con la forma documentada en
-el README del actor (id, code, url, createdAt, caption, likeCount,
-commentCount, isVideo, video, owner.followerCount). Los nombres de los
-indicadores de carrusel y de fijado (`isCarousel`, `isPinned`) y la forma
-del item sin resultados (`noResults`) NO están documentados: se reemplazan
-por la salida real de una corrida chica autorizada por el dueño, y
-`derivePostType` / `isNoResults` se ajustan a lo que se vea ahí.
+Las URLs firmadas del CDN (imágenes, videos, fotos de perfil) se
+reemplazaron por `https://cdn.invalid/...`: vencen a los pocos días y pesan.
+Todo lo demás está tal cual vino.
+
+## Lo que se verificó con esta corrida
+
+- `id` y `url` son los mismos que guardó el actor oficial en
+  `detected_posts` (coincidencia exacta por id y por url en los posteos ya
+  conocidos de `@clavescom` y de los hashtags), así que el dedupe y el
+  refresco de métricas siguen matcheando.
+- Indicadores: `isCarousel` + `carouselMedia[]`, `isVideo` + `video
+  { playCount, duration }`, `isPinned`, `isPaidPartnership`,
+  `isLikeAndViewCountsDisabled`; `type` es siempre `"post"`.
+- Los posteos de un perfil vienen del más nuevo al más viejo.
+- `owner.followerCount` (con `followingCount` y `postCount`) viene SOLO en la
+  consulta de perfil; en hashtag y búsqueda el `owner` llega sin seguidores.
+- Un perfil inexistente devuelve `[]`, no un item de error.
+- La corrida de perfil con `until: "2026-09-17"` devolvió los mismos 10
+  ids que sin `until` (los 10 posteos más nuevos de `@clavescom` son de ese
+  día), y la cuenta no tiene posteos fijados: cómo se lleva `until` con un
+  posteo fijado viejo queda para verlo en el ciclo completo.
+- En la búsqueda los dos items vinieron con `caption`, `likeCount` y
+  `commentCount` en `null` (dos reels de cuentas de fans). Pocos datos para
+  saber si es lo normal de la búsqueda o de esos dos posteos; a mirar en
+  el ciclo real de la Fase 2.
