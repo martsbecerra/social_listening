@@ -49,11 +49,20 @@ saber antes de tocar algo.
 ## Las cuatro fuentes de detección (`config/monitoring.json`, sección `instagram`)
 
 1. `accounts`: cuentas trackeadas. Una consulta de perfil por cuenta y por
-   ciclo, `MONITOR_ACCOUNT_LIMIT` posteos, con `until` y ventana
-   `MONITOR_LOOKBACK`. Un posteo suyo sin caption entra igual.
+   ciclo, `MONITOR_ACCOUNT_LIMIT` posteos, con `until` y una ventana
+   DINÁMICA (`monitor.detectionWindowFor`, no ya el fijo `MONITOR_LOOKBACK`):
+   desde el fin de la última detección exitosa de esa plataforma hasta
+   ahora, con techo `MONITOR_LOOKBACK_MAX` (default 7 días) — así una caída
+   del server no pierde lo publicado en el medio, sin disparar una
+   recuperación gigante. En el caso normal (cron al día) da "1 day", igual
+   que antes. Si supera 1 día, `MONITOR_ACCOUNT_LIMIT`/`MONITOR_HASHTAG_LIMIT`
+   suben proporcionalmente (tope 5x) para no perder posteos por el tope de
+   cantidad. Un posteo sin caption entra igual.
 2. `keywords` que empiezan con `#`: hashtags. Una consulta por hashtag y por
-   ciclo (`MONITOR_HASHTAG_LIMIT`). Traen todo lo que usa el tag: se filtran.
-3. `searches`: búsquedas por palabra clave (solo con apidojo, `scrapeSearch`).
+   ciclo (`MONITOR_HASHTAG_LIMIT`), misma ventana dinámica que cuentas.
+   Traen todo lo que usa el tag: se filtran.
+3. `searches`: búsquedas por palabra clave (solo con apidojo, `scrapeSearch`,
+   ventana fija `MONITOR_LOOKBACK` de siempre — no la dinámica de arriba).
    Una consulta por término y por ciclo (`SEARCH_RESULTS_LIMIT`). Se filtran
    como un hashtag; `sourceType 'search'`, motivo `Búsqueda: <término>`.
    Pocos términos, elegidos a mano; con `IG_ACTOR=apify` se ignoran con aviso.

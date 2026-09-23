@@ -420,9 +420,14 @@ describe('proveedor apidojo del adapter de Instagram', { concurrency: false }, (
     const originals = { scrapeAccount: instagram.scrapeAccount, isConfigured: instagram.isConfigured };
     try {
       instagram.isConfigured = () => true;
+      // Cambio D: cuentas/hashtags usan la ventana dinámica de
+      // detectionWindowFor (no ya el MONITOR_LOOKBACK fijo) — se recalcula
+      // acá para no atarse a un valor fijo (depende de si otro test de este
+      // archivo ya dejó una marca de detección exitosa).
       instagram.scrapeAccount = async (account, { resultsLimit, lookback }) => {
-        assert.equal(resultsLimit, 10, 'tope por cuenta (default)');
-        assert.equal(lookback, process.env.MONITOR_LOOKBACK || '1 day');
+        const window = monitor.detectionWindowFor('instagram');
+        assert.equal(resultsLimit, window.isDefault ? 10 : monitor.raiseLimitForWindow(10, window.windowDays), 'tope por cuenta (según ventana)');
+        assert.equal(lookback, window.lookback);
         return [provider.normalizePost(rawPost({ id: 500, caption: 'arrancan las obras del bajo', followerCount: 4321 }), { account, sourceType: 'account' })];
       };
       const result = await monitor.runMonitoringCycle({ plataformas: ['instagram'] });

@@ -663,6 +663,30 @@ hace que ninguna cuenta todavía no arrancada llegue a llamar a la fuente
 lo tenía el refresco) ahora también corta así, en vez de reintentar cada
 cuenta igual hasta agotar la lista.
 
+### Ventana de detección dinámica (cuentas y hashtags)
+
+`MONITOR_LOOKBACK` era fijo ("1 day"): si el server estuvo apagado, lo
+publicado en el medio no se detectaba. `monitor.detectionWindowFor(platformId)`
+calcula, para cuentas y hashtags de cada corrida, una ventana real =
+`max(ahora − MONITOR_LOOKBACK_MAX, fin de la última detección exitosa de esa
+plataforma)`; sin ninguna corrida previa registrada (o con una de más de
+`MONITOR_LOOKBACK_MAX`, default 7 días), se usa directamente ese techo, para
+que una caída larga no dispare una recuperación gigante (y su costo). En el
+caso normal (cron cada 4hs) la ventana redondea a "1 day", igual que el fijo
+de antes — el techo solo se nota después de una caída real. El fin de la
+última detección exitosa se guarda en `refresh_state`
+(`detection_last_success:<plataforma>`) apenas esa fase termina sin error,
+aunque el ciclo completo falle después en benchmark o refresco.
+
+Si la ventana calculada supera 1 día, `MONITOR_ACCOUNT_LIMIT` y
+`MONITOR_HASHTAG_LIMIT` de esa corrida suben proporcionalmente
+(`raiseLimitForWindow`: factor = días de ventana, nunca más de 5x el tope
+configurado) para no perderse posteos por el tope de cantidad en vez de por
+fecha — pasado ese factor, seguir subiendo el tope es más costo que señal
+real. La consola lo registra cuando no fue la ventana default. Búsquedas
+por palabra clave, keywords de X y el benchmark (90 días fijos) NO cambian:
+siguen con su propia lógica de siempre.
+
 ### Septiembre 2026: cambio de actor de monitoreo
 
 El monitoreo de Instagram pasó de `apify/instagram-scraper` a

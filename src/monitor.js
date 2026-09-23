@@ -112,6 +112,79 @@ function monitorLimits() {
   };
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+// Techo de la ventana de detección dinámica (ver detectionWindowFor): nunca
+// se pide más atrás que esto, ni siquiera después de una caída larga del
+// server, para no disparar una recuperación gigante (y su costo).
+const DEFAULT_LOOKBACK_MAX_DAYS = 7;
+// La ventana dinámica sube MONITOR_ACCOUNT_LIMIT/MONITOR_HASHTAG_LIMIT
+// proporcionalmente cuando supera 1 día (ver raiseLimitForWindow), pero
+// nunca más de esta cantidad de veces el tope configurado: pasado ese
+// punto, una cuenta o hashtag que sigue topeando probablemente satura el
+// feed igual, y seguir subiendo el tope solo dispara costo sin traer más
+// señal real.
+const RAISE_LIMIT_CEILING_FACTOR = 5;
+
+/** MONITOR_LOOKBACK_MAX ("7 days", "10 days", ...) a milisegundos; inválido o ausente cae al default. */
+function parseLookbackMaxMs(raw) {
+  const m = String(raw ?? '')
+    .trim()
+    .match(/^(\d+(?:\.\d+)?)\s*(minutes?|mins?|hours?|days?|weeks?)$/i);
+  if (!m) return DEFAULT_LOOKBACK_MAX_DAYS * DAY_MS;
+  const n = Number(m[1]);
+  const unit = m[2].toLowerCase();
+  const unitMs = unit.startsWith('min') ? 60 * 1000 : unit.startsWith('hour') ? 60 * 60 * 1000 : unit.startsWith('week') ? 7 * DAY_MS : DAY_MS;
+  return n > 0 ? n * unitMs : DEFAULT_LOOKBACK_MAX_DAYS * DAY_MS;
+}
+
+/**
+ * Ventana de detección dinámica (CAMBIO D) para cuentas y hashtags de una
+ * plataforma — búsquedas, keywords (X) y benchmark NO usan esto, siguen con
+ * su propia lógica de siempre. Va desde el fin de la última detección
+ * exitosa de esa plataforma (`detection_last_success:<platformId>` en
+ * refresh_state, ver runMonitoringCycle) hasta `now`, con un techo de
+ * MONITOR_LOOKBACK_MAX (default 7 días): sin corrida previa registrada, o
+ * con una de hace más de ese techo, se usa el techo. Redondeada hacia
+ * arriba a días enteros, mínimo 1: en el caso normal (cron cada 4hs) da
+ * exactamente "1 day", igual que el fijo de antes — el techo solo se nota
+ * después de una caída real. Se manda en días enteros, nunca fracciones de
+ * hora: `apify/instagram-scraper` recibe este string tal cual en
+ * `onlyPostsNewerThan` y no hay garantía de que entienda horas
+ * fraccionarias; apidojo igual refiltra por milisegundos exactos
+ * (`applyWindow` en instagramApidojo.js), así que ahí no se pierde precisión.
+ *
+ * @param {string} platformId
+ * @param {{ now?: number }} [options] `now` inyectable para tests (reloj fijo).
+ * @returns {{ lookback: string, windowDays: number, isDefault: boolean, sinceIso: string }}
+ */
+function detectionWindowFor(platformId, { now = Date.now() } = {}) {
+  const maxMs = parseLookbackMaxMs(process.env.MONITOR_LOOKBACK_MAX);
+  const ceilingMs = now - maxMs;
+  const lastSuccessRaw = db.getRefreshState(`detection_last_success:${platformId}`);
+  const lastSuccessMs = lastSuccessRaw ? Date.parse(lastSuccessRaw) : NaN;
+  const sinceMs = Number.isFinite(lastSuccessMs) ? Math.max(ceilingMs, lastSuccessMs) : ceilingMs;
+  const windowDays = Math.max(1, Math.ceil((now - sinceMs) / DAY_MS));
+  // Singular en 1 para que el caso normal (cron al día) sea BYTE A BYTE el
+  // mismo string que el fijo de antes ("1 day"); parseLookbackMs entiende
+  // los dos igual (la "s" del plural es opcional en su regex).
+  return {
+    lookback: `${windowDays} day${windowDays === 1 ? '' : 's'}`,
+    windowDays,
+    isDefault: windowDays === 1,
+    sinceIso: new Date(sinceMs).toISOString(),
+  };
+}
+
+/**
+ * Sube un tope (MONITOR_ACCOUNT_LIMIT o MONITOR_HASHTAG_LIMIT) para que una
+ * ventana de detección más ancha que la default no pierda posteos por el
+ * tope de cantidad en vez de por fecha. Ver RAISE_LIMIT_CEILING_FACTOR.
+ */
+function raiseLimitForWindow(baseLimit, windowDays) {
+  const factor = Math.min(Math.max(1, windowDays), RAISE_LIMIT_CEILING_FACTOR);
+  return Math.round(baseLimit * factor);
+}
+
 // Enriquecimiento de los resultados de búsqueda (ver enrichSearchResults):
 // cuántos detalles de posteo se piden como mucho por ciclo y plataforma
 // (SEARCH_ENRICH_LIMIT; 0 lo apaga) y cuánto se recuerda un resultado ya
@@ -744,7 +817,10 @@ function notConfiguredError(platform) {
 async function runMonitoringCycle({ plataformas } = {}) {
   const all = loadConfigAll();
   const limits = monitorLimits();
-  const lookback = process.env.MONITOR_LOOKBACK || '1 day';
+  // Búsquedas y keywords (X) siguen con la ventana fija de siempre; solo
+  // cuentas y hashtags usan la ventana dinámica (ver detectionWindowFor).
+  const legacyLookback = process.env.MONITOR_LOOKBACK || '1 day';
+  const cycleNowMs = Date.now();
   const ids = listPlatformIds().filter((id) => !plataformas || plataformas.includes(id));
   const singlePlatformRun = Boolean(plataformas && plataformas.length === 1);
 
@@ -791,6 +867,21 @@ async function runMonitoringCycle({ plataformas } = {}) {
       );
     }
 
+    // Ventana de detección de ESTA corrida para cuentas y hashtags (CAMBIO
+    // D): dinámica, desde el fin de la última detección exitosa, con techo
+    // MONITOR_LOOKBACK_MAX. Si superó 1 día, los topes de cuentas/hashtags
+    // suben proporcionalmente para no perder posteos por el tope de
+    // cantidad en vez de por fecha (ver raiseLimitForWindow).
+    const window = detectionWindowFor(platformId, { now: cycleNowMs });
+    const accountLimit = window.isDefault ? limits.account : raiseLimitForWindow(limits.account, window.windowDays);
+    const hashtagLimit = window.isDefault ? limits.hashtag : raiseLimitForWindow(limits.hashtag, window.windowDays);
+    if (!window.isDefault) {
+      console.log(
+        `[monitor] ${platformId}: ventana de detección ampliada a ${window.windowDays} día(s) (desde ${window.sinceIso}); ` +
+          `topes de esta corrida: cuentas ${accountLimit} (base ${limits.account}), hashtags ${hashtagLimit} (base ${limits.hashtag}).`
+      );
+    }
+
     // Cada búsqueda va en la fase 'busqueda' del registro de gasto
     // (src/apifyCost.js), heredando el ciclo del contexto del scheduler.
     // Las cuatro fuentes se lanzan juntas (no son fases secuenciales de
@@ -802,18 +893,22 @@ async function runMonitoringCycle({ plataformas } = {}) {
     const tickDetection = () => progress.tick();
 
     const sourceResults = await Promise.allSettled([
-      ...accounts.map((account) => platform.scrapeAccount(account, { resultsLimit: limits.account, lookback }).finally(tickDetection)),
-      ...hashtagTags.map((tag) => platform.scrapeHashtag(tag, { resultsLimit: limits.hashtag, lookback }).finally(tickDetection)),
+      ...accounts.map((account) =>
+        platform.scrapeAccount(account, { resultsLimit: accountLimit, lookback: window.lookback }).finally(tickDetection)
+      ),
+      ...hashtagTags.map((tag) =>
+        platform.scrapeHashtag(tag, { resultsLimit: hashtagLimit, lookback: window.lookback }).finally(tickDetection)
+      ),
       ...(canSearchKeywords
         ? textKeywords.map((keyword) =>
-            platform.scrapeKeyword(keyword, { resultsLimit: limits.search, lookback }).finally(tickDetection)
+            platform.scrapeKeyword(keyword, { resultsLimit: limits.search, lookback: legacyLookback }).finally(tickDetection)
           )
         : []),
       ...(canSearch
         ? searches.map((term) =>
-            runWithContext({ phase: 'busqueda' }, () => platform.scrapeSearch(term, { resultsLimit: limits.search, lookback })).finally(
-              tickDetection
-            )
+            runWithContext({ phase: 'busqueda' }, () =>
+              platform.scrapeSearch(term, { resultsLimit: limits.search, lookback: legacyLookback })
+            ).finally(tickDetection)
           )
         : []),
     ]);
@@ -959,6 +1054,17 @@ async function runMonitoringCycle({ plataformas } = {}) {
         throw platformError;
       }
       console.warn(`[monitor] ${platformId}: la corrida quedó incompleta (${code}); se sigue con las demás plataformas.`);
+    } else {
+      // Detección exitosa (cuentas + hashtags, con o sin posteos nuevos):
+      // marca el fin de esta corrida como punto de partida de la próxima
+      // ventana (ver detectionWindowFor). Solo cuentas y hashtags -aunque
+      // el ciclo completo falle después en benchmark o refresco- cuentan
+      // como "detección exitosa" acá.
+      try {
+        db.setRefreshState(`detection_last_success:${platformId}`, new Date(cycleNowMs).toISOString());
+      } catch (err) {
+        console.error(`[monitor] (${platformId}) no se pudo guardar el fin de la última detección exitosa:`, err.message);
+      }
     }
   }
 
@@ -1015,7 +1121,9 @@ module.exports = {
   rememberFollowers,
   monitorLimits,
   searchEnrichLimit,
+  detectionWindowFor,
   // Expuestos para tests.
   evaluateRelevance,
   pickMetrics,
+  raiseLimitForWindow,
 };
