@@ -22,6 +22,11 @@ aparece en el archivo recién cuando se agrega el primer término.
 Es el único formato que el código escribe; los anteriores se migran solos
 (ver al final).
 
+**En una línea**: `keywords` es un filtro de texto gratis sobre lo que ya
+se scrapeó (no le pide nada a Apify); `searches` es una consulta real a la
+búsqueda de Instagram, con costo por término (ver el detalle de cada una
+más abajo).
+
 ## `accounts`
 
 Usuarios de esa red a trackear (sin `@`). Todo lo que publiquen se scrapea
