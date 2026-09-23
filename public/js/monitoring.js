@@ -1,7 +1,12 @@
 const newAccountInput = document.getElementById('newAccount');
 const addAccountBtn = document.getElementById('addAccountBtn');
-const accountListEl = document.getElementById('accountList');
+const accountListPreviewEl = document.getElementById('accountListPreview');
+const accountListFullEl = document.getElementById('accountListFull');
+const viewAllAccountsBtn = document.getElementById('viewAllAccountsBtn');
 const accountErrorEl = document.getElementById('accountError');
+
+const accountsModal = document.getElementById('accountsModal');
+const accountsModalCloseBtn = document.getElementById('accountsModalCloseBtn');
 
 const newKeywordInput = document.getElementById('newKeyword');
 const addKeywordBtn = document.getElementById('addKeywordBtn');
@@ -107,7 +112,7 @@ function renderTagList(listEl, items, onRemove, extraClass) {
 }
 
 // Lista con vista previa + "Ver todas (N)" + listado completo en un modal.
-// El mismo componente para las palabras clave y para las búsquedas.
+// El mismo componente para cuentas, palabras clave y búsquedas.
 function renderPreviewLists({ previewEl, fullEl, viewAllBtn, items, onRemove, extraClass }) {
   const preview = items.slice(0, KEYWORDS_PREVIEW_COUNT);
   renderTagList(previewEl, preview, onRemove, extraClass);
@@ -123,6 +128,16 @@ function renderPreviewLists({ previewEl, fullEl, viewAllBtn, items, onRemove, ex
     viewAllBtn.classList.add('hidden');
   }
   previewEl.appendChild(viewAllBtn);
+}
+
+function renderAccountLists(accounts) {
+  renderPreviewLists({
+    previewEl: accountListPreviewEl,
+    fullEl: accountListFullEl,
+    viewAllBtn: viewAllAccountsBtn,
+    items: accounts,
+    onRemove: removeAccount,
+  });
 }
 
 function renderKeywordLists(keywords) {
@@ -152,11 +167,11 @@ async function loadConfig() {
     const resp = await fetch(withPlataforma('/api/monitoring/config'));
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const config = await resp.json();
-    renderTagList(accountListEl, config.accounts, removeAccount);
+    renderAccountLists(config.accounts);
     renderKeywordLists(config.keywords);
     if (HAS_SEARCHES) renderSearchLists(config.searches || []);
   } catch (err) {
-    accountListEl.innerHTML = '<span class="muted">No se pudo cargar. Reiniciá el servidor y recargá la página.</span>';
+    accountListPreviewEl.innerHTML = '<span class="muted">No se pudo cargar. Reiniciá el servidor y recargá la página.</span>';
     keywordListPreviewEl.innerHTML = '<span class="muted">No se pudo cargar. Reiniciá el servidor y recargá la página.</span>';
     if (HAS_SEARCHES) searchListPreviewEl.innerHTML = '<span class="muted">No se pudo cargar. Reiniciá el servidor y recargá la página.</span>';
     console.error('Error cargando config de monitoreo:', err);
@@ -234,6 +249,9 @@ async function removeKeyword(keyword) {
   }
   loadConfig();
 }
+
+function openAccountsModal() { accountsModal.classList.remove('hidden'); }
+function closeAccountsModal() { accountsModal.classList.add('hidden'); }
 
 function openKeywordsModal() { keywordsModal.classList.remove('hidden'); }
 function closeKeywordsModal() { keywordsModal.classList.add('hidden'); }
@@ -1168,6 +1186,9 @@ async function runNow() {
 
 addAccountBtn.addEventListener('click', addAccount);
 newAccountInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') addAccount(); });
+viewAllAccountsBtn.addEventListener('click', openAccountsModal);
+accountsModalCloseBtn.addEventListener('click', closeAccountsModal);
+accountsModal.addEventListener('click', (e) => { if (e.target === accountsModal) closeAccountsModal(); });
 addKeywordBtn.addEventListener('click', addKeyword);
 newKeywordInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') addKeyword(); });
 viewAllKeywordsBtn.addEventListener('click', openKeywordsModal);

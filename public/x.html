@@ -136,7 +136,9 @@
             <button id="addAccountBtn" class="btn-ghost">Agregar</button>
           </div>
           <p id="accountError" class="error hidden" style="margin-top:8px;"></p>
-          <div id="accountList" class="chips"></div>
+          <div id="accountListPreview" class="chips">
+            <button id="viewAllAccountsBtn" class="chip-more hidden"></button>
+          </div>
         </div>
         <div>
           <h3 class="tag">Palabras clave / hashtags</h3>
@@ -320,6 +322,16 @@
         <button id="keywordsModalCloseBtn" class="btn-small btn-clear">Cerrar</button>
       </div>
       <ul id="keywordListFull" class="tag-list"></ul>
+    </div>
+  </div>
+
+  <div id="accountsModal" class="modal-overlay hidden">
+    <div class="modal-box modal-box-wide">
+      <div class="modal-header">
+        <p>Cuentas trackeadas</p>
+        <button id="accountsModalCloseBtn" class="btn-small btn-clear">Cerrar</button>
+      </div>
+      <ul id="accountListFull" class="tag-list"></ul>
     </div>
   </div>
 
