@@ -21,7 +21,7 @@ const { buildWhatsAppReport: buildXReport } = require('../src/x/reportBuilder');
 const { validateAndNormalizeAnalysis } = require('../src/x/validate');
 const { buildReclamosFromAnalysis } = require('../src/x/reclamosFromAnalysis');
 const { CLASSIFICATION_SYSTEM_PROMPT } = require('../src/x/prompt');
-const { isValidReclamosPlataforma, parseReclamosFilters } = require('../src/reclamosQuery');
+const { isValidReclamosPlataforma, isValidReclamosSeleccion, parseReclamosFilters } = require('../src/reclamosQuery');
 const { CATEGORIA_FALLBACK } = require('../src/categoriasConfig');
 
 describe('x-ig-style temas / geo / mapa', { concurrency: false }, () => {
@@ -198,15 +198,19 @@ describe('x-ig-style temas / geo / mapa', { concurrency: false }, () => {
     );
   });
 
-  test('GET reclamos exige plataforma instagram|x (REQ-MAP-02)', () => {
-    assert.equal(isValidReclamosPlataforma(undefined), false);
-    assert.equal(isValidReclamosPlataforma(''), false);
-    assert.equal(isValidReclamosPlataforma('tiktok'), false);
+  test('GET reclamos acepta todas las redes o un subconjunto', () => {
+    assert.equal(isValidReclamosSeleccion(undefined), true);
+    assert.equal(isValidReclamosSeleccion(['instagram', 'x']), true);
+    assert.equal(isValidReclamosSeleccion(['tiktok', 'facebook']), true);
+    assert.equal(isValidReclamosSeleccion(['youtube']), false);
+    assert.equal(isValidReclamosSeleccion([]), false);
     assert.equal(isValidReclamosPlataforma('instagram'), true);
-    assert.equal(isValidReclamosPlataforma('x'), true);
-    const filters = parseReclamosFilters({ plataforma: 'x', q: 'bache' });
-    assert.equal(filters.plataforma, 'x');
+    assert.equal(isValidReclamosPlataforma('tiktok'), true);
+    assert.equal(isValidReclamosPlataforma('youtube'), false);
+    const filters = parseReclamosFilters({ plataforma: 'x,instagram', q: 'bache' });
+    assert.deepEqual(filters.plataforma, ['x', 'instagram']);
     assert.equal(filters.q, 'bache');
+    assert.equal(parseReclamosFilters({}).plataforma, undefined);
   });
 
   test('conteo por categoría respeta plataforma', () => {
@@ -241,9 +245,19 @@ describe('x-ig-style temas / geo / mapa', { concurrency: false }, () => {
     });
     const ig = db.contarReclamosPorCategoria('instagram');
     const x = db.contarReclamosPorCategoria('x');
+    const todas = db.contarReclamosPorCategoria();
     assert.ok((ig.Higiene || 0) >= 1);
     assert.equal(ig.Seguridad, undefined);
     assert.ok((x.Seguridad || 0) >= 1);
     assert.equal(x.Higiene, undefined);
+    assert.ok((todas.Higiene || 0) >= 1);
+    assert.ok((todas.Seguridad || 0) >= 1);
+
+    const soloIg = db.listReclamosFiltered({ plataforma: ['instagram'] });
+    assert.ok(soloIg.some((row) => row.id === 'ig-1'));
+    assert.equal(soloIg.some((row) => row.id === 'x-1'), false);
+    const ambas = db.listReclamosFiltered({});
+    assert.ok(ambas.some((row) => row.id === 'ig-1'));
+    assert.ok(ambas.some((row) => row.id === 'x-1'));
   });
 });

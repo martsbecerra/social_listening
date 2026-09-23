@@ -11,7 +11,7 @@ App web que:
 2. Recibe el link de una publicación de **X**, trae el hilo y lo clasifica
    con **Grok** vía OpenRouter (`OPENROUTER_X_MODEL`, no Apify ni el Claude
    de Instagram) y arma el reporte con la plantilla de X (solapa Análisis
-   en `x.html`). El mapa de X usa el mismo Leaflet, filtrado por plataforma.
+   en `x.html`).
 3. Monitorea automáticamente, cada 4 horas, si aparece algún posteo nuevo de
    las cuentas trackeadas o que mencione las palabras clave/hashtags
    configurados, en todas las redes registradas en `src/platforms/`: cada
@@ -20,12 +20,12 @@ App web que:
    dedupe, guardado — es el mismo para todas. Cuentas y keywords de cada red
    viven en su sección de `config/monitoring.json`. Ya no se mandan mails de
    alerta del monitoreo.
-4. Muestra la solapa "Mapa de reclamos" (Leaflet) **por plataforma**: cada
-   página pide `GET /api/reclamos?plataforma=instagram|x`. Círculos por
-   dirección normalizada, con filtros combinables por categoría y subcategoría
-   (esquema de dos niveles del cliente, en `config/categorias-reclamos.json`),
-   estado, barrio/comuna, rango de fechas y texto libre. Se alimenta de dos
-   fuentes: el análisis de una publicación (`/api/analyze` e `/api/x/analyze`
+4. Muestra el mapa de reclamos como entrada del panel (`mapa.html`, Leaflet),
+   con los reclamos de todas las redes. Se filtra por red, categoría y
+   subcategoría (esquema de dos niveles del cliente, en
+   `config/categorias-reclamos.json`), estado, barrio/comuna, rango de fechas
+   y texto libre. Sin `plataforma`, `GET /api/reclamos` devuelve todas.
+   Se alimenta de dos fuentes: el análisis de una publicación (`/api/analyze` e `/api/x/analyze`
    guardan reclamos con ubicación en `geo_status = 'pendiente'`; un worker los
    geocodifica con USIG después, sin bloquear la respuesta) y el importador
    genérico de Excel/CSV (`scripts/import-reclamos.js`).
@@ -80,9 +80,10 @@ social_listening_app/
 ├── public/
 │   ├── index.html            # Login (pide un magic link por email).
 │   ├── login-verify.html     # Confirma el link (POST, un solo uso).
-│   ├── dashboard.html        # Selector de red social.
-│   ├── instagram.html        # App Instagram: análisis + monitoreo + mapa de reclamos (tabs).
-│   ├── x.html                # App X: análisis (Grok) + monitoreo + mapa de reclamos.
+│   ├── dashboard.html        # Selector de red y entrada al mapa.
+│   ├── instagram.html        # App Instagram: análisis + monitoreo (tabs).
+│   ├── mapa.html             # Mapa de reclamos de todas las redes.
+│   ├── x.html                # App X: análisis (Grok) + monitoreo.
 │   ├── css/styles.css        # Estilos (paleta oscura corporativa).
 │   └── js/
 │       ├── main.js           # Tabs + dropdown de usuario (sesión / logout).
@@ -91,7 +92,7 @@ social_listening_app/
 │       ├── x-analysis.js     # Análisis de publicación de X (`/api/x/analyze`).
 │       ├── temasEditor.js    # Temas emergentes editables (antes de copiar/WhatsApp).
 │       ├── monitoring.js     # Monitoreo en vivo (parametrizado por data-platform).
-│       └── claimsMap.js      # Mapa de reclamos (Leaflet, filtrado por plataforma).
+│       └── claimsMap.js      # Mapa consolidado (Leaflet, filtro por red).
 ├── scripts/
 │   ├── import-reclamos.js       # Importador genérico de Excel/CSV (solo CLI).
 │   ├── migrate-categorias.js    # Migra categorías viejas al esquema de dos niveles.

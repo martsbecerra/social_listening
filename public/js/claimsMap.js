@@ -1,6 +1,6 @@
-// Mapa de reclamos: filtros (categoría, estado, barrio, comuna, fecha, texto)
+// Mapa de reclamos: filtros (red, categoría, estado, barrio, comuna, fecha, texto)
 // contra GET /api/reclamos, agrupado por dirección en el cliente. Leaflet CDN.
-// Se refresca cada vez que se entra a la solapa (main.js).
+// Se refresca al cargar mapa.html.
 
 const CABA_CENTER = [-34.6083, -58.4386];
 const CABA_ZOOM = 12;
@@ -12,10 +12,6 @@ const AMBA_BOUNDS = [
   [-34.2, -58.05],
 ];
 const SEARCH_DEBOUNCE_MS = 350;
-
-function currentPlatform() {
-  return document.body?.dataset?.platform === 'x' ? 'x' : 'instagram';
-}
 
 let claimsMap = null;
 let claimsLayer = null;
@@ -35,6 +31,10 @@ let conteoPorCategoria = {};
 let allSubcategorias = [];
 let selectedSubcategorias = new Set();
 let subcategoriaMultiSelect = null;
+let plataformaMultiSelect = null;
+let allPlataformas = [];
+let plataformaLabels = new Map();
+let selectedPlataformas = new Set();
 
 // -------------------------------------------------------------------------
 // Colores por categoría
@@ -124,6 +124,26 @@ function ensureClaimsMap() {
 // Filtros
 // -------------------------------------------------------------------------
 
+function etiquetaPlataforma(id) {
+  return plataformaLabels.get(id) || id || 'Red';
+}
+
+function joinRedes(ids) {
+  const labels = ids.map(etiquetaPlataforma);
+  if (labels.length <= 1) return labels[0] || '';
+  if (labels.length === 2) return `${labels[0]} y ${labels[1]}`;
+  return `${labels.slice(0, -1).join(', ')} y ${labels[labels.length - 1]}`;
+}
+
+function redesDelGrupo(group) {
+  const present = new Set(group.reclamos.map((row) => row.plataforma).filter(Boolean));
+  const ordered = allPlataformas.map((item) => item.id).filter((id) => present.has(id));
+  for (const id of present) {
+    if (!ordered.includes(id)) ordered.push(id);
+  }
+  return ordered;
+}
+
 function currentFilters() {
   return {
     categoria: [...selectedCategorias],
@@ -135,6 +155,7 @@ function currentFilters() {
         ? [...selectedSubcategorias]
         : [],
     estado: [...selectedEstados],
+    plataforma: [...selectedPlataformas],
     barrio: document.getElementById('claimsBarrio')?.value || '',
     comuna: document.getElementById('claimsComuna')?.value || '',
     desde: document.getElementById('claimsDesde')?.value || '',
@@ -148,6 +169,7 @@ function isDefaultFilters(f) {
     f.categoria.length === allCategorias.length &&
     f.subcategoria.length === 0 &&
     f.estado.length === allEstados.length &&
+    f.plataforma.length === allPlataformas.length &&
     !f.barrio &&
     !f.comuna &&
     !f.desde &&
@@ -158,7 +180,9 @@ function isDefaultFilters(f) {
 
 function buildQueryString(f) {
   const params = new URLSearchParams();
-  params.set('plataforma', currentPlatform());
+  if (f.plataforma.length > 0 && f.plataforma.length < allPlataformas.length) {
+    params.set('plataforma', f.plataforma.join(','));
+  }
   if (f.categoria.length > 0 && f.categoria.length < allCategorias.length) {
     params.set('categoria', f.categoria.join(','));
   }
@@ -186,7 +210,7 @@ async function applyFiltersAndReload() {
 
   // "Ninguna" categoría/estado tildado: no hay nada que mostrar, no hace
   // falta pegarle al servidor.
-  if (selectedCategorias.size === 0 || selectedEstados.size === 0) {
+  if (selectedCategorias.size === 0 || selectedEstados.size === 0 || selectedPlataformas.size === 0) {
     rawReclamos = [];
     renderMarkers();
     return;
@@ -272,12 +296,13 @@ document.addEventListener('keydown', (e) => {
 });
 
 /**
- * @param {{ containerId: string, label: string, options: string[], selectedSet: Set<string> }} config
+ * @param {{ containerId: string, label: string, options: string[], selectedSet: Set<string>, labelFor?: (value: string) => string }} config
  * @returns {{ selectAll: () => void, selectNone: () => void }}
  */
-function createFilterMultiSelect({ containerId, label, options, selectedSet }) {
+function createFilterMultiSelect({ containerId, label, options, selectedSet, labelFor }) {
   const host = document.getElementById(containerId);
   if (!host) return { selectAll() {}, selectNone() {} };
+  const textOf = labelFor || ((value) => value);
   host.innerHTML = '';
 
   const wrap = document.createElement('div');
@@ -316,7 +341,7 @@ function createFilterMultiSelect({ containerId, label, options, selectedSet }) {
       if (containerId === 'claimsCategoriaSelect') rebuildSubcategoriaFilter();
       applyFiltersAndReload();
     });
-    optLabel.append(checkbox, document.createTextNode(value));
+    optLabel.append(checkbox, document.createTextNode(textOf(value)));
     panel.appendChild(optLabel);
     checkboxes.set(value, checkbox);
   }
@@ -520,6 +545,10 @@ function popupHtml(group) {
     ? '<div class="claims-popup-nota">Ubicación aproximada: es un lugar con nombre, no una altura exacta.</div>'
     : '';
 
+  const redes = redesDelGrupo(group);
+  const resumenRedes =
+    redes.length > 1 ? `<p class="claims-popup-redes">${escapeHtml(joinRedes(redes))}</p>` : '';
+
   const items = group.reclamos
     .map((r) => {
       const user = escapeHtml(r.autor || 'desconocido');
@@ -529,7 +558,7 @@ function popupHtml(group) {
         ? `<div class="claims-popup-sub">${escapeHtml(r.subcategoria)}</div>`
         : '';
       return `<div class="claims-popup-item">
-        <div class="claims-popup-user">@${user} · <span class="claims-tema-pill" style="background:${colorDeCategoria(
+        <div class="claims-popup-user">@${user} · ${escapeHtml(etiquetaPlataforma(r.plataforma))} · <span class="claims-tema-pill" style="background:${colorDeCategoria(
           r.categoria
         )};color:#fff">${escapeHtml(r.categoria)}</span></div>
         ${sub}
@@ -539,7 +568,7 @@ function popupHtml(group) {
       </div>`;
     })
     .join('');
-  return `<div class="claims-popup"><h2>${escapeHtml(group.address)}</h2>${desglose}${avisoPrecision}${items}</div>`;
+  return `<div class="claims-popup"><h2>${escapeHtml(group.address)}</h2>${resumenRedes}${desglose}${avisoPrecision}${items}</div>`;
 }
 
 function getPinSteps() {
@@ -578,6 +607,11 @@ function setEmptyState(isEmpty, filtered) {
   if (empty) empty.classList.toggle('hidden', !isEmpty);
   if (mapEl) mapEl.classList.toggle('is-empty', isEmpty);
   if (!isEmpty || !title || !text) return;
+  if (selectedPlataformas.size === 0) {
+    title.textContent = 'Ninguna red activa';
+    text.textContent = 'Activá al menos una red para ver reclamos.';
+    return;
+  }
   if (filtered) {
     title.textContent = 'Ningún reclamo coincide con los filtros';
     text.textContent = 'Probá ampliar el rango de fechas o tildar más categorías/estados.';
@@ -721,21 +755,31 @@ async function refreshClaimsMap() {
   }
 
   try {
-    const resp = await fetch(`/api/reclamos?plataforma=${encodeURIComponent(currentPlatform())}`);
+    const resp = await fetch('/api/reclamos');
     if (!resp.ok) throw new Error('No se pudieron cargar los reclamos.');
     const data = await resp.json();
 
     allCategorias = Array.isArray(data.categorias) ? data.categorias : [];
     allEstados = Array.isArray(data.estados) ? data.estados : [];
+    allPlataformas = Array.isArray(data.plataformas) ? data.plataformas : [];
+    plataformaLabels = new Map(allPlataformas.map((item) => [item.id, item.label]));
     subcategoriasPorCategoria = data.subcategoriasPorCategoria || {};
     conteoPorCategoria = data.conteoPorCategoria || {};
     selectedCategorias = new Set(allCategorias);
     selectedEstados = new Set(allEstados);
+    selectedPlataformas = new Set(allPlataformas.map((item) => item.id));
     rawReclamos = Array.isArray(data.reclamos) ? data.reclamos : [];
 
     recalcularPaleta();
 
     closeOpenFilterPanel();
+    plataformaMultiSelect = createFilterMultiSelect({
+      containerId: 'claimsPlataformaSelect',
+      label: 'Red',
+      options: allPlataformas.map((item) => item.id),
+      selectedSet: selectedPlataformas,
+      labelFor: etiquetaPlataforma,
+    });
     categoriaMultiSelect = createFilterMultiSelect({
       containerId: 'claimsCategoriaSelect',
       label: 'Categoría',
@@ -767,6 +811,10 @@ async function refreshClaimsMap() {
 
 window.refreshClaimsMap = refreshClaimsMap;
 
+if (document.getElementById('claims-map') && !document.querySelector('.tab-btn[data-tab="claims-map"]')) {
+  refreshClaimsMap();
+}
+
 for (const id of ['claimsBarrio', 'claimsComuna', 'claimsDesde', 'claimsHasta']) {
   document.getElementById(id)?.addEventListener('change', () => applyFiltersAndReload());
 }
@@ -775,6 +823,7 @@ document.getElementById('claimsBuscar')?.addEventListener('input', () => {
   searchDebounceTimer = setTimeout(() => applyFiltersAndReload(), SEARCH_DEBOUNCE_MS);
 });
 document.getElementById('claimsClearBtn')?.addEventListener('click', () => {
+  plataformaMultiSelect?.selectAll();
   categoriaMultiSelect?.selectAll();
   estadoMultiSelect?.selectAll();
   rebuildSubcategoriaFilter();

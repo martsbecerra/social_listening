@@ -688,6 +688,7 @@ a {
 .container-wide {
   width: 100%;
   max-width: 1240px;
+  margin-inline: auto;
 }
 .panel-eyebrow {
   color: var(--jade-500);
@@ -2305,6 +2306,42 @@ pre.report a:hover {
 .grid > *:nth-child(4) {
   animation-delay: 0.22s;
 }
+.plat-map {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 132px;
+  padding: 18px 22px;
+  text-decoration: none;
+  color: #f3faf6;
+  background: var(--jade-900);
+  border: 1px solid var(--jade-950);
+  border-radius: 16px;
+}
+.plat-map:hover {
+  border-color: var(--jade-400);
+}
+.plat-map-kicker {
+  color: var(--jade-300);
+  font-size: 13px;
+}
+.plat-map-title {
+  font-family: "Bricolage Grotesque", sans-serif;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+}
+.plat-map-nets {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+}
+.plat-map-nets svg {
+  width: 16px;
+  height: 16px;
+  fill: var(--jade-150);
+}
 
 /* ------------------------------------------------------------------ */
 /* Tabulator (tabla de "Monitoreo en vivo") — sobrescribe el tema claro  */
@@ -2842,6 +2879,10 @@ pre.report a:hover {
 .claims-popup-user {
   font-weight: 600;
   color: var(--jade-900);
+}
+.claims-popup-redes {
+  margin: 0 0 8px;
+  font-weight: 600;
 }
 .claims-popup-comment {
   white-space: pre-wrap;

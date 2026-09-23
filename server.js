@@ -34,7 +34,7 @@ const { processPendingReclamosInBackground } = require('./src/geoWorker');
 const accountStats = require('./src/accountStats');
 const { CATEGORIAS_RECLAMO, ESTADOS_RECLAMO, isValidEstado } = require('./src/categoriaReclamo');
 const { subcategoriasDe } = require('./src/categoriasConfig');
-const { parseReclamosFilters, isValidReclamosPlataforma } = require('./src/reclamosQuery');
+const { parseReclamosFilters, isValidReclamosSeleccion, PLATAFORMAS_MAPA } = require('./src/reclamosQuery');
 const { normalizeEmail, isEmailAllowed } = require('./src/auth/allowlist');
 const { issueMagicLink, redeemMagicLink } = require('./src/auth/magicLink');
 const { sendMagicLinkEmail } = require('./src/mailer');
@@ -576,27 +576,32 @@ app.post('/api/monitoring/backfill-classification', async (req, res) => {
 
 // --------------------------------------------------------------------------
 // Mapa de reclamos: filtros combinables + edición de estado.
-// plataforma es obligatorio (instagram | x): cada solapa ve solo la suya.
+// Sin `plataforma`, devuelve todas las redes del mapa. Con una lista
+// (instagram,x), solo esas. El conteo de categorías es de toda la base:
+// filtrar redes no puede cambiar el color de los pines.
 // --------------------------------------------------------------------------
 
 app.get('/api/reclamos', (req, res) => {
   const filters = parseReclamosFilters(req.query);
-  if (!isValidReclamosPlataforma(filters.plataforma)) {
-    return res.status(400).json({ error: 'Indicá plataforma=instagram o plataforma=x.' });
+  if (!isValidReclamosSeleccion(filters.plataforma)) {
+    return res.status(400).json({
+      error: 'Plataforma desconocida. Usá instagram, x, facebook o tiktok.',
+    });
   }
   const reclamos = db.listReclamosFiltered(filters);
   res.json({
     categorias: CATEGORIAS_RECLAMO,
     estados: ESTADOS_RECLAMO,
+    plataformas: PLATAFORMAS_MAPA,
     // Árbol categoría -> subcategorías, para poblar el filtro dependiente.
     subcategoriasPorCategoria: Object.fromEntries(
       CATEGORIAS_RECLAMO.map((c) => [c, subcategoriasDe(c)])
     ),
-    // Conteo por categoría sobre ESA plataforma, no sobre lo filtrado: el mapa
+    // Conteo por categoría sobre TODA la base, no sobre lo filtrado: el mapa
     // asigna sus 12 colores a las categorías más frecuentes, y ese ranking no
     // puede cambiar cada vez que el usuario toca un filtro — los pines
     // cambiarían de color solos.
-    conteoPorCategoria: db.contarReclamosPorCategoria(filters.plataforma),
+    conteoPorCategoria: db.contarReclamosPorCategoria(),
     reclamos,
   });
 });

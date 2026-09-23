@@ -19,7 +19,6 @@
        lado del cliente). Por CDN a propósito, sin build step ni dependencia
        nueva en package.json. -->
   <link href="https://unpkg.com/tabulator-tables@6.3.0/dist/css/tabulator.min.css" rel="stylesheet" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="css/styles.css" />
 </head>
 
@@ -64,14 +63,6 @@
         Análisis de publicación
       </button>
       <button class="tab-btn" data-tab="monitoring"><div class="meter" data-meter="4"></div>Monitoreo en vivo</button>
-      <button class="tab-btn" data-tab="claims-map">
-        <svg class="glyph glyph-mp" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true">
-          <circle class="ping" cx="12" cy="10" r="7" stroke-width="1.5" />
-          <path d="M12 21s6-5.7 6-10a6 6 0 1 0-12 0c0 4.3 6 10 6 10Z" />
-          <circle cx="12" cy="10.4" r="2.1" fill="currentColor" stroke="none" />
-        </svg>
-        Mapa de reclamos
-      </button>
     </div>
   </nav>
 
@@ -238,53 +229,6 @@
     </div>
   </section>
 
-  <!-- ===================== Solapa: Mapa de reclamos ===================== -->
-  <section id="tab-claims-map" class="tab-panel hidden">
-    <div class="container-wide">
-      <p class="tag panel-eyebrow">Reclamos</p>
-      <h1 class="display">Mapa de reclamos</h1>
-      <p class="sub">Reclamos con dirección detectados en los comentarios analizados.</p>
-
-      <div class="card claims-filters-card">
-        <div class="claims-filters-row">
-          <div id="claimsCategoriaSelect"></div>
-          <!-- Dependiente del anterior: se puebla con las subcategorías de las
-               categorías seleccionadas (ver rebuildSubcategoriaFilter). -->
-          <div id="claimsSubcategoriaSelect"></div>
-          <div id="claimsEstadoSelect"></div>
-          <select id="claimsBarrio">
-            <option value="">Barrio</option>
-          </select>
-          <select id="claimsComuna">
-            <option value="">Comuna</option>
-          </select>
-          <input type="date" id="claimsDesde" />
-          <input type="date" id="claimsHasta" />
-          <input
-            type="text"
-            id="claimsBuscar"
-            class="claims-search"
-            placeholder="Buscar dirección o texto del comentario…"
-            autocomplete="off"
-          />
-          <button type="button" id="claimsClearBtn" class="btn-small btn-clear">Limpiar</button>
-        </div>
-        <!-- Colores de las categorías presentes en la vista actual. -->
-        <div id="claimsLeyenda" class="claims-leyenda"></div>
-      </div>
-
-      <p id="claimsMapError" class="error hidden"></p>
-
-      <div class="card claims-map-card">
-        <div id="claims-map"></div>
-        <div id="claimsMapEmpty" class="hidden muted claims-map-empty">
-          <div class="meter" data-meter="16"></div>
-          <h3 id="claimsMapEmptyTitle" data-default-title="Todavía no hay reclamos ubicados">Todavía no hay reclamos ubicados</h3>
-          <p id="claimsMapEmptyText" data-default-text="Cuando el análisis detecte comentarios con una dirección, van a aparecer acá.">Cuando el análisis detecte comentarios con una dirección, van a aparecer acá.</p>
-        </div>
-      </div>
-    </div>
-  </section>
 
   <!-- Popup de confirmación para ignorar un posteo de la tabla -->
   <div id="ignoreModal" class="modal-overlay hidden">
@@ -333,7 +277,7 @@
           <nav class="foot-links">
             <a href="instagram.html#tab-analysis">Análisis de publicación</a>
             <a href="instagram.html#tab-monitoring">Monitoreo en vivo</a>
-            <a href="instagram.html#tab-claims-map">Mapa de reclamos</a>
+            <a href="mapa.html">Mapa de reclamos</a>
           </nav>
         </div>
       </div>
@@ -356,8 +300,6 @@
   <script src="https://unpkg.com/tabulator-tables@6.3.0/dist/js/tabulator.min.js"></script>
   <script>window.SL_PLATFORM = 'instagram';</script>
   <script src="js/monitoring.js?v=plat"></script>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="js/claimsMap.js"></script>
   <script src="js/footer.js"></script>
 </body>
 

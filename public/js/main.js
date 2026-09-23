@@ -85,16 +85,13 @@ async function initAuthHeader() {
 
 initAuthHeader();
 
-// Atajos del pie de página: si la URL trae #tab-analysis / #tab-monitoring /
-// #tab-claims-map, abre esa solapa al cargar. Dispara el mismo click que ya
-// usa el usuario — no es un camino de navegación nuevo.
-//
-// Se difiere a DOMContentLoaded porque main.js corre ANTES que claimsMap.js
-// en el orden de scripts: en este momento window.refreshClaimsMap todavía no
-// existe, y el click directo abriría la solapa del mapa sin inicializarlo
-// (el guard del handler lo saltea en silencio). DOMContentLoaded dispara
-// recién cuando todos los scripts clásicos del final del body terminaron.
+// #tab-analysis y #tab-monitoring abren esa solapa. #tab-claims-map, el mapa
+// viejo dentro de una red, pasa a mapa.html.
 document.addEventListener('DOMContentLoaded', () => {
+  if (location.hash === '#tab-claims-map' && !document.getElementById('claims-map')) {
+    location.replace('mapa.html');
+    return;
+  }
   if (location.hash.startsWith('#tab-')) {
     const targetTab = location.hash.slice('#tab-'.length);
     document.querySelector(`.tab-btn[data-tab="${targetTab}"]`)?.click();

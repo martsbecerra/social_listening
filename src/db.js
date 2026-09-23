@@ -888,7 +888,13 @@ function listReclamosFiltered(filters = {}) {
   const clauses = [`geo_status IS NOT 'fuera_caba'`];
   const params = {};
 
-  if (plataforma) {
+  if (Array.isArray(plataforma) && plataforma.length > 0) {
+    const names = plataforma.map((_, i) => `@plataforma${i}`);
+    plataforma.forEach((id, i) => {
+      params[`plataforma${i}`] = id;
+    });
+    clauses.push(`plataforma IN (${names.join(',')})`);
+  } else if (typeof plataforma === 'string' && plataforma) {
     clauses.push('plataforma = @plataforma');
     params.plataforma = plataforma;
   }
