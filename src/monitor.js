@@ -890,25 +890,34 @@ async function runMonitoringCycle({ plataformas } = {}) {
     const detectionTotal =
       accounts.length + hashtagTags.length + (canSearchKeywords ? textKeywords.length : 0) + (canSearch ? searches.length : 0);
     progress.startPhase('Detectando posteos nuevos', detectionTotal);
-    const tickDetection = () => progress.tick();
+    // .then(ok, error) en vez de .finally(): así cada tick sabe si esa
+    // llamada terminó bien o mal (para "[fase] termina ... N ok, N error"),
+    // y sigue devolviendo el mismo valor/error para Promise.allSettled.
+    const tickDetection = (promise) =>
+      promise.then(
+        (value) => {
+          progress.tick(1, { ok: true });
+          return value;
+        },
+        (err) => {
+          progress.tick(1, { ok: false });
+          throw err;
+        }
+      );
 
     const sourceResults = await Promise.allSettled([
-      ...accounts.map((account) =>
-        platform.scrapeAccount(account, { resultsLimit: accountLimit, lookback: window.lookback }).finally(tickDetection)
-      ),
-      ...hashtagTags.map((tag) =>
-        platform.scrapeHashtag(tag, { resultsLimit: hashtagLimit, lookback: window.lookback }).finally(tickDetection)
-      ),
+      ...accounts.map((account) => tickDetection(platform.scrapeAccount(account, { resultsLimit: accountLimit, lookback: window.lookback }))),
+      ...hashtagTags.map((tag) => tickDetection(platform.scrapeHashtag(tag, { resultsLimit: hashtagLimit, lookback: window.lookback }))),
       ...(canSearchKeywords
         ? textKeywords.map((keyword) =>
-            platform.scrapeKeyword(keyword, { resultsLimit: limits.search, lookback: legacyLookback }).finally(tickDetection)
+            tickDetection(platform.scrapeKeyword(keyword, { resultsLimit: limits.search, lookback: legacyLookback }))
           )
         : []),
       ...(canSearch
         ? searches.map((term) =>
-            runWithContext({ phase: 'busqueda' }, () =>
-              platform.scrapeSearch(term, { resultsLimit: limits.search, lookback: legacyLookback })
-            ).finally(tickDetection)
+            tickDetection(
+              runWithContext({ phase: 'busqueda' }, () => platform.scrapeSearch(term, { resultsLimit: limits.search, lookback: legacyLookback }))
+            )
           )
         : []),
     ]);

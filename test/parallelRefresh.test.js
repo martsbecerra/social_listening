@@ -1,15 +1,17 @@
 'use strict';
 
 // Cambio C: refreshStaleAccountStats (accountStats.js) y refreshPostMetrics
-// (metricsRefresh.js) lanzan sus cuentas con Promise.allSettled a través del
-// limitador global de Apify (apifyLimiter, src/apify.js) en vez de un for
-// secuencial. Se prueba acá, con la fuente mockeada (sin red, sin Apify):
+// (metricsRefresh.js) lanzan sus cuentas con Promise.allSettled a través de
+// SU PROPIO limitador (benchmarkLimiter, refreshLimiter — nunca el
+// apifyLimiter de src/apify.js, ver Cambio G / concurrencyLimiter.js) en vez
+// de un for secuencial. Se prueba acá, con la fuente mockeada (sin red, sin
+// Apify):
 //   1. con el limitador en 2 y 6 cuentas, nunca más de 2 en vuelo a la vez.
 //   2. los resultados guardados son los mismos que en modo secuencial.
 //   3. el corte por cuota frena los LANZAMIENTOS pendientes (las cuentas ya
 //      en vuelo terminan igual).
-// APIFY_MAX_CONCURRENT se fija ANTES del require de apify.js (lo lee al
-// cargar, ver src/apify.js).
+// APIFY_MAX_CONCURRENT se fija ANTES del require de accountStats/metricsRefresh
+// (cada uno crea su limitador al cargar, con ese valor).
 
 const fs = require('fs');
 const os = require('os');
@@ -35,7 +37,8 @@ classifier.classifyRelevance = async () => ({ relevant: false });
 const db = require('../src/db');
 const accountStats = require('../src/accountStats');
 const metricsRefresh = require('../src/metricsRefresh');
-const { apifyLimiter, APIFY_MAX_CONCURRENT } = require('../src/apify');
+const { benchmarkLimiter } = accountStats;
+const { refreshLimiter } = metricsRefresh;
 const { getPlatform } = require('../src/platforms');
 const instagram = getPlatform('instagram');
 
@@ -118,8 +121,7 @@ function snapshotStats() {
 
 describe('Cambio C: benchmark en paralelo (accountStats.refreshStaleAccountStats)', { concurrency: false }, () => {
   test('con el limitador en 2 y 6 cuentas, nunca más de 2 en vuelo a la vez', async () => {
-    assert.equal(APIFY_MAX_CONCURRENT, 2);
-    assert.equal(apifyLimiter.limit, 2);
+    assert.equal(benchmarkLimiter.limit, 2);
     clearBenchmarkState();
 
     let inFlight = 0;
@@ -135,7 +137,7 @@ describe('Cambio C: benchmark en paralelo (accountStats.refreshStaleAccountStats
     const result = await accountStats.refreshStaleAccountStats({ plataformas: ['instagram'], maxPerCycle: 10 });
     assert.equal(maxInFlight, 2, 'nunca más de 2 llamadas de benchmark en vuelo a la vez');
     assert.equal(result.recalculated, 6);
-    assert.equal(apifyLimiter.inFlight(), 0);
+    assert.equal(benchmarkLimiter.inFlight(), 0);
   });
 
   test('los resultados guardados son iguales que en modo secuencial', async () => {
@@ -230,7 +232,7 @@ describe('Cambio C: refresco de métricas en paralelo (metricsRefresh.refreshPos
     const result = await metricsRefresh.refreshPostMetrics({ plataformas: ['instagram'] });
     assert.equal(maxInFlight, 2, 'nunca más de 2 llamadas de refresco en vuelo a la vez');
     assert.equal(result.accountsChecked, 6);
-    assert.equal(apifyLimiter.inFlight(), 0);
+    assert.equal(refreshLimiter.inFlight(), 0);
   });
 
   test('corte por cuota: no se lanzan más refrescos pendientes', async () => {

@@ -20,13 +20,23 @@ const cron = require('node-cron');
 const db = require('./db');
 const { runMonitoringCycle } = require('./monitor');
 const { processPendingReclamos } = require('./geoWorker');
-const { refreshStaleAccountStats } = require('./accountStats');
-const { refreshPostMetrics } = require('./metricsRefresh');
+const { refreshStaleAccountStats, benchmarkLimiter } = require('./accountStats');
+const { refreshPostMetrics, refreshLimiter } = require('./metricsRefresh');
 const { runWithContext } = require('./usageContext');
 const { formatCycleCostLine, reconcileRealCosts } = require('./apifyCost');
+const { apifyLimiter } = require('./apify');
 const progress = require('./monitoringProgress');
 
 const DEFAULT_CRON = '0 */4 * * *';
+
+// Heartbeat del ciclo en curso (Cambio G — diagnóstico del cuelgue real de
+// ~30 min): si pasan estos ms sin que NINGUNA llamada termine (ni de
+// detección, ni de benchmark, ni de refresco), se loguea un snapshot de la
+// fase actual y qué tareas siguen activas en cada limitador — exactamente
+// lo que hubiera hecho falta para saber qué llamada quedó colgada. Siempre
+// activo mientras corre un ciclo, sin flag de DEBUG (a propósito).
+const HEARTBEAT_STALE_MS = 15000;
+const HEARTBEAT_CHECK_MS = 15000;
 
 // Momento en que terminó la última corrida (cron o "Actualizar ahora"), para
 // el pie de página. En memoria nomás: si el server reinicia, vuelve a null
@@ -144,6 +154,44 @@ async function runCycle({ ifBusy = 'throw', plataforma, trigger = 'manual' } = {
   }
 }
 
+/** "42s"/"1m 12s": duración legible para los logs de ciclo y heartbeat. */
+function formatDurationMs(ms) {
+  const totalSec = Math.round(ms / 1000);
+  const min = Math.floor(totalSec / 60);
+  const sec = totalSec % 60;
+  return min > 0 ? `${min}m ${sec}s` : `${sec}s`;
+}
+
+/** Activas de un limitador para el snapshot del heartbeat, formateadas "target (Ns)". */
+function formatActiveTargets(limiter) {
+  const active = limiter.activeTargets();
+  if (active.length === 0) return '(ninguna)';
+  return active.map(({ target, elapsedMs }) => `${target || '?'} (${formatDurationMs(elapsedMs)})`).join(', ');
+}
+
+/**
+ * Mientras corre un ciclo: si pasan HEARTBEAT_STALE_MS sin que se registre
+ * ningún tick de progreso, loguea la fase actual y qué está activo en cada
+ * limitador. Se repite cada vez que el chequeo encuentra que sigue sin
+ * actividad — mientras el cuelgue continúe, sigue avisando.
+ */
+function startHeartbeat() {
+  return setInterval(() => {
+    const lastActivityAt = progress.getLastActivityAt();
+    if (lastActivityAt == null) return;
+    const idleMs = Date.now() - lastActivityAt;
+    if (idleMs < HEARTBEAT_STALE_MS) return;
+
+    const current = progress.getProgress();
+    const faseTexto = current ? `${current.phase} (${current.done}/${current.total}, ${current.percent}%)` : '(ninguna fase activa)';
+    console.warn(
+      `[heartbeat] ${formatDurationMs(idleMs)} sin que termine ninguna llamada. Fase: ${faseTexto}. ` +
+        `Activos — apify: [${formatActiveTargets(apifyLimiter)}], benchmark: [${formatActiveTargets(benchmarkLimiter)}], ` +
+        `refresco: [${formatActiveTargets(refreshLimiter)}].`
+    );
+  }, HEARTBEAT_CHECK_MS);
+}
+
 /**
  * Abre la fila del ciclo en monitoring_runs, corre las fases y la cierra con
  * los totales de gasto en Apify (ver src/apifyCost.js), pase lo que pase.
@@ -151,21 +199,36 @@ async function runCycle({ ifBusy = 'throw', plataforma, trigger = 'manual' } = {
  * corre igual sin run_id; si falla al cerrar, se loguea.
  */
 async function runCycleUnlocked(plataformas, trigger = 'manual') {
+  const cycleStartedAt = Date.now();
+  const plataformaTexto = plataformas ? plataformas.join(',') : 'todas';
+  console.log(`[ciclo] inicio (trigger=${trigger}, plataforma=${plataformaTexto})`);
+
   let runId = null;
   try {
-    runId = db.startMonitoringRun({ trigger, plataforma: plataformas ? plataformas.join(',') : 'todas' });
+    runId = db.startMonitoringRun({ trigger, plataforma: plataformaTexto });
   } catch (err) {
     console.error('[costo] No se pudo abrir el registro del ciclo:', err.message);
   }
 
   progress.startCycle();
+  const heartbeat = startHeartbeat();
   let newCount = 0;
+  let cycleError = null;
   try {
     const result = await runCyclePhases(plataformas, runId);
     newCount = result.newCount;
     return result;
+  } catch (err) {
+    cycleError = err;
+    throw err;
   } finally {
+    clearInterval(heartbeat);
     progress.endCycle();
+    console.log(
+      `[ciclo] fin (duración ${formatDurationMs(Date.now() - cycleStartedAt)}, resultado=${cycleError ? 'error' : 'ok'}${
+        cycleError ? `: ${cycleError.message}` : ''
+      })`
+    );
     if (runId != null) {
       try {
         console.log(formatCycleCostLine(db.finishMonitoringRun(runId, { newPosts: newCount })));

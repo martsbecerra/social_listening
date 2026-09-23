@@ -30,7 +30,16 @@ const monitor = require('./monitor');
 const progress = require('./monitoringProgress');
 const { getPlatform, listPlatformIds } = require('./platforms');
 const { isQuotaExceeded } = require('./platforms/errors');
-const { apifyLimiter } = require('./apify');
+const { createLimiter } = require('./concurrencyLimiter');
+
+// Limitador PROPIO para el nivel "cuenta" del benchmark — nunca el
+// apifyLimiter de src/apify.js. computeAccountStats termina llamando a
+// runActorSync, que usa ese otro limitador; si esta capa compartiera la
+// MISMA instancia, con maxPerCycle cuentas en vuelo ocupando todos sus
+// cupos, ninguna llegaría a conseguir un cupo para su propia llamada real
+// (deadlock — así se colgó un ciclo real ~30 min, Cambio G). Mismo valor de
+// APIFY_MAX_CONCURRENT, instancia distinta.
+const benchmarkLimiter = createLimiter(Number(process.env.APIFY_MAX_CONCURRENT) || 3, 'benchmark');
 
 // Cuántos posteos recientes pedir por cuenta. Con apidojo la consulta de
 // perfil incluye 10 y cobra 0,0005 usd por cada uno de más; con el actor
@@ -313,12 +322,12 @@ function selectAccountsForRecalc(activityRows, maxPerCycle) {
  *
  * Las cuentas se lanzan TODAS juntas con Promise.allSettled — el orden de
  * llegada de selectAccountsForRecalc decide la prioridad del tope, no el
- * orden de ejecución — y el limitador global de Apify (apifyLimiter, el
- * mismo que usa runActorSync) regula cuántas corren a la vez, igual que ya
- * hace la detección con sus fuentes. Un flag compartido (`quotaExceeded`)
- * hace que, apenas una llamada devuelve cuota agotada, ninguna tarea
- * TODAVÍA no arrancada llegue a llamar a la fuente — las que ya estaban en
- * vuelo terminan igual.
+ * orden de ejecución — y benchmarkLimiter (propio de este módulo, NUNCA el
+ * apifyLimiter de src/apify.js: ver el comentario junto a su declaración)
+ * regula cuántas corren a la vez, igual que ya hace la detección con sus
+ * fuentes. Un flag compartido (`quotaExceeded`) hace que, apenas una
+ * llamada devuelve cuota agotada, ninguna tarea TODAVÍA no arrancada
+ * llegue a llamar a la fuente — las que ya estaban en vuelo terminan igual.
  */
 async function refreshStaleAccountStatsFor(plataforma, { maxPerCycle = MAX_ACCOUNTS_PER_CYCLE } = {}) {
   const activity = db.listAccountBenchmarkActivity(plataforma, BENCHMARK_RECALC_DAYS);
@@ -331,29 +340,30 @@ async function refreshStaleAccountStatsFor(plataforma, { maxPerCycle = MAX_ACCOU
 
   const settled = await Promise.allSettled(
     toProcess.map(({ account }) =>
-      apifyLimiter.run(async () => {
+      benchmarkLimiter.run(async () => {
         if (quotaExceeded) {
           skippedByQuota += 1;
           return { account, skipped: true };
         }
         try {
           const result = await computeAccountStats(account, plataforma);
+          progress.tick(1, { ok: true });
           return { account, result };
         } catch (err) {
-          if (isQuotaExceeded(err)) {
+          const quotaHit = isQuotaExceeded(err);
+          if (quotaHit) {
             quotaExceeded = true;
             if (!quotaLoggedOnce) {
               quotaLoggedOnce = true;
               console.log(`[accountStats] (${plataforma}) cuota de la fuente agotada, cortando la corrida en @${account}.`);
             }
-            return { account, quotaHit: true };
+          } else {
+            console.error(`[accountStats] (${plataforma}) No se pudo recalcular @${account}:`, err.message);
           }
-          console.error(`[accountStats] (${plataforma}) No se pudo recalcular @${account}:`, err.message);
-          return { account, failed: true };
-        } finally {
-          progress.tick();
+          progress.tick(1, { ok: false });
+          return quotaHit ? { account, quotaHit: true } : { account, failed: true };
         }
-      })
+      }, `@${account}`)
     )
   );
 
@@ -523,4 +533,6 @@ module.exports = {
   refreshStaleAccountStats,
   buildAccountStatsMap,
   classifyPostAgainstBenchmark,
+  // Para el heartbeat del ciclo (Cambio G, ver src/scheduler.js).
+  benchmarkLimiter,
 };

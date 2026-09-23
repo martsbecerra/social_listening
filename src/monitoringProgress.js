@@ -20,15 +20,28 @@
 // plataforma sin esa capability (X sin benchmark/refresco, o un ciclo sin
 // búsquedas por palabra clave) simplemente no genera esa fase, sin que haga
 // falta ningún caso especial por plataforma.
+//
+// Cambio G (diagnóstico del cuelgue): cada fase loguea cuándo arranca y
+// cuándo termina (duración, cuántos ticks salieron bien y cuántos mal), y
+// lastActivityAt (todo tick la actualiza) es lo que src/scheduler.js usa
+// para el heartbeat — "hace cuánto que ninguna llamada termina".
 // ==========================================================================
 
-let current = null; // { phase: {label, done, total} | null, totalDone: number, totalWork: number, percent: number }
+let current = null; // { phase, totalDone, totalWork, percent }
+let lastActivityAt = null;
+
+function logPhaseEnd(phase) {
+  const durationMs = Date.now() - phase.startedAt;
+  console.log(`[fase] termina ${phase.label} (${durationMs}ms, ${phase.ok} ok, ${phase.error} error, ${phase.done}/${phase.total})`);
+}
 
 function startCycle() {
   current = { phase: null, totalDone: 0, totalWork: 0, percent: 0 };
+  lastActivityAt = Date.now();
 }
 
 function endCycle() {
+  if (current && current.phase) logPhaseEnd(current.phase);
   current = null;
 }
 
@@ -39,18 +52,23 @@ function recompute() {
 /** Arranca (o reemplaza) la fase visible. Con total <= 0 no hace nada: esa fase no existió para este ciclo. */
 function startPhase(label, total) {
   if (!current || !Number.isFinite(total) || total <= 0) return;
-  current.phase = { label, done: 0, total: Math.floor(total) };
+  if (current.phase) logPhaseEnd(current.phase);
+  current.phase = { label, done: 0, total: Math.floor(total), ok: 0, error: 0, startedAt: Date.now() };
   current.totalWork += current.phase.total;
+  console.log(`[fase] arranca ${label} (total ${current.phase.total})`);
   recompute();
 }
 
-/** Avanza la fase visible en n (default 1). Sin fase activa, no hace nada (llamada de más, inofensiva). */
-function tick(n = 1) {
+/** Avanza la fase visible en n (default 1); {ok:false} cuenta ese paso como error. Sin fase activa, no hace nada (llamada de más, inofensiva). */
+function tick(n = 1, { ok = true } = {}) {
   if (!current || !current.phase) return;
   const step = Math.min(n, current.phase.total - current.phase.done);
   if (step <= 0) return;
   current.phase.done += step;
   current.totalDone += step;
+  if (ok) current.phase.ok += step;
+  else current.phase.error += step;
+  lastActivityAt = Date.now();
   recompute();
 }
 
@@ -60,4 +78,9 @@ function getProgress() {
   return { phase: current.phase.label, done: current.phase.done, total: current.phase.total, percent: current.percent };
 }
 
-module.exports = { startCycle, endCycle, startPhase, tick, getProgress };
+/** Hace cuánto (ms) que no se registra ningún tick — para el heartbeat de src/scheduler.js. null si no hay ciclo corriendo. */
+function getLastActivityAt() {
+  return lastActivityAt;
+}
+
+module.exports = { startCycle, endCycle, startPhase, tick, getProgress, getLastActivityAt };

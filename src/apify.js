@@ -68,7 +68,7 @@
 
 const { createLimiter } = require('./concurrencyLimiter');
 const { getContext } = require('./usageContext');
-const { recordApifyCall } = require('./apifyCost');
+const { recordApifyCall, describeInput } = require('./apifyCost');
 
 // Nombre del actor en la API (el "/" se escribe como "~")
 const APIFY_ACTOR = 'apify~instagram-scraper';
@@ -94,7 +94,35 @@ const REAL_COST_WAIT_SECS = 60;
 const REAL_COST_REQUEST_TIMEOUT_MS = 90000;
 const TERMINAL_STATUSES = ['SUCCEEDED', 'FAILED', 'ABORTED', 'TIMED-OUT'];
 
-const apifyLimiter = createLimiter(APIFY_MAX_CONCURRENT);
+// Cuelgue de ~30 minutos visto en vivo (Cambio G): timeout de seguridad por
+// llamada, aparte del REQUEST_TIMEOUT_MS de cada request HTTP individual —
+// cubre también un bucle de espera que nunca termina. Cada intento de
+// once() (el inicial y el único reintento por 402) lo respeta por separado.
+// Configurable porque una corrida con muchos posteos por consulta puede
+// necesitar más margen que el default.
+const APIFY_CALL_TIMEOUT_MS = Math.max(1000, Math.floor(Number(process.env.APIFY_CALL_TIMEOUT_MS) || 120000));
+
+const apifyLimiter = createLimiter(APIFY_MAX_CONCURRENT, 'apify');
+
+/**
+ * Corta `promise` a los `ms` si no resolvió antes, con un error `code:
+ * 'TIMEOUT'` (mismo tratamiento que QUOTA_EXCEEDED en describeError). No
+ * cancela el trabajo real de fondo (fetch no se puede abortar acá sin
+ * enhebrar un AbortController hasta este punto) — el timer se limpia igual
+ * para no dejar handles colgados.
+ */
+function withTimeout(promise, ms, target) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      const err = new Error(`Apify: se superó el timeout de seguridad (${ms}ms)${target ? ` — target=${target}` : ''}`);
+      err.code = 'TIMEOUT';
+      err.userMessage = 'La consulta a Apify tardó demasiado y se cortó por seguridad. Probá de nuevo en unos minutos.';
+      reject(err);
+    }, ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
 
 /** APIFY_REAL_COST: activado salvo 0 / false / no / off. Se lee en cada llamada. */
 function realCostEnabled() {
@@ -147,13 +175,15 @@ function isConcurrentRunsError(err) {
  * @returns {Promise<Array>} Lista de items scrapeados.
  */
 async function runActorSync(input, { actorId = APIFY_ACTOR, plataforma = 'instagram' } = {}) {
+  const { target } = describeInput(input);
   return apifyLimiter.run(async () => {
     const context = getContext();
+    const phase = (context && context.phase) || 'desconocida';
     const startedAt = Date.now();
     const record = ({ items, error, run }) =>
       recordApifyCall({
         runId: context && context.runId != null ? context.runId : null,
-        phase: (context && context.phase) || 'desconocida',
+        phase,
         plataforma,
         actor: actorId,
         input,
@@ -164,11 +194,20 @@ async function runActorSync(input, { actorId = APIFY_ACTOR, plataforma = 'instag
         // usd_real queda vacío acá a propósito: se concilia después (ver encabezado).
         apifyRunId: run ? run.id : (error && error.apifyRunId) || null,
       });
+    // once() respeta APIFY_CALL_TIMEOUT_MS por intento (Cambio G: un cuelgue
+    // real de ~30 min sin timeout mató el proceso a mano). No cuenta como
+    // "de plataforma" (ver platforms/errors.js): una sola cuenta/hashtag con
+    // timeout se loguea y se sigue, no tira abajo el resto del ciclo.
     const once = () =>
-      usesRealCost(actorId)
-        ? runActorRealCostOnce(input, actorId)
-        : runActorSyncOnce(input, actorId).then((items) => ({ items, run: null }));
+      withTimeout(
+        usesRealCost(actorId)
+          ? runActorRealCostOnce(input, actorId)
+          : runActorSyncOnce(input, actorId).then((items) => ({ items, run: null })),
+        APIFY_CALL_TIMEOUT_MS,
+        target
+      );
 
+    console.log(`[apify] → fase=${phase} target=${target || '(sin target)'} actor=${actorId}`);
     let result;
     try {
       try {
@@ -184,16 +223,24 @@ async function runActorSync(input, { actorId = APIFY_ACTOR, plataforma = 'instag
         result = await once();
       }
     } catch (err) {
+      const durationMs = Date.now() - startedAt;
+      if (err.code === 'TIMEOUT') {
+        console.error(`[apify] ← TIMEOUT target=${target || '(sin target)'} tras ${durationMs}ms (tope ${APIFY_CALL_TIMEOUT_MS}ms)`);
+      } else {
+        console.error(`[apify] ← error target=${target || '(sin target)'} en ${durationMs}ms: ${describeError(err)}`);
+      }
       record({ error: err });
       throw err;
     }
+    console.log(`[apify] ← ok target=${target || '(sin target)'} en ${Date.now() - startedAt}ms, items=${(result.items || []).length}`);
     record({ items: result.items, run: result.run });
     return result.items;
-  });
+  }, target);
 }
 
-/** Texto de la columna `error` de apify_calls: 'QUOTA_EXCEEDED' para la cuota, si no el mensaje acotado. */
+/** Texto de la columna `error` de apify_calls: 'QUOTA_EXCEEDED'/'TIMEOUT' para esos casos, si no el mensaje acotado. */
 function describeError(err) {
+  if (err && err.code === 'TIMEOUT') return 'TIMEOUT';
   if (err && (err.code === 'QUOTA_EXCEEDED' || isQuotaExceededError(err))) return 'QUOTA_EXCEEDED';
   return String((err && err.message) || err || 'error').slice(0, 300);
 }
@@ -488,4 +535,5 @@ module.exports = {
   // Para tests y diagnóstico: el limitador único del proceso y su tope.
   apifyLimiter,
   APIFY_MAX_CONCURRENT,
+  APIFY_CALL_TIMEOUT_MS,
 };

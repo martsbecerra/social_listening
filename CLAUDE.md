@@ -130,11 +130,30 @@ juntas (`Promise.allSettled`) y se muestran como una sola fase combinada
 (ej. benchmark en X) nunca se anuncia, sin casos especiales por plataforma.
 
 `refreshStaleAccountStats` y `refreshPostMetrics` también lanzan sus
-cuentas con `Promise.allSettled`, a través del mismo `apifyLimiter` de
-`src/apify.js` (no uno propio). Un flag compartido corta los lanzamientos
-pendientes apenas una llamada devuelve `QUOTA_EXCEEDED` (las ya en vuelo
-terminan); el benchmark automático no tenía este corte antes, se agregó acá
-porque paralelizar sin él dispararía N llamadas condenadas a la vez.
+cuentas con `Promise.allSettled`, cada uno a través de SU PROPIO limitador
+(`benchmarkLimiter`, `refreshLimiter` en `src/concurrencyLimiter.js`) —
+NUNCA el `apifyLimiter` de `src/apify.js`: compartir esa instancia entre la
+capa "cuenta" y la capa "llamada real" (`runActorSync` usa `apifyLimiter`
+más adentro) es un deadlock real — pasó en producción, colgó ~30 min — con
+`APIFY_MAX_CONCURRENT` cuentas en vuelo ocupando todos los cupos del mismo
+limitador, ninguna consigue uno para su propia llamada. Mismo VALOR de
+`APIFY_MAX_CONCURRENT`, instancia SEPARADA por capa. Un flag compartido
+corta los lanzamientos pendientes apenas una llamada devuelve
+`QUOTA_EXCEEDED` (las ya en vuelo terminan); el benchmark automático no
+tenía este corte antes, se agregó porque paralelizar sin él dispararía N
+llamadas condenadas a la vez.
+
+## Diagnóstico del ciclo (siempre activo, sin flag de DEBUG)
+
+`[ciclo] inicio`/`fin` (scheduler.js), `[fase] arranca`/`termina` con N
+ok/N error (monitoringProgress.js), `[apify] →`/`←` por llamada real y
+`[limiter:<nombre>]` al esperar/adquirir/liberar cupo (concurrencyLimiter.js)
+quedan siempre en consola. Si pasan 15s sin que termine ninguna llamada
+mientras un ciclo está en curso, `[heartbeat]` (scheduler.js) loguea la
+fase actual y qué target tiene cada tarea activa en `apifyLimiter`,
+`benchmarkLimiter` y `refreshLimiter`. `APIFY_CALL_TIMEOUT_MS` (default
+120000, piso 1000) corta cada llamada a Apify que no respondió a tiempo,
+libera su cupo y la deja en `apify_calls` con `error='TIMEOUT'`.
 
 ## Datos que no se tocan
 

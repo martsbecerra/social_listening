@@ -650,10 +650,12 @@ adapter no tiene.
 `refreshStaleAccountStats` (`src/accountStats.js`) y `refreshPostMetrics`
 (`src/metricsRefresh.js`) lanzan todas sus cuentas juntas con
 `Promise.allSettled`, igual que la detección con sus fuentes, en vez de un
-`for` secuencial. El mismo `apifyLimiter` de `src/apify.js` (el de
-`runActorSync`, gobernado por `APIFY_MAX_CONCURRENT`) regula cuántas
-llamadas de cada fase van a la vez — no hay un limitador aparte por fase.
-Los topes por ciclo (`MAX_ACCOUNTS_PER_CYCLE`, `MAX_ACCOUNTS_PER_REFRESH`),
+`for` secuencial. Cada uno regula cuántas llamadas van a la vez con SU
+PROPIO limitador (`benchmarkLimiter`, `refreshLimiter`; mismo valor de
+`APIFY_MAX_CONCURRENT`, instancia separada del `apifyLimiter` de
+`src/apify.js` — ver más abajo "Cuelgue real (~30 min)..." para por qué
+NUNCA tiene que ser la misma instancia). Los topes por ciclo
+(`MAX_ACCOUNTS_PER_CYCLE`, `MAX_ACCOUNTS_PER_REFRESH`),
 la prioridad de posteos recientes del refresco, `rememberFollowers`, el
 registro de costos, las escrituras a la base y el detector de saltos
 siguen igual; solo cambia que las cuentas se piden en paralelo. Corte por
@@ -662,6 +664,33 @@ hace que ninguna cuenta todavía no arrancada llegue a llamar a la fuente
 (las que ya estaban en vuelo terminan). El benchmark automático (antes solo
 lo tenía el refresco) ahora también corta así, en vez de reintentar cada
 cuenta igual hasta agotar la lista.
+
+### Cuelgue real (~30 min) y diagnóstico: dos limitadores nunca deben ser el mismo
+
+Un ciclo real quedó colgado ~30 minutos y hubo que matar el proceso a mano.
+Causa: la primera versión de "benchmark y refresco en paralelo" (arriba)
+envolvía cada cuenta en el MISMO `apifyLimiter` que usa `runActorSync` más
+adentro. Con `APIFY_MAX_CONCURRENT` cuentas en vuelo ocupando **todos** los
+cupos de ese limitador, cuando cada una intenta su propia llamada real a
+Apify, esa llamada pide OTRO cupo del mismo limitador — que ya está
+agotado por las propias cuentas que están esperando esa llamada. Ninguna
+termina nunca: un deadlock real, no un cuelgue de red.
+
+**Arreglo**: `accountStats.js` y `metricsRefresh.js` tienen su propio
+limitador (`benchmarkLimiter`, `refreshLimiter`; mismo valor de
+`APIFY_MAX_CONCURRENT`, instancia **separada** de `apifyLimiter`). Compartir
+el número entre capas está bien; compartir la cola no. `src/concurrencyLimiter.js`
+documenta esto en su encabezado, y `test/concurrencyLimiter.test.js`
+reproduce el deadlock con capas iguales y confirma que capas separadas no
+cuelgan.
+
+**Diagnóstico agregado** (siempre activo, sin flag de `DEBUG`):
+- `[ciclo] inicio`/`[ciclo] fin` (trigger, plataforma, duración, resultado) en `src/scheduler.js`.
+- `[fase] arranca`/`[fase] termina` (duración, N ok, N error) en `src/monitoringProgress.js`, cada vez que una fase empieza o cede lugar a la siguiente.
+- `[apify] →`/`[apify] ←` por cada llamada real (fase, target, actor; al resolver, ok/error, duración, items) en `src/apify.js`.
+- `[limiter:<nombre>]` cuando una tarea espera cupo, lo adquiere o lo libera (activos/cola), en cualquier `createLimiter`.
+- `[heartbeat]`: si pasan 15s sin que termine ninguna llamada mientras un ciclo está en curso, un snapshot de la fase actual y qué target tiene cada tarea activa en `apifyLimiter`, `benchmarkLimiter` y `refreshLimiter` — se repite cada 15s mientras siga sin actividad.
+- `APIFY_CALL_TIMEOUT_MS` (default 120000, piso 1000): cada llamada a Apify se corta a los ms configurados si no respondió, libera su cupo y queda en `apify_calls` con `error='TIMEOUT'`, sin tirar abajo el resto del ciclo.
 
 ### Ventana de detección dinámica (cuentas y hashtags)
 

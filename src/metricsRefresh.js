@@ -36,7 +36,7 @@ const db = require('./db');
 const progress = require('./monitoringProgress');
 const { getPlatform, listPlatformIds } = require('./platforms');
 const { isQuotaExceeded } = require('./platforms/errors');
-const { apifyLimiter } = require('./apify');
+const { createLimiter } = require('./concurrencyLimiter');
 const { BENCHMARK_POST_LIMIT } = require('./accountStats');
 const { pickMetrics, rememberFollowers } = require('./monitor');
 const { checkAndLogJump } = require('./viralJumpDetector');
@@ -47,6 +47,11 @@ const REFRESH_WARM_EVERY_HOURS = Number(process.env.REFRESH_WARM_EVERY_HOURS) ||
 const REFRESH_COLD_EVERY_DAYS = Number(process.env.REFRESH_COLD_EVERY_DAYS) || 7;
 const REFRESH_COLD_MAX_DAYS = Number(process.env.REFRESH_COLD_MAX_DAYS) || 60;
 const MAX_ACCOUNTS_PER_REFRESH = Number(process.env.MAX_ACCOUNTS_PER_REFRESH) || 30;
+
+// Limitador PROPIO del nivel "cuenta" del refresco — nunca el apifyLimiter
+// de src/apify.js (mismo motivo que benchmarkLimiter en accountStats.js: un
+// deadlock real si compartiera instancia con runActorSync, ver Cambio G).
+const refreshLimiter = createLimiter(Number(process.env.APIFY_MAX_CONCURRENT) || 3, 'refresco');
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
@@ -146,14 +151,15 @@ async function refreshPostMetricsFor(plataforma, skipSet) {
   let quotaLoggedOnce = false;
 
   // Las cuentas se lanzan TODAS juntas (Promise.allSettled) — la prioridad
-  // por recencia decide el orden de `prioritized`, no el de ejecución — y el
-  // limitador global de Apify (apifyLimiter, el mismo de runActorSync) regula
-  // cuántas corren a la vez. Un flag compartido corta los LANZAMIENTOS
-  // pendientes apenas una llamada devuelve cuota agotada; las que ya estaban
-  // en vuelo terminan y sus resultados se guardan igual.
+  // por recencia decide el orden de `prioritized`, no el de ejecución — y
+  // refreshLimiter (propio de este módulo, NUNCA el apifyLimiter de
+  // src/apify.js: ver el comentario junto a su declaración) regula cuántas
+  // corren a la vez. Un flag compartido corta los LANZAMIENTOS pendientes
+  // apenas una llamada devuelve cuota agotada; las que ya estaban en vuelo
+  // terminan y sus resultados se guardan igual.
   await Promise.allSettled(
     prioritized.map((account) =>
-      apifyLimiter.run(async () => {
+      refreshLimiter.run(async () => {
         if (quotaExceeded) {
           skippedByQuota += 1;
           return;
@@ -168,13 +174,13 @@ async function refreshPostMetricsFor(plataforma, skipSet) {
               quotaLoggedOnce = true;
               console.log(`[metricsRefresh] (${plataforma}) cuota de la fuente agotada, cortando la corrida en @${account}.`);
             }
-            return;
+          } else {
+            console.error(`[metricsRefresh] (${plataforma}) No se pudo refrescar @${account}:`, err.message);
           }
-          console.error(`[metricsRefresh] (${plataforma}) No se pudo refrescar @${account}:`, err.message);
+          progress.tick(1, { ok: false });
           return;
-        } finally {
-          progress.tick();
         }
+        progress.tick(1, { ok: true });
         accountsChecked += 1;
         resultsConsumed += posts.length;
         // Seguidores que vinieron con los posteos (apidojo): solo la caché;
@@ -194,7 +200,7 @@ async function refreshPostMetricsFor(plataforma, skipSet) {
             checkAndLogJump({ account: result.account, id: post.id, postedAt: result.postedAt, metric: 'likes', previous: result.previousLikes, current: result.likes })
           ) jumpsDetected += 1;
         }
-      })
+      }, `@${account}`)
     )
   );
 
@@ -282,4 +288,6 @@ module.exports = {
   REFRESH_COLD_EVERY_DAYS,
   REFRESH_COLD_MAX_DAYS,
   MAX_ACCOUNTS_PER_REFRESH,
+  // Para el heartbeat del ciclo (Cambio G, ver src/scheduler.js).
+  refreshLimiter,
 };
