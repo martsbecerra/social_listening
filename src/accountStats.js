@@ -27,6 +27,7 @@
 
 const db = require('./db');
 const monitor = require('./monitor');
+const progress = require('./monitoringProgress');
 const { getPlatform, listPlatformIds } = require('./platforms');
 
 // Cuántos posteos recientes pedir por cuenta. Con apidojo la consulta de
@@ -312,6 +313,7 @@ function selectAccountsForRecalc(activityRows, maxPerCycle) {
 async function refreshStaleAccountStatsFor(plataforma, { maxPerCycle = MAX_ACCOUNTS_PER_CYCLE } = {}) {
   const activity = db.listAccountBenchmarkActivity(plataforma, BENCHMARK_RECALC_DAYS);
   const { toProcess, deferred, upToDate } = selectAccountsForRecalc(activity, maxPerCycle);
+  progress.startPhase('Calculando benchmark de cuentas', toProcess.length);
 
   let recalculated = 0;
   let attemptsOnly = 0;
@@ -331,6 +333,8 @@ async function refreshStaleAccountStatsFor(plataforma, { maxPerCycle = MAX_ACCOU
       recalculatedAccounts.push(account);
     } catch (err) {
       console.error(`[accountStats] (${plataforma}) No se pudo recalcular @${account}:`, err.message);
+    } finally {
+      progress.tick();
     }
   }
 

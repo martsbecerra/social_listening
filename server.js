@@ -43,6 +43,7 @@ const db = require('./src/db');
 const monitor = require('./src/monitor');
 const { listPlatformIds, getPlatform } = require('./src/platforms');
 const { startScheduler, runCycle, getCronExpression, getLastRunAt, estimateRunsPerDay, getNextRunAt } = require('./src/scheduler');
+const monitoringProgress = require('./src/monitoringProgress');
 const { processPendingReclamosInBackground } = require('./src/geoWorker');
 const accountStats = require('./src/accountStats');
 const { CATEGORIAS_RECLAMO, ESTADOS_RECLAMO, isValidEstado } = require('./src/categoriaReclamo');
@@ -494,6 +495,14 @@ app.get('/api/monitoring/config', (req, res) => {
 // corrida HH:MM") — la hora sale de la expresión cron real, no está fija.
 app.get('/api/monitoring/status', (req, res) => {
   res.json({ nextRunAt: getNextRunAt(getCronExpression()).toISOString() });
+});
+
+// Progreso real del ciclo en curso (fase + contador + porcentaje), para que
+// "Actualizar ahora" lo muestre en vivo en vez de una barra simulada. null si
+// no hay ningún ciclo corriendo. Mismo control de acceso que el resto de
+// /api/monitoring (el middleware de arriba corre antes que esta ruta).
+app.get('/api/monitoring/progress', (req, res) => {
+  res.json(monitoringProgress.getProgress());
 });
 
 // Menciones detectadas en los últimos 7 días, para el resumen del dashboard,

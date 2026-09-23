@@ -24,6 +24,7 @@ const { refreshStaleAccountStats } = require('./accountStats');
 const { refreshPostMetrics } = require('./metricsRefresh');
 const { runWithContext } = require('./usageContext');
 const { formatCycleCostLine, reconcileRealCosts } = require('./apifyCost');
+const progress = require('./monitoringProgress');
 
 const DEFAULT_CRON = '0 */4 * * *';
 
@@ -157,12 +158,14 @@ async function runCycleUnlocked(plataformas, trigger = 'manual') {
     console.error('[costo] No se pudo abrir el registro del ciclo:', err.message);
   }
 
+  progress.startCycle();
   let newCount = 0;
   try {
     const result = await runCyclePhases(plataformas, runId);
     newCount = result.newCount;
     return result;
   } finally {
+    progress.endCycle();
     if (runId != null) {
       try {
         console.log(formatCycleCostLine(db.finishMonitoringRun(runId, { newPosts: newCount })));

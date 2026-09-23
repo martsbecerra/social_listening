@@ -621,6 +621,30 @@ Efecto en el tiempo: con 13 fuentes y tope 3, un ciclo de Instagram pasa de
 un minuto a unos 3-5 (cada corrida de 15 posteos tarda 30-60 s). El botón
 "Actualizar ahora" espera esa respuesta, como siempre.
 
+### Progreso real de "Actualizar ahora"
+
+Mientras el ciclo corre, `src/monitoringProgress.js` guarda en memoria la
+fase actual (detectando posteos nuevos, detalle de búsquedas, clasificando
+relevancia, benchmark de cuentas, refrescando métricas), cuánto de esa fase
+se completó y un porcentaje global = trabajo completado / trabajo conocido
+hasta ese momento (se recalcula cada vez que una fase arranca y suma su
+propio total). `GET /api/monitoring/progress` (mismo control de acceso que
+el resto de `/api/monitoring`) devuelve `{ phase, done, total, percent }` o
+`null` si no hay ningún ciclo corriendo. El frontend (`public/js/monitoring.js`)
+lo consulta cada 1,5 s mientras espera la respuesta de "Actualizar ahora" y
+pinta la fase y el porcentaje reales en la misma tarjeta de siempre — ya no
+hay frases fijas rotando ni una barra que avanza sola.
+
+Cuentas, hashtags, búsquedas por palabra clave y keywords (X) se lanzan
+todas juntas (`Promise.allSettled`), no son fases secuenciales de verdad:
+se muestran combinadas en una sola fase visible, "Detectando posteos
+nuevos", con un tick por cada llamada que termina. Una fase sin trabajo
+(ej. benchmark en un ciclo de solo X, que no tiene esa capability) nunca se
+anuncia — no hace falta ningún caso especial por plataforma: la solapa de X
+muestra progreso real en "Detectando posteos nuevos" y "Clasificando
+relevancia" igual que Instagram, y simplemente no pasa por las fases que su
+adapter no tiene.
+
 ### Septiembre 2026: cambio de actor de monitoreo
 
 El monitoreo de Instagram pasó de `apify/instagram-scraper` a

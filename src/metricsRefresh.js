@@ -33,6 +33,7 @@
 // ==========================================================================
 
 const db = require('./db');
+const progress = require('./monitoringProgress');
 const { getPlatform, listPlatformIds } = require('./platforms');
 const { isQuotaExceeded } = require('./platforms/errors');
 const { BENCHMARK_POST_LIMIT } = require('./accountStats');
@@ -132,6 +133,7 @@ async function refreshPostMetricsFor(plataforma, skipSet) {
     .sort((a, b) => (b[1] > a[1] ? 1 : b[1] < a[1] ? -1 : 0))
     .slice(0, MAX_ACCOUNTS_PER_REFRESH)
     .map(([account]) => account);
+  progress.startPhase('Refrescando métricas', prioritized.length);
 
   let accountsChecked = 0;
   let resultsConsumed = 0;
@@ -148,11 +150,14 @@ async function refreshPostMetricsFor(plataforma, skipSet) {
       if (isQuotaExceeded(err)) {
         console.log(`[metricsRefresh] (${plataforma}) cuota de la fuente agotada, cortando la corrida en @${account}.`);
         quotaExceeded = true;
+        progress.tick();
         break;
       }
       console.error(`[metricsRefresh] (${plataforma}) No se pudo refrescar @${account}:`, err.message);
+      progress.tick();
       continue;
     }
+    progress.tick();
     accountsChecked += 1;
     resultsConsumed += posts.length;
     // Seguidores que vinieron con los posteos (apidojo): solo la caché;

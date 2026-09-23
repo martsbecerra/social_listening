@@ -106,6 +106,20 @@ purga a los 30 días. Si el run falla entero no se anota nada.
   (monitoreo · busqueda · benchmark · refresco)`, `npm run costo` y
   `GET /api/monitoring/costs`.
 
+## Ciclo de monitoreo: progreso real
+
+`src/monitoringProgress.js` guarda en memoria la fase del ciclo en curso
+(detectando posteos, detalle de búsquedas, clasificando relevancia,
+benchmark, refresco), su contador y un porcentaje global (trabajo
+completado / trabajo conocido, recalculado en cada `startPhase`).
+`GET /api/monitoring/progress` (mismo control de acceso que el resto de
+`/api/monitoring`) lo expone; `null` sin ciclo corriendo. El frontend lo
+consulta cada 1,5s mientras espera "Actualizar ahora" — ya no hay frases
+fijas ni barra simulada. Cuentas, hashtags, búsquedas y keywords se lanzan
+juntas (`Promise.allSettled`) y se muestran como una sola fase combinada
+("Detectando posteos nuevos"); una fase sin trabajo para esa plataforma
+(ej. benchmark en X) nunca se anuncia, sin casos especiales por plataforma.
+
 ## Datos que no se tocan
 
 - `detected_posts.id` es el id numérico de Instagram y `url` es

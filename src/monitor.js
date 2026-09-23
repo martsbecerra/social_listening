@@ -48,6 +48,7 @@ const { checkAndLogJump } = require('./viralJumpDetector');
 const { getPlatform, listPlatformIds, DEFAULT_PLATFORM_ID } = require('./platforms');
 const { isPlatformError } = require('./platforms/errors');
 const { runWithContext } = require('./usageContext');
+const progress = require('./monitoringProgress');
 const db = require('./db');
 
 // MONITORING_CONFIG_PATH: solo para tests (tempfile), mismo patrón que
@@ -647,6 +648,7 @@ async function enrichSearchResults(platform, platformId, postsById) {
   const batch = candidates.slice(0, limit);
   stats.requested = batch.length;
   stats.deferred = candidates.length - batch.length;
+  progress.startPhase('Detalle de búsquedas', batch.length);
 
   let details;
   try {
@@ -672,6 +674,7 @@ async function enrichSearchResults(platform, platformId, postsById) {
   }
 
   for (const post of batch) {
+    progress.tick();
     const detail = byId.get(String(post.id)) || byCode.get(postCodeOf(post.url));
     if (!detail) {
       stats.noDetail += 1;
@@ -790,15 +793,27 @@ async function runMonitoringCycle({ plataformas } = {}) {
 
     // Cada búsqueda va en la fase 'busqueda' del registro de gasto
     // (src/apifyCost.js), heredando el ciclo del contexto del scheduler.
+    // Las cuatro fuentes se lanzan juntas (no son fases secuenciales de
+    // verdad): el progreso las junta en una sola fase visible, con un tick
+    // por cada llamada que termina (bien o mal) — ver src/monitoringProgress.js.
+    const detectionTotal =
+      accounts.length + hashtagTags.length + (canSearchKeywords ? textKeywords.length : 0) + (canSearch ? searches.length : 0);
+    progress.startPhase('Detectando posteos nuevos', detectionTotal);
+    const tickDetection = () => progress.tick();
+
     const sourceResults = await Promise.allSettled([
-      ...accounts.map((account) => platform.scrapeAccount(account, { resultsLimit: limits.account, lookback })),
-      ...hashtagTags.map((tag) => platform.scrapeHashtag(tag, { resultsLimit: limits.hashtag, lookback })),
+      ...accounts.map((account) => platform.scrapeAccount(account, { resultsLimit: limits.account, lookback }).finally(tickDetection)),
+      ...hashtagTags.map((tag) => platform.scrapeHashtag(tag, { resultsLimit: limits.hashtag, lookback }).finally(tickDetection)),
       ...(canSearchKeywords
-        ? textKeywords.map((keyword) => platform.scrapeKeyword(keyword, { resultsLimit: limits.search, lookback }))
+        ? textKeywords.map((keyword) =>
+            platform.scrapeKeyword(keyword, { resultsLimit: limits.search, lookback }).finally(tickDetection)
+          )
         : []),
       ...(canSearch
         ? searches.map((term) =>
-            runWithContext({ phase: 'busqueda' }, () => platform.scrapeSearch(term, { resultsLimit: limits.search, lookback }))
+            runWithContext({ phase: 'busqueda' }, () => platform.scrapeSearch(term, { resultsLimit: limits.search, lookback })).finally(
+              tickDetection
+            )
           )
         : []),
     ]);
@@ -853,6 +868,11 @@ async function runMonitoringCycle({ plataformas } = {}) {
     if (enrichment.stats) porPlataforma[platformId].searchEnrichment = enrichment.stats;
     if (enrichment.platformError && !platformError) platformError = enrichment.platformError;
 
+    // Total real de la fase de clasificación: solo los posteos NUEVOS pasan
+    // por evaluateRelevance (los ya conocidos abajo solo se refrescan gratis).
+    const pendingClassification = [...seenInThisRun.values()].filter((post) => !db.findExistingPostId(post.id, post.url)).length;
+    progress.startPhase('Clasificando relevancia', pendingClassification);
+
     for (const post of seenInThisRun.values()) {
       // Por id o por url: si el scraper cambia el campo con el que armamos el
       // id, la URL sigue siendo la misma pieza y no hay que re-clasificarla.
@@ -872,6 +892,7 @@ async function runMonitoringCycle({ plataformas } = {}) {
       }
 
       const evaluation = await evaluateRelevance(post, plainKeywords, { platform });
+      progress.tick();
       // Un resultado de búsqueda con el detalle ya pagado queda anotado con
       // lo que se decidió: descartado no se vuelve a consultar ni a evaluar.
       const paidDetail = enrichment.enriched.has(post.id);

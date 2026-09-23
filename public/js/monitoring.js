@@ -1088,60 +1088,43 @@ async function loadNextRun() {
 }
 
 // --------------------------------------------------------------------
-// Barra de progreso "simulada", igual que en el análisis de publicación:
-// el backend no avisa en tiempo real cómo va el ciclo (una sola llamada
-// que responde al final), así que animamos una barra que avanza rápido al
-// principio y se frena cerca del 92%, más mensajes rotativos, para que se
-// vea que algo está pasando mientras se espera.
+// Progreso real del ciclo (GET /api/monitoring/progress, ver
+// src/monitoringProgress.js): mientras "Actualizar ahora" está en curso,
+// se consulta cada PROGRESS_POLL_MS y se muestra la fase con su contador
+// real y el porcentaje real. null (sin ciclo corriendo, o entre el fetch
+// inicial y que el scheduler arranque la primera fase) deja el texto/barra
+// como estaban, no los pisa con nada inventado.
 // --------------------------------------------------------------------
-const MONITOR_LOADING_MESSAGES = IS_X_MONITOR
-  ? [
-      'Buscando posteos nuevos con Grok…',
-      'Revisando las cuentas y palabras clave…',
-      'Evaluando relevancia…',
-      'Clasificando título y sentimiento…',
-      'Guardando resultados…',
-    ]
-  : [
-      'Buscando posteos nuevos en las cuentas trackeadas…',
-      'Revisando los hashtags configurados…',
-      'Evaluando relevancia con IA…',
-      'Clasificando título y sentimiento…',
-      'Guardando resultados…',
-    ];
+const PROGRESS_POLL_MS = 1500;
+let progressPollTimer = null;
 
-let monitorProgressTimer = null;
-let monitorMessageTimer = null;
+async function pollMonitorProgress() {
+  try {
+    const resp = await fetch(withPlataforma('/api/monitoring/progress'));
+    if (!resp.ok) return;
+    const data = await resp.json();
+    if (!data) return;
+    monitoringStatusTextEl.textContent = `${data.phase} · ${data.done} de ${data.total}`;
+    monitoringProgressFillEl.style.width = `${data.percent}%`;
+  } catch (err) {
+    // Un fallo puntual de polling no tiene que interrumpir la espera del
+    // resultado real (runNow sigue esperando su propio fetch).
+  }
+}
 
 function startMonitorLoading() {
   monitoringResultEl.classList.add('hidden');
   monitoringStatusCard.classList.remove('hidden');
-
-  let pct = 0;
+  monitoringStatusTextEl.textContent = IS_X_MONITOR ? 'Buscando posteos nuevos con Grok…' : 'Buscando posteos nuevos…';
   monitoringProgressFillEl.style.width = '0%';
 
-  monitorProgressTimer = setInterval(() => {
-    const restante = 92 - pct;
-    pct += Math.max(0.3, restante * 0.04);
-    if (pct > 92) pct = 92;
-    monitoringProgressFillEl.style.width = pct + '%';
-  }, 200);
-
-  let msgIndex = 0;
-  monitoringStatusTextEl.textContent = MONITOR_LOADING_MESSAGES[0];
-  monitorMessageTimer = setInterval(() => {
-    msgIndex = (msgIndex + 1) % MONITOR_LOADING_MESSAGES.length;
-    monitoringStatusTextEl.style.opacity = 0;
-    setTimeout(() => {
-      monitoringStatusTextEl.textContent = MONITOR_LOADING_MESSAGES[msgIndex];
-      monitoringStatusTextEl.style.opacity = 1;
-    }, 250);
-  }, 2500);
+  pollMonitorProgress();
+  progressPollTimer = setInterval(pollMonitorProgress, PROGRESS_POLL_MS);
 }
 
 function stopMonitorLoading(exito) {
-  clearInterval(monitorProgressTimer);
-  clearInterval(monitorMessageTimer);
+  clearInterval(progressPollTimer);
+  progressPollTimer = null;
 
   if (exito) {
     monitoringProgressFillEl.style.width = '100%';
