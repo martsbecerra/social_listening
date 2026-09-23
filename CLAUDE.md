@@ -120,6 +120,13 @@ juntas (`Promise.allSettled`) y se muestran como una sola fase combinada
 ("Detectando posteos nuevos"); una fase sin trabajo para esa plataforma
 (ej. benchmark en X) nunca se anuncia, sin casos especiales por plataforma.
 
+`refreshStaleAccountStats` y `refreshPostMetrics` también lanzan sus
+cuentas con `Promise.allSettled`, a través del mismo `apifyLimiter` de
+`src/apify.js` (no uno propio). Un flag compartido corta los lanzamientos
+pendientes apenas una llamada devuelve `QUOTA_EXCEEDED` (las ya en vuelo
+terminan); el benchmark automático no tenía este corte antes, se agregó acá
+porque paralelizar sin él dispararía N llamadas condenadas a la vez.
+
 ## Datos que no se tocan
 
 - `detected_posts.id` es el id numérico de Instagram y `url` es

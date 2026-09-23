@@ -645,6 +645,24 @@ muestra progreso real en "Detectando posteos nuevos" y "Clasificando
 relevancia" igual que Instagram, y simplemente no pasa por las fases que su
 adapter no tiene.
 
+### Benchmark y refresco de métricas en paralelo
+
+`refreshStaleAccountStats` (`src/accountStats.js`) y `refreshPostMetrics`
+(`src/metricsRefresh.js`) lanzan todas sus cuentas juntas con
+`Promise.allSettled`, igual que la detección con sus fuentes, en vez de un
+`for` secuencial. El mismo `apifyLimiter` de `src/apify.js` (el de
+`runActorSync`, gobernado por `APIFY_MAX_CONCURRENT`) regula cuántas
+llamadas de cada fase van a la vez — no hay un limitador aparte por fase.
+Los topes por ciclo (`MAX_ACCOUNTS_PER_CYCLE`, `MAX_ACCOUNTS_PER_REFRESH`),
+la prioridad de posteos recientes del refresco, `rememberFollowers`, el
+registro de costos, las escrituras a la base y el detector de saltos
+siguen igual; solo cambia que las cuentas se piden en paralelo. Corte por
+cuota: apenas una llamada devuelve `QUOTA_EXCEEDED`, un flag compartido
+hace que ninguna cuenta todavía no arrancada llegue a llamar a la fuente
+(las que ya estaban en vuelo terminan). El benchmark automático (antes solo
+lo tenía el refresco) ahora también corta así, en vez de reintentar cada
+cuenta igual hasta agotar la lista.
+
 ### Septiembre 2026: cambio de actor de monitoreo
 
 El monitoreo de Instagram pasó de `apify/instagram-scraper` a

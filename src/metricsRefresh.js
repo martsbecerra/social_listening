@@ -36,6 +36,7 @@ const db = require('./db');
 const progress = require('./monitoringProgress');
 const { getPlatform, listPlatformIds } = require('./platforms');
 const { isQuotaExceeded } = require('./platforms/errors');
+const { apifyLimiter } = require('./apify');
 const { BENCHMARK_POST_LIMIT } = require('./accountStats');
 const { pickMetrics, rememberFollowers } = require('./monitor');
 const { checkAndLogJump } = require('./viralJumpDetector');
@@ -141,43 +142,61 @@ async function refreshPostMetricsFor(plataforma, skipSet) {
   let postsMatched = 0;
   let jumpsDetected = 0;
   let quotaExceeded = false;
+  let skippedByQuota = 0;
+  let quotaLoggedOnce = false;
 
-  for (const account of prioritized) {
-    let posts;
-    try {
-      posts = await platform.scrapeAccount(account, { resultsLimit: BENCHMARK_POST_LIMIT, lookback: undefined });
-    } catch (err) {
-      if (isQuotaExceeded(err)) {
-        console.log(`[metricsRefresh] (${plataforma}) cuota de la fuente agotada, cortando la corrida en @${account}.`);
-        quotaExceeded = true;
-        progress.tick();
-        break;
-      }
-      console.error(`[metricsRefresh] (${plataforma}) No se pudo refrescar @${account}:`, err.message);
-      progress.tick();
-      continue;
-    }
-    progress.tick();
-    accountsChecked += 1;
-    resultsConsumed += posts.length;
-    // Seguidores que vinieron con los posteos (apidojo): solo la caché;
-    // propagarlos a las filas guardadas sigue siendo cosa del benchmark.
-    rememberFollowers(posts, plataforma);
+  // Las cuentas se lanzan TODAS juntas (Promise.allSettled) — la prioridad
+  // por recencia decide el orden de `prioritized`, no el de ejecución — y el
+  // limitador global de Apify (apifyLimiter, el mismo de runActorSync) regula
+  // cuántas corren a la vez. Un flag compartido corta los LANZAMIENTOS
+  // pendientes apenas una llamada devuelve cuota agotada; las que ya estaban
+  // en vuelo terminan y sus resultados se guardan igual.
+  await Promise.allSettled(
+    prioritized.map((account) =>
+      apifyLimiter.run(async () => {
+        if (quotaExceeded) {
+          skippedByQuota += 1;
+          return;
+        }
+        let posts;
+        try {
+          posts = await platform.scrapeAccount(account, { resultsLimit: BENCHMARK_POST_LIMIT, lookback: undefined });
+        } catch (err) {
+          if (isQuotaExceeded(err)) {
+            quotaExceeded = true;
+            if (!quotaLoggedOnce) {
+              quotaLoggedOnce = true;
+              console.log(`[metricsRefresh] (${plataforma}) cuota de la fuente agotada, cortando la corrida en @${account}.`);
+            }
+            return;
+          }
+          console.error(`[metricsRefresh] (${plataforma}) No se pudo refrescar @${account}:`, err.message);
+          return;
+        } finally {
+          progress.tick();
+        }
+        accountsChecked += 1;
+        resultsConsumed += posts.length;
+        // Seguidores que vinieron con los posteos (apidojo): solo la caché;
+        // propagarlos a las filas guardadas sigue siendo cosa del benchmark.
+        rememberFollowers(posts, plataforma);
 
-    for (const post of posts) {
-      const result = db.applyMetricsRefresh(post.id, pickMetrics(platform, post));
-      if (!result) continue; // no estaba guardado -> no corresponde tocarlo (eso es cosa de runMonitoringCycle)
-      postsMatched += 1;
-      if (result.changed) rowsUpdated += 1;
+        for (const post of posts) {
+          const result = db.applyMetricsRefresh(post.id, pickMetrics(platform, post));
+          if (!result) continue; // no estaba guardado -> no corresponde tocarlo (eso es cosa de runMonitoringCycle)
+          postsMatched += 1;
+          if (result.changed) rowsUpdated += 1;
 
-      if (
-        checkAndLogJump({ account: result.account, id: post.id, postedAt: result.postedAt, metric: 'comentarios', previous: result.previousComments, current: result.comments })
-      ) jumpsDetected += 1;
-      if (
-        checkAndLogJump({ account: result.account, id: post.id, postedAt: result.postedAt, metric: 'likes', previous: result.previousLikes, current: result.likes })
-      ) jumpsDetected += 1;
-    }
-  }
+          if (
+            checkAndLogJump({ account: result.account, id: post.id, postedAt: result.postedAt, metric: 'comentarios', previous: result.previousComments, current: result.comments })
+          ) jumpsDetected += 1;
+          if (
+            checkAndLogJump({ account: result.account, id: post.id, postedAt: result.postedAt, metric: 'likes', previous: result.previousLikes, current: result.likes })
+          ) jumpsDetected += 1;
+        }
+      })
+    )
+  );
 
   // Las marcas de pase NO se avanzan si se cortó por cuota — mejor
   // reintentar antes en el próximo ciclo que esperar el intervalo completo
@@ -192,7 +211,8 @@ async function refreshPostMetricsFor(plataforma, skipSet) {
   console.log(
     `[metricsRefresh] (${plataforma}) ${hotCount} posteos en tramo caliente, ${warmCount} en tibio, ${coldCount} en frío, ` +
       `${accountsChecked} cuentas consultadas, ${resultsConsumed} resultados consumidos, ` +
-      `${rowsUpdated} filas actualizadas, ${jumpsDetected} saltos detectados`
+      `${rowsUpdated} filas actualizadas, ${jumpsDetected} saltos detectados` +
+      (skippedByQuota > 0 ? `; ${skippedByQuota} cuenta(s) no se intentaron por corte de cuota` : '')
   );
 
   // Falla silenciosa: si se consultaron cuentas de verdad pero ni un solo

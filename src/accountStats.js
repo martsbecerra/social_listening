@@ -29,6 +29,8 @@ const db = require('./db');
 const monitor = require('./monitor');
 const progress = require('./monitoringProgress');
 const { getPlatform, listPlatformIds } = require('./platforms');
+const { isQuotaExceeded } = require('./platforms/errors');
+const { apifyLimiter } = require('./apify');
 
 // Cuántos posteos recientes pedir por cuenta. Con apidojo la consulta de
 // perfil incluye 10 y cobra 0,0005 usd por cada uno de más; con el actor
@@ -307,13 +309,53 @@ function selectAccountsForRecalc(activityRows, maxPerCycle) {
  * Recalcula, para UNA plataforma, las cuentas que aparecieron con un posteo
  * nuevo en detected_posts y nunca se calcularon o cuyo último cálculo tiene
  * BENCHMARK_RECALC_DAYS o más días al momento de detectar ese posteo. Como
- * mucho `maxPerCycle` por corrida, en orden de llegada. Ver
- * refreshStaleAccountStats.
+ * mucho `maxPerCycle` por corrida. Ver refreshStaleAccountStats.
+ *
+ * Las cuentas se lanzan TODAS juntas con Promise.allSettled — el orden de
+ * llegada de selectAccountsForRecalc decide la prioridad del tope, no el
+ * orden de ejecución — y el limitador global de Apify (apifyLimiter, el
+ * mismo que usa runActorSync) regula cuántas corren a la vez, igual que ya
+ * hace la detección con sus fuentes. Un flag compartido (`quotaExceeded`)
+ * hace que, apenas una llamada devuelve cuota agotada, ninguna tarea
+ * TODAVÍA no arrancada llegue a llamar a la fuente — las que ya estaban en
+ * vuelo terminan igual.
  */
 async function refreshStaleAccountStatsFor(plataforma, { maxPerCycle = MAX_ACCOUNTS_PER_CYCLE } = {}) {
   const activity = db.listAccountBenchmarkActivity(plataforma, BENCHMARK_RECALC_DAYS);
   const { toProcess, deferred, upToDate } = selectAccountsForRecalc(activity, maxPerCycle);
   progress.startPhase('Calculando benchmark de cuentas', toProcess.length);
+
+  let quotaExceeded = false;
+  let skippedByQuota = 0;
+  let quotaLoggedOnce = false;
+
+  const settled = await Promise.allSettled(
+    toProcess.map(({ account }) =>
+      apifyLimiter.run(async () => {
+        if (quotaExceeded) {
+          skippedByQuota += 1;
+          return { account, skipped: true };
+        }
+        try {
+          const result = await computeAccountStats(account, plataforma);
+          return { account, result };
+        } catch (err) {
+          if (isQuotaExceeded(err)) {
+            quotaExceeded = true;
+            if (!quotaLoggedOnce) {
+              quotaLoggedOnce = true;
+              console.log(`[accountStats] (${plataforma}) cuota de la fuente agotada, cortando la corrida en @${account}.`);
+            }
+            return { account, quotaHit: true };
+          }
+          console.error(`[accountStats] (${plataforma}) No se pudo recalcular @${account}:`, err.message);
+          return { account, failed: true };
+        } finally {
+          progress.tick();
+        }
+      })
+    )
+  );
 
   let recalculated = 0;
   let attemptsOnly = 0;
@@ -322,20 +364,15 @@ async function refreshStaleAccountStatsFor(plataforma, { maxPerCycle = MAX_ACCOU
   let postsUpdated = 0;
   const recalculatedAccounts = [];
 
-  for (const { account } of toProcess) {
-    try {
-      const result = await computeAccountStats(account, plataforma);
-      recalculated += 1;
-      if (result.attemptOnly) attemptsOnly += 1;
-      resultsConsumed += result.fetched;
-      followersChecked += result.followersChecked;
-      postsUpdated += result.postsUpdated;
-      recalculatedAccounts.push(account);
-    } catch (err) {
-      console.error(`[accountStats] (${plataforma}) No se pudo recalcular @${account}:`, err.message);
-    } finally {
-      progress.tick();
-    }
+  for (const outcome of settled) {
+    const r = outcome.status === 'fulfilled' ? outcome.value : null;
+    if (!r || r.skipped || r.quotaHit || r.failed) continue;
+    recalculated += 1;
+    if (r.result.attemptOnly) attemptsOnly += 1;
+    resultsConsumed += r.result.fetched;
+    followersChecked += r.result.followersChecked;
+    postsUpdated += r.result.postsUpdated;
+    recalculatedAccounts.push(r.account);
   }
 
   console.log(
@@ -344,7 +381,8 @@ async function refreshStaleAccountStatsFor(plataforma, { maxPerCycle = MAX_ACCOU
       `, ${upToDate} al día` +
       (deferred > 0 ? `, ${deferred} quedan para el próximo ciclo (tope ${maxPerCycle})` : '') +
       `; ${resultsConsumed} resultados consumidos, ${followersChecked} consultas de seguidores, ` +
-      `${postsUpdated} posteos actualizados`
+      `${postsUpdated} posteos actualizados` +
+      (skippedByQuota > 0 ? `; ${skippedByQuota} cuenta(s) no se intentaron por corte de cuota` : '')
   );
 
   return {
@@ -357,6 +395,7 @@ async function refreshStaleAccountStatsFor(plataforma, { maxPerCycle = MAX_ACCOU
     deferred,
     withPosts: activity.length,
     recalculatedAccounts,
+    quotaExceeded,
   };
 }
 
@@ -394,6 +433,7 @@ async function refreshStaleAccountStats({ plataformas, maxPerCycle = MAX_ACCOUNT
     withPosts: 0,
     recalculatedAccounts: {},
     porPlataforma: {},
+    quotaExceeded: false,
   };
   for (const plataforma of benchmarkPlatformIds(plataformas)) {
     const result = await refreshStaleAccountStatsFor(plataforma, { maxPerCycle });
@@ -402,6 +442,7 @@ async function refreshStaleAccountStats({ plataformas, maxPerCycle = MAX_ACCOUNT
     for (const key of ['recalculated', 'attemptsOnly', 'resultsConsumed', 'followersChecked', 'postsUpdated', 'upToDate', 'deferred', 'withPosts']) {
       totals[key] += result[key];
     }
+    totals.quotaExceeded = totals.quotaExceeded || result.quotaExceeded;
   }
   return totals;
 }
