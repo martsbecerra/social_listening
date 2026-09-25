@@ -519,20 +519,27 @@ app.get('/api/footer-stats', (req, res) => {
 });
 
 // Ignora un registro puntual de la tabla (cruz de la fila). La fila queda
-// en SQLite con ignored=1 para no re-detectarlo; deja de listarse.
+// en SQLite con ignored=1 para no re-detectarlo; deja de listarse. Solo si
+// el posteo es de la plataforma de la solapa: desde Instagram no se ignora
+// un posteo de X aunque se conozca su id.
 app.post('/api/monitoring/posts/:id/ignore', (req, res) => {
-  db.ignorePost(req.params.id);
+  if (!db.ignorePost(req.params.id, monitoringPlataforma(req))) {
+    return res.status(404).json({ error: 'Ese posteo no existe en esta plataforma.' });
+  }
   res.json({ ok: true });
 });
 
 // Corrige a mano el sentimiento de un registro (por si Haiku se equivocó).
+// Mismo contrato: id Y plataforma.
 const VALID_SENTIMENTS = ['positivo', 'neutral', 'negativo'];
 app.patch('/api/monitoring/posts/:id', (req, res) => {
   const { sentiment } = req.body || {};
   if (!VALID_SENTIMENTS.includes(sentiment)) {
     return res.status(400).json({ error: 'Sentimiento inválido.' });
   }
-  db.updateSentiment(req.params.id, sentiment);
+  if (!db.updateSentiment(req.params.id, sentiment, monitoringPlataforma(req))) {
+    return res.status(404).json({ error: 'Ese posteo no existe en esta plataforma.' });
+  }
   res.json({ ok: true });
 });
 

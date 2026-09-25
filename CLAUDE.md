@@ -167,7 +167,9 @@ sigue. Dominio desconocido = null, nunca "instagram por defecto". El
 análisis de publicación valida con `checkAnalyzeUrl(url, plataforma)` del
 mismo módulo antes de llamar a Apify/Grok: otra red → 400 "Esta sección
 solo analiza publicaciones de <red>"; el cliente repite solo el chequeo de
-dominio.
+dominio. Ignorar y corregir sentimiento van por id Y plataforma
+(`db.ignorePost`, `db.updateSentiment`: 404 desde otra solapa; sin
+plataforma tiran).
 
 ## Datos que no se tocan
 

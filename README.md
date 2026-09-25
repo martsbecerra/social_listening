@@ -744,6 +744,13 @@ lo que no es una url también. El cliente (`analysis.js`, `x-analysis.js`)
 repite solo el chequeo de dominio para avisar al instante sin request; el
 server es quien manda.
 
+**Acciones de la tabla**: ignorar (`POST /api/monitoring/posts/:id/ignore`)
+y corregir sentimiento (`PATCH /api/monitoring/posts/:id`) van por id **y**
+plataforma (`db.ignorePost(id, plataforma)`, `db.updateSentiment(id,
+sentiment, plataforma)`): un id de otra red responde 404 y no toca nada,
+aunque los ids ya sean únicos entre redes. Sin plataforma, las funciones
+tiran: no hay default a Instagram.
+
 ### Septiembre 2026: cambio de actor de monitoreo
 
 El monitoreo de Instagram pasó de `apify/instagram-scraper` a

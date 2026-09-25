@@ -165,12 +165,24 @@ const listUnclassifiedByPlataformaStmt = db.prepare(
   'SELECT id, caption FROM detected_posts WHERE title IS NULL AND ignored = 0 AND plataforma = ? ORDER BY detected_at ASC'
 );
 const updateClassificationStmt = db.prepare('UPDATE detected_posts SET title = ?, sentiment = ? WHERE id = ?');
-const updateSentimentStmt = db.prepare('UPDATE detected_posts SET sentiment = ? WHERE id = ?');
+// Las acciones de la tabla (ignorar, corregir sentimiento) van por id Y
+// plataforma: desde la solapa de Instagram no se toca un posteo de X aunque
+// se conozca su id (los ids ya son únicos entre redes, esto es el contrato).
+const postExistsInPlataformaStmt = db.prepare('SELECT 1 FROM detected_posts WHERE id = ? AND plataforma = ?');
+const updateSentimentStmt = db.prepare('UPDATE detected_posts SET sentiment = ? WHERE id = ? AND plataforma = ?');
 // Solo la primera vez: si ya estaba ignorado, ignored_at se conserva.
 const ignorePostStmt = db.prepare(
-  'UPDATE detected_posts SET ignored = 1, ignored_at = ? WHERE id = ? AND ignored = 0'
+  'UPDATE detected_posts SET ignored = 1, ignored_at = ? WHERE id = ? AND ignored = 0 AND plataforma = ?'
 );
 const getPostIgnoredAtStmt = db.prepare('SELECT ignored, ignored_at FROM detected_posts WHERE id = ?');
+
+/** Las funciones por plataforma no tienen default: sin ella es un error de programación, no "instagram". */
+function requirePlataforma(plataforma, fn) {
+  if (typeof plataforma !== 'string' || !plataforma.trim()) {
+    throw new Error(`${fn}: falta plataforma (instagram | x); no hay default.`);
+  }
+  return plataforma;
+}
 
 // La forma vieja de `reclamos` (source/username/comment_text/lat/lng/tematica
 // libre) es incompatible con el esquema de categorías cerradas + USIG. La
@@ -921,10 +933,13 @@ function updateClassification(id, { title, sentiment }) {
 
 /**
  * Corrección manual del sentimiento de un registro (por si Haiku se
- * equivocó). No toca el título ni ningún otro campo.
+ * equivocó). No toca el título ni ningún otro campo. Solo si el posteo es
+ * de ESA plataforma.
+ * @returns {boolean} true si existía en esa plataforma y se actualizó.
  */
-function updateSentiment(id, sentiment) {
-  updateSentimentStmt.run(sentiment, id);
+function updateSentiment(id, sentiment, plataforma) {
+  requirePlataforma(plataforma, 'updateSentiment');
+  return updateSentimentStmt.run(sentiment, id, plataforma).changes > 0;
 }
 
 /**
@@ -932,10 +947,15 @@ function updateSentiment(id, sentiment) {
  * se queda: findExistingPostId y el unique de url siguen viéndola, así que
  * la próxima corrida no la re-detecta ni re-notifica. No hay deshacer en
  * la UI; ignored_at queda para auditoría. Si ya estaba ignorado, no pisa
- * la fecha original.
+ * la fecha original. Solo si el posteo es de ESA plataforma.
+ * @returns {boolean} true si el posteo existe en esa plataforma (ignorado
+ *   recién o de antes); false si no existe ahí — nada se toca.
  */
-function ignorePost(id) {
-  ignorePostStmt.run(new Date().toISOString(), id);
+function ignorePost(id, plataforma) {
+  requirePlataforma(plataforma, 'ignorePost');
+  if (!postExistsInPlataformaStmt.get(id, plataforma)) return false;
+  ignorePostStmt.run(new Date().toISOString(), id, plataforma);
+  return true;
 }
 
 function getPostIgnoreState(id) {
