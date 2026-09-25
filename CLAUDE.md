@@ -152,8 +152,9 @@ quedan siempre en consola. Si pasan 15s sin que termine ninguna llamada
 mientras un ciclo está en curso, `[heartbeat]` (scheduler.js) loguea la
 fase actual y qué target tiene cada tarea activa en `apifyLimiter`,
 `benchmarkLimiter` y `refreshLimiter`. `APIFY_CALL_TIMEOUT_MS` (default
-120000, piso 1000) corta cada llamada a Apify que no respondió a tiempo,
-libera su cupo y la deja en `apify_calls` con `error='TIMEOUT'`.
+300000, piso 1000; una llamada cortada se cobra igual y pierde sus
+resultados, por eso es holgado) corta cada llamada a Apify que no respondió
+a tiempo, libera su cupo y la deja en `apify_calls` con `error='TIMEOUT'`.
 
 ## Clasificación con contexto (LLM del monitoreo)
 

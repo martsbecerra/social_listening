@@ -836,7 +836,7 @@ cuelgan.
 - `[apify] →`/`[apify] ←` por cada llamada real (fase, target, actor; al resolver, ok/error, duración, items) en `src/apify.js`.
 - `[limiter:<nombre>]` cuando una tarea espera cupo, lo adquiere o lo libera (activos/cola), en cualquier `createLimiter`.
 - `[heartbeat]`: si pasan 15s sin que termine ninguna llamada mientras un ciclo está en curso, un snapshot de la fase actual y qué target tiene cada tarea activa en `apifyLimiter`, `benchmarkLimiter` y `refreshLimiter` — se repite cada 15s mientras siga sin actividad.
-- `APIFY_CALL_TIMEOUT_MS` (default 120000, piso 1000): cada llamada a Apify se corta a los ms configurados si no respondió, libera su cupo y queda en `apify_calls` con `error='TIMEOUT'`, sin tirar abajo el resto del ciclo.
+- `APIFY_CALL_TIMEOUT_MS` (default 300000, piso 1000; era 120000 y hubo consultas reales de más de 100 s que quedaban al borde): cada llamada a Apify se corta a los ms configurados si no respondió, libera su cupo y queda en `apify_calls` con `error='TIMEOUT'`, sin tirar abajo el resto del ciclo. Una llamada cortada se cobra igual y sus resultados se pierden: el tope es contra el cuelgue, no contra una consulta lenta.
 
 ### Ventana de detección dinámica (búsquedas en Instagram; cuentas y hashtags en X)
 

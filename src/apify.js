@@ -98,9 +98,10 @@ const TERMINAL_STATUSES = ['SUCCEEDED', 'FAILED', 'ABORTED', 'TIMED-OUT'];
 // llamada, aparte del REQUEST_TIMEOUT_MS de cada request HTTP individual —
 // cubre también un bucle de espera que nunca termina. Cada intento de
 // once() (el inicial y el único reintento por 402) lo respeta por separado.
-// Configurable porque una corrida con muchos posteos por consulta puede
-// necesitar más margen que el default.
-const APIFY_CALL_TIMEOUT_MS = Math.max(1000, Math.floor(Number(process.env.APIFY_CALL_TIMEOUT_MS) || 120000));
+// 5 minutos (era 2): hubo consultas reales de 84, 87 y 106 s, y una que
+// pasa el tope se corta, se cobra igual y sus resultados se pierden. El
+// timeout es contra el cuelgue, no contra una consulta lenta.
+const APIFY_CALL_TIMEOUT_MS = Math.max(1000, Math.floor(Number(process.env.APIFY_CALL_TIMEOUT_MS) || 300000));
 
 const apifyLimiter = createLimiter(APIFY_MAX_CONCURRENT, 'apify');
 
