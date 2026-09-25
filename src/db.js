@@ -20,6 +20,7 @@ const fs = require('fs');
 const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
 const { normalizeClasificacion } = require('./categoriasConfig');
+const { platformForUrl } = require('./platforms/urlPlatform');
 
 const DATA_DIR = path.join(__dirname, '..', 'data');
 // MONITORING_DB_PATH: solo para tests (tempfile). En runtime normal sigue
@@ -854,8 +855,21 @@ function rejectNegative(value) {
 /**
  * @returns {boolean} true si se insertó una fila nueva. false si ya existía
  * (mismo id o misma url) — no tira UNIQUE.
+ * @throws {Error} code 'PLATAFORMA_INCONSISTENTE' si el dominio de la url es
+ *   de otra red que `plataforma` (una publicación de X nunca se guarda como
+ *   Instagram, ni al revés). Un dominio desconocido no se valida: la regla
+ *   se garantiza acá, al escribir, no solo al leer.
  */
 function saveDetectedPost(post) {
+  const plataforma = post.plataforma || 'instagram';
+  const plataformaDeLaUrl = platformForUrl(post.url);
+  if (plataformaDeLaUrl && plataformaDeLaUrl !== plataforma) {
+    const e = new Error(
+      `El posteo ${post.id} tiene url de ${plataformaDeLaUrl} (${post.url}) pero plataforma "${plataforma}": no se guarda.`
+    );
+    e.code = 'PLATAFORMA_INCONSISTENTE';
+    throw e;
+  }
   const result = insertPostStmt.run({
     id: post.id,
     account: post.account || null,
@@ -870,7 +884,7 @@ function saveDetectedPost(post) {
     sentiment: post.sentiment || null,
     postType: post.postType || null,
     followers: post.followers ?? null,
-    plataforma: post.plataforma || 'instagram',
+    plataforma,
     retweets: rejectNegative(post.retweets ?? null),
     views: rejectNegative(post.views ?? null),
   });

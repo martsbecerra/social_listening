@@ -1026,7 +1026,16 @@ async function runMonitoringCycle({ plataformas } = {}) {
               : null,
       };
 
-      const inserted = db.saveDetectedPost(postWithClassification);
+      let inserted;
+      try {
+        inserted = db.saveDetectedPost(postWithClassification);
+      } catch (err) {
+        // Url de otra red que la plataforma que lo trajo: la base lo rechaza
+        // (ver db.saveDetectedPost). Se descarta ese posteo y el ciclo sigue.
+        if (err.code !== 'PLATAFORMA_INCONSISTENTE') throw err;
+        console.error(`[monitor] (${platformId}) descartado: ${err.message}`);
+        continue;
+      }
       if (!inserted) {
         // Carrera con otro ciclo: entre el findExisting y el INSERT el otro
         // proceso ya lo guardó. No es un posteo nuevo para notificar.

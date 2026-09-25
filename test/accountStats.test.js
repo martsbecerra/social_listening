@@ -79,7 +79,9 @@ function insertPost({ id, account, detectedDaysAgo = 0, postedDaysAgo = 70, igno
   const inserted = db.saveDetectedPost({
     id,
     account,
-    url: `https://www.instagram.com/p/${id}/`,
+    // La url tiene que ser de la red del posteo: saveDetectedPost rechaza
+    // una url de instagram.com etiquetada como X (ver urlPlatform.js).
+    url: plataforma === 'x' ? `https://x.com/${account}/status/${id.replace(/\D/g, '') || '1'}` : `https://www.instagram.com/p/${id}/`,
     caption: 'obras',
     matchedReason: 'test',
     likes: 10,

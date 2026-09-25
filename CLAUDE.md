@@ -155,6 +155,16 @@ fase actual y qué target tiene cada tarea activa en `apifyLimiter`,
 120000, piso 1000) corta cada llamada a Apify que no respondió a tiempo,
 libera su cupo y la deja en `apify_calls` con `error='TIMEOUT'`.
 
+## Separación por plataforma
+
+Una publicación de X nunca se muestra ni se procesa en Instagram, ni al
+revés. La lectura filtra por `detected_posts.plataforma` (cada solapa manda
+`?plataforma=`); la escritura la garantiza `db.saveDetectedPost`, que rechaza
+(`code: 'PLATAFORMA_INCONSISTENTE'`) un posteo cuya url sea de otra red
+según `platformForUrl` (`src/platforms/urlPlatform.js`, sin dependencias
+porque lo requiere db.js). El ciclo atrapa ese error, loguea `descartado` y
+sigue. Dominio desconocido = null, nunca "instagram por defecto".
+
 ## Datos que no se tocan
 
 - `detected_posts.id` es el id numérico de Instagram y `url` es

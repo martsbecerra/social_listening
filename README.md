@@ -716,6 +716,23 @@ real. La consola lo registra cuando no fue la ventana default. Búsquedas
 por palabra clave, keywords de X y el benchmark (90 días fijos) NO cambian:
 siguen con su propia lógica de siempre.
 
+### Separación por plataforma: la url manda
+
+Regla del producto: una publicación de X nunca se muestra ni se procesa en
+la solapa de Instagram, ni al revés. Toda la app ya filtra por la columna
+`plataforma` de `detected_posts` (cada solapa manda `?plataforma=` y cada
+consulta la usa), pero eso protege la lectura; lo que garantiza que la
+etiqueta sea correcta es el guard al **escribir**:
+`src/platforms/urlPlatform.js` (`platformForUrl(url)` → `'instagram'` |
+`'x'` | `null` por el dominio, subdominios incluidos) y `db.saveDetectedPost`,
+que rechaza con `code: 'PLATAFORMA_INCONSISTENTE'` un posteo cuya url es de
+otra red que su `plataforma`. Un dominio desconocido no se valida (no es
+"Instagram por defecto"). El ciclo (`runMonitoringCycle`) atrapa ese error,
+loguea `descartado` y sigue con los demás posteos: un adapter que devolviera
+un link ajeno no tira abajo la corrida ni contamina la otra solapa. El
+módulo no tiene dependencias porque lo requiere `db.js` (el registro de
+adapters lo re-exporta).
+
 ### Septiembre 2026: cambio de actor de monitoreo
 
 El monitoreo de Instagram pasó de `apify/instagram-scraper` a

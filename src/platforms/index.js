@@ -77,6 +77,7 @@
 
 const instagram = require('./instagram');
 const x = require('./x');
+const { platformForUrl } = require('./urlPlatform');
 
 const PLATFORMS = { instagram, x };
 
@@ -98,4 +99,6 @@ function listPlatformIds() {
   return Object.keys(PLATFORMS);
 }
 
-module.exports = { getPlatform, listPlatformIds, DEFAULT_PLATFORM_ID };
+// platformForUrl vive en urlPlatform.js (sin dependencias, porque también lo
+// usa db.js); se re-exporta acá para quien ya tiene el registro a mano.
+module.exports = { getPlatform, listPlatformIds, DEFAULT_PLATFORM_ID, platformForUrl };
