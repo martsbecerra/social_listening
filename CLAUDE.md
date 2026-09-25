@@ -216,4 +216,10 @@ plataforma: parámetro obligatorio, sin default.
   métricas cruzan por ahí. `post_type` es `reel` | `imagen` | `carrusel` |
   null, los mismos valores de `account_stats`.
 - El módulo de X (`src/platforms/x.js`, `src/x/`) y el análisis de
-  publicación quedaron fuera de la migración de actor.
+  publicación quedaron fuera de la migración de actor. X está en stand by:
+  el cron corre solo `MONITOR_PLATFORMS` (default `instagram`;
+  `scheduler.cronPlatforms`, ids desconocidos se ignoran con aviso), y con
+  `trigger: 'cron'` `runMonitoringCycle` nunca tira un error de plataforma
+  aunque la lista tenga una sola (lo anota en `porPlataforma`). "Actualizar
+  ahora" en la solapa X sigue corriendo X (`trigger` manual). No borrar el
+  código de X.

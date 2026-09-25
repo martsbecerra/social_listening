@@ -859,14 +859,19 @@ function notConfiguredError(platform) {
  * una corrida de todo el registro queda en porPlataforma[id].error y se
  * sigue con las demás.
  *
- * @param {{ plataformas?: string[] }} [options] subconjunto del registro;
- *   sin él, todas (cron).
+ * @param {{ plataformas?: string[], trigger?: 'cron'|'manual' }} [options]
+ *   plataformas: subconjunto del registro; sin él, todas. trigger: 'cron'
+ *   hace que un error de plataforma NUNCA se tire, aunque la lista tenga una
+ *   sola plataforma (MONITOR_PLATFORMS=instagram con X en stand by): se
+ *   anota en porPlataforma y el ciclo sigue con benchmark y refresco. Sin
+ *   trigger (o 'manual') vale lo de siempre: una sola plataforma = el botón
+ *   de esa solapa, el error le llega al usuario.
  * @returns {Promise<{ checked: number, newPosts: object[],
  *   scrapedAccounts: Object<string, string[]>,
  *   porPlataforma: Object<string, { checked: number, newCount: number, skipped: boolean,
  *     error?: { code: string, message: string } }> }>}
  */
-async function runMonitoringCycle({ plataformas } = {}) {
+async function runMonitoringCycle({ plataformas, trigger } = {}) {
   const all = loadConfigAll();
   const limits = monitorLimits();
   // Búsquedas y keywords (X) siguen con la ventana fija de siempre; solo
@@ -874,7 +879,10 @@ async function runMonitoringCycle({ plataformas } = {}) {
   const legacyLookback = process.env.MONITOR_LOOKBACK || '1 day';
   const cycleNowMs = Date.now();
   const ids = listPlatformIds().filter((id) => !plataformas || plataformas.includes(id));
-  const singlePlatformRun = Boolean(plataformas && plataformas.length === 1);
+  // Un error de plataforma se le tira al usuario solo en una corrida MANUAL
+  // de esa sola plataforma ("Actualizar ahora" en su solapa). En el cron,
+  // aunque MONITOR_PLATFORMS lo deje en una sola, se anota y el ciclo sigue.
+  const singlePlatformRun = trigger !== 'cron' && Boolean(plataformas && plataformas.length === 1);
 
   let checked = 0;
   const newPosts = [];

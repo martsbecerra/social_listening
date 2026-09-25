@@ -451,6 +451,13 @@ describe('adapter X', { concurrency: false }, () => {
         assert.equal(err.userMessage, 'Se agotó la cuota mensual de Apify.');
         return true;
       });
+
+      // El cron con MONITOR_PLATFORMS=instagram (X en stand by): también una
+      // sola plataforma, pero NO es "Actualizar ahora": el error se anota y
+      // el ciclo sigue (benchmark y refresco), en vez de tirarse. X no corre.
+      const cronSoloIg = await monitor.runMonitoringCycle({ plataformas: ['instagram'], trigger: 'cron' });
+      assert.deepEqual(cronSoloIg.porPlataforma.instagram.error, { code: 'QUOTA_EXCEEDED', message: 'Se agotó la cuota mensual de Apify.' });
+      assert.equal(cronSoloIg.porPlataforma.x, undefined, 'X quedó fuera del ciclo automático');
     } finally {
       fs.writeFileSync(CONFIG_PATH, rawConfig);
       grokFetch.callGrokJson = originals.callGrokJson;

@@ -177,7 +177,10 @@ Hace falta `SESSION_SECRET` (string largo aleatorio) y `APP_BASE_URL` (p. ej.
 
   En X es distinto: cada cuenta es una búsqueda `from:handle` y cada keyword,
   con `#` o sin él, una búsqueda de Grok con costo por corrida; no hay lista
-  `searches`.
+  `searches`. **X está en stand by** (su detección no funciona hoy): el
+  ciclo automático corre solo las plataformas de `MONITOR_PLATFORMS`
+  (default `instagram`; `instagram,x` la vuelve a sumar). Su código sigue
+  ahí y "Actualizar ahora" en la solapa X la corre igual.
 
 - **`src/db.js`** — ¿qué es SQLite y por qué lo usamos así?: SQLite es una
   base de datos que vive en **un solo archivo** (`data/monitoring.db`), sin
@@ -348,7 +351,11 @@ Hace falta `SESSION_SECRET` (string largo aleatorio) y `APP_BASE_URL` (p. ej.
   es chica, no necesita base de datos propia ni configuración compleja: solo
   le decís un horario (acá, `0 8,12,16,20 * * *` = a las 8, 12, 16 y 20 h,
   hora local; configurable con `MONITOR_CRON`) y una función para
-  correr. Vive dentro del mismo proceso de `server.js`.
+  correr. Vive dentro del mismo proceso de `server.js`. Qué plataformas
+  corre lo decide `MONITOR_PLATFORMS` (default `instagram`: X quedó en
+  stand by y fuera del ciclo automático; `instagram,x` la suma de nuevo).
+  En el cron un error de plataforma nunca corta el ciclo, aunque quede una
+  sola: se anota y siguen benchmark y refresco.
 
   > ⚠️ **Esto SOLO funciona mientras el servidor esté corriendo sin cortes.**
   > Hoy la app corre con `npm start` en esta PC — si cerrás la terminal o la

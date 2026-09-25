@@ -19,6 +19,7 @@
 const cron = require('node-cron');
 const db = require('./db');
 const { runMonitoringCycle } = require('./monitor');
+const { listPlatformIds } = require('./platforms');
 const { processPendingReclamos } = require('./geoWorker');
 const { refreshStaleAccountStats, benchmarkLimiter } = require('./accountStats');
 const { refreshPostMetrics, refreshLimiter } = require('./metricsRefresh');
@@ -30,6 +31,13 @@ const progress = require('./monitoringProgress');
 // Corridas a las 8, 12, 16 y 20 (hora local del server): sin las de 0 y 4,
 // que costaban lo mismo y casi no traían nada. Configurable con MONITOR_CRON.
 const DEFAULT_CRON = '0 8,12,16,20 * * *';
+
+// Plataformas que corre el ciclo AUTOMÁTICO (el cron). X está en stand by
+// (su detección no funciona hoy), así que por defecto el cron corre solo
+// Instagram; MONITOR_PLATFORMS=instagram,x la vuelve a sumar sin tocar
+// código. "Actualizar ahora" no mira esto: corre la plataforma de la
+// solapa que apretó el botón, X incluida.
+const DEFAULT_CRON_PLATFORMS = ['instagram'];
 
 // Heartbeat del ciclo en curso (Cambio G — diagnóstico del cuelgue real de
 // ~30 min): si pasan estos ms sin que NINGUNA llamada termine (ni de
@@ -57,6 +65,35 @@ function getCronExpression() {
 
 function getLastRunAt() {
   return lastRunAt;
+}
+
+/**
+ * Plataformas del ciclo automático según MONITOR_PLATFORMS (lista separada
+ * por comas, ids del registro de src/platforms/). Vacía o ausente: el
+ * default (solo Instagram). Un id desconocido se ignora con aviso; si no
+ * queda ninguno válido, el default. Orden y duplicados: como se escribió,
+ * sin repetidos.
+ * @param {(msg: string) => void} [log] para tests
+ * @returns {string[]}
+ */
+function cronPlatforms(log = console.warn) {
+  const raw = String(process.env.MONITOR_PLATFORMS ?? '').trim();
+  if (!raw) return [...DEFAULT_CRON_PLATFORMS];
+  const known = listPlatformIds();
+  const wanted = raw
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  const unknown = wanted.filter((id) => !known.includes(id));
+  if (unknown.length > 0) {
+    log(`[monitor] MONITOR_PLATFORMS: se ignoran plataformas desconocidas: ${unknown.join(', ')} (válidas: ${known.join(', ')}).`);
+  }
+  const valid = [...new Set(wanted.filter((id) => known.includes(id)))];
+  if (valid.length === 0) {
+    log(`[monitor] MONITOR_PLATFORMS="${raw}" no deja ninguna plataforma válida: se usa el default (${DEFAULT_CRON_PLATFORMS.join(', ')}).`);
+    return [...DEFAULT_CRON_PLATFORMS];
+  }
+  return valid;
 }
 
 /**
@@ -130,13 +167,16 @@ function getNextRunAt(cronExpression, from = new Date()) {
  * (en las plataformas que lo soportan). Exportada aparte para poder
  * llamarla a mano (botón "Actualizar ahora").
  *
- * @param {{ ifBusy?: 'throw'|'skip', plataforma?: string, trigger?: 'cron'|'manual' }} [options]
- *   plataforma: acota el ciclo a esa sola (la solapa que apretó el botón);
- *   sin ella corre todo el registro (cron).
+ * @param {{ ifBusy?: 'throw'|'skip', plataforma?: string, plataformas?: string[], trigger?: 'cron'|'manual' }} [options]
+ *   plataforma: acota el ciclo a esa sola (la solapa que apretó el botón).
+ *   plataformas: lista explícita (el cron pasa cronPlatforms()). Sin
+ *   ninguna de las dos corre todo el registro.
  *   trigger: quién disparó el ciclo, para la fila de monitoring_runs (el
- *   cron pasa 'cron'; el botón "Actualizar ahora" queda en 'manual').
+ *   cron pasa 'cron'; el botón "Actualizar ahora" queda en 'manual') y
+ *   para que un error de plataforma solo se tire al usuario en una corrida
+ *   manual (ver runMonitoringCycle).
  */
-async function runCycle({ ifBusy = 'throw', plataforma, trigger = 'manual' } = {}) {
+async function runCycle({ ifBusy = 'throw', plataforma, plataformas, trigger = 'manual' } = {}) {
   if (cycleInProgress) {
     if (ifBusy === 'skip') {
       console.log('[monitor] ya hay un ciclo en curso; se saltea este disparo.');
@@ -150,7 +190,7 @@ async function runCycle({ ifBusy = 'throw', plataforma, trigger = 'manual' } = {
 
   cycleInProgress = true;
   try {
-    return await runCycleUnlocked(plataforma ? [plataforma] : undefined, trigger);
+    return await runCycleUnlocked(plataformas || (plataforma ? [plataforma] : undefined), trigger);
   } finally {
     cycleInProgress = false;
   }
@@ -217,7 +257,7 @@ async function runCycleUnlocked(plataformas, trigger = 'manual') {
   let newCount = 0;
   let cycleError = null;
   try {
-    const result = await runCyclePhases(plataformas, runId);
+    const result = await runCyclePhases(plataformas, runId, trigger);
     newCount = result.newCount;
     return result;
   } catch (err) {
@@ -266,10 +306,10 @@ function mergeSkipAccounts(...sources) {
 // 'benchmark', 'refresco') para que cada llamada a Apify se registre con
 // su ciclo y su fase (src/usageContext.js). Solo medición: la lógica de
 // cada fase no cambia.
-async function runCyclePhases(plataformas, runId) {
+async function runCyclePhases(plataformas, runId, trigger) {
   const { checked, newPosts, scrapedAccounts, porPlataforma } = await runWithContext(
     { runId, phase: 'monitoreo' },
-    () => runMonitoringCycle({ plataformas })
+    () => runMonitoringCycle({ plataformas, trigger })
   );
   const newCount = (newPosts || []).length;
 
@@ -311,14 +351,20 @@ async function runCyclePhases(plataformas, runId) {
 
 function startScheduler() {
   const cronExpression = getCronExpression();
+  const plataformas = cronPlatforms();
 
   cron.schedule(cronExpression, () => {
-    runCycle({ ifBusy: 'skip', trigger: 'cron' }).catch((err) => {
+    runCycle({ ifBusy: 'skip', trigger: 'cron', plataformas }).catch((err) => {
       console.error('Error en el ciclo de monitoreo agendado:', err.message);
     });
   });
 
-  console.log(`✅ Monitoreo automático agendado (cron: "${cronExpression}")`);
+  const fuera = listPlatformIds().filter((id) => !plataformas.includes(id));
+  console.log(
+    `✅ Monitoreo automático agendado (cron: "${cronExpression}", plataformas: ${plataformas.join(', ')}` +
+      (fuera.length > 0 ? `; ${fuera.join(', ')} fuera del ciclo automático, MONITOR_PLATFORMS para sumarla` : '') +
+      ')'
+  );
 }
 
 module.exports = {
@@ -328,4 +374,6 @@ module.exports = {
   getLastRunAt,
   estimateRunsPerDay,
   getNextRunAt,
+  cronPlatforms,
+  DEFAULT_CRON_PLATFORMS,
 };
