@@ -159,11 +159,11 @@ describe('runMonitoringCycle: en Instagram solo se consulta la búsqueda, con la
 
     assert.equal(seen.account, null, 'la cuenta trackeada no se consulta en la detección');
     assert.equal(seen.hashtag, null, 'la página del hashtag no se recorre');
-    assert.deepEqual(seen.search, { lookback: expected.lookback, resultsLimit: monitor.raiseLimitForWindow(50, expected.windowDays) });
+    assert.deepEqual(seen.search, { lookback: expected.lookback, resultsLimit: monitor.raiseLimitForWindow(100, expected.windowDays) });
 
     // Ciclo al día (marca de hace 4hs): ventana default y tope base.
     db.setRefreshState(KEY, new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString());
     await monitor.runMonitoringCycle({ plataformas: ['instagram'] });
-    assert.deepEqual(seen.search, { lookback: '1 day', resultsLimit: 50 });
+    assert.deepEqual(seen.search, { lookback: '1 day', resultsLimit: 100 });
   });
 });

@@ -453,7 +453,7 @@ describe('proveedor apidojo del adapter de Instagram', { concurrency: false }, (
       };
       instagram.scrapeSearch = async (term, { resultsLimit }) => {
         assert.equal(term, 'obras');
-        assert.equal(resultsLimit, 50, 'SEARCH_RESULTS_LIMIT default');
+        assert.equal(resultsLimit, 100, 'SEARCH_RESULTS_LIMIT default');
         return [provider.normalizePost(rawPost({ id: 500, caption: 'arrancan las obras del bajo' }), { account: null, sourceType: 'search', sourceQuery: 'obras' })];
       };
       console.log = (...args) => logs.push(args.join(' '));
@@ -480,9 +480,9 @@ describe('proveedor apidojo del adapter de Instagram', { concurrency: false }, (
     const warned = [];
     console.warn = (...args) => warned.push(args.join(' '));
     try {
-      assert.deepEqual(monitor.monitorLimits(), { account: 10, hashtag: 30, search: 50 });
+      assert.deepEqual(monitor.monitorLimits(), { account: 10, hashtag: 30, search: 100 });
       process.env.MONITOR_RESULTS_LIMIT = '15';
-      assert.deepEqual(monitor.monitorLimits(), { account: 15, hashtag: 15, search: 50 }, 'un .env viejo sigue igual que antes');
+      assert.deepEqual(monitor.monitorLimits(), { account: 15, hashtag: 15, search: 100 }, 'un .env viejo sigue igual que antes');
       assert.equal(warned.filter((w) => w.includes('MONITOR_RESULTS_LIMIT=15')).length, 1);
       monitor.monitorLimits();
       assert.equal(warned.length, 1, 'avisa una sola vez');
@@ -492,7 +492,7 @@ describe('proveedor apidojo del adapter de Instagram', { concurrency: false }, (
       assert.deepEqual(monitor.monitorLimits(), { account: 8, hashtag: 20, search: 40 }, 'los topes nuevos ganan');
       process.env.MONITOR_ACCOUNT_LIMIT = 'nada';
       process.env.SEARCH_RESULTS_LIMIT = '0';
-      assert.deepEqual(monitor.monitorLimits(), { account: 15, hashtag: 20, search: 50 }, 'inválidos: respaldo o default');
+      assert.deepEqual(monitor.monitorLimits(), { account: 15, hashtag: 20, search: 100 }, 'inválidos: respaldo o default');
     } finally {
       console.warn = originalWarn;
       delete process.env.MONITOR_RESULTS_LIMIT;

@@ -134,7 +134,7 @@ describe('búsqueda por palabra clave (fuente search)', { concurrency: false }, 
     try {
       const before = { ...classifierCalls };
       const result = await monitor.runMonitoringCycle({ plataformas: ['instagram'] });
-      assert.deepEqual(searchCalls, [{ term: 'jorge macri', resultsLimit: 50, lookback: '1 day', phase: 'busqueda' }]);
+      assert.deepEqual(searchCalls, [{ term: 'jorge macri', resultsLimit: 100, lookback: '1 day', phase: 'busqueda' }]);
       assert.equal(result.checked, 4);
       assert.equal(result.porPlataforma.instagram.newCount, 2);
 

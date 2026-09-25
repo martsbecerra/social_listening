@@ -404,7 +404,7 @@ El monitoreo de Instagram corre con el actor que elija `IG_ACTOR`
   palabra clave 0,015 con 20, posteo suelto 0,005. Uso de plataforma incluido.
 
 Con los topes por defecto (`MONITOR_ACCOUNT_LIMIT=10`,
-`MONITOR_HASHTAG_LIMIT=30`, `SEARCH_RESULTS_LIMIT=50`,
+`MONITOR_HASHTAG_LIMIT=30`, `SEARCH_RESULTS_LIMIT=100`,
 `BENCHMARK_POST_LIMIT=15`), una llamada por fuente y el oficial en plan
 Starter (2,30 por 1.000):
 
@@ -413,7 +413,7 @@ Starter (2,30 por 1.000):
 | Cuenta trackeada por ciclo, con posteos nuevos | hasta 0,0345 (15 res.) | 0,005 (10 incl.) |
 | Cuenta trackeada por ciclo, sin novedades | 0,0023 (1 item de error) | 0,005 |
 | Hashtag por ciclo | 0,0345 | 0,015 (30 incl.) |
-| Búsqueda por palabra clave, 50 resultados | no existe | 0,030 |
+| Búsqueda por palabra clave, 100 resultados (el tope; lo normal son menos de 20: 0,015) | no existe | 0,055 |
 | Detalle de un resultado de búsqueda nuevo (una sola vez por posteo) | 0,0023, siempre con este actor | — (0,005 si se pidiera acá) |
 | Benchmark de una cuenta (15 posteos + seguidores) | 0,0368 (+1 consulta de perfil) | 0,0075 |
 | Refresco de métricas de una cuenta (15 posteos) | 0,0345 | 0,0075 |
@@ -421,8 +421,9 @@ Starter (2,30 por 1.000):
 
 Desde septiembre 2026 la detección de Instagram son **solo las búsquedas**
 (cuentas y hashtags no se consultan): con 8 términos y
-`SEARCH_RESULTS_LIMIT=50`, como mucho 8 × 0,030 = 0,24 por ciclo (0,015 por
-término si trae 20 o menos), más el detalle de los resultados nuevos, como
+`SEARCH_RESULTS_LIMIT=100`, como mucho 8 × 0,055 = 0,44 por ciclo (0,015 por
+término si trae 20 o menos, que es lo normal: en septiembre 2026 ninguna
+búsqueda pasó de 7), más el detalle de los resultados nuevos, como
 mucho `SEARCH_ENRICH_LIMIT` × 0,0023 por ciclo (0,23 con el default de 100)
 y en régimen mucho menos (unos 6 posteos nuevos por ciclo en septiembre
 2026): solo se paga por posteos que la búsqueda trae por primera vez. La búsqueda por palabra clave solo existe en apidojo. El

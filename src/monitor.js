@@ -84,14 +84,17 @@ function sourcePriority(post) {
 }
 
 // Topes de posteos por tipo de fuente en cada corrida (uno por llamada:
-// cada cuenta, hashtag o búsqueda es un run aparte). Los defaults coinciden
-// con los posteos incluidos en cada consulta del actor apidojo (perfil 10,
-// hashtag 30, búsqueda 20 incluidos de los 50 que se piden): por encima se
-// cobra por posteo. Con IG_ACTOR=apify son el resultsLimit de siempre.
-// MONITOR_RESULTS_LIMIT (un solo tope para todo) ya no se usa; si sigue en
-// el .env y faltan los topes nuevos, vale para cuentas y hashtags con un
-// aviso, así un .env viejo se comporta igual que antes.
-const DEFAULT_LIMITS = { account: 10, hashtag: 30, search: 50 };
+// cada cuenta, hashtag o búsqueda es un run aparte). Cuentas y hashtags
+// coinciden con los posteos incluidos en cada consulta del actor apidojo
+// (perfil 10, hashtag 30); la búsqueda incluye 20 y se piden hasta 100
+// (era 50): es un tope de seguridad que en la práctica no se llena (ninguna
+// búsqueda pasó de 7 en septiembre 2026) y solo cuesta si hay resultados
+// (0,0005 usd por posteo de más), así que va holgado para un día viral. Con
+// IG_ACTOR=apify son el resultsLimit de siempre. MONITOR_RESULTS_LIMIT (un
+// solo tope para todo) ya no se usa; si sigue en el .env y faltan los topes
+// nuevos, vale para cuentas y hashtags con un aviso, así un .env viejo se
+// comporta igual que antes.
+const DEFAULT_LIMITS = { account: 10, hashtag: 30, search: 100 };
 let warnedLegacyLimit = false;
 
 function positiveInt(raw) {
