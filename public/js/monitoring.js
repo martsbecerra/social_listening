@@ -909,6 +909,13 @@ const MONITORING_COLUMNS = [
       select.addEventListener('change', () => {
         if (select.value === SENTIMENT_UNSET) return;
         updateSentiment(id, select.value, select);
+        // También el dato de la fila en Tabulator: desplegar o replegar la
+        // fila re-corre este formatter desde row.getData(), y sin esto el
+        // select se volvía a armar con el valor viejo (el PATCH ya se había
+        // guardado bien; solo la tabla quedaba atrás). row.update re-corre
+        // el rowFormatter, así el panel abierto también queda al día.
+        cell.getRow().update({ sentiment: select.value });
+        if (monitoringTable) renderHighlightCards(monitoringTable.getData());
       });
       return select;
     },
