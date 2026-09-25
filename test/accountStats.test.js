@@ -34,8 +34,13 @@ fs.writeFileSync(
 
 // Clasificador stubeado ANTES de cargar monitor.js (que lo destructura).
 const classifier = require('../src/classifier');
-classifier.classifyPost = async (caption) => ({ title: `titulo: ${String(caption).slice(0, 12)}`, sentiment: 'neutral' });
-classifier.classifyRelevance = async () => ({ relevant: false });
+// Una sola función, con el criterio de siempre para estos tests:
+// coincidencia literal en la pista → relevante; sin ella, no.
+classifier.clasificarPosteo = async (caption, { pista } = {}) => ({
+  relevant: Boolean(pista && pista.termino),
+  title: `titulo: ${String(caption).slice(0, 12)}`,
+  sentiment: 'neutral',
+});
 
 const db = require('../src/db');
 const accountStats = require('../src/accountStats');

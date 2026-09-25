@@ -23,8 +23,13 @@ const { describe, test, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 
 const classifier = require('../src/classifier');
-classifier.classifyPost = async () => ({ title: 't', sentiment: 'neutral' });
-classifier.classifyRelevance = async () => ({ relevant: false });
+// Una sola función, con el criterio de siempre para estos tests:
+// coincidencia literal en la pista → relevante; sin ella, no.
+classifier.clasificarPosteo = async (caption, { pista } = {}) => ({
+  relevant: Boolean(pista && pista.termino),
+  title: 't',
+  sentiment: 'neutral',
+});
 
 const db = require('../src/db');
 const monitor = require('../src/monitor');

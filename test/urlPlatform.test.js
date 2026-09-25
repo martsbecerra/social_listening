@@ -26,8 +26,13 @@ const { DatabaseSync } = require('node:sqlite');
 
 // Clasificador stubeado ANTES de cargar monitor.js (que lo destructura).
 const classifier = require('../src/classifier');
-classifier.classifyPost = async (caption) => ({ title: `t: ${String(caption).slice(0, 10)}`, sentiment: 'neutral' });
-classifier.classifyRelevance = async () => ({ relevant: false });
+// Una sola función, con el criterio de siempre para estos tests:
+// coincidencia literal en la pista → relevante; sin ella, no.
+classifier.clasificarPosteo = async (caption, { pista } = {}) => ({
+  relevant: Boolean(pista && pista.termino),
+  title: `t: ${String(caption).slice(0, 10)}`,
+  sentiment: 'neutral',
+});
 
 const { platformForUrl, hostnameOf } = require('../src/platforms/urlPlatform');
 const platforms = require('../src/platforms');

@@ -21,11 +21,13 @@
 //   1. Llegó por una búsqueda por término (sourceType 'keyword': una keyword,
 //      o un hashtag en las redes donde el hashtag es una búsqueda más, como
 //      X) — la búsqueda ya lo validó, o
-//   2. Su caption/hashtags contienen alguna palabra clave literal
-//      (case-insensitive), o
-//   3. No hay coincidencia literal, pero el clasificador determina que el
-//      contenido igual habla del Jefe de Gobierno porteño o su gestión
-//      (detección semántica — ver classifyRelevance en src/classifier.js).
+//   2. El clasificador (src/classifier.js, una sola llamada con el modelo
+//      de análisis) decide que habla de Jorge Macri o de la gestión de la
+//      Ciudad. La coincidencia literal con una keyword ya no es un veredicto:
+//      viaja como pista de contexto junto con la cuenta trackeada, el
+//      hashtag o la búsqueda, y el modelo decide con eso (desde septiembre
+//      2026; antes la keyword literal daba relevancia por hecho y "Jefe de
+//      Gobierno" de la Ciudad de México entraba como si fuera porteño).
 //
 // Todo lo específico de cada plataforma (fuente de datos, URLs, nombres de
 // campos, métricas propias, qué sabe hacer) vive en su adapter de
@@ -43,7 +45,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { classifyPost, classifyRelevance } = require('./classifier');
+const { clasificarPosteo } = require('./classifier');
 const { checkAndLogJump } = require('./viralJumpDetector');
 const { getPlatform, listPlatformIds, DEFAULT_PLATFORM_ID } = require('./platforms');
 const { isPlatformError } = require('./platforms/errors');
@@ -533,19 +535,23 @@ function pickMetrics(platform, post) {
 
 /**
  * Decide si un posteo candidato es relevante y, si lo es, le pone
- * título + sentimiento. Tres caminos:
+ * título + sentimiento. Dos caminos:
  *   1. Llegó por una búsqueda por término (sourceType 'keyword': una keyword
  *      o, en X, también un hashtag — ahí el hashtag es una búsqueda más, no
  *      una página de descubrimiento) → relevante sin preguntar: la búsqueda
  *      de la plataforma ya lo encontró para ese término, descartarlo después
- *      sería perder lo que la búsqueda validó. Solo se clasifican título y
- *      sentimiento. sourceType 'hashtag' (Instagram) NO entra acá: la página
- *      del hashtag trae todo lo que lo usa y hay que filtrarlo.
- *   2. Coincidencia literal de palabra clave → clasificación directa
- *      (siempre relevante, no hace falta preguntar si aplica).
- *   3. Sin coincidencia literal → se le pregunta al clasificador si el
- *      contenido igual habla del Jefe de Gobierno porteño / su gestión
- *      (detección semántica), para no depender solo del texto exacto.
+ *      sería perder lo que la búsqueda validó. El clasificador solo aporta
+ *      título y sentimiento; su "relevant" no se mira (X quedó fuera del
+ *      cambio de criterio de septiembre 2026). sourceType 'hashtag'
+ *      (Instagram) NO entra acá: la página del hashtag trae todo lo que lo
+ *      usa y hay que filtrarlo.
+ *   2. Todo lo demás (cuenta trackeada, hashtag, búsqueda de Instagram) lo
+ *      decide el clasificador en una sola llamada, con una PISTA de cómo
+ *      llegó el posteo: la coincidencia literal con una keyword (señal
+ *      fuerte, no garantía), la cuenta trackeada (señal débil), el hashtag
+ *      o la búsqueda. Antes la coincidencia literal daba relevancia por
+ *      hecho y solo sin ella se le preguntaba al modelo; así entraba "Jefe
+ *      de Gobierno" de la Ciudad de México como si fuera porteño.
  * Un posteo sin caption solo se acepta si viene de una cuenta trackeada
  * (no hay texto que evaluar, pero viene de la fuente que explícitamente
  * querés ver); si viene de un hashtag o una búsqueda, se descarta. Los de
@@ -553,8 +559,11 @@ function pickMetrics(platform, post) {
  * cuando el detalle lo trajo.
  * La búsqueda por palabra clave de Instagram (sourceType 'search') NO es el
  * camino 1: Instagram asocia al término mucho contenido que no habla del
- * tema, así que pasa por el 2 y el 3 como un hashtag, con el motivo
+ * tema, así que pasa por el 2 como un hashtag, con el motivo
  * "Búsqueda: <término>" (searchBase).
+ * Si el clasificador falla, el posteo se guarda igual marcado "sin
+ * clasificar" (relevancia sin verificar): un falso positivo se ve y se
+ * borra; uno descartado en silencio no vuelve nunca.
  *
  * @param {object} post posteo normalizado por el adapter
  * @param {string[]} keywords keywords planas (sin "#") de la plataforma
@@ -574,8 +583,8 @@ async function evaluateRelevance(post, keywords, { platform } = {}) {
   const literalMatch = textIncludesAny(text, keywords);
 
   if (post.sourceType === 'keyword') {
-    const { title, sentiment, unclassified } = await classifyPost(post.caption, { platformLabel });
     const term = post.sourceQuery || literalMatch;
+    const { title, sentiment, unclassified } = await clasificarPosteo(post.caption, { platformLabel, pista: { busqueda: term } });
     let base = 'Búsqueda por palabra clave';
     if (term) {
       base = String(term).startsWith('#')
@@ -591,54 +600,46 @@ async function evaluateRelevance(post, keywords, { platform } = {}) {
     };
   }
 
-  if (literalMatch) {
-    // La relevancia acá NO depende del LLM: ya matcheó una palabra clave. Si
-    // el clasificador falla, el posteo entra igual, sin título ni sentimiento.
-    const { title, sentiment, unclassified } = await classifyPost(post.caption, { platformLabel });
-    const base =
-      post.sourceType === 'account'
-        ? `Cuenta trackeada: @${post.account} (coincidencia: "${literalMatch}")`
-        : post.sourceType === 'search'
-          ? `${searchBase(post)} (coincidencia: "${literalMatch}")`
-          : `Coincidencia con palabra clave: "${literalMatch}"`;
-    return {
-      relevant: true,
-      title,
-      sentiment,
-      unclassified,
-      matchedReason: unclassified ? `${base} — sin clasificar` : base,
-    };
-  }
+  const pista = {
+    termino: literalMatch || null,
+    cuenta: post.sourceType === 'account' ? post.account : null,
+    hashtag: post.sourceType === 'hashtag',
+    busqueda: post.sourceType === 'search' ? post.sourceQuery || null : null,
+  };
+  const result = await clasificarPosteo(post.caption, { platformLabel, pista });
 
-  const result = await classifyRelevance(post.caption, { platformLabel });
-  if (!result.relevant) return { relevant: false };
+  // Motivo base, con los textos de siempre según origen y coincidencia.
+  const origen =
+    post.sourceType === 'account'
+      ? `Cuenta trackeada: @${post.account}`
+      : post.sourceType === 'search'
+        ? searchBase(post)
+        : null;
+  const base = literalMatch
+    ? origen
+      ? `${origen} (coincidencia: "${literalMatch}")`
+      : `Coincidencia con palabra clave: "${literalMatch}"`
+    : origen
+      ? `${origen} (relacionado por contenido)`
+      : 'Relacionado por contenido (sin palabra clave literal)';
 
-  // Sin palabra clave literal y con el clasificador caído no sabemos si es
-  // relevante. Se guarda igual, marcado, para que alguien lo revise: un falso
-  // positivo se ve y se borra; uno descartado en silencio no vuelve nunca.
   if (result.unclassified) {
-    const origen =
-      post.sourceType === 'account'
-        ? `Cuenta trackeada: @${post.account}`
-        : post.sourceType === 'search'
-          ? searchBase(post)
-          : 'Hashtag monitoreado';
+    // Con el clasificador caído no sabemos si es relevante. Se guarda igual,
+    // marcado, para que alguien lo revise.
+    const sinVerificar = literalMatch ? base : origen || 'Hashtag monitoreado';
     return {
       relevant: true,
       title: null,
       sentiment: null,
       unclassified: true,
-      matchedReason: `${origen} — sin clasificar (falló el clasificador, relevancia sin verificar)`,
+      matchedReason: `${sinVerificar} — sin clasificar (falló el clasificador, relevancia sin verificar)`,
     };
   }
 
-  const matchedReason =
-    post.sourceType === 'account'
-      ? `Cuenta trackeada: @${post.account} (relacionado por contenido)`
-      : post.sourceType === 'search'
-        ? `${searchBase(post)} (relacionado por contenido)`
-        : 'Relacionado por contenido (sin palabra clave literal)';
-  return { relevant: true, title: result.title, sentiment: result.sentiment, matchedReason };
+  // Un relevant:false del modelo es una respuesta legítima: descarta.
+  if (!result.relevant) return { relevant: false };
+
+  return { relevant: true, title: result.title, sentiment: result.sentiment, matchedReason: base };
 }
 
 /**
@@ -967,7 +968,7 @@ async function runMonitoringCycle({ plataformas } = {}) {
     // aparecer también en un hashtag o en una búsqueda). Si el mismo posteo
     // llega por más de una fuente gana el origen más específico
     // (SOURCE_PRIORITY): la búsqueda por término de X ('keyword') ya lo
-    // validó y entra sin classifyRelevance; la cuenta trackeada ('account')
+    // validó y entra sin que el clasificador decida; la cuenta trackeada ('account')
     // le gana al hashtag y a la búsqueda de Instagram ('search'), que son
     // descubrimiento y se filtran igual. A igual prioridad, el primero. La
     // cuenta no se pierde: post.account es el mismo handle en todas. Por
@@ -1124,8 +1125,11 @@ async function backfillClassification(platformId) {
   let stillPending = 0;
 
   for (const row of pending) {
-    const { title, sentiment, unclassified } = await classifyPost(row.caption, { platformLabel: platform.label });
-    if (unclassified) {
+    // Sin pista: el origen ya quedó en matched_reason. El modelo también
+    // devuelve relevant, pero desde acá no se borra nada ya guardado: solo
+    // se completan título y sentimiento.
+    const { title, sentiment, unclassified } = await clasificarPosteo(row.caption, { platformLabel: platform.label });
+    if (unclassified || !title) {
       // Sigue fallando: no pisamos la fila con los mismos nulls, queda
       // pendiente para el próximo intento.
       stillPending++;

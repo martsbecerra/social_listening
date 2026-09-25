@@ -25,8 +25,13 @@ process.env.MONITORING_X_CONFIG_PATH = path.join(tmp, 'monitoring-x.json');
 fs.writeFileSync(process.env.MONITORING_CONFIG_PATH, JSON.stringify({ instagram: { accounts: ['trackeada'], keywords: ['obras'] } }, null, 2) + '\n');
 
 const classifier = require('../src/classifier');
-classifier.classifyPost = async (caption) => ({ title: `titulo: ${String(caption).slice(0, 12)}`, sentiment: 'neutral' });
-classifier.classifyRelevance = async () => ({ relevant: false });
+// Una sola función, con el criterio de siempre para estos tests:
+// coincidencia literal en la pista → relevante; sin ella, no.
+classifier.clasificarPosteo = async (caption, { pista } = {}) => ({
+  relevant: Boolean(pista && pista.termino),
+  title: `titulo: ${String(caption).slice(0, 12)}`,
+  sentiment: 'neutral',
+});
 
 const { resolveIgActor, IG_ACTORS, DEFAULT_IG_ACTOR } = require('../src/platforms/igActor');
 const db = require('../src/db');

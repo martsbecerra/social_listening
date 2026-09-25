@@ -2,10 +2,13 @@
 // llm/index.js — Punto único de acceso al LLM según LLM_PROVIDER.
 // --------------------------------------------------------------------------
 // Todo el código de la app pasa por acá: nadie más debería importar un
-// proveedor concreto ni el SDK de Anthropic. Dos entradas, una por tarea:
-//   - requestStructuredAnalysis: análisis de comentarios (JSON con schema)
+// proveedor concreto ni el SDK de Anthropic. Dos entradas, UN solo modelo
+// (ver providerConfig.js):
+//   - requestStructuredAnalysis: JSON con schema — el análisis de
+//     comentarios y la clasificación del monitoreo (src/classifier.js).
 //     Instagram usa LLM_PROVIDER. X puede forzar provider/model (Grok).
-//   - requestText:               clasificación del monitoreo (texto plano)
+//   - requestText:               texto plano — subcategoría de reclamos
+//     (src/clasificarReclamo.js) e importador (src/importers/).
 // ==========================================================================
 
 const { getLlmProvider, getAnalysisModel } = require('./providerConfig');
@@ -26,6 +29,7 @@ async function requestStructuredAnalysis({
   provider: providerOverride,
   model: modelOverride,
   jsonFallback = false,
+  maxTokens,
 }) {
   const provider = providerOverride || getLlmProvider();
   const result = await providerModule(provider).requestStructuredAnalysis({
@@ -35,6 +39,7 @@ async function requestStructuredAnalysis({
     schemaName,
     model: modelOverride,
     jsonFallback,
+    maxTokens,
   });
   result.usage = finalizeLlmUsage(result.usage, {
     provider,
@@ -44,10 +49,10 @@ async function requestStructuredAnalysis({
 }
 
 /**
- * Texto plano con el modelo clasificador del proveedor activo.
- * Propaga los errores de API (err.isApiFailure) — no los traga: el
- * clasificador necesita distinguir "se cayó la API" de "el modelo respondió
- * algo raro", porque son dos decisiones distintas (ver src/classifier.js).
+ * Texto plano con el modelo del proveedor activo (el mismo que el análisis).
+ * Propaga los errores de API (err.isApiFailure) — no los traga: quien llama
+ * necesita distinguir "se cayó la API" de "el modelo respondió algo raro",
+ * porque son dos decisiones distintas.
  * @returns {Promise<{ text: string, usage: import('./usage').TokenUsage | null }>}
  */
 async function requestText({ system, userPrompt, maxTokens }) {

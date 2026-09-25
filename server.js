@@ -37,7 +37,7 @@ const {
   requiredLlmEnvKeys,
   getProviderLabel,
   getAnalysisModel,
-  getClassifierModel,
+  warnObsoleteModelVars,
 } = require('./src/llm/providerConfig');
 const db = require('./src/db');
 const monitor = require('./src/monitor');
@@ -678,8 +678,8 @@ const server = app.listen(PORT, () => {
   const provider = getLlmProvider();
   console.log(`\n✅ Servidor listo en http://localhost:${PORT}`);
   console.log(`   Proveedor LLM: ${getProviderLabel(provider)} (${provider})`);
-  console.log(`   Modelo análisis: ${getAnalysisModel(provider)}`);
-  console.log(`   Modelo clasificador: ${getClassifierModel(provider)}`);
+  console.log(`   Modelo LLM (análisis y clasificador del monitoreo): ${getAnalysisModel(provider)}`);
+  warnObsoleteModelVars();
   const grokBackend = getFetchBackend();
   const grokHint =
     grokBackend === 'openrouter'

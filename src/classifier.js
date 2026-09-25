@@ -1,160 +1,159 @@
 // ==========================================================================
 // classifier.js
 // --------------------------------------------------------------------------
-// Dos tareas, ambas con el modelo clasificador del proveedor activo (barato y
-// rápido, no hace falta el modelo de análisis para esto — ver
-// getClassifierModel en src/llm/providerConfig.js):
-//   1. classifyPost: título + sentimiento de un posteo que YA se sabe que es
-//      relevante (coincidió con una palabra clave, llegó por una búsqueda de
-//      keyword, o es de una cuenta trackeada sin caption para analizar).
-//   2. classifyRelevance: para posteos que NO coincidieron con ninguna
-//      palabra clave literal — le pregunta al modelo si el contenido igual
-//      habla del Jefe de Gobierno porteño o de su gestión (detección
-//      semántica), para no depender solo del matching de texto exacto.
+// Clasificación de un posteo del monitoreo en UNA llamada al LLM: relevancia
+// (¿habla de Jorge Macri o de la gestión de la Ciudad?), título y
+// sentimiento. Una sola función, clasificarPosteo, para todas las
+// plataformas (Instagram, X, ...): solo cambia la etiqueta de la red en el
+// prompt (platformLabel).
 //
-// Es el mismo clasificador para todas las plataformas (Instagram, X, ...):
-// solo cambia la etiqueta de la red en el prompt (platformLabel). Pasa por
-// src/llm/, nunca por el SDK de un proveedor: cambiar LLM_PROVIDER tiene que
-// migrar el monitoreo igual que el análisis de publicación.
+// Antes había dos caminos y ninguno verificaba geografía: con una keyword
+// literal en el caption el posteo entraba sin preguntarle nada al modelo
+// (solo título y sentimiento), y sin keyword se le preguntaba a un modelo
+// barato si "igual hablaba del Jefe de Gobierno". "Jefe de Gobierno" es
+// también el título del titular de la Ciudad de México, y términos como
+// "gobierno de la ciudad" o PDLC son ambiguos entre ciudades: eso metía
+// falsos positivos. Ahora la coincidencia literal viaja como PISTA de
+// contexto (junto con cuenta trackeada, hashtag o búsqueda) y el modelo
+// decide siempre. Es una señal fuerte a favor, no una garantía.
 //
-// SOBRE LOS FALLOS: antes, cualquier error devolvía un resultado inventado
-// (neutral / relevant:false). Eso hacía que una API caída se viera igual que
-// "no hay nada relevante": el monitoreo descartaba posteos válidos sin que
-// nadie se enterara. Ahora un fallo devuelve unclassified:true y el posteo se
-// guarda igual, con title/sentiment en null → la UI lo muestra como
-// "(sin clasificar)" y backfillClassification lo reintenta después. Preferimos
-// ruido visible a pérdida silenciosa.
+// Va por src/llm/ (requestStructuredAnalysis, con schema: JSON válido y
+// enum de sentimiento garantizados), con el MISMO modelo que el análisis de
+// publicación — ya no hay un "modelo clasificador" aparte (ver
+// src/llm/providerConfig.js). Nunca por el SDK de un proveedor: cambiar
+// LLM_PROVIDER migra el monitoreo igual que el análisis.
+//
+// SOBRE LOS FALLOS: un error del LLM, una respuesta que no cumple el schema
+// o un "relevant" que no es booleano devuelven unclassified:true y el posteo
+// se guarda igual, con title/sentiment en null → la UI lo muestra como
+// "(sin clasificar)" y backfillClassification lo reintenta después.
+// Preferimos ruido visible a pérdida silenciosa. Un relevant:false del
+// modelo, en cambio, es una respuesta legítima y sí descarta.
 // ==========================================================================
 
-const { requestText } = require('./llm');
+// Por el objeto del módulo (no destructurado): los tests stubean
+// llm.requestStructuredAnalysis para ejercitar esta función sin red.
+const llm = require('./llm');
 
 const VALID_SENTIMENTS = ['positivo', 'neutral', 'negativo'];
 const DEFAULT_PLATFORM_LABEL = 'Instagram';
+const MAX_CAPTION_CHARS = 2000;
+// Un título de hasta 10 palabras, el sentimiento y el JSON: sobra con esto.
+const MAX_TOKENS = 300;
+const SCHEMA_NAME = 'clasificacion_posteo';
+
+/** Schema de la respuesta (structured outputs). Estricto: todo requerido, sin extras. */
+const CLASIFICACION_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['relevant', 'title', 'sentiment'],
+  properties: {
+    relevant: {
+      type: 'boolean',
+      description: 'true solo si el posteo habla de Jorge Macri o de la gestión de la Ciudad de Buenos Aires',
+    },
+    title: { type: 'string', description: 'De qué habla el posteo, en español, máximo 10 palabras' },
+    sentiment: { type: 'string', enum: VALID_SENTIMENTS },
+  },
+};
 
 function systemPrompt(platformLabel) {
-  return `Sos un clasificador rápido de menciones políticas para un equipo de gobierno.
-Te paso el texto de un posteo de ${platformLabel}. Respondé SOLO un JSON, sin texto adicional, sin markdown, con exactamente este formato:
+  return `Sos el clasificador de menciones del equipo de monitoreo del Gobierno de la Ciudad de Buenos Aires.
 
-{"title": "...", "sentiment": "positivo" | "neutral" | "negativo"}
+OBJETIVO
+Decidir si un posteo de ${platformLabel} habla de Jorge Macri, Jefe de Gobierno de la Ciudad Autónoma de Buenos Aires (CABA), Argentina, o de su gestión (obras, políticas, anuncios, funcionarios y organismos porteños, Legislatura porteña, comunas, servicios de la Ciudad), aunque no lo nombre. Para los que sí, resumir de qué hablan y cómo lo retratan.
 
-- "title": una frase corta (máximo 10 palabras), en español, que resuma de qué habla el posteo.
-- "sentiment": cómo retrata el posteo al Jefe de Gobierno de la Ciudad de Buenos Aires o a su gestión:
-  - "positivo" si lo muestra favorablemente o destaca un logro de su gestión.
-  - "negativo" si lo critica, cuestiona o muestra un hecho desfavorable.
-  - "neutral" si es puramente informativo, no queda claro, o no podés determinarlo con confianza.
-  Ante la duda, usá siempre "neutral".`;
-}
+PISTA DE CONTEXTO
+El mensaje puede incluir una línea "CONTEXTO" con cómo llegó el posteo: contiene un término de nuestra lista de seguimiento, viene de una cuenta trackeada, de un hashtag o de una búsqueda. Un término de la lista es una señal fuerte a favor, no una garantía. Venir de una cuenta trackeada es una señal débil: las cuentas de política general publican mucho contenido que no tiene que ver con la gestión porteña, así que eso solo no alcanza para darlo por relevante.
 
-function extractJson(text) {
-  const match = text.match(/\{[\s\S]*\}/);
-  return match ? match[0] : text;
+RESPUESTA (JSON según el schema)
+- relevant: true solo si habla de Jorge Macri o de la gestión de CABA según lo de arriba.
+- title: frase corta (máximo 10 palabras) en español de qué habla el posteo. Siempre, también si relevant es false.
+- sentiment: cómo retrata a Jorge Macri o a su gestión. "positivo" si lo muestra favorablemente o destaca un logro; "negativo" si lo critica, cuestiona o muestra un hecho desfavorable; "neutral" si es informativo, no queda claro o relevant es false. Ante la duda, "neutral".`;
 }
 
 /**
- * Resultado cuando no se pudo clasificar (API caída, respuesta ilegible).
- * title y sentiment van en null a propósito: es lo que hace que el posteo
- * aparezca como "(sin clasificar)" en la tabla y que listUnclassified() lo
- * agarre en el próximo backfill (su criterio es title IS NULL).
+ * Línea CONTEXTO del mensaje de usuario, a partir de la pista que arma
+ * evaluateRelevance con cómo llegó el posteo. Sin pista, sin línea.
+ * @param {{ termino?: string|null, cuenta?: string|null, hashtag?: boolean, busqueda?: string|null } | null} pista
  */
-function unclassifiedResult(extra = {}) {
-  return { title: null, sentiment: null, unclassified: true, ...extra };
+function renderContexto(pista, platformLabel) {
+  if (!pista) return '';
+  const partes = [];
+  if (pista.termino) partes.push(`el texto contiene el término "${pista.termino}" de nuestra lista de seguimiento`);
+  if (pista.busqueda) partes.push(`llegó por la búsqueda del término "${pista.busqueda}" en ${platformLabel}`);
+  if (pista.hashtag) partes.push('llegó por un hashtag monitoreado (la página del hashtag trae todo lo que lo usa)');
+  if (pista.cuenta) partes.push(`es de la cuenta trackeada @${pista.cuenta}`);
+  return partes.length > 0 ? `CONTEXTO: ${partes.join('; ')}.\n` : '';
+}
+
+function buildUserPrompt(caption, { pista, platformLabel }) {
+  return `${renderContexto(pista, platformLabel)}POSTEO:\n${caption.slice(0, MAX_CAPTION_CHARS)}`;
+}
+
+/**
+ * Resultado cuando no se pudo clasificar (API caída, respuesta fuera del
+ * schema). relevant:true para que el posteo se guarde; title y sentiment en
+ * null a propósito: es lo que hace que aparezca como "(sin clasificar)" en la
+ * tabla y que listUnclassified() lo agarre en el próximo backfill (su
+ * criterio es title IS NULL).
+ */
+function unclassifiedResult() {
+  return { relevant: true, title: null, sentiment: null, unclassified: true };
 }
 
 /** Log uniforme, distinguiendo el tipo de fallo para poder diagnosticar. */
-function logClassifierFailure(tarea, err) {
-  const motivo = err.isApiFailure ? 'falló la API del LLM' : 'respuesta ilegible del modelo';
+function logClassifierFailure(err) {
+  const motivo = err.isApiFailure ? 'falló la API del LLM' : 'respuesta inválida del modelo';
   console.error(
-    `Clasificador (${tarea}): ${motivo} — el posteo se guarda SIN CLASIFICAR ` +
+    `Clasificador: ${motivo} — el posteo se guarda SIN CLASIFICAR ` +
     `y se reintenta en el próximo backfill. Detalle: ${err.message}`
   );
 }
 
 /**
- * Clasifica un caption. Si el LLM falla o responde algo inesperado, devuelve
- * unclassified:true en vez de inventar un "neutral".
+ * Clasifica un caption en una sola llamada: relevancia + título + sentimiento.
+ * Si el LLM falla o responde algo fuera del schema, devuelve
+ * unclassified:true en vez de inventar un "neutral" o un "no relevante".
  * @param {string} caption
- * @param {{ platformLabel?: string }} [options] etiqueta de la red para el prompt
+ * @param {{ platformLabel?: string, pista?: object|null }} [options]
+ *   platformLabel: etiqueta de la red para el prompt; pista: cómo llegó el
+ *   posteo (ver renderContexto), va como contexto para el modelo.
+ * @returns {Promise<{ relevant: boolean, title: string|null, sentiment: string|null, unclassified?: true }>}
  */
-async function classifyPost(caption, { platformLabel = DEFAULT_PLATFORM_LABEL } = {}) {
+async function clasificarPosteo(caption, { platformLabel = DEFAULT_PLATFORM_LABEL, pista = null } = {}) {
   if (!caption || !caption.trim()) {
-    return { title: 'Sin descripción', sentiment: 'neutral' };
-  }
-
-  try {
-    const { text } = await requestText({
-      system: systemPrompt(platformLabel),
-      userPrompt: caption.slice(0, 2000),
-      maxTokens: 200,
-    });
-
-    const parsed = JSON.parse(extractJson(text));
-    const title = typeof parsed.title === 'string' && parsed.title.trim() ? parsed.title.trim() : null;
-    if (!title) throw new Error('el modelo no devolvió un título usable');
-
-    const sentiment = VALID_SENTIMENTS.includes(parsed.sentiment) ? parsed.sentiment : 'neutral';
-    return { title, sentiment };
-  } catch (err) {
-    logClassifierFailure('título + sentimiento', err);
-    return unclassifiedResult();
-  }
-}
-
-function relevanceSystemPrompt(platformLabel) {
-  return `Sos un clasificador para un equipo de gobierno que monitorea menciones al Jefe de Gobierno de la Ciudad de Buenos Aires (Jorge Macri) y a su gestión.
-Te paso el texto de un posteo de ${platformLabel} que NO contiene ninguna palabra clave literal conocida. Tu tarea es juzgar, por el CONTENIDO, si igual se relaciona con él o con la gestión de la Ciudad de Buenos Aires (obras públicas, políticas, anuncios, funcionarios porteños, gestión municipal, etc.), aunque no lo nombre explícitamente.
-
-Respondé SOLO un JSON, sin texto adicional, sin markdown, con exactamente este formato:
-
-{"relevant": true | false, "title": "...", "sentiment": "positivo" | "neutral" | "negativo"}
-
-- "relevant": true solo si el contenido realmente habla del Jefe de Gobierno porteño o de su gestión. false para cualquier otro tema (contenido genérico, turístico, cultural, de otro distrito o de otro funcionario sin relación).
-- "title": frase corta (máximo 10 palabras) en español de qué habla el posteo. Completala siempre, incluso si relevant es false.
-- "sentiment": solo importa si relevant es true — cómo lo retrata ("positivo", "negativo", o "neutral" ante la duda).`;
-}
-
-/**
- * Para posteos SIN coincidencia literal de palabra clave: le pregunta al
- * modelo si el contenido igual se relaciona con el tema (para no perderse
- * menciones indirectas).
- *
- * Un `relevant: false` del modelo SÍ descarta el posteo: esa es su función y
- * es una respuesta legítima. Lo que ya no descarta nada es un FALLO: ante un
- * error se devuelve relevant:true + unclassified:true, para que el posteo
- * quede guardado y visible y alguien pueda mirarlo. Puede traer ruido; el
- * ruido se ve y se borra, un posteo perdido no.
- * @param {string} caption
- * @param {{ platformLabel?: string }} [options]
- */
-async function classifyRelevance(caption, { platformLabel = DEFAULT_PLATFORM_LABEL } = {}) {
-  if (!caption || !caption.trim()) {
+    // Nada que evaluar; quien llama decide qué hacer con un posteo sin texto
+    // (evaluateRelevance ni siquiera llega acá).
     return { relevant: false, title: 'Sin descripción', sentiment: 'neutral' };
   }
 
   try {
-    const { text } = await requestText({
-      system: relevanceSystemPrompt(platformLabel),
-      userPrompt: caption.slice(0, 2000),
-      maxTokens: 200,
+    const { parsed } = await llm.requestStructuredAnalysis({
+      system: systemPrompt(platformLabel),
+      userPrompt: buildUserPrompt(caption, { pista, platformLabel }),
+      schema: CLASIFICACION_SCHEMA,
+      schemaName: SCHEMA_NAME,
+      maxTokens: MAX_TOKENS,
     });
 
-    const parsed = JSON.parse(extractJson(text));
-    if (typeof parsed.relevant !== 'boolean') {
+    if (!parsed || typeof parsed.relevant !== 'boolean') {
       throw new Error('el modelo no devolvió un campo "relevant" booleano');
     }
-    if (!parsed.relevant) return { relevant: false };
-
     const title = typeof parsed.title === 'string' && parsed.title.trim() ? parsed.title.trim() : null;
     const sentiment = VALID_SENTIMENTS.includes(parsed.sentiment) ? parsed.sentiment : 'neutral';
 
+    if (!parsed.relevant) return { relevant: false, title, sentiment };
+
     // Dijo que es relevante pero no dio título: sirve como hallazgo, no como
     // clasificación — se guarda para reintentar el título después.
-    if (!title) return unclassifiedResult({ relevant: true });
+    if (!title) return unclassifiedResult();
 
     return { relevant: true, title, sentiment };
   } catch (err) {
-    logClassifierFailure('relevancia', err);
-    return unclassifiedResult({ relevant: true });
+    logClassifierFailure(err);
+    return unclassifiedResult();
   }
 }
 
-module.exports = { classifyPost, classifyRelevance };
+module.exports = { clasificarPosteo, systemPrompt, CLASIFICACION_SCHEMA };

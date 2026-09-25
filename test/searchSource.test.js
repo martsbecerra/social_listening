@@ -39,16 +39,16 @@ fs.writeFileSync(
 );
 
 // Clasificador stubeado ANTES de cargar monitor.js (que lo destructura).
+// Una sola función: reproduce el criterio viejo para estos tests (con
+// coincidencia literal en la pista → relevante; sin ella, decide por el
+// texto) y cuenta una llamada por posteo evaluado.
 const classifier = require('../src/classifier');
-const classifierCalls = { post: 0, relevance: 0 };
-let relevanceMode = 'normal'; // 'normal' | 'unclassified'
-classifier.classifyPost = async (caption) => {
-  classifierCalls.post += 1;
-  return { title: `titulo: ${String(caption).slice(0, 12)}`, sentiment: 'neutral' };
-};
-classifier.classifyRelevance = async (caption) => {
-  classifierCalls.relevance += 1;
-  if (relevanceMode === 'unclassified') return { relevant: true, unclassified: true };
+const classifierCalls = { llamadas: 0 };
+let relevanceMode = 'normal'; // 'normal' | 'unclassified' (solo sin coincidencia literal)
+classifier.clasificarPosteo = async (caption, { pista } = {}) => {
+  classifierCalls.llamadas += 1;
+  if (pista && pista.termino) return { relevant: true, title: `titulo: ${String(caption).slice(0, 12)}`, sentiment: 'neutral' };
+  if (relevanceMode === 'unclassified') return { relevant: true, title: null, sentiment: null, unclassified: true };
   return /gestión/i.test(caption) ? { relevant: true, title: 'gestión', sentiment: 'positivo' } : { relevant: false };
 };
 
@@ -148,8 +148,7 @@ describe('búsqueda por palabra clave (fuente search)', { concurrency: false }, 
       assert.equal(s2.title, 'gestión');
       assert.equal(savedPost('s3'), undefined, 'sin caption no entra');
       assert.equal(savedPost('s4'), undefined, 'el clasificador dijo que no');
-      assert.equal(classifierCalls.post - before.post, 1, 'clasificación directa solo para la coincidencia literal');
-      assert.equal(classifierCalls.relevance - before.relevance, 2, 'semántica para los dos sin coincidencia literal');
+      assert.equal(classifierCalls.llamadas - before.llamadas, 3, 'una llamada por posteo con texto (el sin caption no se clasifica)');
     } finally {
       Object.assign(instagram, originals);
     }

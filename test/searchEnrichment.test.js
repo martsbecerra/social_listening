@@ -40,13 +40,12 @@ fs.writeFileSync(
 
 // Clasificador stubeado ANTES de cargar monitor.js (que lo destructura).
 const classifier = require('../src/classifier');
-const classifierCalls = { post: 0, relevance: 0 };
-classifier.classifyPost = async (caption) => {
-  classifierCalls.post += 1;
-  return { title: `titulo: ${String(caption).slice(0, 12)}`, sentiment: 'neutral' };
-};
-classifier.classifyRelevance = async (caption) => {
-  classifierCalls.relevance += 1;
+// Una sola función: coincidencia literal en la pista → relevante; sin ella,
+// decide por el texto. Una llamada por posteo evaluado.
+const classifierCalls = { llamadas: 0 };
+classifier.clasificarPosteo = async (caption, { pista } = {}) => {
+  classifierCalls.llamadas += 1;
+  if (pista && pista.termino) return { relevant: true, title: `titulo: ${String(caption).slice(0, 12)}`, sentiment: 'neutral' };
   return /gestión/i.test(caption) ? { relevant: true, title: 'gestión', sentiment: 'positivo' } : { relevant: false };
 };
 
@@ -242,7 +241,7 @@ describe('detalle de los resultados de búsqueda sin caption', { concurrency: fa
       assert.equal(db.getSearchSeen('nuevo', 'instagram').outcome, 'guardado');
       assert.equal(db.getSearchSeen('medio', 'instagram').outcome, 'descartado');
       assert.equal(db.getSearchSeen('viejo', 'instagram'), null, 'lo que no entró en el tope no se anota');
-      assert.equal(classifierCalls.relevance - before.relevance, 1, 'semántica solo para el que no matcheó literal');
+      assert.equal(classifierCalls.llamadas - before.llamadas, 2, 'una llamada por posteo evaluado (el diferido, sin texto, no)');
 
       // Próximo ciclo: solo el que había quedado afuera; su detalle tampoco
       // trae texto, así que se descarta y queda anotado.

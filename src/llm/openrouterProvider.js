@@ -5,14 +5,15 @@
 // contra {OPENROUTER_BASE_URL}/chat/completions, así que el mismo código sirve
 // para cualquier gateway compatible cambiando sólo esa variable.
 //
-// Dos modos de uso:
-//   - requestStructuredAnalysis: response_format json_schema (análisis de post)
-//   - requestText:               texto plano (clasificador del monitoreo)
+// Dos modos de uso, con el mismo modelo:
+//   - requestStructuredAnalysis: response_format json_schema (análisis de
+//                                post y clasificador del monitoreo)
+//   - requestText:               texto plano (reclamos, importador)
 // ==========================================================================
 
 const { ANALYSIS_JSON_SCHEMA } = require('../analysisSchema');
 const { addTokenUsage, fromOpenRouterUsage } = require('./usage');
-const { getAnalysisModel, getClassifierModel } = require('./providerConfig');
+const { getAnalysisModel } = require('./providerConfig');
 
 const DEFAULT_BASE_URL = 'https://openrouter.ai/api/v1';
 const STRUCTURED_OUTPUT_MAX_ATTEMPTS = 2;
@@ -87,12 +88,13 @@ async function requestStructuredAnalysis({
   schemaName,
   model: modelOverride,
   jsonFallback = false,
+  maxTokens = 8000,
 }) {
   const model = (modelOverride || '').trim() || getAnalysisModel('openrouter');
 
   const schemaBody = {
     model,
-    max_tokens: 8000,
+    max_tokens: maxTokens,
     messages: [
       { role: 'system', content: system },
       { role: 'user', content: userPrompt },
@@ -109,7 +111,7 @@ async function requestStructuredAnalysis({
 
   const jsonObjectBody = {
     model,
-    max_tokens: 8000,
+    max_tokens: maxTokens,
     messages: [
       { role: 'system', content: system },
       { role: 'user', content: userPrompt },
@@ -166,13 +168,12 @@ async function runStructuredAttempts(body) {
 }
 
 /**
- * Texto plano, sin schema — lo que necesita el clasificador del monitoreo.
- * No reintenta ni traga errores: quien llama decide qué hacer (ver
- * src/classifier.js).
+ * Texto plano, sin schema — subcategoría de reclamos e importador. No
+ * reintenta ni traga errores: quien llama decide qué hacer.
  * @returns {Promise<{ text: string, usage: import('./usage').TokenUsage | null }>}
  */
 async function requestText({ system, userPrompt, maxTokens = 200 }) {
-  const model = getClassifierModel('openrouter');
+  const model = getAnalysisModel('openrouter');
 
   const data = await postChatCompletion({
     model,

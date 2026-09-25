@@ -38,7 +38,7 @@ const { asignarSubcategorias } = require('../src/clasificarReclamo');
 const { geocodeAddress } = require('../src/geocode');
 const { ubicarPunto } = require('../src/territorios');
 const { normalizeClasificacion } = require('../src/categoriasConfig');
-const { getLlmProvider, getClassifierModel } = require('../src/llm/providerConfig');
+const { getLlmProvider, getAnalysisModel } = require('../src/llm/providerConfig');
 const db = require('../src/db');
 
 // Precio del modelo clasificador en OpenRouter (USD por millón de tokens).
@@ -255,7 +255,7 @@ async function main() {
 
   // --- 4. Estimación de costo ---
   const provider = getLlmProvider();
-  const modelo = getClassifierModel(provider);
+  const modelo = getAnalysisModel(provider);
   // Categorías presentes en el archivo, ya unificadas por los alias. El
   // histórico de X trae 4 valores crudos pero dos son la misma categoría mal
   // escrita, así que acá quedan 3.

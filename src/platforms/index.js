@@ -48,8 +48,8 @@
 //                   'hashtag'  página/feed de descubrimiento (Instagram):
 //                              trae todo lo que usa el tag, hay que filtrar.
 //                   'keyword'  resultado de una búsqueda por término: la
-//                              fuente ya lo validó, relevante sin pasar por
-//                              classifyRelevance. En X vale tanto para las
+//                              fuente ya lo validó, relevante sin que el
+//                              clasificador decida. En X vale tanto para las
 //                              keywords como para los hashtags (allá un
 //                              hashtag es una búsqueda más), con el término
 //                              en sourceQuery.
