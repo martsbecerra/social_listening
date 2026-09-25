@@ -321,9 +321,11 @@ Hace falta `SESSION_SECRET` (string largo aleatorio) y `APP_BASE_URL` (p. ej.
   memoria. El benchmark corre después de guardar los posteos del ciclo, así
   el posteo de una cuenta nueva ya sale con referencia en la tabla.
 
-  Tope `MAX_ACCOUNTS_PER_CYCLE` (default 10) por ciclo: si aparecen muchas
-  cuentas pendientes de golpe, las que quedan afuera siguen pendientes y
-  salen en los ciclos siguientes, en orden de llegada. Un intento que no
+  Tope `MAX_ACCOUNTS_PER_CYCLE` (default 50; era 10 y con la detección por
+  búsquedas, donde casi cada posteo es de una cuenta distinta, la cola no se
+  vaciaba nunca) por ciclo: si aparecen muchas cuentas pendientes de golpe,
+  las que quedan afuera siguen pendientes y salen en los ciclos siguientes,
+  en orden de llegada. Un intento que no
   trae 5 posteos recientes (cuenta privada, publica poco, la fuente
   devolvió vacío) no borra la referencia anterior: la conserva y solo
   anota la fecha, para no reintentar en cada ciclo. La misma pasada trae

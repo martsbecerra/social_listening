@@ -60,10 +60,13 @@ const RATIO_LOW = 0.5;
 const RATIO_HIGH = 1.5;
 // Tope de cuentas que recalcula CADA ciclo automático (ver
 // refreshStaleAccountStats). Si en un ciclo aparecen muchas cuentas con
-// recálculo pendiente (ej. un hashtag nuevo trae 30 cuentas desconocidas),
-// esto lo escalona; las que quedan afuera siguen elegibles y salen en los
-// ciclos siguientes, en orden de llegada.
-const MAX_ACCOUNTS_PER_CYCLE = Number(process.env.MAX_ACCOUNTS_PER_CYCLE) || 10;
+// recálculo pendiente, esto lo escalona; las que quedan afuera siguen
+// elegibles y salen en los ciclos siguientes, en orden de llegada. Con la
+// detección por búsquedas casi cada posteo nuevo es de una cuenta distinta:
+// con el tope viejo de 10 la cola no se vaciaba nunca (82 pendientes el
+// 25/9/2026) y esos posteos quedaban días "sin referencia". 50 la vacía en
+// un ciclo normal; cada cuenta cuesta una consulta de perfil (0,0075 usd).
+const MAX_ACCOUNTS_PER_CYCLE = Number(process.env.MAX_ACCOUNTS_PER_CYCLE) || 50;
 
 // Las funciones de una sola cuenta reciben la plataforma SIEMPRE: no hay
 // default a Instagram (un llamador que la olvide etiquetaría mal sin error).
