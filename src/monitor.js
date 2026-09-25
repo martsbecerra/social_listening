@@ -547,8 +547,8 @@ function pickMetrics(platform, post) {
  *      usa y hay que filtrarlo.
  *   2. Todo lo demás (cuenta trackeada, hashtag, búsqueda de Instagram) lo
  *      decide el clasificador en una sola llamada, con una PISTA de cómo
- *      llegó el posteo: la coincidencia literal con una keyword (señal
- *      fuerte, no garantía), la cuenta trackeada (señal débil), el hashtag
+ *      llegó el posteo: la coincidencia literal con una keyword (una guía,
+ *      no una garantía), la cuenta trackeada (señal débil), el hashtag
  *      o la búsqueda. Antes la coincidencia literal daba relevancia por
  *      hecho y solo sin ella se le preguntaba al modelo; así entraba "Jefe
  *      de Gobierno" de la Ciudad de México como si fuera porteño.

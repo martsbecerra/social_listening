@@ -1176,8 +1176,9 @@ Ahora:
   buscando la coincidencia literal, pero la manda como línea `CONTEXTO:`
   del mensaje de usuario ("el texto contiene el término X de nuestra lista
   de seguimiento"), junto con la cuenta trackeada, el hashtag o la búsqueda.
-  El prompt dice que el término es una señal fuerte a favor y la cuenta
-  trackeada una señal débil, y que ninguna garantiza relevancia.
+  El prompt dice que los términos de la lista son una guía (no una señal
+  fuerte ni una garantía) y la cuenta trackeada una señal débil: decide el
+  contenido.
 - **Desambiguación geográfica en el system prompt**: objetivo Jorge Macri /
   CABA; la Ciudad de México no es relevante aunque use "Jefe de Gobierno";
   PDLC, "gobierno de la ciudad", alcalde, intendente solo valen en contexto

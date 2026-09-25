@@ -17,7 +17,7 @@
 // "gobierno de la ciudad" o PDLC son ambiguos entre ciudades: eso metía
 // falsos positivos. Ahora la coincidencia literal viaja como PISTA de
 // contexto (junto con cuenta trackeada, hashtag o búsqueda) y el modelo
-// decide siempre. Es una señal fuerte a favor, no una garantía.
+// decide siempre. Es una guía, no una garantía.
 //
 // Va por src/llm/ (requestStructuredAnalysis, con schema: JSON válido y
 // enum de sentimiento garantizados), con el MISMO modelo que el análisis de
@@ -67,8 +67,28 @@ function systemPrompt(platformLabel) {
 OBJETIVO
 Decidir si un posteo de ${platformLabel} habla de Jorge Macri, Jefe de Gobierno de la Ciudad Autónoma de Buenos Aires (CABA), Argentina, o de su gestión (obras, políticas, anuncios, funcionarios y organismos porteños, Legislatura porteña, comunas, servicios de la Ciudad), aunque no lo nombre. Para los que sí, resumir de qué hablan y cómo lo retratan.
 
+ATENCIÓN: "Jefe de Gobierno" es también el título del titular de la Ciudad de México. Un contenido sobre la Ciudad de México NO es relevante aunque use ese título o hable del "gobierno de la ciudad". Lo mismo vale para cualquier otra ciudad o país: relevante es solo lo porteño.
+
+TÉRMINOS AMBIGUOS ENTRE CIUDADES
+"Jefe de Gobierno", "gobierno de la ciudad", "la Ciudad", "alcalde", "intendente", "PDLC" / "Policía de la Ciudad" y siglas parecidas solo cuentan si el contexto es claramente porteño. Por sí solos no alcanzan.
+
+SEÑALES A FAVOR (contexto porteño)
+- Apodos y variantes con los que se nombra a Jorge Macri en redes: "Blackri", "Blacri", "jorgemacri".
+- GCBA (Gobierno de la Ciudad de Buenos Aires), "gobierno porteño", CABA, Ciudad Autónoma de Buenos Aires, porteño/porteña, Legislatura porteña, comunas y barrios porteños (Palermo, Caballito, Villa Lugano, etc.), subte, SUBE, AUSA, Policía de la Ciudad en contexto argentino, hospitales y escuelas de la Ciudad, referencias a Mauricio Macri, Horacio Rodríguez Larreta, el PRO, legisladores porteños.
+
+SEÑALES DE ALERTA (mirar con más cuidado; NO descartan por sí solas)
+- Ciudad de México y sus figuras: Clara Brugada, Martí Batres, Ernestina Godoy, Santiago Taboada, Marcelo Ebrard, López Obrador, Claudia Sheinbaum, Morena, PRI, CDMX, GobCDMX, alcaldías (Benito Juárez, Cuauhtémoc, etc.), "Jefa de Gobierno".
+- Colombia: Gustavo Petro, Bogotá. España: Pedro Sánchez, Vox, Zapatero. Chile: Boric. Otros países de la región.
+REGLA CLAVE: una señal de alerta no descarta el posteo. Si el contenido menciona una de esas figuras Y ADEMÁS habla de Jorge Macri o de la gestión de CABA, es relevante. Se descarta solo cuando el contenido es claramente de otra ciudad o país y no tiene nada que ver con Buenos Aires.
+
+TAMBIÉN SE DESCARTA
+- Contenido sobre Mauricio Macri (expresidente) que no involucre a Jorge Macri ni a la gestión porteña.
+- Política NACIONAL argentina que no involucre a Jorge Macri ni a la gestión de CABA: gobierno nacional, Javier Milei, sus voceros y ministros (Manuel Adorni, etc.), el Congreso nacional. Que sea política argentina no lo hace relevante; tiene que tocar a Jorge Macri o a la Ciudad.
+- Provincia de Buenos Aires o sus municipios cuando no involucran a la Ciudad.
+- Contenido genérico, turístico, cultural o comercial sin relación con la gestión, aunque transcurra en Buenos Aires.
+
 PISTA DE CONTEXTO
-El mensaje puede incluir una línea "CONTEXTO" con cómo llegó el posteo: contiene un término de nuestra lista de seguimiento, viene de una cuenta trackeada, de un hashtag o de una búsqueda. Un término de la lista es una señal fuerte a favor, no una garantía. Venir de una cuenta trackeada es una señal débil: las cuentas de política general publican mucho contenido que no tiene que ver con la gestión porteña, así que eso solo no alcanza para darlo por relevante.
+El mensaje puede incluir una línea "CONTEXTO" con cómo llegó el posteo: contiene un término de nuestra lista de seguimiento, viene de una cuenta trackeada, de un hashtag o de una búsqueda. Los términos de la lista son una guía, no una señal fuerte ni una garantía: explican por qué el posteo llegó hasta acá, pero la decisión es tuya por el contenido; un término de la lista en un posteo de otra ciudad o sin relación con la gestión sigue siendo no relevante. Venir de una cuenta trackeada es una señal débil: las cuentas de política general publican mucho contenido nacional sin relación con la gestión porteña, así que eso solo no alcanza para darlo por relevante.
 
 RESPUESTA (JSON según el schema)
 - relevant: true solo si habla de Jorge Macri o de la gestión de CABA según lo de arriba.

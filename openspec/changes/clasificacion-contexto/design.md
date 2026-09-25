@@ -19,9 +19,9 @@ resto del orquestador no cambia.
 - **La keyword es pista, no veredicto.** `evaluateRelevance` sigue buscando
   la coincidencia literal, pero la pasa como `pista.termino` en una línea
   `CONTEXTO:` del mensaje de usuario (junto con cuenta trackeada, hashtag o
-  búsqueda). El system prompt queda fijo. El prompt dice que el término es
-  una señal fuerte a favor y la cuenta trackeada una señal débil, y que
-  ninguna garantiza relevancia.
+  búsqueda). El system prompt queda fijo. El prompt dice que los términos
+  de la lista son una guía (no una señal fuerte ni una garantía) y la
+  cuenta trackeada una señal débil: decide el contenido.
 - **Un modelo.** `providerConfig.js` deja de conocer la tarea `classifier`:
   `getAnalysisModel` es el único modelo y `requestText` (reclamos,
   importador) lo usa. `warnObsoleteModelVars()` avisa al arrancar si

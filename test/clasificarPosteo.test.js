@@ -51,6 +51,9 @@ llm.requestStructuredAnalysis = async (req) => {
 /** "Modelo" de mentira: aplica sobre el caption las reglas que el prompt le pide al real. */
 function modeloDeReglas(userPrompt) {
   const texto = (userPrompt.split('POSTEO:\n')[1] || '').toLowerCase();
+  if (/blackri|blacri/.test(texto)) {
+    return { relevant: true, title: 'Blackri y la gestión porteña', sentiment: 'negativo', motivo: 'Blackri es Jorge Macri' };
+  }
   if (/jorge macri|\bcaba\b|ciudad de buenos aires|porteñ/.test(texto)) {
     return { relevant: true, title: 'Jorge Macri y la gestión porteña', sentiment: 'positivo', motivo: 'habla de CABA' };
   }
@@ -120,6 +123,27 @@ describe('clasificarPosteo: una sola llamada, con schema', { concurrency: false 
     assert.equal(llamadas.length, antes, 'sin texto no hay nada que preguntar');
   });
 
+  test('el system prompt desambigua geografía: CABA vs. Ciudad de México, términos ambiguos, señales que no descartan solas, política nacional afuera', () => {
+    const s = classifier.systemPrompt('Instagram');
+    assert.match(s, /Jorge Macri, Jefe de Gobierno de la Ciudad Autónoma de Buenos Aires \(CABA\), Argentina/);
+    assert.match(s, /"Jefe de Gobierno" es también el título del titular de la Ciudad de México/);
+    assert.match(s, /"PDLC" \/ "Policía de la Ciudad" y siglas parecidas solo cuentan si el contexto es claramente porteño/);
+    assert.match(s, /NO descartan por sí solas/);
+    assert.match(s, /REGLA CLAVE: una señal de alerta no descarta el posteo/);
+    assert.match(s, /Mauricio Macri \(expresidente\) que no involucre a Jorge Macri/);
+    assert.match(s, /Política NACIONAL argentina que no involucre a Jorge Macri ni a la gestión de CABA/);
+    assert.match(s, /Provincia de Buenos Aires/);
+    assert.match(s, /cuenta trackeada es una señal débil/);
+    assert.match(s, /Los términos de la lista son una guía, no una señal fuerte ni una garantía/);
+    assert.match(s, /"Blackri", "Blacri", "jorgemacri"/);
+    assert.match(s, /GCBA \(Gobierno de la Ciudad de Buenos Aires\), "gobierno porteño"/);
+    // Milei es señal de descarte (política nacional), no señal a favor.
+    const aFavor = s.split('SEÑALES A FAVOR')[1].split('SEÑALES DE ALERTA')[0];
+    assert.ok(!/Milei/.test(aFavor), 'Milei no está entre las señales a favor');
+    assert.match(s.split('TAMBIÉN SE DESCARTA')[1], /Javier Milei/);
+    assert.match(classifier.systemPrompt('X'), /posteo de X habla de Jorge Macri/);
+  });
+
   test('fallo de la API o respuesta fuera del schema: sin clasificar, nunca descartado en silencio', async () => {
     const sinClasificar = { relevant: true, title: null, sentiment: null, motivo: null, unclassified: true };
     const errores = [];
@@ -166,6 +190,49 @@ describe('evaluateRelevance: el modelo decide, la keyword es una pista', { concu
     assert.equal(r.sentiment, 'positivo');
     assert.equal(r.motivo, 'habla de CABA');
     assert.equal(r.matchedReason, 'Cuenta trackeada: @cuenta (coincidencia: "jorge macri") · habla de CABA');
+  });
+
+  test('"Blackri" sin nombrar a Jorge Macri: entra (el prompt lista los apodos como señal a favor)', async () => {
+    const r = await evaluar({
+      caption: 'Blackri otra vez de vacaciones mientras el subte no anda',
+      sourceType: 'search',
+      sourceQuery: 'blackri',
+      account: 'vecino',
+    });
+    assert.equal(r.relevant, true);
+    assert.equal(r.title, 'Blackri y la gestión porteña');
+    assert.equal(r.sentiment, 'negativo');
+    assert.equal(r.matchedReason, 'Búsqueda: blackri (relacionado por contenido) · Blackri es Jorge Macri');
+    assert.equal(ultima().userPrompt, 'CONTEXTO: llegó por la búsqueda del término "blackri" en Instagram.\nPOSTEO:\nBlackri otra vez de vacaciones mientras el subte no anda');
+    assert.match(ultima().system, /"Blackri", "Blacri", "jorgemacri"/);
+  });
+
+  test('una figura mexicana y Jorge Macri en el mismo posteo: entra (la señal de alerta no descarta por sí sola)', async () => {
+    const r = await evaluar({
+      caption: 'Sheinbaum recibió a Jorge Macri en CDMX y hablaron de seguridad',
+      sourceType: 'search',
+      sourceQuery: 'jorge macri',
+      account: 'medio',
+    });
+    assert.equal(r.relevant, true);
+    assert.equal(r.matchedReason, 'Búsqueda: jorge macri (coincidencia: "jorge macri") · habla de CABA');
+  });
+
+  test('keyword literal pero de otra ciudad: la PDLC de Bogotá no entra', async () => {
+    const r = await evaluar({ caption: 'La PDLC de Bogotá desplegó operativos en el centro', sourceType: 'hashtag', account: 'noticiasbogota' });
+    assert.deepEqual(r, { relevant: false, motivo: 'es de Bogotá' });
+    assert.match(ultima().userPrompt, /^CONTEXTO: el texto contiene el término "pdlc"/);
+  });
+
+  test('Mauricio Macri sin relación con la gestión porteña: no entra', async () => {
+    const r = await evaluar({ caption: 'Mauricio Macri viajó a Europa para reunirse con líderes del PP', sourceType: 'account', account: 'cuenta' });
+    assert.deepEqual(r, { relevant: false, motivo: 'Mauricio Macri sin relación con la gestión porteña' });
+  });
+
+  test('cuenta trackeada que publica sobre Milei y Adorni sin Jorge Macri ni CABA: no entra (la cuenta trackeada es una señal débil)', async () => {
+    const r = await evaluar({ caption: 'Milei y Adorni presentaron el presupuesto nacional en el Congreso', sourceType: 'account', account: 'cuenta' });
+    assert.deepEqual(r, { relevant: false, motivo: 'política nacional sin relación con CABA' });
+    assert.equal(ultima().userPrompt, 'CONTEXTO: es de la cuenta trackeada @cuenta.\nPOSTEO:\nMilei y Adorni presentaron el presupuesto nacional en el Congreso');
   });
 
   test('X en stand by: lo que llega por búsqueda por término entra directo, con título y sentimiento del modelo pero sin mirar relevant', async () => {

@@ -14,8 +14,8 @@
 
 ## Phase 2: prompt geográfico (cambio 2)
 
-- [ ] 2.1 System prompt con objetivo, términos ambiguos, señales a favor, señales de alerta, regla clave y descartes (REQ-CLC-05)
-- [ ] 2.2 Tests con captions de ejemplo (modelo stubeado)
+- [x] 2.1 System prompt con objetivo, términos ambiguos, señales a favor, señales de alerta, regla clave y descartes (REQ-CLC-05)
+- [x] 2.2 Tests con captions de ejemplo (modelo stubeado)
 
 ## Phase 3: trazabilidad (cambio 3)
 
