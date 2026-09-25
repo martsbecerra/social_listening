@@ -61,8 +61,8 @@ describe('detectionWindowFor (reloj fijo)', () => {
       assert.equal(monitor.detectionWindowFor('instagram', { now: NOW }).lookback, '3 days');
       process.env.MONITOR_LOOKBACK = '2 hours';
       assert.equal(monitor.detectionWindowFor('instagram', { now: NOW }).lookback, '1 day');
-      process.env.MONITOR_LOOKBACK = '30 days';
-      assert.equal(monitor.detectionWindowFor('instagram', { now: NOW }).windowDays, 7, 'el techo también acota la primera corrida');
+      process.env.MONITOR_LOOKBACK = '40 days';
+      assert.equal(monitor.detectionWindowFor('instagram', { now: NOW }).windowDays, 30, 'el techo también acota la primera corrida');
     } finally {
       delete process.env.MONITOR_LOOKBACK;
     }
@@ -87,12 +87,16 @@ describe('detectionWindowFor (reloj fijo)', () => {
     assert.equal(window.sinceIso, new Date(threeDaysAgo).toISOString());
   });
 
-  test('corrida previa de hace 20 días: se acota a MONITOR_LOOKBACK_MAX, no a los 20 días', () => {
-    const twentyDaysAgo = NOW - 20 * DAY_MS;
-    db.setRefreshState(KEY, new Date(twentyDaysAgo).toISOString());
-    const window = monitor.detectionWindowFor('instagram', { now: NOW });
-    assert.equal(window.windowDays, 7, 'clampeado al techo default, no a 20');
-    assert.equal(window.lookback, '7 days');
+  test('corrida previa de hace 20 días: entra entera (techo default 30); una de hace 40 se acota a MONITOR_LOOKBACK_MAX', () => {
+    db.setRefreshState(KEY, new Date(NOW - 20 * DAY_MS).toISOString());
+    const veinte = monitor.detectionWindowFor('instagram', { now: NOW });
+    assert.equal(veinte.windowDays, 20, 'con el techo viejo de 7 esto se perdía');
+    assert.equal(veinte.lookback, '20 days');
+
+    db.setRefreshState(KEY, new Date(NOW - 40 * DAY_MS).toISOString());
+    const cuarenta = monitor.detectionWindowFor('instagram', { now: NOW });
+    assert.equal(cuarenta.windowDays, 30, 'clampeado al techo default, no a 40');
+    assert.equal(cuarenta.lookback, '30 days');
   });
 
   test('MONITOR_LOOKBACK_MAX configurable: acota una corrida previa muy vieja; sin corrida previa sigue siendo 1 día', () => {
@@ -121,9 +125,10 @@ describe('raiseLimitForWindow', () => {
   test('ventana de 3 días: sube proporcionalmente', () => {
     assert.equal(monitor.raiseLimitForWindow(10, 3), 30);
   });
-  test('ventana en el techo (7 días): el factor no pasa de 5x', () => {
-    assert.equal(monitor.raiseLimitForWindow(10, 7), 50);
-    assert.equal(monitor.raiseLimitForWindow(10, 30), 50, 'un windowDays más grande que el factor tope no sube más');
+  test('ventana larga: el factor no pasa de 10x', () => {
+    assert.equal(monitor.raiseLimitForWindow(10, 7), 70);
+    assert.equal(monitor.raiseLimitForWindow(10, 10), 100);
+    assert.equal(monitor.raiseLimitForWindow(10, 30), 100, 'un windowDays más grande que el factor tope no sube más');
   });
 });
 

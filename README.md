@@ -848,9 +848,10 @@ ventana de "solo posteos más nuevos que":
 - **Sin ninguna corrida previa registrada** (primera vez en esta base):
   `MONITOR_LOOKBACK`, default 1 día hacia atrás.
 - **Con corrida previa**: desde el fin de la última detección exitosa de esa
-  plataforma hasta ahora, con techo `MONITOR_LOOKBACK_MAX` (default 7 días)
-  para que una caída larga no dispare una recuperación gigante (y su costo).
-  Así, si el server estuvo apagado, lo publicado en el medio no se pierde.
+  plataforma hasta ahora, con techo `MONITOR_LOOKBACK_MAX` (default 30
+  días; era 7 y una caída de más de una semana perdía lo anterior;
+  recuperar un mes de búsquedas son centavos). Así, si el server estuvo
+  apagado, lo publicado en el medio no se pierde.
 
 En el caso normal (cron al día) la ventana redondea a "1 day" — el techo
 solo se nota después de una caída real. El fin de la última detección
@@ -864,7 +865,7 @@ fijos) no cambian.
 Si la ventana calculada supera 1 día, `SEARCH_RESULTS_LIMIT`,
 `MONITOR_ACCOUNT_LIMIT` y `MONITOR_HASHTAG_LIMIT` de esa corrida suben
 proporcionalmente (`raiseLimitForWindow`: factor = días de ventana, nunca
-más de 5x el tope configurado) para no perderse posteos por el tope de
+más de 10x el tope configurado) para no perderse posteos por el tope de
 cantidad en vez de por fecha: el excedente sobre los posteos incluidos por
 consulta (20 en la búsqueda de apidojo) se paga a 0,0005 usd por posteo, no
 se corta. La consola lo registra cuando no fue la ventana default. Si aun

@@ -125,15 +125,16 @@ function monitorLimits() {
 const DAY_MS = 24 * 60 * 60 * 1000;
 // Techo de la ventana de detección dinámica (ver detectionWindowFor): nunca
 // se pide más atrás que esto, ni siquiera después de una caída larga del
-// server, para no disparar una recuperación gigante (y su costo).
-const DEFAULT_LOOKBACK_MAX_DAYS = 7;
-// La ventana dinámica sube MONITOR_ACCOUNT_LIMIT/MONITOR_HASHTAG_LIMIT
-// proporcionalmente cuando supera 1 día (ver raiseLimitForWindow), pero
-// nunca más de esta cantidad de veces el tope configurado: pasado ese
-// punto, una cuenta o hashtag que sigue topeando probablemente satura el
-// feed igual, y seguir subiendo el tope solo dispara costo sin traer más
-// señal real.
-const RAISE_LIMIT_CEILING_FACTOR = 5;
+// server. 30 días (era 7): con 7, una caída de más de una semana perdía lo
+// publicado antes; y como cada búsqueda cuesta por consulta más 0,0005 por
+// posteo de más, recuperar un mes entero son centavos.
+const DEFAULT_LOOKBACK_MAX_DAYS = 30;
+// La ventana dinámica sube los topes de resultados proporcionalmente
+// cuando supera 1 día (ver raiseLimitForWindow), pero nunca más de esta
+// cantidad de veces el tope configurado. 10 (era 5): con el techo de 30
+// días, 5x no alcanzaba para que una recuperación larga no cortara por
+// cantidad en vez de por fecha; el excedente se paga, no se corta.
+const RAISE_LIMIT_CEILING_FACTOR = 10;
 
 /** "7 days", "2 hours", "10 days", ... a milisegundos; inválido o ausente cae a `fallbackMs`. */
 function parseWindowMs(raw, fallbackMs) {
@@ -147,7 +148,7 @@ function parseWindowMs(raw, fallbackMs) {
   return n > 0 ? n * unitMs : fallbackMs;
 }
 
-/** MONITOR_LOOKBACK_MAX a milisegundos (default 7 días): el techo de la ventana. */
+/** MONITOR_LOOKBACK_MAX a milisegundos (default 30 días): el techo de la ventana. */
 function parseLookbackMaxMs(raw) {
   return parseWindowMs(raw, DEFAULT_LOOKBACK_MAX_DAYS * DAY_MS);
 }
@@ -164,8 +165,8 @@ function parseFirstRunLookbackMs(raw) {
  * siempre. Va desde el fin de la última detección exitosa de esa plataforma
  * (`detection_last_success:<platformId>` en refresh_state, ver
  * runMonitoringCycle) hasta `now`, con un techo de MONITOR_LOOKBACK_MAX
- * (default 7 días) para que una caída larga no dispare una recuperación
- * gigante (y su costo). Sin ninguna corrida previa registrada, la ventana
+ * (default 30 días) para que una caída larga no dispare una recuperación
+ * sin fin. Sin ninguna corrida previa registrada, la ventana
  * es MONITOR_LOOKBACK (default 1 día): la primera corrida mira un día hacia
  * atrás, no una semana. Redondeada hacia arriba a días enteros, mínimo 1:
  * en el caso normal (cron al día) da exactamente "1 day" — el techo solo se

@@ -56,9 +56,9 @@ ignoran con aviso y no se detecta nada). Ventana DINÁMICA
 (`monitor.detectionWindowFor`): sin corrida previa, `MONITOR_LOOKBACK` (1
 día); con corrida previa, desde el fin de la última detección exitosa de esa
 plataforma (`detection_last_success:<id>` en `refresh_state`), techo
-`MONITOR_LOOKBACK_MAX` (7 días). Si la ventana supera 1 día,
+`MONITOR_LOOKBACK_MAX` (30 días). Si la ventana supera 1 día,
 `SEARCH_RESULTS_LIMIT` (y en X los topes de cuentas/hashtags) sube
-proporcionalmente (tope 5x): el excedente sobre los 20 incluidos se paga
+proporcionalmente (tope 10x): el excedente sobre los 20 incluidos se paga
 (0,0005 c/u), no se corta; si una búsqueda igual llena su `maxItems`, el
 adapter apidojo lo avisa por log. `accounts` (cuentas trackeadas) y
 `keywords` (con o sin `#`) NO se consultan en la detección: son guía para el
