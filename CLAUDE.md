@@ -68,10 +68,10 @@ saber antes de tocar algo.
    Pocos términos, elegidos a mano; con `IG_ACTOR=apify` se ignoran con aviso.
    Llegan sin caption ni contadores: a los nuevos se les pide el detalle
    antes de filtrarlos (ver abajo).
-4. `keywords` sin `#`: NO son una fuente. Son el filtro de texto gratuito
-   que decide si lo que trajeron las otras tres habla del tema, más
-   `classifyRelevance` (semántica) cuando no hay coincidencia literal. En X,
-   en cambio, cada keyword (con o sin `#`) es una búsqueda de Grok.
+4. `keywords` sin `#`: NO son una fuente. La coincidencia literal con una
+   de ellas es una PISTA para el clasificador (`pista.termino`), no un
+   veredicto: el modelo decide siempre (ver "Clasificación con contexto").
+   En X, en cambio, cada keyword (con o sin `#`) es una búsqueda de Grok.
 
 Relevancia y dedupe viven en `src/monitor.js` (`evaluateRelevance`; si un
 posteo llega por varias fuentes gana `keyword` (X) > `account` > `hashtag`
@@ -154,6 +154,35 @@ fase actual y qué target tiene cada tarea activa en `apifyLimiter`,
 `benchmarkLimiter` y `refreshLimiter`. `APIFY_CALL_TIMEOUT_MS` (default
 120000, piso 1000) corta cada llamada a Apify que no respondió a tiempo,
 libera su cupo y la deja en `apify_calls` con `error='TIMEOUT'`.
+
+## Clasificación con contexto (LLM del monitoreo)
+
+`src/classifier.js` tiene UNA función, `clasificarPosteo(caption, {
+platformLabel, pista })`: una llamada con schema
+(`llm.requestStructuredAnalysis`, `maxTokens` 300) que devuelve `relevant`,
+`title`, `sentiment` y `motivo`, con el modelo de análisis. No hay modelo
+clasificador aparte: `CLASSIFIER_MODEL` / `OPENROUTER_CLASSIFIER_MODEL` no
+existen (si están en el `.env`, `warnObsoleteModelVars` avisa al arrancar);
+`requestText` (reclamos, importador) usa el mismo modelo. La coincidencia
+literal con una keyword NO da relevancia: `evaluateRelevance` la manda como
+`pista.termino` (junto con `cuenta`, `hashtag`, `busqueda`) en la línea
+`CONTEXTO:` del mensaje de usuario, y decide por `relevant`. El system prompt
+es fijo y desambigua geografía: "Jefe de Gobierno" es también el de la
+Ciudad de México; PDLC, "gobierno de la ciudad", alcalde, intendente solo
+valen en contexto porteño; las señales de alerta (figuras de CDMX, Colombia,
+España, Chile) no descartan por sí solas; se descarta Mauricio Macri sin
+Jorge ni gestión porteña, la política nacional argentina que no toque a
+Jorge Macri ni a la Ciudad, y la Provincia sin la Ciudad; la cuenta
+trackeada es señal débil. Fallo del LLM o respuesta fuera del schema →
+`unclassified` → se guarda sin clasificar (`— sin clasificar (falló el
+clasificador, relevancia sin verificar)`), nunca descarte silencioso;
+`relevant: false` sí descarta y se loguea `[clasificador] descartado (<red>)
+@cuenta <url>: <motivo>`. `matched_reason` = motivo base + ` · <motivo>`. X
+en stand by: `sourceType 'keyword'` entra directo (título y sentimiento,
+`relevant` ignorado, sin motivo). El backfill completa título, sentimiento y
+motivo y no borra: si el modelo dice no relevante, deja `no relevante según
+el modelo: <motivo>`. Los tests stubean `llm.requestStructuredAnalysis` (por
+el objeto del módulo) o `classifier.clasificarPosteo`; nunca el modelo real.
 
 ## Separación por plataforma
 

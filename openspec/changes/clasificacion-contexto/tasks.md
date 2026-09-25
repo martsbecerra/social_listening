@@ -6,11 +6,11 @@
 
 ## Phase 1: una función, un modelo (cambio 1)
 
-- [ ] 1.1 `clasificarPosteo` en `src/classifier.js` con schema y pista de contexto (REQ-CLC-01, REQ-CLC-02, REQ-CLC-04)
-- [ ] 1.2 `maxTokens` en `requestStructuredAnalysis` (index, anthropic, openrouter); `requestText` con el modelo de análisis (REQ-CLC-03)
-- [ ] 1.3 `providerConfig.js` sin tarea `classifier`; `warnObsoleteModelVars` en `server.js`; `scripts/import-reclamos.js` (REQ-CLC-03)
-- [ ] 1.4 `evaluateRelevance` y `backfillClassification` en `src/monitor.js`; X sin cambios (REQ-CLC-02, REQ-CLC-04, REQ-CLC-06)
-- [ ] 1.5 `.env.example`; stubs de los tests existentes; `test/clasificarPosteo.test.js`
+- [x] 1.1 `clasificarPosteo` en `src/classifier.js` con schema y pista de contexto (REQ-CLC-01, REQ-CLC-02, REQ-CLC-04)
+- [x] 1.2 `maxTokens` en `requestStructuredAnalysis` (index, anthropic, openrouter); `requestText` con el modelo de análisis (REQ-CLC-03)
+- [x] 1.3 `providerConfig.js` sin tarea `classifier`; `warnObsoleteModelVars` en `server.js`; `scripts/import-reclamos.js` (REQ-CLC-03)
+- [x] 1.4 `evaluateRelevance` y `backfillClassification` en `src/monitor.js`; X sin cambios (REQ-CLC-02, REQ-CLC-04, REQ-CLC-06)
+- [x] 1.5 `.env.example`; stubs de los tests existentes; `test/clasificarPosteo.test.js`
 
 ## Phase 2: prompt geográfico (cambio 2)
 
@@ -19,11 +19,11 @@
 
 ## Phase 3: trazabilidad (cambio 3)
 
-- [ ] 3.1 `motivo` en el schema, en `matched_reason`, en el log de descartes y en el backfill (REQ-CLC-07)
+- [x] 3.1 `motivo` en el schema, en `matched_reason`, en el log de descartes y en el backfill (REQ-CLC-07)
 
 ## Phase 4: docs
 
-- [ ] 4.1 README y `CLAUDE.md`
+- [x] 4.1 README y `CLAUDE.md`
 
 ## Pendiente (fuera del código)
 

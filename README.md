@@ -61,7 +61,7 @@ social_listening_app/
 │   ├── monitor.js            # Orquestador del monitoreo (todas las redes) + config.
 │   ├── accountStats.js       # Benchmark por cuenta (solo redes con esa capability).
 │   ├── metricsRefresh.js     # Refresco de métricas de posteos ya guardados (ídem).
-│   ├── classifier.js         # Título + sentimiento de cada posteo (Claude Haiku), para todas las redes.
+│   ├── classifier.js         # Relevancia + título + sentimiento + motivo de cada posteo (una llamada, mismo modelo que el análisis), para todas las redes.
 │   ├── mailer.js             # Envío de emails (alertas + magic link).
 │   ├── auth/                 # Allowlist, magic link, sesión, rate limit, gate.
 │   ├── notify.js             # Orquesta las notificaciones (email + WhatsApp a futuro).
@@ -204,14 +204,20 @@ Hace falta `SESSION_SECRET` (string largo aleatorio) y `APP_BASE_URL` (p. ej.
      página de descubrimiento como en Instagram) → relevante directo: la
      búsqueda ya lo encontró para ese término, descartarlo después sería
      perder lo que la búsqueda validó. Solo se le ponen título y sentimiento.
-  2. Si el caption/hashtags contienen alguna palabra clave configurada
-     literalmente → relevante directo.
-  3. Si no hay coincidencia literal → le pregunta a **Claude** si el
-     contenido igual habla del Jefe de Gobierno porteño o de su gestión,
-     sin necesidad de que lo nombre explícitamente (`classifyRelevance` en
-     `src/classifier.js`). Así se detectan menciones indirectas (ej. un
-     anuncio de una política de vivienda que no dice su nombre) que el
-     matching de texto solo, se perdería.
+  2. Todo lo demás (cuenta trackeada, hashtag, búsqueda de Instagram) lo
+     decide **Claude** en una sola llamada (`clasificarPosteo` en
+     `src/classifier.js`, con el mismo modelo que el análisis): ¿habla de
+     Jorge Macri o de la gestión de CABA? Si el caption/hashtags contienen
+     una palabra clave configurada, eso NO lo da por relevante: viaja como
+     **pista de contexto** ("el texto contiene el término X de nuestra lista
+     de seguimiento"), junto con la cuenta trackeada (señal débil), el
+     hashtag o la búsqueda, y el modelo decide. Así se detectan menciones
+     indirectas (una política de vivienda que no lo nombra) y se frenan las
+     colisiones geográficas: "Jefe de Gobierno" es también el título del
+     titular de la Ciudad de México, y "gobierno de la ciudad" o PDLC son
+     ambiguos entre ciudades; el prompt lo dice explícitamente (ver
+     "Clasificación con contexto" en las decisiones técnicas). El modelo
+     devuelve además un `motivo` corto que queda en `matched_reason`.
      Un posteo sin caption (nada que evaluar) solo se acepta si viene de una
      cuenta trackeada — de un hashtag o una búsqueda se descarta, porque no
      hay ninguna señal de que se relacione con el tema.
@@ -317,15 +323,15 @@ Hace falta `SESSION_SECRET` (string largo aleatorio) y `APP_BASE_URL` (p. ej.
   `node scripts/recalc-account-stats.js <cuenta>`, `--todas` o
   `--pendientes` (ver el encabezado del script).
 
-- **`src/classifier.js`**: acá vive el llamado a **Claude Haiku 4.5** (modelo
-  barato, configurable con `CLASSIFIER_MODEL`) para dos cosas: `classifyPost`
-  (título + sentimiento de un posteo que ya se sabe relevante) y
-  `classifyRelevance` (título + sentimiento + si aplica o no, para posteos
-  sin coincidencia literal — ver arriba). Todo a partir del caption, no de
-  los comentarios de la gente (eso sigue siendo un análisis aparte, manual,
-  en "Análisis de publicación"). Si el clasificador falla, el posteo no se
-  descarta: se guarda marcado como "sin clasificar" para revisarlo a mano
-  (ver "Cuando falla el clasificador del monitoreo", más abajo).
+- **`src/classifier.js`**: acá vive el llamado al LLM del monitoreo, una
+  sola función, `clasificarPosteo`: en una llamada con schema (structured
+  outputs) devuelve `relevant`, `title`, `sentiment` y `motivo`, con el
+  mismo modelo que el análisis de publicación (Sonnet; ya no hay un modelo
+  clasificador aparte). Todo a partir del caption, no de los comentarios de
+  la gente (eso sigue siendo un análisis aparte, manual, en "Análisis de
+  publicación"). Si el clasificador falla, el posteo no se descarta: se
+  guarda marcado como "sin clasificar" para revisarlo a mano (ver "Cuando
+  falla el clasificador del monitoreo", más abajo).
 
 - **`src/scheduler.js`** — ¿qué es un "cron" y por qué `node-cron`?: un cron
   es simplemente "una tarea que se repite sola cada tanto tiempo", sin que
@@ -820,26 +826,30 @@ pero se ignoran (con un aviso por ciclo) hasta volver a apidojo.
 
 ### ¿Qué modelo usa cada tarea?
 
-Hay **dos** tareas con LLM, y cada una tiene su modelo:
+Desde septiembre 2026 hay **un solo modelo** para todo el LLM (análisis de
+publicación, clasificación del monitoreo, subcategoría de reclamos e
+importador):
 
-| Tarea | Dónde | `anthropic` | `openrouter` |
-|---|---|---|---|
-| Análisis de publicación | `src/llm/` | `claude-sonnet-5` | `anthropic/claude-sonnet-5` |
-| Relevancia + sentimiento del monitoreo | `src/classifier.js` | `claude-haiku-4-5` | `anthropic/claude-haiku-4.5` |
+| `anthropic` | `openrouter` |
+|---|---|
+| `claude-sonnet-5` | `anthropic/claude-sonnet-5` |
 
-Son **los mismos dos modelos** en ambos proveedores: OpenRouter sólo cambia el
-formato del id (prefijo del proveedor y punto en la versión). Cambiar
-`LLM_PROVIDER` no cambia qué modelo se usa en cada tarea.
+Es **el mismo modelo** en ambos proveedores: OpenRouter sólo cambia el
+formato del id (prefijo del proveedor). Cambiar `LLM_PROVIDER` no cambia qué
+modelo se usa.
 
-Para pisarlos: `CLAUDE_MODEL` / `CLASSIFIER_MODEL` con `anthropic`, y
-`OPENROUTER_MODEL` / `OPENROUTER_CLASSIFIER_MODEL` con `openrouter`. Si elegís
-otro modelo para el análisis, tiene que soportar structured outputs —
-verificalo en https://openrouter.ai/models (debe listar `structured_outputs`).
+Para pisarlo: `CLAUDE_MODEL` con `anthropic`, `OPENROUTER_MODEL` con
+`openrouter`. Tiene que soportar structured outputs (el análisis y el
+clasificador los usan) — verificalo en https://openrouter.ai/models (debe
+listar `structured_outputs`). `CLASSIFIER_MODEL` y
+`OPENROUTER_CLASSIFIER_MODEL` (el modelo clasificador aparte, Haiku, de
+antes) ya no existen: si siguen en el `.env` se ignoran, con un aviso al
+arrancar.
 
 `LLM_PROVIDER` sólo acepta `anthropic` u `openrouter`: cualquier otro valor
 aborta el arranque en vez de caer en un default silencioso. Lo mismo si falta
 la clave del proveedor elegido. Al arrancar, el servidor imprime el proveedor
-activo y los dos modelos.
+activo y el modelo.
 
 `OPENROUTER_BASE_URL` (default `https://openrouter.ai/api/v1`) permite apuntar
 a cualquier gateway compatible con OpenAI, no sólo a OpenRouter.
@@ -1145,6 +1155,52 @@ La app muestra mensajes claros cuando:
 Si faltan credenciales, el servidor **no levanta**: aborta con el detalle de
 qué variable falta. Antes era un `console.warn` y el problema aparecía a mitad
 de un análisis.
+
+### Clasificación con contexto (septiembre 2026)
+
+Antes había dos caminos en `src/classifier.js` y ninguno verificaba
+geografía: con una keyword literal en el caption el posteo entraba sin
+preguntarle nada al modelo (solo título y sentimiento), y sin keyword se le
+preguntaba a Haiku si "igual hablaba del Jefe de Gobierno". "Jefe de
+Gobierno" es también el título del titular de la Ciudad de México, y
+"gobierno de la ciudad" o PDLC (Policía de la Ciudad) son ambiguos entre
+ciudades: entraban falsos positivos.
+
+Ahora:
+
+- **Una sola función, `clasificarPosteo`**, una llamada con schema
+  (structured outputs) que devuelve `relevant`, `title`, `sentiment` y
+  `motivo`, con el mismo modelo que el análisis (ver "¿Qué modelo usa cada
+  tarea?"). `classifyPost` y `classifyRelevance` no existen más.
+- **La keyword es una pista, no un veredicto.** `evaluateRelevance` sigue
+  buscando la coincidencia literal, pero la manda como línea `CONTEXTO:`
+  del mensaje de usuario ("el texto contiene el término X de nuestra lista
+  de seguimiento"), junto con la cuenta trackeada, el hashtag o la búsqueda.
+  El prompt dice que el término es una señal fuerte a favor y la cuenta
+  trackeada una señal débil, y que ninguna garantiza relevancia.
+- **Desambiguación geográfica en el system prompt**: objetivo Jorge Macri /
+  CABA; la Ciudad de México no es relevante aunque use "Jefe de Gobierno";
+  PDLC, "gobierno de la ciudad", alcalde, intendente solo valen en contexto
+  porteño; señales a favor (CABA, porteño, Legislatura porteña, comunas,
+  subte, SUBE, AUSA, el PRO, Rodríguez Larreta...) y señales de alerta
+  (figuras de la Ciudad de México, Colombia, España, Chile) que NO descartan
+  por sí solas: si además habla de Jorge Macri o de CABA, es relevante.
+  También se descarta Mauricio Macri sin relación con Jorge ni la gestión
+  porteña, la política nacional argentina (gobierno nacional, Milei,
+  Adorni, el Congreso) que no toque a Jorge Macri ni a la Ciudad, y la
+  Provincia de Buenos Aires sin la Ciudad.
+- **Trazabilidad**: `matched_reason` queda como `<motivo base de siempre> ·
+  <motivo del modelo>` (ej. `Cuenta trackeada: @cuenta (coincidencia:
+  "pdlc") · habla de la Policía de la Ciudad en CABA`), visible en
+  `GET /api/monitoring/posts` y en la base. Un descarte se loguea
+  `[clasificador] descartado (<red>) @cuenta <url>: <motivo>`. El backfill
+  completa título, sentimiento y motivo; si el modelo dice que un posteo ya
+  guardado no es relevante, no lo borra: deja `no relevante según el
+  modelo: <motivo>` y avisa por consola.
+- **X en stand by**: lo que llega por búsqueda por término de X sigue
+  entrando directo (título y sentimiento del modelo, `relevant` ignorado,
+  sin motivo).
+- Los posteos guardados antes del cambio quedan como están (sin motivo).
 
 ### Cuando falla el clasificador del monitoreo
 
