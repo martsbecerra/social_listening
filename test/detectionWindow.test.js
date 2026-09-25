@@ -1,10 +1,11 @@
 'use strict';
 
-// Cambio D: ventana de detección dinámica (cuentas y hashtags SOLO) desde el
-// fin de la última detección exitosa, con techo MONITOR_LOOKBACK_MAX. Ver
-// monitor.detectionWindowFor (reloj fijo inyectable) y monitor.raiseLimitForWindow.
-// Búsquedas, keywords (X) y benchmark no cambian: se prueba aparte que
-// runMonitoringCycle les sigue mandando el MONITOR_LOOKBACK fijo de siempre.
+// Ventana de detección dinámica: sin corrida previa, MONITOR_LOOKBACK (1 día);
+// con corrida previa, desde el fin de la última detección exitosa, con techo
+// MONITOR_LOOKBACK_MAX. Ver monitor.detectionWindowFor (reloj fijo
+// inyectable) y monitor.raiseLimitForWindow. En Instagram la usan las
+// búsquedas (la única fuente de detección), con el tope escalado por la
+// ventana; cuentas y hashtags no se consultan.
 
 const fs = require('fs');
 const os = require('os');
@@ -44,14 +45,27 @@ beforeEach(() => {
   db.setRefreshState(KEY, ''); // 'borrar' no existe: valor vacío no parsea -> Number.isFinite(NaN) falso, mismo efecto que "sin marca"
 });
 
-describe('Cambio D: detectionWindowFor (reloj fijo)', () => {
-  test('sin corrida previa: usa el techo (MONITOR_LOOKBACK_MAX, default 7 días)', () => {
+describe('detectionWindowFor (reloj fijo)', () => {
+  test('sin corrida previa: MONITOR_LOOKBACK (default 1 día), no el techo', () => {
     delete process.env.MONITOR_LOOKBACK_MAX;
+    delete process.env.MONITOR_LOOKBACK;
     const window = monitor.detectionWindowFor('instagram', { now: NOW });
-    assert.equal(window.windowDays, 7);
-    assert.equal(window.lookback, '7 days');
-    assert.equal(window.isDefault, false);
-    assert.equal(window.sinceIso, new Date(NOW - 7 * DAY_MS).toISOString());
+    assert.equal(window.windowDays, 1);
+    assert.equal(window.lookback, '1 day');
+    assert.equal(window.isDefault, true);
+    assert.equal(window.sinceIso, new Date(NOW - DAY_MS).toISOString());
+
+    // Configurable, en días enteros (una fracción de día redondea a 1).
+    process.env.MONITOR_LOOKBACK = '3 days';
+    try {
+      assert.equal(monitor.detectionWindowFor('instagram', { now: NOW }).lookback, '3 days');
+      process.env.MONITOR_LOOKBACK = '2 hours';
+      assert.equal(monitor.detectionWindowFor('instagram', { now: NOW }).lookback, '1 day');
+      process.env.MONITOR_LOOKBACK = '30 days';
+      assert.equal(monitor.detectionWindowFor('instagram', { now: NOW }).windowDays, 7, 'el techo también acota la primera corrida');
+    } finally {
+      delete process.env.MONITOR_LOOKBACK;
+    }
   });
 
   test('corrida previa reciente (hace 4hs, el cron normal): ventana de 1 día, igual que el default de siempre', () => {
@@ -81,10 +95,10 @@ describe('Cambio D: detectionWindowFor (reloj fijo)', () => {
     assert.equal(window.lookback, '7 days');
   });
 
-  test('MONITOR_LOOKBACK_MAX configurable: cambia el techo cuando no hay corrida previa (o es muy vieja)', () => {
+  test('MONITOR_LOOKBACK_MAX configurable: acota una corrida previa muy vieja; sin corrida previa sigue siendo 1 día', () => {
     process.env.MONITOR_LOOKBACK_MAX = '3 days';
     try {
-      assert.equal(monitor.detectionWindowFor('instagram', { now: NOW }).windowDays, 3);
+      assert.equal(monitor.detectionWindowFor('instagram', { now: NOW }).windowDays, 1);
       db.setRefreshState(KEY, new Date(NOW - 20 * DAY_MS).toISOString());
       assert.equal(monitor.detectionWindowFor('instagram', { now: NOW }).windowDays, 3);
     } finally {
@@ -96,11 +110,11 @@ describe('Cambio D: detectionWindowFor (reloj fijo)', () => {
     db.setRefreshState('detection_last_success:instagram', new Date(NOW - 3 * DAY_MS).toISOString());
     delete process.env.MONITOR_LOOKBACK_MAX;
     const x = monitor.detectionWindowFor('x', { now: NOW });
-    assert.equal(x.windowDays, 7, 'x nunca tuvo una corrida marcada: usa el techo, sin importar la de instagram');
+    assert.equal(x.windowDays, 1, 'x nunca tuvo una corrida marcada: 1 día, sin importar la de instagram');
   });
 });
 
-describe('Cambio D: raiseLimitForWindow', () => {
+describe('raiseLimitForWindow', () => {
   test('ventana de 1 día (default): no sube el tope', () => {
     assert.equal(monitor.raiseLimitForWindow(10, 1), 10);
   });
@@ -113,33 +127,43 @@ describe('Cambio D: raiseLimitForWindow', () => {
   });
 });
 
-describe('runMonitoringCycle: en Instagram solo se consulta la búsqueda', () => {
-  test('scrapeAccount/scrapeHashtag no se llaman (cuentas y hashtags son guía); scrapeSearch recibe MONITOR_LOOKBACK fijo', async () => {
+describe('runMonitoringCycle: en Instagram solo se consulta la búsqueda, con la ventana dinámica', () => {
+  test('scrapeAccount/scrapeHashtag no se llaman (cuentas y hashtags son guía); scrapeSearch recibe la ventana dinámica y el tope escalado', async () => {
     delete process.env.MONITOR_LOOKBACK_MAX;
-    process.env.MONITOR_LOOKBACK = '2 hours';
+    delete process.env.MONITOR_LOOKBACK;
+    delete process.env.SEARCH_RESULTS_LIMIT;
+    // Última detección exitosa hace unos días (NOW es un reloj fijo del
+    // pasado): la ventana real, calculada con Date.now(), supera 1 día.
     db.setRefreshState(KEY, new Date(NOW - 3 * DAY_MS).toISOString());
 
-    const seenLookbacks = { account: null, hashtag: null, search: null };
+    const seen = { account: null, hashtag: null, search: null };
     instagram.isConfigured = () => true;
     instagram.scrapeAccount = async (account, { lookback }) => {
-      seenLookbacks.account = lookback;
+      seen.account = lookback;
       return [];
     };
     instagram.scrapeHashtag = async (tag, { lookback }) => {
-      seenLookbacks.hashtag = lookback;
+      seen.hashtag = lookback;
       return [];
     };
-    instagram.scrapeSearch = async (term, { lookback }) => {
-      seenLookbacks.search = lookback;
+    instagram.scrapeSearch = async (term, { lookback, resultsLimit }) => {
+      seen.search = { lookback, resultsLimit };
       return [];
     };
 
+    // La ventana depende de Date.now() real acá (runMonitoringCycle no toma
+    // un `now` inyectado): se calcula con el mismo criterio para comparar.
+    const expected = monitor.detectionWindowFor('instagram');
+    assert.equal(expected.isDefault, false, 'precondición: la marca de hace días abre la ventana');
     await monitor.runMonitoringCycle({ plataformas: ['instagram'] });
 
-    assert.equal(seenLookbacks.account, null, 'la cuenta trackeada no se consulta en la detección');
-    assert.equal(seenLookbacks.hashtag, null, 'la página del hashtag no se recorre');
-    assert.equal(seenLookbacks.search, '2 hours', 'la búsqueda va con MONITOR_LOOKBACK fijo');
+    assert.equal(seen.account, null, 'la cuenta trackeada no se consulta en la detección');
+    assert.equal(seen.hashtag, null, 'la página del hashtag no se recorre');
+    assert.deepEqual(seen.search, { lookback: expected.lookback, resultsLimit: monitor.raiseLimitForWindow(50, expected.windowDays) });
 
-    delete process.env.MONITOR_LOOKBACK;
+    // Ciclo al día (marca de hace 4hs): ventana default y tope base.
+    db.setRefreshState(KEY, new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString());
+    await monitor.runMonitoringCycle({ plataformas: ['instagram'] });
+    assert.deepEqual(seen.search, { lookback: '1 day', resultsLimit: 50 });
   });
 });

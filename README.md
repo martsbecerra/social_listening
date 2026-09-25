@@ -707,29 +707,38 @@ cuelgan.
 - `[heartbeat]`: si pasan 15s sin que termine ninguna llamada mientras un ciclo está en curso, un snapshot de la fase actual y qué target tiene cada tarea activa en `apifyLimiter`, `benchmarkLimiter` y `refreshLimiter` — se repite cada 15s mientras siga sin actividad.
 - `APIFY_CALL_TIMEOUT_MS` (default 120000, piso 1000): cada llamada a Apify se corta a los ms configurados si no respondió, libera su cupo y queda en `apify_calls` con `error='TIMEOUT'`, sin tirar abajo el resto del ciclo.
 
-### Ventana de detección dinámica (cuentas y hashtags)
+### Ventana de detección dinámica (búsquedas en Instagram; cuentas y hashtags en X)
 
-`MONITOR_LOOKBACK` era fijo ("1 day"): si el server estuvo apagado, lo
-publicado en el medio no se detectaba. `monitor.detectionWindowFor(platformId)`
-calcula, para cuentas y hashtags de cada corrida, una ventana real =
-`max(ahora − MONITOR_LOOKBACK_MAX, fin de la última detección exitosa de esa
-plataforma)`; sin ninguna corrida previa registrada (o con una de más de
-`MONITOR_LOOKBACK_MAX`, default 7 días), se usa directamente ese techo, para
-que una caída larga no dispare una recuperación gigante (y su costo). En el
-caso normal (cron cada 4hs) la ventana redondea a "1 day", igual que el fijo
-de antes — el techo solo se nota después de una caída real. El fin de la
-última detección exitosa se guarda en `refresh_state`
-(`detection_last_success:<plataforma>`) apenas esa fase termina sin error,
-aunque el ciclo completo falle después en benchmark o refresco.
+`monitor.detectionWindowFor(platformId)` calcula, para cada corrida, la
+ventana de "solo posteos más nuevos que":
 
-Si la ventana calculada supera 1 día, `MONITOR_ACCOUNT_LIMIT` y
-`MONITOR_HASHTAG_LIMIT` de esa corrida suben proporcionalmente
-(`raiseLimitForWindow`: factor = días de ventana, nunca más de 5x el tope
-configurado) para no perderse posteos por el tope de cantidad en vez de por
-fecha — pasado ese factor, seguir subiendo el tope es más costo que señal
-real. La consola lo registra cuando no fue la ventana default. Búsquedas
-por palabra clave, keywords de X y el benchmark (90 días fijos) NO cambian:
-siguen con su propia lógica de siempre.
+- **Sin ninguna corrida previa registrada** (primera vez en esta base):
+  `MONITOR_LOOKBACK`, default 1 día hacia atrás.
+- **Con corrida previa**: desde el fin de la última detección exitosa de esa
+  plataforma hasta ahora, con techo `MONITOR_LOOKBACK_MAX` (default 7 días)
+  para que una caída larga no dispare una recuperación gigante (y su costo).
+  Así, si el server estuvo apagado, lo publicado en el medio no se pierde.
+
+En el caso normal (cron al día) la ventana redondea a "1 day" — el techo
+solo se nota después de una caída real. El fin de la última detección
+exitosa se guarda en `refresh_state` (`detection_last_success:<plataforma>`)
+apenas esa fase termina sin error, aunque el ciclo completo falle después
+en benchmark o refresco. En Instagram la usan las búsquedas por palabra
+clave (la única fuente de detección); en X, cuentas y hashtags. Las keywords
+de X (search de Grok, `MONITOR_LOOKBACK` fijo) y el benchmark (90 días
+fijos) no cambian.
+
+Si la ventana calculada supera 1 día, `SEARCH_RESULTS_LIMIT`,
+`MONITOR_ACCOUNT_LIMIT` y `MONITOR_HASHTAG_LIMIT` de esa corrida suben
+proporcionalmente (`raiseLimitForWindow`: factor = días de ventana, nunca
+más de 5x el tope configurado) para no perderse posteos por el tope de
+cantidad en vez de por fecha: el excedente sobre los posteos incluidos por
+consulta (20 en la búsqueda de apidojo) se paga a 0,0005 usd por posteo, no
+se corta. La consola lo registra cuando no fue la ventana default. Si aun
+así una búsqueda llena su tope (`maxItems`), el adapter lo avisa por log
+(`[apidojo] la búsqueda "..." devolvió N posteos, el tope de la consulta`):
+lo más viejo de la ventana puede haber quedado afuera; subir
+`SEARCH_RESULTS_LIMIT` es pagar el excedente en vez de cortar.
 
 ### Separación por plataforma: la url manda
 

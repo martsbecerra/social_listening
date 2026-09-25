@@ -316,6 +316,22 @@ describe('proveedor apidojo del adapter de Instagram', { concurrency: false }, (
       assert.equal(search[0].sourceType, 'search');
       assert.equal(search[0].sourceQuery, 'jorge macri');
       assert.equal(search[1].caption, '');
+
+      // Si la búsqueda llena su tope, avisa: puede haber quedado afuera algo
+      // de la ventana, y la intención es pagar el excedente, no cortar.
+      const originalWarn = console.warn;
+      const warned = [];
+      console.warn = (...args) => warned.push(args.join(' '));
+      try {
+        await instagram.scrapeSearch('jorge macri', { resultsLimit: 2, lookback: '1 day' });
+      } finally {
+        console.warn = originalWarn;
+      }
+      assert.equal(calls[2].body.maxItems, 2);
+      assert.ok(
+        warned.some((w) => /\[apidojo\] la búsqueda "jorge macri" devolvió 2 posteos, el tope de la consulta \(maxItems=2\)/.test(w) && /SEARCH_RESULTS_LIMIT/.test(w)),
+        warned.join('\n')
+      );
     } finally {
       global.fetch = originalFetch;
     }

@@ -132,31 +132,43 @@ const DEFAULT_LOOKBACK_MAX_DAYS = 7;
 // señal real.
 const RAISE_LIMIT_CEILING_FACTOR = 5;
 
-/** MONITOR_LOOKBACK_MAX ("7 days", "10 days", ...) a milisegundos; inválido o ausente cae al default. */
-function parseLookbackMaxMs(raw) {
+/** "7 days", "2 hours", "10 days", ... a milisegundos; inválido o ausente cae a `fallbackMs`. */
+function parseWindowMs(raw, fallbackMs) {
   const m = String(raw ?? '')
     .trim()
     .match(/^(\d+(?:\.\d+)?)\s*(minutes?|mins?|hours?|days?|weeks?)$/i);
-  if (!m) return DEFAULT_LOOKBACK_MAX_DAYS * DAY_MS;
+  if (!m) return fallbackMs;
   const n = Number(m[1]);
   const unit = m[2].toLowerCase();
   const unitMs = unit.startsWith('min') ? 60 * 1000 : unit.startsWith('hour') ? 60 * 60 * 1000 : unit.startsWith('week') ? 7 * DAY_MS : DAY_MS;
-  return n > 0 ? n * unitMs : DEFAULT_LOOKBACK_MAX_DAYS * DAY_MS;
+  return n > 0 ? n * unitMs : fallbackMs;
+}
+
+/** MONITOR_LOOKBACK_MAX a milisegundos (default 7 días): el techo de la ventana. */
+function parseLookbackMaxMs(raw) {
+  return parseWindowMs(raw, DEFAULT_LOOKBACK_MAX_DAYS * DAY_MS);
+}
+
+/** MONITOR_LOOKBACK a milisegundos (default 1 día): la ventana de la primera corrida. */
+function parseFirstRunLookbackMs(raw) {
+  return parseWindowMs(raw, DAY_MS);
 }
 
 /**
- * Ventana de detección dinámica (CAMBIO D) para cuentas y hashtags de una
- * plataforma — búsquedas, keywords (X) y benchmark NO usan esto, siguen con
- * su propia lógica de siempre. Va desde el fin de la última detección
- * exitosa de esa plataforma (`detection_last_success:<platformId>` en
- * refresh_state, ver runMonitoringCycle) hasta `now`, con un techo de
- * MONITOR_LOOKBACK_MAX (default 7 días): sin corrida previa registrada, o
- * con una de hace más de ese techo, se usa el techo. Redondeada hacia
- * arriba a días enteros, mínimo 1: en el caso normal (cron cada 4hs) da
- * exactamente "1 day", igual que el fijo de antes — el techo solo se nota
- * después de una caída real. Se manda en días enteros, nunca fracciones de
- * hora: `apify/instagram-scraper` recibe este string tal cual en
- * `onlyPostsNewerThan` y no hay garantía de que entienda horas
+ * Ventana de detección dinámica de una plataforma: en Instagram la usan las
+ * búsquedas por palabra clave (la única fuente de detección); en X, cuentas
+ * y hashtags. Las keywords de X y el benchmark NO: siguen con su lógica de
+ * siempre. Va desde el fin de la última detección exitosa de esa plataforma
+ * (`detection_last_success:<platformId>` en refresh_state, ver
+ * runMonitoringCycle) hasta `now`, con un techo de MONITOR_LOOKBACK_MAX
+ * (default 7 días) para que una caída larga no dispare una recuperación
+ * gigante (y su costo). Sin ninguna corrida previa registrada, la ventana
+ * es MONITOR_LOOKBACK (default 1 día): la primera corrida mira un día hacia
+ * atrás, no una semana. Redondeada hacia arriba a días enteros, mínimo 1:
+ * en el caso normal (cron al día) da exactamente "1 day" — el techo solo se
+ * nota después de una caída real. Se manda en días enteros, nunca
+ * fracciones de hora: `apify/instagram-scraper` recibe este string tal cual
+ * en `onlyPostsNewerThan` y no hay garantía de que entienda horas
  * fraccionarias; apidojo igual refiltra por milisegundos exactos
  * (`applyWindow` en instagramApidojo.js), así que ahí no se pierde precisión.
  *
@@ -169,7 +181,8 @@ function detectionWindowFor(platformId, { now = Date.now() } = {}) {
   const ceilingMs = now - maxMs;
   const lastSuccessRaw = db.getRefreshState(`detection_last_success:${platformId}`);
   const lastSuccessMs = lastSuccessRaw ? Date.parse(lastSuccessRaw) : NaN;
-  const sinceMs = Number.isFinite(lastSuccessMs) ? Math.max(ceilingMs, lastSuccessMs) : ceilingMs;
+  const firstRunMs = now - parseFirstRunLookbackMs(process.env.MONITOR_LOOKBACK);
+  const sinceMs = Math.max(ceilingMs, Number.isFinite(lastSuccessMs) ? lastSuccessMs : firstRunMs);
   const windowDays = Math.max(1, Math.ceil((now - sinceMs) / DAY_MS));
   // Singular en 1 para que el caso normal (cron al día) sea BYTE A BYTE el
   // mismo string que el fijo de antes ("1 day"); parseLookbackMs entiende
@@ -920,18 +933,21 @@ async function runMonitoringCycle({ plataformas } = {}) {
       );
     }
 
-    // Ventana de detección de ESTA corrida para cuentas y hashtags (CAMBIO
-    // D): dinámica, desde el fin de la última detección exitosa, con techo
-    // MONITOR_LOOKBACK_MAX. Si superó 1 día, los topes de cuentas/hashtags
-    // suben proporcionalmente para no perder posteos por el tope de
-    // cantidad en vez de por fecha (ver raiseLimitForWindow).
+    // Ventana de detección de ESTA corrida (cuentas, hashtags y búsquedas):
+    // dinámica, desde el fin de la última detección exitosa (sin corrida
+    // previa, MONITOR_LOOKBACK: 1 día), con techo MONITOR_LOOKBACK_MAX. Si
+    // superó 1 día, los topes suben proporcionalmente para no perder posteos
+    // por el tope de cantidad en vez de por fecha (ver raiseLimitForWindow):
+    // el excedente sobre lo incluido por consulta se paga, no se corta.
     const window = detectionWindowFor(platformId, { now: cycleNowMs });
     const accountLimit = window.isDefault ? limits.account : raiseLimitForWindow(limits.account, window.windowDays);
     const hashtagLimit = window.isDefault ? limits.hashtag : raiseLimitForWindow(limits.hashtag, window.windowDays);
+    const searchLimit = window.isDefault ? limits.search : raiseLimitForWindow(limits.search, window.windowDays);
     if (!window.isDefault) {
       console.log(
         `[monitor] ${platformId}: ventana de detección ampliada a ${window.windowDays} día(s) (desde ${window.sinceIso}); ` +
-          `topes de esta corrida: cuentas ${accountLimit} (base ${limits.account}), hashtags ${hashtagLimit} (base ${limits.hashtag}).`
+          `topes de esta corrida: cuentas ${accountLimit} (base ${limits.account}), hashtags ${hashtagLimit} (base ${limits.hashtag}), ` +
+          `búsquedas ${searchLimit} (base ${limits.search}).`
       );
     }
 
@@ -969,7 +985,7 @@ async function runMonitoringCycle({ plataformas } = {}) {
       ...(canSearch
         ? searches.map((term) =>
             tickDetection(
-              runWithContext({ phase: 'busqueda' }, () => platform.scrapeSearch(term, { resultsLimit: limits.search, lookback: legacyLookback }))
+              runWithContext({ phase: 'busqueda' }, () => platform.scrapeSearch(term, { resultsLimit: searchLimit, lookback: window.lookback }))
             )
           )
         : []),

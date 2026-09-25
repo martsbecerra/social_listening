@@ -252,7 +252,17 @@ async function scrapeHashtag(tag, { resultsLimit, lookback } = {}) {
  */
 async function scrapeSearch(term, { resultsLimit, lookback } = {}) {
   const clean = String(term || '').trim();
-  const items = await runActor(buildInput({ keywords: [clean] }, { resultsLimit, lookback }));
+  const input = buildInput({ keywords: [clean] }, { resultsLimit, lookback });
+  const items = await runActor(input);
+  // Si la búsqueda llenó su tope, algo de la ventana puede haber quedado
+  // afuera: que se vea en el log, porque el excedente sobre los 20 incluidos
+  // se paga a 0,0005 y la intención es pagarlo, no cortar.
+  if (Array.isArray(items) && items.length >= input.maxItems) {
+    console.warn(
+      `[apidojo] la búsqueda "${clean}" devolvió ${items.length} posteos, el tope de la consulta (maxItems=${input.maxItems}): ` +
+        'puede haber quedado afuera lo más viejo de la ventana. Subí SEARCH_RESULTS_LIMIT para pagar el excedente (0,0005 usd por posteo) en vez de cortar.'
+    );
+  }
   return applyWindow(normalizeItems(items, { account: null, sourceType: 'search', sourceQuery: clean }), lookback);
 }
 

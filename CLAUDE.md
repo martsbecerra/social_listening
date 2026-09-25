@@ -50,10 +50,17 @@ saber antes de tocar algo.
 
 Desde septiembre 2026 **lo único que busca publicaciones nuevas en Instagram
 es `searches`** (la lupita: búsqueda por palabra clave nativa, solo con
-apidojo, `scrapeSearch`; una consulta cobrada por término y por ciclo,
-`SEARCH_RESULTS_LIMIT` resultados, ventana fija `MONITOR_LOOKBACK`;
+apidojo, `scrapeSearch`; una consulta cobrada por término y por ciclo;
 `sourceType 'search'`, motivo `Búsqueda: <término>`; con `IG_ACTOR=apify` se
-ignoran con aviso y no se detecta nada). `accounts` (cuentas trackeadas) y
+ignoran con aviso y no se detecta nada). Ventana DINÁMICA
+(`monitor.detectionWindowFor`): sin corrida previa, `MONITOR_LOOKBACK` (1
+día); con corrida previa, desde el fin de la última detección exitosa de esa
+plataforma (`detection_last_success:<id>` en `refresh_state`), techo
+`MONITOR_LOOKBACK_MAX` (7 días). Si la ventana supera 1 día,
+`SEARCH_RESULTS_LIMIT` (y en X los topes de cuentas/hashtags) sube
+proporcionalmente (tope 5x): el excedente sobre los 20 incluidos se paga
+(0,0005 c/u), no se corta; si una búsqueda igual llena su `maxItems`, el
+adapter apidojo lo avisa por log. `accounts` (cuentas trackeadas) y
 `keywords` (con o sin `#`) NO se consultan en la detección: son guía para el
 clasificador (pista de cuenta trackeada / coincidencia literal, ver
 "Clasificación con contexto"). Lo declara el adapter en
