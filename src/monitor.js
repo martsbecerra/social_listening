@@ -208,8 +208,11 @@ function raiseLimitForWindow(baseLimit, windowDays) {
 // Enriquecimiento de los resultados de búsqueda (ver enrichSearchResults):
 // cuántos detalles de posteo se piden como mucho por ciclo y plataforma
 // (SEARCH_ENRICH_LIMIT; 0 lo apaga) y cuánto se recuerda un resultado ya
-// consultado (tabla search_seen).
-const DEFAULT_SEARCH_ENRICH_LIMIT = 20;
+// consultado (tabla search_seen). 100 (era 20): lo que no entra solo vuelve
+// si la búsqueda lo trae de nuevo dentro de la ventana, así que un tope
+// chico en un día con muchos resultados perdía posteos. Solo cuesta si hay
+// volumen (0,0023 usd por posteo nuevo).
+const DEFAULT_SEARCH_ENRICH_LIMIT = 100;
 const SEARCH_SEEN_TTL_DAYS = 30;
 
 /** @returns {number} se lee en cada ciclo, no al cargar. Un valor inválido vale el default. */
@@ -721,9 +724,10 @@ function markSearchSeen(post, platformId, outcome) {
  * Para no pagar dos veces por lo mismo:
  *   - No se consulta lo que ya está en detected_posts ni lo anotado en
  *     search_seen (un posteo descartado no se vuelve a evaluar).
- *   - Tope por ciclo SEARCH_ENRICH_LIMIT (default 20, 0 apaga el paso): van
+ *   - Tope por ciclo SEARCH_ENRICH_LIMIT (default 100, 0 apaga el paso): van
  *     primero los más nuevos; el resto queda SIN anotar y entra en el próximo
- *     ciclo si la búsqueda lo sigue trayendo.
+ *     ciclo si la búsqueda lo sigue trayendo (si ya no lo trae, se perdió:
+ *     por eso el tope es holgado).
  *   - Queda anotado todo aquello por lo que se pagó: 'sin_caption' (el
  *     detalle tampoco trae texto: se descarta), 'sin_detalle' (la consulta
  *     no devolvió ese posteo: borrado o privado) y, después de evaluar

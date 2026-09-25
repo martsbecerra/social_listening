@@ -331,9 +331,9 @@ describe('detalle de los resultados de búsqueda sin caption', { concurrency: fa
       assert.equal(result.porPlataforma.instagram.searchEnrichment.requested, 0);
 
       delete process.env.SEARCH_ENRICH_LIMIT;
-      assert.equal(monitor.searchEnrichLimit(), 20, 'default');
+      assert.equal(monitor.searchEnrichLimit(), 100, 'default');
       process.env.SEARCH_ENRICH_LIMIT = 'muchos';
-      assert.equal(monitor.searchEnrichLimit(), 20, 'un valor inválido vale el default');
+      assert.equal(monitor.searchEnrichLimit(), 100, 'un valor inválido vale el default');
       delete process.env.SEARCH_ENRICH_LIMIT;
 
       // Un resultado que ya trae texto: ningún detalle. Las cuentas

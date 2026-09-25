@@ -246,8 +246,10 @@ Hace falta `SESSION_SECRET` (string largo aleatorio) y `APP_BASE_URL` (p. ej.
      los hashtags y los contadores del detalle se vuelcan sobre el mismo
      posteo, que sigue siendo de la búsqueda (`Búsqueda: <término>`), y
      recién ahí corre el filtro de siempre. `SEARCH_ENRICH_LIMIT` (default
-     20, `0` lo apaga) es el tope por ciclo: van los más nuevos y el resto
-     entra en el ciclo siguiente. Cada posteo se paga una sola vez:
+     100, `0` lo apaga) es el tope por ciclo: van los más nuevos y el resto
+     entra en el ciclo siguiente solo si la búsqueda lo vuelve a traer (por
+     eso el tope es holgado: solo cuesta si hay volumen). Cada posteo se
+     paga una sola vez:
      `search_seen` anota lo consultado con su resultado (`guardado`,
      `descartado`, `sin_caption`, `sin_detalle`) y un descartado no se vuelve
      a consultar ni a evaluar; la tabla se purga a los 30 días. Si el run de
@@ -421,9 +423,9 @@ Desde septiembre 2026 la detección de Instagram son **solo las búsquedas**
 (cuentas y hashtags no se consultan): con 8 términos y
 `SEARCH_RESULTS_LIMIT=50`, como mucho 8 × 0,030 = 0,24 por ciclo (0,015 por
 término si trae 20 o menos), más el detalle de los resultados nuevos, como
-mucho `SEARCH_ENRICH_LIMIT` × 0,0023 por ciclo (0,046 con el default de 20)
-y en régimen mucho menos: solo se paga por posteos que la búsqueda trae por
-primera vez. La búsqueda por palabra clave solo existe en apidojo. El
+mucho `SEARCH_ENRICH_LIMIT` × 0,0023 por ciclo (0,23 con el default de 100)
+y en régimen mucho menos (unos 6 posteos nuevos por ciclo en septiembre
+2026): solo se paga por posteos que la búsqueda trae por primera vez. La búsqueda por palabra clave solo existe en apidojo. El
 benchmark y el refresco siguen pagando consultas de perfil (ver abajo). Para
 bajar el costo: menos búsquedas, topes más chicos, o espaciar el cron
 (`MONITOR_CRON`).

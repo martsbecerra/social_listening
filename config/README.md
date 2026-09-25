@@ -88,7 +88,7 @@ La búsqueda devuelve los posteos **recortados** (sin caption ni contadores),
 así que a cada resultado nuevo se le pide el detalle antes de filtrarlo: un
 solo run por ciclo de `apify/instagram-scraper` con todas las URLs (0,0023
 usd por posteo en Starter), hasta `SEARCH_ENRICH_LIMIT` posteos por ciclo
-(default 20; `0` lo apaga y los resultados sin texto se descartan). Cada
+(default 100; `0` lo apaga y los resultados sin texto se descartan). Cada
 posteo se consulta una sola vez: lo que se descartó queda anotado en la
 tabla `search_seen` y no se vuelve a pagar ni a evaluar, aunque la búsqueda
 lo siga trayendo. Ojo con eso al sumar keywords: un posteo ya descartado no

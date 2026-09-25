@@ -89,7 +89,8 @@ solo run por ciclo con todas las URLs, `instagram.fetchPostDetails`, fase
 por posteo en Starter y varias URLs por run, contra 0,005 de apidojo), con
 cualquier `IG_ACTOR`: es la única función de `instagramApify.js` que la
 fachada expone con apidojo activo. Tope por ciclo `SEARCH_ENRICH_LIMIT`
-(20; 0 lo apaga; los más nuevos primero, el resto al ciclo siguiente).
+(100; 0 lo apaga; los más nuevos primero, el resto al ciclo siguiente solo
+si la búsqueda lo vuelve a traer: por eso es holgado).
 `search_seen` anota lo ya pagado (`guardado` | `descartado` | `sin_caption`
 | `sin_detalle`): un descartado no se vuelve a consultar ni a evaluar; se
 purga a los 30 días. Si el run falla entero no se anota nada.
