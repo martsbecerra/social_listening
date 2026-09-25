@@ -13,6 +13,7 @@ const path = require('path');
 
 process.env.APIFY_API_TOKEN = 'token-de-test';
 process.env.MAX_ACCOUNTS_PER_REFRESH = '2';
+process.env.REFRESH_HOT_EVERY_HOURS = '12';
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sl-refresh-tramos-'));
 process.env.MONITORING_DB_PATH = path.join(tmp, 'monitoring.db');
 process.env.MONITORING_CONFIG_PATH = path.join(tmp, 'monitoring.json');
@@ -69,6 +70,23 @@ function reset() {
 
 describe('refresco: tope por corrida y marcas de pase', { concurrency: false }, () => {
   beforeEach(reset);
+
+  test('tramo caliente: cadencia por posteo (REFRESH_HOT_EVERY_HOURS), ya no en cada ciclo', async () => {
+    seed('cal-nunca', { postedAgoMs: 2 * HOUR_MS }); // recién detectado: entra
+    seed('cal-vencida', { postedAgoMs: 20 * HOUR_MS, refreshedAgoMs: 13 * HOUR_MS }); // hace más de 12 h: entra
+    seed('cal-fresca', { postedAgoMs: 20 * HOUR_MS, refreshedAgoMs: 1 * HOUR_MS }); // refrescada hace 1 h: espera
+
+    const result = await metricsRefresh.refreshPostMetrics({ plataformas: ['instagram'] });
+    assert.deepEqual(consultadas.sort(), ['cal-nunca', 'cal-vencida']);
+    assert.equal(result.hotCount, 2, 'la fresca no cuenta como pendiente');
+    assert.equal(result.leftOut, 0);
+    assert.equal(metricsRefresh.REFRESH_HOT_EVERY_HOURS, 12);
+
+    consultadas = [];
+    const otraVez = await metricsRefresh.refreshPostMetrics({ plataformas: ['instagram'] });
+    assert.deepEqual(consultadas, [], 'recién refrescadas: ningún posteo caliente vence hasta dentro de 12 h');
+    assert.equal(otraVez.accountsChecked, 0);
+  });
 
   test('el tope deja cuentas afuera: la marca del pase tibio no avanza y el próximo ciclo retoma solo lo que faltaba', async () => {
     // Tres cuentas en tramo tibio (posteos de hace 3 días), nunca refrescadas; tope 2.

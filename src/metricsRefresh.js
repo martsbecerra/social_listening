@@ -12,8 +12,13 @@
 // inclusión de la cuenta.
 //
 // Tres tramos por antigüedad (ver posted_at):
-//   - Caliente (< REFRESH_HOT_HOURS): sin cadencia propia, el cron de 4hs
-//     que llama a refreshPostMetrics ya es la cadencia.
+//   - Caliente (< REFRESH_HOT_HOURS): cadencia por posteo
+//     (metrics_updated_at contra REFRESH_HOT_EVERY_HOURS, 12 h), sin marca
+//     de tramo: cada ciclo evalúa el tramo y refresca solo lo que no se
+//     refrescó en las últimas 12 h. Antes se refrescaba en CADA ciclo (cada
+//     4 h) y era más de la mitad del gasto en Apify sin traer ninguna
+//     publicación nueva. Un posteo recién detectado (metrics_updated_at
+//     null) entra en el ciclo siguiente.
 //   - Tibio (REFRESH_HOT_HOURS a REFRESH_WARM_DAYS): gateado dos veces —
 //     a nivel de tramo (no se evalúa nada si no pasó REFRESH_WARM_EVERY_HOURS
 //     desde el último pase, marca persistida en refresh_state) y a nivel de
@@ -51,6 +56,7 @@ const { pickMetrics, rememberFollowers } = require('./monitor');
 const { checkAndLogJump } = require('./viralJumpDetector');
 
 const REFRESH_HOT_HOURS = Number(process.env.REFRESH_HOT_HOURS) || 48;
+const REFRESH_HOT_EVERY_HOURS = Number(process.env.REFRESH_HOT_EVERY_HOURS) || 12;
 const REFRESH_WARM_DAYS = Number(process.env.REFRESH_WARM_DAYS) || 7;
 const REFRESH_WARM_EVERY_HOURS = Number(process.env.REFRESH_WARM_EVERY_HOURS) || 24;
 const REFRESH_COLD_EVERY_DAYS = Number(process.env.REFRESH_COLD_EVERY_DAYS) || 7;
@@ -109,8 +115,13 @@ async function refreshPostMetricsFor(plataforma, skipSet) {
   const warmMaxAgeIso = daysAgoIso(REFRESH_WARM_DAYS, now);
   const coldMaxAgeIso = daysAgoIso(REFRESH_COLD_MAX_DAYS, now);
 
-  // Caliente: siempre, sin gate propio.
-  const hotAccounts = db.listAccountsDueForRefresh({ sinceIso: hotSinceIso, untilIso: nowIso, cadenceIso: null, plataforma });
+  // Caliente: sin marca de tramo, con cadencia por posteo (ver encabezado).
+  const hotAccounts = db.listAccountsDueForRefresh({
+    sinceIso: hotSinceIso,
+    untilIso: nowIso,
+    cadenceIso: hoursAgoIso(REFRESH_HOT_EVERY_HOURS, now),
+    plataforma,
+  });
 
   // Tibio: gate de tramo (marca persistida) antes de siquiera consultar.
   const warmKey = stateKey('warm_last_pass_at', plataforma);
@@ -308,6 +319,7 @@ module.exports = {
   refreshPostMetrics,
   refreshPlatformIds,
   REFRESH_HOT_HOURS,
+  REFRESH_HOT_EVERY_HOURS,
   REFRESH_WARM_DAYS,
   REFRESH_WARM_EVERY_HOURS,
   REFRESH_COLD_EVERY_DAYS,
