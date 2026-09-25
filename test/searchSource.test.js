@@ -179,18 +179,29 @@ describe('búsqueda por palabra clave (fuente search)', { concurrency: false }, 
     }
   });
 
-  test('el mismo posteo por cuenta trackeada y por búsqueda en el mismo ciclo queda como cuenta trackeada', async () => {
+  test('las cuentas trackeadas de Instagram no se consultan en la detección: son guía para el clasificador', async () => {
     const originals = { scrapeAccount: instagram.scrapeAccount, scrapeSearch: instagram.scrapeSearch, isConfigured: instagram.isConfigured };
     instagram.isConfigured = () => true;
-    instagram.scrapeAccount = async (account) => [post({ id: 'dup1', caption: 'obras en marcha', account, sourceType: 'account', sourceQuery: null })];
+    let accountCalls = 0;
+    instagram.scrapeAccount = async (account) => {
+      accountCalls += 1;
+      return [post({ id: 'dup1', caption: 'obras en marcha', account, sourceType: 'account', sourceQuery: null })];
+    };
     instagram.scrapeSearch = async () => [post({ id: 'dup1', caption: 'obras en marcha', account: 'trackeada' })];
+    const logs = [];
+    const originalLog = console.log;
+    console.log = (...args) => logs.push(args.join(' '));
     try {
       const result = await monitor.runMonitoringCycle({ plataformas: ['instagram'] });
-      assert.equal(result.checked, 1, 'un solo candidato después del dedupe');
+      assert.equal(accountCalls, 0, 'scrapeAccount no se llama aunque haya cuentas configuradas');
+      assert.equal(result.checked, 1);
       assert.equal(result.porPlataforma.instagram.newCount, 1);
-      assert.equal(savedPost('dup1').matched_reason, 'Cuenta trackeada: @trackeada (coincidencia: "obras")');
+      assert.deepEqual(result.scrapedAccounts, { instagram: [] });
+      assert.equal(savedPost('dup1').matched_reason, 'Búsqueda: jorge macri (coincidencia: "obras")');
       assert.equal(savedPost('dup1').account, 'trackeada');
+      assert.ok(logs.some((l) => /1 cuenta\(s\) trackeada\(s\) y 0 hashtag\(s\) configurados son solo guía/.test(l)), logs.join('\n'));
     } finally {
+      console.log = originalLog;
       Object.assign(instagram, originals);
     }
   });
@@ -217,24 +228,29 @@ describe('búsqueda por palabra clave (fuente search)', { concurrency: false }, 
   test('una búsqueda que falla sola no tira abajo el ciclo; sin términos no se busca', async () => {
     const originals = { scrapeAccount: instagram.scrapeAccount, scrapeSearch: instagram.scrapeSearch, isConfigured: instagram.isConfigured };
     instagram.isConfigured = () => true;
-    instagram.scrapeAccount = async (account) => [post({ id: 'a9', caption: 'obras del subte', account, sourceType: 'account', sourceQuery: null })];
+    instagram.scrapeAccount = async () => {
+      throw new Error('la detección de Instagram no consulta cuentas trackeadas');
+    };
+    monitor.addSearch('obras', 'instagram'); // segunda búsqueda: la que sí responde
     let searchCalls = 0;
-    instagram.scrapeSearch = async () => {
+    instagram.scrapeSearch = async (term) => {
       searchCalls += 1;
+      if (term === 'obras') return [post({ id: 'a9', caption: 'obras del subte', sourceQuery: 'obras' })];
       throw new Error('Instagram no respondió la búsqueda');
     };
     const originalError = console.error;
     console.error = () => {};
     try {
       const result = await monitor.runMonitoringCycle({ plataformas: ['instagram'] });
-      assert.equal(searchCalls, 1);
-      assert.equal(result.porPlataforma.instagram.newCount, 1, 'lo de la cuenta entró igual');
+      assert.equal(searchCalls, 2);
+      assert.equal(result.porPlataforma.instagram.newCount, 1, 'lo de la otra búsqueda entró igual');
       assert.equal(result.porPlataforma.instagram.error, undefined, 'un fallo puntual de una fuente no es error de plataforma');
 
       monitor.removeSearch('jorge macri', 'instagram');
+      monitor.removeSearch('obras', 'instagram');
       assert.deepEqual(readDisk().instagram.searches, []);
       await monitor.runMonitoringCycle({ plataformas: ['instagram'] });
-      assert.equal(searchCalls, 1, 'sin términos, ninguna búsqueda');
+      assert.equal(searchCalls, 2, 'sin términos, ninguna búsqueda');
     } finally {
       console.error = originalError;
       Object.assign(instagram, originals);

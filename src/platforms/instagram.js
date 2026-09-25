@@ -52,12 +52,17 @@ const adapter = {
   provider: PROVIDER_ID,
   actorId: provider.ACTOR_ID,
   /**
-   * Qué sabe hacer esta plataforma además de detectar posteos (ver
-   * platforms/index.js). Instagram tiene todo: benchmark por cuenta
-   * (mediana de likes/comentarios), seguidores y refresco de métricas de
-   * posteos ya guardados. Es igual con los dos proveedores.
+   * Qué sabe hacer esta plataforma (ver platforms/index.js). Instagram tiene
+   * benchmark por cuenta (mediana de likes/comentarios), seguidores y
+   * refresco de métricas de posteos ya guardados, con los dos proveedores.
+   * Desde septiembre 2026 la detección NO consulta los perfiles de las
+   * cuentas trackeadas ni recorre páginas de hashtag: lo único que busca
+   * publicaciones nuevas es la lista `searches` (la lupita, scrapeSearch).
+   * Cuentas y keywords/hashtags del config quedan como guía para el
+   * clasificador. scrapeAccount sigue existiendo para el benchmark, el
+   * refresco y la validación.
    */
-  capabilities: { benchmark: true, followers: true, metricsRefresh: true },
+  capabilities: { benchmark: true, followers: true, metricsRefresh: true, detectAccounts: false, detectHashtags: false },
   isConfigured,
   validateAccount: (account) => provider.validateAccount(account),
   validateHashtag: (tag) => provider.validateHashtag(tag),

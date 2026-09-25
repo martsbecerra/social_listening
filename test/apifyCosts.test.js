@@ -485,13 +485,24 @@ describe('costo de Apify', { concurrency: false }, () => {
     }
   });
 
-  test('ciclo completo (scheduler, IG_ACTOR=apify): la llamada del monitoreo queda con run_id, fase y actor, y la fila del ciclo se cierra con trigger y totales', async () => {
+  test('ciclo completo (scheduler, IG_ACTOR=apify): la llamada del refresco queda con run_id, fase y actor, y la fila del ciclo se cierra con trigger y totales', async () => {
+    // La detección de Instagram va solo por las búsquedas, y con
+    // IG_ACTOR=apify no hay búsqueda: el ciclo no gasta nada en detectar (la
+    // cuenta trackeada es guía, no se consulta). La única llamada sale del
+    // refresco de métricas de un posteo reciente de una cuenta cuyo
+    // benchmark ya está calculado.
+    const ahora = new Date().toISOString();
+    db.saveDetectedPost({
+      id: 'ref1', account: 'trackeada', url: 'https://www.instagram.com/p/ref1/', caption: 'obras', matchedReason: 'test',
+      likes: 1, comments: 1, postedAt: ahora, title: 't', sentiment: 'neutral', postType: null, followers: null, plataforma: 'instagram',
+    });
+    db.upsertAccountStats({ account: 'trackeada', plataforma: 'instagram', postType: null, nPosts: 12, medianLikes: 10, medianComments: 1, computedAt: ahora });
     const originalFetch = global.fetch;
     const originalLog = console.log;
     const lines = [];
     const callsBefore = allCalls().length;
     try {
-      global.fetch = async () => respond(200, '', []); // la cuenta trackeada no trae nada
+      global.fetch = async () => respond(200, '', []); // el perfil no devuelve nada
       console.log = (...args) => lines.push(args.join(' '));
       const result = await scheduler.runCycle({ plataforma: 'instagram', trigger: 'cron' });
       assert.equal(result.newCount, 0);
@@ -500,8 +511,8 @@ describe('costo de Apify', { concurrency: false }, () => {
       console.log = originalLog;
     }
     const calls = allCalls().slice(callsBefore);
-    assert.equal(calls.length, 1, 'una sola llamada: el scrape de la trackeada (sin posteos no hay benchmark ni refresco)');
-    assert.equal(calls[0].phase, 'monitoreo');
+    assert.equal(calls.length, 1, 'una sola llamada: el refresco de la cuenta del posteo reciente (sin búsqueda no hay detección; el benchmark ya está)');
+    assert.equal(calls[0].phase, 'refresco');
     assert.equal(calls[0].actor, OFICIAL);
     assert.equal(calls[0].query_type, 'user');
     assert.ok(calls[0].run_id > 0);

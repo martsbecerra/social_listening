@@ -74,7 +74,7 @@ describe('IG_ACTOR=apify: el proveedor oficial detrás de la fachada', { concurr
     assert.equal(instagram.actorId, 'apify~instagram-scraper');
     assert.equal(typeof instagram.scrapeSearch, 'undefined');
     assert.equal(typeof instagram.scrapeKeyword, 'undefined');
-    assert.deepEqual(instagram.capabilities, { benchmark: true, followers: true, metricsRefresh: true });
+    assert.deepEqual(instagram.capabilities, { benchmark: true, followers: true, metricsRefresh: true, detectAccounts: false, detectHashtags: false });
   });
 
   test('normalizePost del actor oficial: id/url como siempre, centinela -1 a null, tipo desde type/productType, sin seguidores', () => {

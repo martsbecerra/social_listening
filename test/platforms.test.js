@@ -113,7 +113,7 @@ describe('platforms', { concurrency: false }, () => {
     assert.ok(['apidojo', 'apify'].includes(ig.provider), ig.provider);
     assert.equal(ig.actorId, ig.provider === 'apidojo' ? 'apidojo~instagram-scraper-api' : 'apify~instagram-scraper');
     assert.equal(ig.buildProfileUrl('pepe'), 'https://www.instagram.com/pepe/');
-    assert.deepEqual(ig.capabilities, { benchmark: true, followers: true, metricsRefresh: true });
+    assert.deepEqual(ig.capabilities, { benchmark: true, followers: true, metricsRefresh: true, detectAccounts: false, detectHashtags: false });
 
     // Contrato genérico: lo mismo para cada adapter del registro.
     for (const id of listPlatformIds()) {

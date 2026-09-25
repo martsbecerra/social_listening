@@ -22,17 +22,22 @@ aparece en el archivo recién cuando se agrega el primer término.
 Es el único formato que el código escribe; los anteriores se migran solos
 (ver al final).
 
-**En una línea**: `keywords` es un filtro de texto gratis sobre lo que ya
-se scrapeó (no le pide nada a Apify); `searches` es una consulta real a la
-búsqueda de Instagram, con costo por término (ver el detalle de cada una
-más abajo).
+**En una línea** (Instagram, desde septiembre 2026): `searches` es **lo
+único que busca publicaciones** (una consulta real a la búsqueda de
+Instagram, con costo por término); `accounts` y `keywords` no le piden nada
+a Apify en la detección: son guía para el clasificador (ver el detalle de
+cada una más abajo).
 
 ## `accounts`
 
-Usuarios de esa red a trackear (sin `@`). Todo lo que publiquen se scrapea
-(Instagram: el perfil, vía Apify; X: la búsqueda `from:usuario`, vía Grok) y
-después cada posteo se evalúa igual que cualquier otra fuente (ver
-`evaluateRelevance` en `src/monitor.js`).
+Usuarios de esa red a trackear (sin `@`). En **X** todo lo que publiquen se
+busca (`from:usuario`, vía Grok) y cada posteo se evalúa como cualquier
+otra fuente. En **Instagram** el perfil ya NO se consulta en la detección
+(el adapter lo declara con `capabilities.detectAccounts: false`): la cuenta
+queda como guía para el clasificador y como universo del benchmark y del
+refresco de métricas, que sí consultan el perfil cuando la cuenta aparece
+en `detected_posts`. Al agregar una cuenta se sigue validando contra Apify
+que exista.
 
 ## `keywords`
 
@@ -41,15 +46,15 @@ dentro de esta misma lista (`"#JorgeMacri"`). Lo que significa cada entrada
 cambia según la red:
 
 - **Instagram**
-  - Un **hashtag** es una **fuente de descubrimiento**: dispara una corrida
-    del actor de Apify contra la página del hashtag
-    (`instagram.com/explore/tags/...`) y **tiene costo** — se paga por cada
-    resultado que trae, haya coincidencia real o no. Lo que trae se filtra
-    después (coincidencia literal con alguna keyword, o el clasificador).
-  - Una **keyword sin `#`** es un **filtro de texto gratuito**: se busca como
-    substring (sin distinguir mayúsculas) dentro del caption de los posteos
-    que ya se scrapearon por otra vía (cuenta trackeada o hashtag). No
-    dispara ninguna corrida de Apify por sí sola.
+  - Ni las keywords ni los hashtags disparan corridas de Apify: desde
+    septiembre 2026 la página del hashtag ya NO se recorre
+    (`capabilities.detectHashtags: false`). Lo único que trae publicaciones
+    es `searches` (abajo).
+  - Una **coincidencia literal** con una keyword (con `#` o sin él, como
+    substring, sin distinguir mayúsculas) en el caption de un resultado de
+    búsqueda viaja como **pista** al clasificador ("el texto contiene el
+    término X de nuestra lista"), que decide por el contenido. No es un
+    veredicto: un posteo de otra ciudad con el término igual se descarta.
 - **X**
   - **Cada keyword es una búsqueda**, tenga `#` o no: Grok la busca
     literalmente en cada corrida (en X un hashtag no es una página que se
@@ -67,15 +72,16 @@ lista de términos de búsqueda, no de personas.
 
 ## `searches` (Instagram)
 
-Búsquedas por palabra clave, la cuarta fuente de detección. Es una lista
-**distinta** de `keywords`: las keywords son filtros de texto gratis sobre
-lo que ya se scrapeó; cada término de `searches` dispara **una consulta
-cobrada por ciclo** a la búsqueda nativa de Instagram (actor
-`apidojo/instagram-scraper-api`: 0,015 usd con 20 posteos incluidos, hasta
+Búsquedas por palabra clave (la "lupita" de la solapa): desde septiembre
+2026, **la única fuente de detección de Instagram**. Es una lista
+**distinta** de `keywords`: las keywords son guía para el clasificador;
+cada término de `searches` dispara **una consulta cobrada por ciclo** a la
+búsqueda nativa de Instagram (actor `apidojo/instagram-scraper-api`: 0,015
+usd con 20 posteos incluidos, 0,0005 por cada uno de más hasta
 `SEARCH_RESULTS_LIMIT`). Por eso va corta y elegida a mano: buscar las 60 y
 pico keywords sería carísimo. Lo que trae **no entra directo**: Instagram
-asocia al término mucho contenido ajeno, así que se filtra igual que un
-hashtag (coincidencia literal con alguna keyword, o el clasificador) y
+asocia al término mucho contenido ajeno, así que lo decide el clasificador
+(con la pista de la búsqueda y de la coincidencia literal si la hay) y
 queda con el motivo `Búsqueda: <término>`. Un posteo sin texto se descarta.
 
 La búsqueda devuelve los posteos **recortados** (sin caption ni contadores),
@@ -97,15 +103,13 @@ cada keyword ya es una búsqueda.
 
 ## Lo que las keywords NO cubren
 
-Ni las keywords ni los hashtags de Instagram detectan una mención que no use
-ninguno de esos términos literalmente (por ejemplo, un anuncio de gestión
-que no lo nombra). Para eso existe una capa aparte, semántica, en
-`src/classifier.js` (`classifyRelevance`): le pregunta al clasificador si el
-contenido igual habla de él o de su gestión, sin necesitar coincidencia de
-texto. Las keywords son un filtro rápido y gratuito; la capa semántica es
-la red de contención para lo que las keywords no anticiparon. (En X esa
-capa solo interviene para los posteos de cuentas trackeadas: lo que llega
-por búsqueda ya entra como relevante.)
+Las keywords no detectan nada por sí solas: la relevancia de cada resultado
+de búsqueda la decide el clasificador de `src/classifier.js`
+(`clasificarPosteo`) por el contenido, con la coincidencia literal como
+pista. Así entra un anuncio de gestión que no lo nombra y se descarta un
+posteo de otra ciudad que usa el mismo término. (En X la decisión del
+clasificador solo interviene para los posteos de cuentas trackeadas: lo
+que llega por búsqueda ya entra como relevante.)
 
 ## Formatos anteriores
 

@@ -312,7 +312,7 @@ describe('detalle de los resultados de búsqueda sin caption', { concurrency: fa
     }
   });
 
-  test('SEARCH_ENRICH_LIMIT=0 apaga el detalle; con caption, por cuenta trackeada o con otro sourceType no se pide nada', async () => {
+  test('SEARCH_ENRICH_LIMIT=0 apaga el detalle; con caption no se pide nada; las cuentas trackeadas no se consultan', async () => {
     let detailCalls = 0;
     const restore = stubInstagram({
       scrapeSearch: async () => [bare({ id: 'apagado' })],
@@ -336,13 +336,13 @@ describe('detalle de los resultados de búsqueda sin caption', { concurrency: fa
       assert.equal(monitor.searchEnrichLimit(), 20, 'un valor inválido vale el default');
       delete process.env.SEARCH_ENRICH_LIMIT;
 
-      // Un resultado que ya trae texto, y el mismo posteo por cuenta trackeada
-      // (gana 'account' y entra aunque no tenga caption): ningún detalle.
-      instagram.scrapeSearch = async () => [
-        bare({ id: 'contexto', caption: 'Jorge Macri habló de seguridad' }),
-        bare({ id: 'trackeado' }),
-      ];
-      instagram.scrapeAccount = async () => [{ ...bare({ id: 'trackeado' }), account: 'trackeada', sourceType: 'account', sourceQuery: null }];
+      // Un resultado que ya trae texto: ningún detalle. Las cuentas
+      // trackeadas del config no se consultan en la detección (son guía):
+      // aunque el stub tenga algo para dar, nadie se lo pide.
+      instagram.scrapeSearch = async () => [bare({ id: 'contexto', caption: 'Jorge Macri habló de seguridad' })];
+      instagram.scrapeAccount = async () => {
+        throw new Error('la detección de Instagram no consulta cuentas trackeadas');
+      };
       fs.writeFileSync(
         CONFIG_PATH,
         JSON.stringify({ instagram: { accounts: ['trackeada'], keywords: ['jorge macri'], searches: ['jorge macri'] }, x: { accounts: [], keywords: [] } }, null, 2) + '\n'
@@ -351,7 +351,7 @@ describe('detalle de los resultados de búsqueda sin caption', { concurrency: fa
       assert.equal(detailCalls, 0);
       assert.equal(result.porPlataforma.instagram.searchEnrichment, undefined, 'no había resultados de búsqueda sin texto');
       assert.equal(savedPost('contexto').matched_reason, 'Búsqueda: jorge macri (coincidencia: "jorge macri")');
-      assert.equal(savedPost('trackeado').matched_reason, 'Cuenta trackeada: @trackeada');
+      assert.equal(savedPost('trackeado'), undefined, 'nada llegó por la cuenta trackeada');
     } finally {
       delete process.env.SEARCH_ENRICH_LIMIT;
       restore();

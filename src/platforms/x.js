@@ -221,7 +221,10 @@ module.exports = {
    * metricsRefresh: false — el único refresco que tiene X es el gratuito del
    * propio ciclo (posteos conocidos que vuelven a aparecer en la búsqueda).
    */
-  capabilities: { benchmark: false, followers: false, metricsRefresh: false },
+  // En X la detección sí consulta cuentas (from:handle) y hashtags (una
+  // búsqueda más), además de las keywords: X quedó fuera del cambio de
+  // septiembre 2026 que dejó a Instagram solo con las búsquedas.
+  capabilities: { benchmark: false, followers: false, metricsRefresh: false, detectAccounts: true, detectHashtags: true },
   isConfigured,
   validateAccount,
   validateHashtag,

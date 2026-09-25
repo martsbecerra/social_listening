@@ -84,7 +84,7 @@ describe('adapter X', { concurrency: false }, () => {
     assert.deepEqual(listPlatformIds(), ['instagram', 'x']);
     assert.equal(x.id, 'x');
     assert.equal(x.label, 'X');
-    assert.deepEqual(x.capabilities, { benchmark: false, followers: false, metricsRefresh: false });
+    assert.deepEqual(x.capabilities, { benchmark: false, followers: false, metricsRefresh: false, detectAccounts: true, detectHashtags: true });
     for (const fn of ['isConfigured', 'validateAccount', 'validateHashtag', 'scrapeAccount', 'scrapeHashtag', 'scrapeKeyword', 'normalizePost', 'buildProfileUrl', 'fetchAccountFollowers']) {
       assert.equal(typeof x[fn], 'function', fn);
     }
@@ -424,12 +424,13 @@ describe('adapter X', { concurrency: false }, () => {
   });
 
   test('cron con Instagram caído por cuota (error de Apify sin code): se anota y X sigue corriendo', async () => {
-    const originals = { callGrokJson: grokFetch.callGrokJson, xConfigured: x.isConfigured, igConfigured: instagram.isConfigured, igScrapeAccount: instagram.scrapeAccount };
+    const originals = { callGrokJson: grokFetch.callGrokJson, xConfigured: x.isConfigured, igConfigured: instagram.isConfigured, igScrapeSearch: instagram.scrapeSearch };
     const rawConfig = fs.readFileSync(CONFIG_PATH, 'utf8');
-    // Directo al archivo: addAccount('gcba', 'instagram') validaría contra Apify.
-    fs.writeFileSync(CONFIG_PATH, JSON.stringify({ instagram: { accounts: ['gcba'], keywords: [] }, x: JSON.parse(rawConfig).x }, null, 2) + '\n');
+    // Directo al archivo (sin validar contra Apify). La detección de
+    // Instagram va solo por las búsquedas: es la búsqueda la que se cae.
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify({ instagram: { accounts: [], keywords: [], searches: ['gcba'] }, x: JSON.parse(rawConfig).x }, null, 2) + '\n');
     instagram.isConfigured = () => true;
-    instagram.scrapeAccount = async () => {
+    instagram.scrapeSearch = async () => {
       // Como lo tira apify.js si la cuota vence por texto y sin `code`.
       throw Object.assign(new Error('Apify respondió 403: {"error":{"type":"actor-disabled","message":"Monthly usage hard limit exceeded"}}'), { userMessage: 'Se agotó la cuota mensual de Apify.' });
     };
@@ -455,7 +456,9 @@ describe('adapter X', { concurrency: false }, () => {
       grokFetch.callGrokJson = originals.callGrokJson;
       x.isConfigured = originals.xConfigured;
       instagram.isConfigured = originals.igConfigured;
-      instagram.scrapeAccount = originals.igScrapeAccount;
+      // Con IG_ACTOR=apify la fachada no tiene scrapeSearch: no dejar el stub.
+      if (originals.igScrapeSearch) instagram.scrapeSearch = originals.igScrapeSearch;
+      else delete instagram.scrapeSearch;
     }
   });
 });

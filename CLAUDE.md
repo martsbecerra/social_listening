@@ -46,32 +46,24 @@ saber antes de tocar algo.
   o `node scripts/costo-apify.js --conciliar`. `APIFY_REAL_COST=0` lo apaga.
   El oficial sigue con `run-sync-get-dataset-items`.
 
-## Las cuatro fuentes de detección (`config/monitoring.json`, sección `instagram`)
+## Fuentes de detección de Instagram (`config/monitoring.json`, sección `instagram`)
 
-1. `accounts`: cuentas trackeadas. Una consulta de perfil por cuenta y por
-   ciclo, `MONITOR_ACCOUNT_LIMIT` posteos, con `until` y una ventana
-   DINÁMICA (`monitor.detectionWindowFor`, no ya el fijo `MONITOR_LOOKBACK`):
-   desde el fin de la última detección exitosa de esa plataforma hasta
-   ahora, con techo `MONITOR_LOOKBACK_MAX` (default 7 días) — así una caída
-   del server no pierde lo publicado en el medio, sin disparar una
-   recuperación gigante. En el caso normal (cron al día) da "1 day", igual
-   que antes. Si supera 1 día, `MONITOR_ACCOUNT_LIMIT`/`MONITOR_HASHTAG_LIMIT`
-   suben proporcionalmente (tope 5x) para no perder posteos por el tope de
-   cantidad. Un posteo sin caption entra igual.
-2. `keywords` que empiezan con `#`: hashtags. Una consulta por hashtag y por
-   ciclo (`MONITOR_HASHTAG_LIMIT`), misma ventana dinámica que cuentas.
-   Traen todo lo que usa el tag: se filtran.
-3. `searches`: búsquedas por palabra clave (solo con apidojo, `scrapeSearch`,
-   ventana fija `MONITOR_LOOKBACK` de siempre — no la dinámica de arriba).
-   Una consulta por término y por ciclo (`SEARCH_RESULTS_LIMIT`). Se filtran
-   como un hashtag; `sourceType 'search'`, motivo `Búsqueda: <término>`.
-   Pocos términos, elegidos a mano; con `IG_ACTOR=apify` se ignoran con aviso.
-   Llegan sin caption ni contadores: a los nuevos se les pide el detalle
-   antes de filtrarlos (ver abajo).
-4. `keywords` sin `#`: NO son una fuente. La coincidencia literal con una
-   de ellas es una PISTA para el clasificador (`pista.termino`), no un
-   veredicto: el modelo decide siempre (ver "Clasificación con contexto").
-   En X, en cambio, cada keyword (con o sin `#`) es una búsqueda de Grok.
+Desde septiembre 2026 **lo único que busca publicaciones nuevas en Instagram
+es `searches`** (la lupita: búsqueda por palabra clave nativa, solo con
+apidojo, `scrapeSearch`; una consulta cobrada por término y por ciclo,
+`SEARCH_RESULTS_LIMIT` resultados, ventana fija `MONITOR_LOOKBACK`;
+`sourceType 'search'`, motivo `Búsqueda: <término>`; con `IG_ACTOR=apify` se
+ignoran con aviso y no se detecta nada). `accounts` (cuentas trackeadas) y
+`keywords` (con o sin `#`) NO se consultan en la detección: son guía para el
+clasificador (pista de cuenta trackeada / coincidencia literal, ver
+"Clasificación con contexto"). Lo declara el adapter en
+`capabilities.detectAccounts` / `detectHashtags` (Instagram: false; X: true,
+allá cada cuenta es `from:handle` y cada keyword o hashtag una búsqueda de
+Grok); el orquestador decide por ahí, nunca por el nombre de la red. Un
+resultado de búsqueda sin caption (ni después del detalle) se descarta. El
+benchmark y el refresco de métricas siguen igual: trabajan sobre las cuentas
+que aparecen en `detected_posts`, con consultas de perfil (`scrapeAccount`
+sigue existiendo para eso y para validar cuentas al agregarlas).
 
 Relevancia y dedupe viven en `src/monitor.js` (`evaluateRelevance`; si un
 posteo llega por varias fuentes gana `keyword` (X) > `account` > `hashtag`

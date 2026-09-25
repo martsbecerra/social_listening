@@ -366,7 +366,7 @@ describe('proveedor apidojo del adapter de Instagram', { concurrency: false }, (
     assert.equal(instagram.provider, 'apidojo');
     assert.equal(instagram.actorId, 'apidojo~instagram-scraper-api');
     assert.equal(instagram.id, 'instagram');
-    assert.deepEqual(instagram.capabilities, { benchmark: true, followers: true, metricsRefresh: true });
+    assert.deepEqual(instagram.capabilities, { benchmark: true, followers: true, metricsRefresh: true, detectAccounts: false, detectHashtags: false });
     const raw = fixture('profile')[0];
     assert.deepEqual(instagram.normalizePost(raw, { account: 'x', sourceType: 'account' }), provider.normalizePost(raw, { account: 'x', sourceType: 'account' }));
     assert.equal(instagram.buildProfileUrl('pepe'), 'https://www.instagram.com/pepe/');
@@ -421,30 +421,41 @@ describe('proveedor apidojo del adapter de Instagram', { concurrency: false }, (
     }
   });
 
-  test('ciclo de monitoreo: el posteo nuevo sale con los seguidores que vinieron en el posteo y la caché queda al día', async () => {
-    const originals = { scrapeAccount: instagram.scrapeAccount, isConfigured: instagram.isConfigured };
+  test('ciclo de monitoreo: la cuenta trackeada no se consulta (es guía) y la detección va por la búsqueda', async () => {
+    const originals = { scrapeAccount: instagram.scrapeAccount, scrapeSearch: instagram.scrapeSearch, isConfigured: instagram.isConfigured };
+    const originalConfig = fs.readFileSync(process.env.MONITORING_CONFIG_PATH, 'utf8');
+    const originalLog = console.log;
+    const logs = [];
+    fs.writeFileSync(
+      process.env.MONITORING_CONFIG_PATH,
+      JSON.stringify({ instagram: { accounts: ['cuenta_prueba'], keywords: ['obras'], searches: ['obras'] } }, null, 2) + '\n'
+    );
     try {
       instagram.isConfigured = () => true;
-      // Cambio D: cuentas/hashtags usan la ventana dinámica de
-      // detectionWindowFor (no ya el MONITOR_LOOKBACK fijo) — se recalcula
-      // acá para no atarse a un valor fijo (depende de si otro test de este
-      // archivo ya dejó una marca de detección exitosa).
-      instagram.scrapeAccount = async (account, { resultsLimit, lookback }) => {
-        const window = monitor.detectionWindowFor('instagram');
-        assert.equal(resultsLimit, window.isDefault ? 10 : monitor.raiseLimitForWindow(10, window.windowDays), 'tope por cuenta (según ventana)');
-        assert.equal(lookback, window.lookback);
-        return [provider.normalizePost(rawPost({ id: 500, caption: 'arrancan las obras del bajo', followerCount: 4321 }), { account, sourceType: 'account' })];
+      instagram.scrapeAccount = async () => {
+        throw new Error('la detección de Instagram no consulta perfiles de cuentas trackeadas');
       };
+      instagram.scrapeSearch = async (term, { resultsLimit }) => {
+        assert.equal(term, 'obras');
+        assert.equal(resultsLimit, 50, 'SEARCH_RESULTS_LIMIT default');
+        return [provider.normalizePost(rawPost({ id: 500, caption: 'arrancan las obras del bajo' }), { account: null, sourceType: 'search', sourceQuery: 'obras' })];
+      };
+      console.log = (...args) => logs.push(args.join(' '));
       const result = await monitor.runMonitoringCycle({ plataformas: ['instagram'] });
       assert.equal(result.newPosts.length, 1);
-      assert.equal(result.newPosts[0].followers, 4321);
+      assert.deepEqual(result.scrapedAccounts, { instagram: [] }, 'ninguna cuenta consultada en la detección');
+      assert.ok(
+        logs.some((l) => /1 cuenta\(s\) trackeada\(s\) y 0 hashtag\(s\) configurados son solo guía para el clasificador/.test(l)),
+        logs.join('\n')
+      );
       const saved = db.listDetectedPosts({ page: 1, pageSize: 10, plataforma: 'instagram' }).posts.find((p) => p.id === '500');
-      assert.equal(saved.followers, 4321);
+      assert.equal(saved.account, 'cuenta_prueba');
       assert.equal(saved.post_type, 'imagen');
-      assert.equal(db.getAccountFollowers('cuenta_prueba', 'instagram'), 4321);
+      assert.equal(saved.matched_reason, 'Búsqueda: obras (coincidencia: "obras")');
     } finally {
-      instagram.scrapeAccount = originals.scrapeAccount;
-      instagram.isConfigured = originals.isConfigured;
+      console.log = originalLog;
+      fs.writeFileSync(process.env.MONITORING_CONFIG_PATH, originalConfig);
+      Object.assign(instagram, originals);
     }
   });
 

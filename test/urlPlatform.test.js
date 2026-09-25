@@ -17,7 +17,7 @@ process.env.MONITORING_CONFIG_PATH = path.join(tmp, 'monitoring.json');
 process.env.MONITORING_X_CONFIG_PATH = path.join(tmp, 'monitoring-x.json');
 fs.writeFileSync(
   process.env.MONITORING_CONFIG_PATH,
-  JSON.stringify({ instagram: { accounts: ['cuentaig'], keywords: ['obras'] }, x: { accounts: [], keywords: [] } }, null, 2) + '\n'
+  JSON.stringify({ instagram: { accounts: ['cuentaig'], keywords: ['obras'], searches: ['obras'] }, x: { accounts: [], keywords: [] } }, null, 2) + '\n'
 );
 
 const { describe, test } = require('node:test');
@@ -111,14 +111,18 @@ describe('separación por plataforma: la url manda', { concurrency: false }, () 
       postedAt: now,
       postType: null,
       followers: null,
-      sourceType: 'account',
-      sourceQuery: null,
+      sourceType: 'search',
+      sourceQuery: 'obras',
     });
-    instagram.scrapeAccount = async () => [
+    // La detección de Instagram va solo por la búsqueda (la lupita).
+    instagram.scrapeSearch = async () => [
       post('10', 'https://www.instagram.com/p/CCC/'),
       post('x:11', 'https://x.com/cuentaig/status/11'), // un adapter de Instagram nunca debería devolver esto
       post('12', 'https://www.instagram.com/p/DDD/'),
     ];
+    instagram.scrapeAccount = async () => {
+      throw new Error('la detección de Instagram no consulta cuentas trackeadas');
+    };
     instagram.scrapeHashtag = async () => [];
 
     const logged = [];

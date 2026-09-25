@@ -151,24 +151,31 @@ Hace falta `SESSION_SECRET` (string largo aleatorio) y `APP_BASE_URL` (p. ej.
   relevancia de lo que traen esas fuentes se decide igual para todas las
   redes (ver `src/monitor.js` más abajo).
 
-  **Las cuatro fuentes de detección de Instagram** y qué cuesta cada una:
-  1. **Cuentas trackeadas** (`accounts`): el perfil de cada una, una
-     consulta por cuenta y por ciclo.
-  2. **Hashtags** (`keywords` que empiezan con `#`): la página del hashtag,
-     una consulta por hashtag y por ciclo. Trae todo lo que lo usa: se filtra.
-  3. **Búsquedas por palabra clave** (`searches`, actor apidojo): la búsqueda
-     nativa de Instagram para ese término, una consulta por término y por
-     ciclo. También se filtra. Pocos términos, elegidos a mano. La búsqueda
-     devuelve los posteos recortados (sin caption ni contadores): a los
-     resultados nuevos se les pide el detalle en una sola consulta por ciclo
-     antes de filtrarlos (ver "Detalle de los resultados de búsqueda").
-  4. **Keywords sin `#`** (`keywords`): NO son una fuente, son el **filtro de
-     texto gratuito** que decide si lo que trajeron las otras tres habla del
-     tema (más la detección semántica del clasificador cuando no hay
-     coincidencia literal). Son 60 y pico; buscarlas todas sería carísimo.
+  **Qué busca publicaciones en Instagram** (desde septiembre 2026, una sola
+  fuente) y qué queda como guía:
+  1. **Búsquedas por palabra clave** (`searches`, actor apidojo; la "lupita"
+     de la solapa): la búsqueda nativa de Instagram para ese término, una
+     consulta por término y por ciclo. Es **lo único que trae publicaciones
+     nuevas**. Lo que trae lo filtra el clasificador. Pocos términos,
+     elegidos a mano. La búsqueda devuelve los posteos recortados (sin
+     caption ni contadores): a los resultados nuevos se les pide el detalle
+     en una sola consulta por ciclo antes de filtrarlos (ver "Detalle de los
+     resultados de búsqueda").
+  2. **Cuentas trackeadas** (`accounts`): NO se consultan en la detección
+     (antes era una consulta de perfil por cuenta y por ciclo). Quedan como
+     guía para el clasificador y como universo del benchmark. El adapter lo
+     declara con `capabilities.detectAccounts: false`.
+  3. **Palabras clave y hashtags** (`keywords`, con `#` o sin él): NO se
+     buscan ni se recorren páginas de hashtag (`detectHashtags: false`). Una
+     coincidencia literal con una de ellas viaja como pista al clasificador,
+     que decide por el contenido (ver "Clasificación con contexto").
 
-  En X es distinto: cada keyword, con `#` o sin él, es una búsqueda de Grok
-  con costo por corrida, y no hay lista `searches`.
+  El benchmark por cuenta y el refresco de métricas siguen como siempre:
+  consultan el perfil de las cuentas que aparecen en `detected_posts`.
+
+  En X es distinto: cada cuenta es una búsqueda `from:handle` y cada keyword,
+  con `#` o sin él, una búsqueda de Grok con costo por corrida; no hay lista
+  `searches`.
 
 - **`src/db.js`** — ¿qué es SQLite y por qué lo usamos así?: SQLite es una
   base de datos que vive en **un solo archivo** (`data/monitoring.db`), sin
@@ -187,9 +194,9 @@ Hace falta `SESSION_SECRET` (string largo aleatorio) y `APP_BASE_URL` (p. ej.
 - **`src/monitor.js`**: el orquestador del monitoreo, agnóstico de red. Por
   cada plataforma registrada en `src/platforms/` lee su sección de
   `config/monitoring.json` y le pide a su adapter los posteos recientes de
-  cada cuenta trackeada, de cada hashtag, de cada búsqueda por palabra clave
-  (`searches`, solo si el adapter sabe buscar) y — solo si el adapter sabe
-  buscarlas — de cada keyword suelta. Compara todo contra `src/db.js` para
+  las fuentes que ese adapter declara consultar (`capabilities`): en
+  Instagram solo las búsquedas por palabra clave (`searches`); en X cada
+  cuenta trackeada, cada hashtag y cada keyword. Compara todo contra `src/db.js` para
   no volver a evaluar ni guardar algo que ya se vio. Antes de guardar una
   cuenta o hashtag nuevo (al agregarlo desde la interfaz) el adapter valida
   lo que puede: Instagram consulta a Apify que exista (el actor no tira un
@@ -395,14 +402,16 @@ Starter (2,30 por 1.000):
 | Refresco de métricas de una cuenta (15 posteos) | 0,0345 | 0,0075 |
 | Validar una cuenta / un hashtag al agregarlos | 0,0023 / 0,0023 | 0,005 / 0,015 |
 
-Con 12 cuentas y 1 hashtag, la detección de un ciclo cuesta 0,075 con
-apidojo contra 0,06 típico (0,45 en el peor caso) con el oficial: el ahorro
-grande está en hashtags, benchmark y refresco, y la búsqueda por palabra
-clave solo existe en apidojo. El detalle de los resultados de búsqueda suma
-como mucho `SEARCH_ENRICH_LIMIT` × 0,0023 por ciclo (0,046 con el default
-de 20) y en régimen mucho menos: solo se paga por posteos que la búsqueda
-trae por primera vez. Para bajar el costo: menos hashtags y búsquedas, topes
-más chicos, o espaciar el cron (`MONITOR_CRON`).
+Desde septiembre 2026 la detección de Instagram son **solo las búsquedas**
+(cuentas y hashtags no se consultan): con 8 términos y
+`SEARCH_RESULTS_LIMIT=50`, como mucho 8 × 0,030 = 0,24 por ciclo (0,015 por
+término si trae 20 o menos), más el detalle de los resultados nuevos, como
+mucho `SEARCH_ENRICH_LIMIT` × 0,0023 por ciclo (0,046 con el default de 20)
+y en régimen mucho menos: solo se paga por posteos que la búsqueda trae por
+primera vez. La búsqueda por palabra clave solo existe en apidojo. El
+benchmark y el refresco siguen pagando consultas de perfil (ver abajo). Para
+bajar el costo: menos búsquedas, topes más chicos, o espaciar el cron
+(`MONITOR_CRON`).
 
 El benchmark por cuenta (`src/accountStats.js`) solo gasta cuando una cuenta
 aparece con un posteo nuevo y nunca se calculó o pasaron

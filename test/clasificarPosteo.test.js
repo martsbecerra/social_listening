@@ -26,7 +26,7 @@ process.env.MONITORING_X_CONFIG_PATH = path.join(tmp, 'monitoring-x.json');
 const KEYWORDS = ['jorge macri', 'jefe de gobierno', 'pdlc'];
 fs.writeFileSync(
   process.env.MONITORING_CONFIG_PATH,
-  JSON.stringify({ instagram: { accounts: ['cuenta'], keywords: KEYWORDS }, x: { accounts: [], keywords: [] } }, null, 2) + '\n'
+  JSON.stringify({ instagram: { accounts: ['cuenta'], keywords: KEYWORDS, searches: ['jorge macri'] }, x: { accounts: [], keywords: [] } }, null, 2) + '\n'
 );
 
 const { describe, test, beforeEach } = require('node:test');
@@ -250,11 +250,14 @@ describe('evaluateRelevance: el modelo decide, la keyword es una pista', { concu
     const originals = { isConfigured: instagram.isConfigured, scrapeAccount: instagram.scrapeAccount, scrapeHashtag: instagram.scrapeHashtag, scrapeSearch: instagram.scrapeSearch };
     instagram.isConfigured = () => true;
     instagram.scrapeHashtag = async () => [];
-    if (instagram.scrapeSearch) instagram.scrapeSearch = async () => [];
+    // La detección de Instagram va solo por las búsquedas (la lupita).
+    instagram.scrapeAccount = async () => {
+      throw new Error('la detección de Instagram no consulta cuentas trackeadas');
+    };
     const ahora = new Date().toISOString();
-    instagram.scrapeAccount = async (account) => [
-      { id: '9001', url: 'https://www.instagram.com/p/CAIDO/', caption: 'Jorge Macri anunció obras en Caballito', account, sourceType: 'account', likes: 1, comments: 1, postedAt: ahora },
-      { id: '9002', url: 'https://www.instagram.com/p/CAIDO2/', caption: 'Milei y Adorni anunciaron el veto al presupuesto', account, sourceType: 'account', likes: 1, comments: 1, postedAt: ahora },
+    instagram.scrapeSearch = async () => [
+      { id: '9001', url: 'https://www.instagram.com/p/CAIDO/', caption: 'Jorge Macri anunció obras en Caballito', account: 'cuenta', sourceType: 'search', sourceQuery: 'jorge macri', likes: 1, comments: 1, postedAt: ahora },
+      { id: '9002', url: 'https://www.instagram.com/p/CAIDO2/', caption: 'Milei y Adorni anunciaron el veto al presupuesto', account: 'cuenta', sourceType: 'search', sourceQuery: 'jorge macri', likes: 1, comments: 1, postedAt: ahora },
     ];
     const guardado = (id) => db.listDetectedPosts({ plataforma: 'instagram' }).posts.find((p) => p.id === id);
     try {
@@ -270,8 +273,8 @@ describe('evaluateRelevance: el modelo decide, la keyword es una pista', { concu
       assert.equal(result.porPlataforma.instagram.newCount, 2, 'los dos se guardaron aunque el modelo haya fallado');
       assert.equal(guardado('9001').title, null);
       assert.equal(guardado('9001').sentiment, null);
-      assert.equal(guardado('9001').matched_reason, 'Cuenta trackeada: @cuenta (coincidencia: "jorge macri") — sin clasificar (falló el clasificador, relevancia sin verificar)');
-      assert.equal(guardado('9002').matched_reason, 'Cuenta trackeada: @cuenta — sin clasificar (falló el clasificador, relevancia sin verificar)');
+      assert.equal(guardado('9001').matched_reason, 'Búsqueda: jorge macri (coincidencia: "jorge macri") — sin clasificar (falló el clasificador, relevancia sin verificar)');
+      assert.equal(guardado('9002').matched_reason, 'Búsqueda: jorge macri — sin clasificar (falló el clasificador, relevancia sin verificar)');
 
       // Backfill con el modelo de vuelta: título, sentimiento y motivo; la
       // marca "sin clasificar" desaparece. Al que el modelo ahora considera no
@@ -289,9 +292,9 @@ describe('evaluateRelevance: el modelo decide, la keyword es una pista', { concu
       assert.deepEqual(backfill, { classified: 2, stillPending: 0 });
       assert.equal(guardado('9001').title, 'Jorge Macri y la gestión porteña');
       assert.equal(guardado('9001').sentiment, 'positivo');
-      assert.equal(guardado('9001').matched_reason, 'Cuenta trackeada: @cuenta (coincidencia: "jorge macri") · habla de CABA');
+      assert.equal(guardado('9001').matched_reason, 'Búsqueda: jorge macri (coincidencia: "jorge macri") · habla de CABA');
       assert.equal(guardado('9002').title, 'Gobierno nacional');
-      assert.equal(guardado('9002').matched_reason, 'Cuenta trackeada: @cuenta · no relevante según el modelo: política nacional sin relación con CABA');
+      assert.equal(guardado('9002').matched_reason, 'Búsqueda: jorge macri · no relevante según el modelo: política nacional sin relación con CABA');
       assert.deepEqual(avisos, [
         '[monitor] backfill: el modelo considera NO relevante el posteo 9002 de @cuenta (política nacional sin relación con CABA); queda guardado para revisión.',
       ]);

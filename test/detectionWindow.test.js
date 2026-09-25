@@ -113,8 +113,8 @@ describe('Cambio D: raiseLimitForWindow', () => {
   });
 });
 
-describe('Cambio D: runMonitoringCycle usa la ventana dinámica solo en cuentas/hashtags', () => {
-  test('scrapeAccount/scrapeHashtag reciben la ventana dinámica; scrapeSearch sigue con MONITOR_LOOKBACK fijo', async () => {
+describe('runMonitoringCycle: en Instagram solo se consulta la búsqueda', () => {
+  test('scrapeAccount/scrapeHashtag no se llaman (cuentas y hashtags son guía); scrapeSearch recibe MONITOR_LOOKBACK fijo', async () => {
     delete process.env.MONITOR_LOOKBACK_MAX;
     process.env.MONITOR_LOOKBACK = '2 hours';
     db.setRefreshState(KEY, new Date(NOW - 3 * DAY_MS).toISOString());
@@ -134,15 +134,11 @@ describe('Cambio D: runMonitoringCycle usa la ventana dinámica solo en cuentas/
       return [];
     };
 
-    // La ventana dinámica depende de Date.now() real acá (runMonitoringCycle
-    // no toma un `now` inyectado) — se calcula con el mismo criterio para
-    // comparar, tolerando el mismo redondeo a días enteros.
-    const expected = monitor.detectionWindowFor('instagram');
     await monitor.runMonitoringCycle({ plataformas: ['instagram'] });
 
-    assert.equal(seenLookbacks.account, expected.lookback);
-    assert.equal(seenLookbacks.hashtag, expected.lookback);
-    assert.equal(seenLookbacks.search, '2 hours', 'las búsquedas no usan la ventana dinámica');
+    assert.equal(seenLookbacks.account, null, 'la cuenta trackeada no se consulta en la detección');
+    assert.equal(seenLookbacks.hashtag, null, 'la página del hashtag no se recorre');
+    assert.equal(seenLookbacks.search, '2 hours', 'la búsqueda va con MONITOR_LOOKBACK fijo');
 
     delete process.env.MONITOR_LOOKBACK;
   });

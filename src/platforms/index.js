@@ -11,9 +11,15 @@
 //                 columna `plataforma` y la clave de sección en
 //                 config/monitoring.json.
 //   label         Nombre para mostrar y para los prompts del clasificador.
-//   capabilities  { benchmark, followers, metricsRefresh }: qué sabe hacer
-//                 la plataforma ADEMÁS de detectar posteos. Quien orquesta
-//                 decide por acá, nunca por el nombre de la plataforma.
+//   capabilities  { benchmark, followers, metricsRefresh, detectAccounts,
+//                 detectHashtags }: qué sabe hacer la plataforma ADEMÁS de
+//                 detectar posteos, y con qué fuentes detecta. Con
+//                 detectAccounts: false el orquestador NO consulta los
+//                 perfiles de las cuentas trackeadas en la detección (son
+//                 guía para el clasificador; Instagram desde septiembre
+//                 2026); con detectHashtags: false no recorre páginas de
+//                 hashtag. Ausentes valen true. Quien orquesta decide por
+//                 acá, nunca por el nombre de la plataforma.
 //   isConfigured() true si están las credenciales que necesita su fuente.
 //                 Sin ellas, el ciclo la saltea con un aviso en vez de
 //                 fallar fuente por fuente.

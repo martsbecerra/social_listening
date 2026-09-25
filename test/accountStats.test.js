@@ -24,12 +24,13 @@ process.env.MONITORING_DB_PATH = DB_PATH;
 process.env.MONITORING_CONFIG_PATH = CONFIG_PATH;
 process.env.MONITORING_X_CONFIG_PATH = path.join(tmp, 'monitoring-x.json');
 
-// Config escrita directo (nunca por addAccount): una cuenta trackeada que
-// no va a traer nada, y una keyword literal para que los posteos de hashtag
-// entren sin pasar por el clasificador de relevancia.
+// Config escrita directo (nunca por addAccount): una cuenta trackeada (que
+// la detección de Instagram no consulta: es guía), una keyword literal para
+// que los resultados de búsqueda entren con el clasificador stubeado, y la
+// búsqueda "obras", la única fuente de detección.
 fs.writeFileSync(
   CONFIG_PATH,
-  JSON.stringify({ instagram: { accounts: ['trackeada'], keywords: ['obras', '#caba'] } }, null, 2) + '\n'
+  JSON.stringify({ instagram: { accounts: ['trackeada'], keywords: ['obras', '#caba'], searches: ['obras'] } }, null, 2) + '\n'
 );
 
 // Clasificador stubeado ANTES de cargar monitor.js (que lo destructura).
@@ -59,8 +60,8 @@ const raw = new DatabaseSync(DB_PATH);
 // métricas) va sin lookback; la del ciclo de monitoreo, con lookback.
 const calls = { benchmark: [], monitor: [], followers: [] };
 let benchmarkPosts = {}; // cuenta (minúscula) -> posteos que devuelve la pasada del benchmark
-let monitorPosts = {}; // cuenta (minúscula) -> posteos que devuelve el ciclo de monitoreo
-let hashtagPosts = {}; // tag -> posteos
+let monitorPosts = {}; // cuenta (minúscula) -> posteos que devolvería el ciclo de monitoreo (Instagram ya no consulta cuentas en la detección)
+let searchPosts = {}; // término -> posteos que devuelve la búsqueda (la única fuente de detección de Instagram)
 instagram.isConfigured = () => true;
 instagram.scrapeAccount = async (account, { lookback } = {}) => {
   const key = String(account).toLowerCase();
@@ -71,7 +72,8 @@ instagram.scrapeAccount = async (account, { lookback } = {}) => {
   calls.monitor.push(key);
   return monitorPosts[key] || [];
 };
-instagram.scrapeHashtag = async (tag) => hashtagPosts[tag] || [];
+instagram.scrapeHashtag = async () => [];
+instagram.scrapeSearch = async (term) => searchPosts[term] || [];
 instagram.fetchAccountFollowers = async (account) => {
   calls.followers.push(String(account).toLowerCase());
   return 1234;
@@ -299,21 +301,21 @@ describe('benchmark: criterio de recálculo', { concurrency: false }, () => {
   });
 
   test('mismo ciclo (scheduler): el posteo de una cuenta nueva sale con benchmark; la trackeada sin posteos no se calcula; el refresco no repite el scrape', async () => {
-    monitorPosts = { trackeada: [] }; // se scrapea, no trae nada relevante
-    hashtagPosts = {
-      caba: [
+    monitorPosts = { trackeada: [] }; // no se consulta en la detección: es guía
+    searchPosts = {
+      obras: [
         {
           id: 'aparecida-1',
           account: 'aparecida',
           url: 'https://www.instagram.com/p/aparecida-1/',
           caption: 'obras en la ciudad',
-          hashtagsText: '#caba',
+          hashtagsText: '',
           likes: 30,
           comments: 3,
           postedAt: iso(0),
           postType: 'imagen',
-          sourceType: 'hashtag',
-          sourceQuery: '#caba',
+          sourceType: 'search',
+          sourceQuery: 'obras',
         },
       ],
     };
@@ -322,7 +324,7 @@ describe('benchmark: criterio de recálculo', { concurrency: false }, () => {
 
     const result = await scheduler.runCycle({ plataforma: 'instagram' });
     assert.equal(result.newCount, 1);
-    assert.ok(calls.monitor.includes('trackeada'), 'la trackeada se scrapeó en el ciclo');
+    assert.ok(!calls.monitor.includes('trackeada'), 'la trackeada no se consulta en la detección: es solo guía');
     assert.equal(benchmarkCalls('trackeada'), 0, 'sin posteo guardado no hay recálculo');
     assert.equal(benchmarkCalls('aparecida'), 1, 'una sola pasada: el refresco de métricas no la repite');
     assert.equal(calls.benchmark.length, before + 1);

@@ -3,19 +3,24 @@
 // --------------------------------------------------------------------------
 // Orquestador del monitoreo, agnóstico de plataforma. Detecta posteos nuevos
 // relevantes a partir de las fuentes configuradas por plataforma
-// (config/monitoring.json, una sección por red):
-//   - Cuentas trackeadas.
-//   - Hashtags (las keywords que empiezan con "#").
+// (config/monitoring.json, una sección por red), según lo que cada adapter
+// declara en capabilities (detectAccounts, detectHashtags):
+//   - Cuentas trackeadas: el perfil de cada una (X: `from:handle` en Grok).
+//     En Instagram NO se consultan desde septiembre 2026 (detectAccounts:
+//     false): son solo guía para el clasificador.
+//   - Hashtags (las keywords que empiezan con "#"): la página del hashtag.
+//     En Instagram tampoco se recorren (detectHashtags: false); en X son
+//     una búsqueda más.
 //   - Keywords planas, SOLO en las plataformas cuyo adapter sabe buscarlas
-//     (scrapeKeyword, por ejemplo X). En las demás son un filtro de texto
-//     sobre lo que ya se scrapeó por cuenta, hashtag o búsqueda.
+//     (scrapeKeyword, por ejemplo X). En las demás son una pista para el
+//     clasificador sobre lo que trajeron las otras fuentes.
 //   - Búsquedas por palabra clave (`searches`), SOLO en las plataformas
 //     cuyo adapter sabe buscar (scrapeSearch: Instagram con IG_ACTOR=apidojo).
-//     Es una lista aparte de las keywords, corta y elegida a mano: cada
-//     término es una consulta cobrada por ciclo. Lo que trae se filtra igual
-//     que un hashtag (relevancia literal o semántica), no entra directo. La
-//     búsqueda devuelve los posteos sin caption ni contadores: a los nuevos
-//     se les pide el detalle antes de evaluarlos (enrichSearchResults).
+//     Desde septiembre 2026 es LA fuente de detección de Instagram: cada
+//     término es una consulta cobrada por ciclo. Lo que trae lo filtra el
+//     clasificador, no entra directo. La búsqueda devuelve los posteos sin
+//     caption ni contadores: a los nuevos se les pide el detalle antes de
+//     evaluarlos (enrichSearchResults).
 //
 // Un posteo se considera relevante si:
 //   1. Llegó por una búsqueda por término (sourceType 'keyword': una keyword,
@@ -890,6 +895,20 @@ async function runMonitoringCycle({ plataformas } = {}) {
     // Para filtrar por substring usamos la lista completa de keywords, sin el "#".
     const plainKeywords = keywords.map((k) => (k.startsWith('#') ? k.slice(1) : k));
     const canSearchKeywords = typeof platform.scrapeKeyword === 'function';
+    // Qué fuentes consulta la detección de esta plataforma, según lo que
+    // declara su adapter (ver platforms/index.js). Instagram (desde
+    // septiembre 2026) no consulta perfiles de cuentas trackeadas ni recorre
+    // páginas de hashtag: esas listas quedan como guía para el clasificador
+    // y lo único que busca publicaciones es `searches`. X sigue con todo.
+    const caps = platform.capabilities || {};
+    const accountsToScrape = caps.detectAccounts === false ? [] : accounts;
+    const hashtagsToScrape = caps.detectHashtags === false ? [] : hashtagTags;
+    if (accountsToScrape.length < accounts.length || hashtagsToScrape.length < hashtagTags.length) {
+      console.log(
+        `[monitor] ${platformId}: ${accounts.length} cuenta(s) trackeada(s) y ${hashtagTags.length} hashtag(s) configurados ` +
+          `son solo guía para el clasificador, no se consultan; la detección va por ${searches.length} búsqueda(s) por palabra clave.`
+      );
+    }
     // Búsqueda por palabra clave (lista `searches`): solo si el adapter
     // sabe buscar. Con IG_ACTOR=apify no hay búsqueda: los términos quedan
     // configurados, pero se avisa y se ignoran en esta corrida.
@@ -897,7 +916,7 @@ async function runMonitoringCycle({ plataformas } = {}) {
     if (searches.length > 0 && !canSearch) {
       console.warn(
         `[monitor] ${platformId}: hay ${searches.length} búsqueda(s) por palabra clave configuradas pero el proveedor activo ` +
-          `no busca (en Instagram hace falta IG_ACTOR=apidojo): se ignoran en esta corrida.`
+          `no busca (en Instagram hace falta IG_ACTOR=apidojo): se ignoran en esta corrida y no se detecta nada.`
       );
     }
 
@@ -922,7 +941,7 @@ async function runMonitoringCycle({ plataformas } = {}) {
     // verdad): el progreso las junta en una sola fase visible, con un tick
     // por cada llamada que termina (bien o mal) — ver src/monitoringProgress.js.
     const detectionTotal =
-      accounts.length + hashtagTags.length + (canSearchKeywords ? textKeywords.length : 0) + (canSearch ? searches.length : 0);
+      accountsToScrape.length + hashtagsToScrape.length + (canSearchKeywords ? textKeywords.length : 0) + (canSearch ? searches.length : 0);
     progress.startPhase('Detectando posteos nuevos', detectionTotal);
     // .then(ok, error) en vez de .finally(): así cada tick sabe si esa
     // llamada terminó bien o mal (para "[fase] termina ... N ok, N error"),
@@ -940,8 +959,8 @@ async function runMonitoringCycle({ plataformas } = {}) {
       );
 
     const sourceResults = await Promise.allSettled([
-      ...accounts.map((account) => tickDetection(platform.scrapeAccount(account, { resultsLimit: accountLimit, lookback: window.lookback }))),
-      ...hashtagTags.map((tag) => tickDetection(platform.scrapeHashtag(tag, { resultsLimit: hashtagLimit, lookback: window.lookback }))),
+      ...accountsToScrape.map((account) => tickDetection(platform.scrapeAccount(account, { resultsLimit: accountLimit, lookback: window.lookback }))),
+      ...hashtagsToScrape.map((tag) => tickDetection(platform.scrapeHashtag(tag, { resultsLimit: hashtagLimit, lookback: window.lookback }))),
       ...(canSearchKeywords
         ? textKeywords.map((keyword) =>
             tickDetection(platform.scrapeKeyword(keyword, { resultsLimit: limits.search, lookback: legacyLookback }))
@@ -1088,7 +1107,9 @@ async function runMonitoringCycle({ plataformas } = {}) {
     // matcheó, nunca "los últimos N" de esa cuenta). src/metricsRefresh.js las
     // usa para no volver a pedirle al scraper una cuenta que ya se acaba de
     // consultar. Por plataforma: el mismo handle puede existir en dos redes.
-    scrapedAccounts[platformId] = [...accounts];
+    // En Instagram queda vacío (detectAccounts: false): ninguna cuenta se
+    // consultó en la detección, así que el refresco las pide si les toca.
+    scrapedAccounts[platformId] = [...accountsToScrape];
 
     if (platformError) {
       const saved = porPlataforma[platformId].newCount;
@@ -1107,11 +1128,12 @@ async function runMonitoringCycle({ plataformas } = {}) {
       }
       console.warn(`[monitor] ${platformId}: la corrida quedó incompleta (${code}); se sigue con las demás plataformas.`);
     } else {
-      // Detección exitosa (cuentas + hashtags, con o sin posteos nuevos):
-      // marca el fin de esta corrida como punto de partida de la próxima
-      // ventana (ver detectionWindowFor). Solo cuentas y hashtags -aunque
-      // el ciclo completo falle después en benchmark o refresco- cuentan
-      // como "detección exitosa" acá.
+      // Detección exitosa (las fuentes que esta plataforma consulta:
+      // búsquedas en Instagram; cuentas, hashtags y keywords en X — con o
+      // sin posteos nuevos): marca el fin de esta corrida como punto de
+      // partida de la próxima ventana (ver detectionWindowFor). Solo la
+      // detección cuenta acá, aunque el ciclo completo falle después en
+      // benchmark o refresco.
       try {
         db.setRefreshState(`detection_last_success:${platformId}`, new Date(cycleNowMs).toISOString());
       } catch (err) {
