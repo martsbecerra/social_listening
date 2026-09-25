@@ -220,7 +220,7 @@ describe('adapter X', { concurrency: false }, () => {
 
     assert.deepEqual(db.listDistinctPostAccounts('instagram'), ['gcba']);
     assert.deepEqual(db.listDistinctPostAccounts('x'), ['otrovecino']);
-    assert.deepEqual(db.listDistinctPostAccounts(), ['gcba']); // default instagram
+    assert.throws(() => db.listDistinctPostAccounts(), /falta plataforma/); // sin default a instagram
 
     // Seguidores por plataforma: no pisa la fila de X con el mismo handle.
     assert.equal(db.saveDetectedPost(samplePost({ id: 'x:100', account: 'gcba', url: 'https://x.com/gcba/status/100', plataforma: 'x', followers: null })), true);

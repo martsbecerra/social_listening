@@ -30,6 +30,7 @@ function samplePost(overrides = {}) {
     sentiment: 'neutral',
     postType: 'imagen',
     followers: 100,
+    plataforma: 'instagram',
     ...overrides,
   };
 }

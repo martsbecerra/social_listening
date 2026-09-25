@@ -324,12 +324,23 @@ function loadConfigAll() {
   return absorbLegacyXConfig(readConfigAll());
 }
 
+// Las funciones por plataforma la reciben SIEMPRE: sin default a Instagram.
+// Un llamador que la olvide no tiene que terminar leyendo (o peor,
+// escribiendo una sección "undefined" en) el config de otra red.
+function requirePlatformId(platformId, fn) {
+  if (typeof platformId !== 'string' || !platformId.trim()) {
+    throw new Error(`${fn}: falta plataforma (instagram | x); no hay default.`);
+  }
+  return platformId;
+}
+
 /**
  * Config de UNA plataforma para la API y el resto de la app:
  * { accounts, keywords, searches }. `searches` se devuelve siempre como
  * lista, exista o no en el archivo (ver addSearch).
  */
-function loadConfig(platformId = DEFAULT_PLATFORM_ID) {
+function loadConfig(platformId) {
+  requirePlatformId(platformId, 'loadConfig');
   const section = loadConfigAll()[platformId] || { accounts: [], keywords: [] };
   return { accounts: section.accounts, keywords: section.keywords, searches: cleanList(section.searches) };
 }
@@ -344,7 +355,8 @@ function saveConfig(configAll) {
  * consulta que exista; X solo chequea el formato del handle). No hace nada
  * si ya estaba (evita duplicados).
  */
-async function addAccount(account, platformId = DEFAULT_PLATFORM_ID) {
+async function addAccount(account, platformId) {
+  requirePlatformId(platformId, 'addAccount');
   const clean = String(account || '').trim().replace(/^@/, '');
   if (!clean) {
     const e = new Error('Cuenta vacía');
@@ -369,7 +381,8 @@ async function addAccount(account, platformId = DEFAULT_PLATFORM_ID) {
   return config;
 }
 
-function removeAccount(account, platformId = DEFAULT_PLATFORM_ID) {
+function removeAccount(account, platformId) {
+  requirePlatformId(platformId, 'removeAccount');
   const all = loadConfigAll();
   const config = all[platformId] || (all[platformId] = { accounts: [], keywords: [] });
   config.accounts = config.accounts.filter((a) => a.toLowerCase() !== String(account).toLowerCase());
@@ -383,7 +396,8 @@ function removeAccount(account, platformId = DEFAULT_PLATFORM_ID) {
  * es texto libre: en Instagram se busca dentro de lo que ya se scrapea, en
  * X se busca literalmente (ver scrapeKeyword en el adapter).
  */
-async function addKeyword(keyword, platformId = DEFAULT_PLATFORM_ID) {
+async function addKeyword(keyword, platformId) {
+  requirePlatformId(platformId, 'addKeyword');
   const clean = String(keyword || '').trim();
   if (!clean) {
     const e = new Error('Keyword vacía');
@@ -403,7 +417,8 @@ async function addKeyword(keyword, platformId = DEFAULT_PLATFORM_ID) {
   return config;
 }
 
-function removeKeyword(keyword, platformId = DEFAULT_PLATFORM_ID) {
+function removeKeyword(keyword, platformId) {
+  requirePlatformId(platformId, 'removeKeyword');
   const all = loadConfigAll();
   const config = all[platformId] || (all[platformId] = { accounts: [], keywords: [] });
   config.keywords = config.keywords.filter((k) => k.toLowerCase() !== String(keyword).toLowerCase());
@@ -423,7 +438,8 @@ function removeKeyword(keyword, platformId = DEFAULT_PLATFORM_ID) {
  * nunca se va a usar. `searches` recién aparece en el archivo cuando se
  * agrega el primero; las secciones de las demás redes no se tocan.
  */
-function addSearch(term, platformId = DEFAULT_PLATFORM_ID) {
+function addSearch(term, platformId) {
+  requirePlatformId(platformId, 'addSearch');
   const clean = String(term || '').trim();
   if (!clean) {
     const e = new Error('Búsqueda vacía');
@@ -449,7 +465,8 @@ function addSearch(term, platformId = DEFAULT_PLATFORM_ID) {
   return loadConfig(platformId);
 }
 
-function removeSearch(term, platformId = DEFAULT_PLATFORM_ID) {
+function removeSearch(term, platformId) {
+  requirePlatformId(platformId, 'removeSearch');
   const all = loadConfigAll();
   const config = all[platformId];
   if (config && Array.isArray(config.searches)) {
@@ -1099,7 +1116,8 @@ async function runMonitoringCycle({ plataformas } = {}) {
  * alguno que falló). Se puede llamar las veces que haga falta: no vuelve a
  * tocar los que ya están clasificados.
  */
-async function backfillClassification(platformId = DEFAULT_PLATFORM_ID) {
+async function backfillClassification(platformId) {
+  requirePlatformId(platformId, 'backfillClassification');
   const platform = getPlatform(platformId);
   const pending = db.listUnclassified({ plataforma: platformId });
   let classified = 0;

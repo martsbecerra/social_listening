@@ -89,7 +89,7 @@ describe('apify: cola de runs simultáneos', { concurrency: false }, () => {
       return respond(200, '', [{ n }]);
     };
     try {
-      const results = await Promise.all([1, 2, 3, 4, 5, 6].map((n) => runActorSync({ n }, { actorId: 'apify~instagram-scraper' })));
+      const results = await Promise.all([1, 2, 3, 4, 5, 6].map((n) => runActorSync({ n }, { actorId: 'apify~instagram-scraper', plataforma: 'instagram' })));
       assert.equal(maxInFlight, 2);
       assert.deepEqual(order, [1, 2, 3, 4, 5, 6]);
       assert.deepEqual(results.map((items) => items[0].n), [1, 2, 3, 4, 5, 6]);
@@ -108,7 +108,7 @@ describe('apify: cola de runs simultáneos', { concurrency: false }, () => {
       calls = 0;
       global.fetch = async () => (calls++ === 0 ? respond(402, BODY_CONCURRENT) : respond(200, '', [{ ok: true }]));
       const t0 = Date.now();
-      assert.deepEqual(await runActorSync({}, { actorId: 'apify~instagram-scraper' }), [{ ok: true }]);
+      assert.deepEqual(await runActorSync({}, { actorId: 'apify~instagram-scraper', plataforma: 'instagram' }), [{ ok: true }]);
       assert.equal(calls, 2);
       assert.ok(Date.now() - t0 >= 15, 'esperó APIFY_RETRY_DELAY_MS antes de reintentar');
 
@@ -118,7 +118,7 @@ describe('apify: cola de runs simultáneos', { concurrency: false }, () => {
         calls += 1;
         return respond(402, BODY_CONCURRENT);
       };
-      await assert.rejects(runActorSync({}, { actorId: 'apify~instagram-scraper' }), (err) => {
+      await assert.rejects(runActorSync({}, { actorId: 'apify~instagram-scraper', plataforma: 'instagram' }), (err) => {
         assert.equal(err.code, 'RATE_LIMITED');
         assert.match(err.userMessage, /runs simultáneos/);
         assert.match(err.message, /Apify respondió 402/);
@@ -132,7 +132,7 @@ describe('apify: cola de runs simultáneos', { concurrency: false }, () => {
         calls += 1;
         return respond(402, '{"error":{"type":"actor-memory-limit-exceeded","message":"Memory limit exceeded"}}');
       };
-      await assert.rejects(runActorSync({}, { actorId: 'apify~instagram-scraper' }), (err) => {
+      await assert.rejects(runActorSync({}, { actorId: 'apify~instagram-scraper', plataforma: 'instagram' }), (err) => {
         assert.equal(err.code, undefined);
         assert.match(err.userMessage, /límites del plan \(402\)/);
         return true;
@@ -141,7 +141,7 @@ describe('apify: cola de runs simultáneos', { concurrency: false }, () => {
 
       // Después de errores la cola quedó libre y sigue atendiendo.
       global.fetch = async () => respond(200, '', [1]);
-      assert.deepEqual(await runActorSync({}, { actorId: 'apify~instagram-scraper' }), [1]);
+      assert.deepEqual(await runActorSync({}, { actorId: 'apify~instagram-scraper', plataforma: 'instagram' }), [1]);
       assert.equal(apifyLimiter.inFlight(), 0);
       assert.equal(apifyLimiter.pending(), 0);
     } finally {

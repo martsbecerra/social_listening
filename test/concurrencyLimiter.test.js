@@ -145,7 +145,7 @@ describe('runActorSync: timeout de seguridad (APIFY_CALL_TIMEOUT_MS)', () => {
     global.fetch = () => new Promise((resolve) => setTimeout(() => resolve({ ok: true, status: 200, text: async () => '', json: async () => [] }), 1400));
     try {
       const t0 = Date.now();
-      await assert.rejects(runActorSync({ directUrls: ['https://x/p/1/'] }, { actorId: 'apify~instagram-scraper' }), (err) => {
+      await assert.rejects(runActorSync({ directUrls: ['https://x/p/1/'] }, { actorId: 'apify~instagram-scraper', plataforma: 'instagram' }), (err) => {
         assert.equal(err.code, 'TIMEOUT');
         return true;
       });
@@ -160,7 +160,7 @@ describe('runActorSync: timeout de seguridad (APIFY_CALL_TIMEOUT_MS)', () => {
     // La cola sigue viva: una llamada normal después del timeout funciona.
     global.fetch = async () => ({ ok: true, status: 200, text: async () => '', json: async () => [{ ok: true }] });
     try {
-      const items = await runActorSync({ directUrls: ['https://x/p/2/'] }, { actorId: 'apify~instagram-scraper' });
+      const items = await runActorSync({ directUrls: ['https://x/p/2/'] }, { actorId: 'apify~instagram-scraper', plataforma: 'instagram' });
       assert.deepEqual(items, [{ ok: true }]);
     } finally {
       global.fetch = originalFetch;

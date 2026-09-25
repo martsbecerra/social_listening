@@ -424,18 +424,23 @@ app.post('/api/x/analyze', async (req, res) => {
 // --------------------------------------------------------------------------
 // Monitoreo automático: config, tabla de posteos detectados, disparo manual.
 // --------------------------------------------------------------------------
-// Todos los endpoints de monitoreo aceptan `plataforma` (query en GET/DELETE,
-// body en POST). Sin él, default 'instagram': el frontend viejo no manda el
-// parámetro y tiene que seguir funcionando igual. Un id que no esté en el
-// registro de src/platforms/ NO cae en silencio a instagram: el middleware
-// de abajo responde 400 antes del handler.
+// Todos los endpoints de monitoreo reciben `plataforma` (query en GET/DELETE,
+// body en POST). Sin ella NO hay default a instagram: el middleware de abajo
+// responde 400 antes del handler (el frontend la manda en toda llamada, ver
+// withPlataforma en public/js/monitoring.js). Un id que no esté en el
+// registro de src/platforms/ tampoco cae en silencio a instagram: 400.
+// Las rutas que no filtran por plataforma la aceptan pero no la exigen.
 function monitoringPlataforma(req) {
-  const raw = String(req.query?.plataforma || req.body?.plataforma || '').trim();
-  return raw || 'instagram';
+  return String(req.query?.plataforma || req.body?.plataforma || '').trim();
 }
+const RUTAS_MONITORING_SIN_PLATAFORMA = new Set(['/status', '/progress', '/counts', '/costs']);
 
 app.use('/api/monitoring', (req, res, next) => {
   const plataforma = monitoringPlataforma(req);
+  if (!plataforma) {
+    if (RUTAS_MONITORING_SIN_PLATAFORMA.has(req.path)) return next();
+    return res.status(400).json({ error: 'Falta el parámetro plataforma (instagram | x).' });
+  }
   const soportadas = listPlatformIds();
   if (!soportadas.includes(plataforma)) {
     return res.status(400).json({

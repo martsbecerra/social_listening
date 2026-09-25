@@ -169,7 +169,11 @@ mismo módulo antes de llamar a Apify/Grok: otra red → 400 "Esta sección
 solo analiza publicaciones de <red>"; el cliente repite solo el chequeo de
 dominio. Ignorar y corregir sentimiento van por id Y plataforma
 (`db.ignorePost`, `db.updateSentiment`: 404 desde otra solapa; sin
-plataforma tiran).
+plataforma tiran). Ninguna función por plataforma tiene default a
+`'instagram'` (db, monitor, accountStats, `runActorSync`): sin ella tiran
+"falta plataforma", y `/api/monitoring/*` responde 400 salvo en `/status`,
+`/progress`, `/counts` y `/costs`. Al sumar una función nueva por
+plataforma: parámetro obligatorio, sin default.
 
 ## Datos que no se tocan
 

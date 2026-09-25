@@ -873,7 +873,7 @@ function rejectNegative(value) {
  *   se garantiza acá, al escribir, no solo al leer.
  */
 function saveDetectedPost(post) {
-  const plataforma = post.plataforma || 'instagram';
+  const plataforma = requirePlataforma(post.plataforma, 'saveDetectedPost');
   const plataformaDeLaUrl = platformForUrl(post.url);
   if (plataformaDeLaUrl && plataformaDeLaUrl !== plataforma) {
     const e = new Error(
@@ -1270,7 +1270,8 @@ function getAccountFollowers(account, plataforma) {
 }
 
 /** @returns {string[]} Cuentas distintas de una plataforma presentes en detected_posts (sin NULL ni 'N/D'). */
-function listDistinctPostAccounts(plataforma = 'instagram') {
+function listDistinctPostAccounts(plataforma) {
+  requirePlataforma(plataforma, 'listDistinctPostAccounts');
   return listDistinctPostAccountsStmt.all(plataforma).map((row) => row.account);
 }
 
@@ -1326,7 +1327,8 @@ function updatePostMetricsIfChanged(id, { likes, comments, postType }) {
 }
 
 /** Propaga la cantidad de seguidores a TODOS los posteos ya guardados de una cuenta de esa plataforma (no solo a los nuevos). */
-function updateFollowersForAccount(account, followers, plataforma = 'instagram') {
+function updateFollowersForAccount(account, followers, plataforma) {
+  requirePlataforma(plataforma, 'updateFollowersForAccount');
   updateFollowersForAccountStmt.run(followers ?? null, account, plataforma);
 }
 
@@ -1441,17 +1443,20 @@ function sumApifyCallsSince(sinceIso) {
 }
 
 /** @returns {{postId: string, plataforma: string, url: string|null, term: string|null, outcome: string, firstSeenAt: string}|null} */
-function getSearchSeen(postId, plataforma = 'instagram') {
+function getSearchSeen(postId, plataforma) {
+  requirePlataforma(plataforma, 'getSearchSeen');
   const row = getSearchSeenStmt.get(String(postId), plataforma);
   return row ? { ...row } : null;
 }
 
-function isSearchSeen(postId, plataforma = 'instagram') {
+function isSearchSeen(postId, plataforma) {
+  requirePlataforma(plataforma, 'isSearchSeen');
   return Boolean(getSearchSeenStmt.get(String(postId), plataforma));
 }
 
 /** Anota un resultado de búsqueda al que ya se le pidió el detalle. Si ya estaba, solo cambia el outcome. */
-function markSearchSeen({ postId, plataforma = 'instagram', url = null, term = null, outcome, firstSeenAt }) {
+function markSearchSeen({ postId, plataforma, url = null, term = null, outcome, firstSeenAt }) {
+  requirePlataforma(plataforma, 'markSearchSeen');
   markSearchSeenStmt.run({
     postId: String(postId),
     plataforma,
@@ -1481,7 +1486,8 @@ function setRefreshState(key, value) {
  * cumpla la cadencia (cadenceIso null = sin filtro de metrics_updated_at).
  * @returns {{account: string, mostRecentPostedAt: string, postCount: number}[]}
  */
-function listAccountsDueForRefresh({ sinceIso, untilIso, cadenceIso = null, plataforma = 'instagram' }) {
+function listAccountsDueForRefresh({ sinceIso, untilIso, cadenceIso = null, plataforma }) {
+  requirePlataforma(plataforma, 'listAccountsDueForRefresh');
   return listAccountsDueForRefreshStmt.all({ sinceIso, untilIso, cadenceIso, plataforma });
 }
 

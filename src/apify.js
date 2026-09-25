@@ -168,13 +168,18 @@ function isConcurrentRunsError(err) {
  * La duración se mide desde que la llamada obtiene su lugar en la cola.
  *
  * @param {object} input - La configuración (input) que espera el actor.
- * @param {{ actorId?: string, plataforma?: string }} [options] - Actor a
+ * @param {{ actorId?: string, plataforma: string }} options - Actor a
  *   correr. Por defecto el oficial (scrapeInstagram, abajo, no lo pasa);
  *   los adapters de src/platforms/ pasan el suyo, así este módulo queda
- *   genérico. plataforma: para la fila de apify_calls (default instagram).
+ *   genérico. plataforma: para la fila de apify_calls, obligatoria (sin
+ *   default a instagram: el gasto de otra red no se etiqueta como Instagram
+ *   en silencio).
  * @returns {Promise<Array>} Lista de items scrapeados.
  */
-async function runActorSync(input, { actorId = APIFY_ACTOR, plataforma = 'instagram' } = {}) {
+async function runActorSync(input, { actorId = APIFY_ACTOR, plataforma } = {}) {
+  if (typeof plataforma !== 'string' || !plataforma.trim()) {
+    throw new Error('runActorSync: falta plataforma (instagram | x); no hay default.');
+  }
   const { target } = describeInput(input);
   return apifyLimiter.run(async () => {
     const context = getContext();
@@ -443,8 +448,8 @@ async function scrapeInstagram(postUrl) {
   const commentsLimitRequested = commentsInput.resultsLimit;
 
   const [commentItems, postItems] = await Promise.all([
-    runActorSync(commentsInput),
-    runActorSync(postInput),
+    runActorSync(commentsInput, { plataforma: 'instagram' }),
+    runActorSync(postInput, { plataforma: 'instagram' }),
   ]);
 
   const rawCommentItems = Array.isArray(commentItems) ? commentItems.length : 0;

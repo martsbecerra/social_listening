@@ -163,7 +163,7 @@ describe('costo de Apify', { concurrency: false }, () => {
 
       // Fallida (500): fila con ok 0, items 0, usd 0 y el mensaje.
       global.fetch = async () => respond(500, 'boom');
-      await assert.rejects(runActorSync({ directUrls: ['https://www.instagram.com/x/'], resultsType: 'posts' }));
+      await assert.rejects(runActorSync({ directUrls: ['https://www.instagram.com/x/'], resultsType: 'posts' }, { plataforma: 'instagram' }));
       row = lastCall();
       assert.equal(row.ok, 0);
       assert.equal(row.items, 0);
@@ -175,7 +175,7 @@ describe('costo de Apify', { concurrency: false }, () => {
 
       // Cuota agotada: error = 'QUOTA_EXCEEDED', con la fase del caller.
       global.fetch = async () => respond(403, '{"error":{"type":"actor-disabled","message":"Monthly usage hard limit exceeded"}}');
-      await assert.rejects(runWithContext({ phase: 'validacion' }, () => runActorSync({ directUrls: ['https://www.instagram.com/y/'], resultsType: 'details' })));
+      await assert.rejects(runWithContext({ phase: 'validacion' }, () => runActorSync({ directUrls: ['https://www.instagram.com/y/'], resultsType: 'details' }, { plataforma: 'instagram' })));
       row = lastCall();
       assert.equal(row.error, 'QUOTA_EXCEEDED');
       assert.equal(row.phase, 'validacion');
@@ -240,7 +240,7 @@ describe('costo de Apify', { concurrency: false }, () => {
       // El run termina en FAILED: rechaza con el estado y el mensaje de Apify; la fila queda fallida con el run id.
       requests.length = 0;
       statusAfterWait = 'FAILED';
-      await assert.rejects(runActorSync(input, { actorId: APIDOJO }), (err) => {
+      await assert.rejects(runActorSync(input, { actorId: APIDOJO, plataforma: 'instagram' }), (err) => {
         assert.match(err.message, /run run-1 de Apify terminó en FAILED: Actor crashed/);
         assert.match(err.userMessage, /terminó en FAILED/);
         return true;
@@ -256,14 +256,14 @@ describe('costo de Apify', { concurrency: false }, () => {
       // 402 por runs simultáneos al arrancar el run: mismo reintento único que el sincrónico.
       requests.length = 0;
       firstPostStatus = 402;
-      assert.equal((await runActorSync(input, { actorId: APIDOJO })).length, 12);
+      assert.equal((await runActorSync(input, { actorId: APIDOJO, plataforma: 'instagram' })).length, 12);
       assert.equal(requests.filter((r) => r.method === 'POST').length, 2, 'dos POST: el rechazado y el reintento');
       assert.equal(lastCall().ok, 1);
 
       // El POST ya devuelve el run terminado: no hace falta esperar.
       requests.length = 0;
       postStatus = 'SUCCEEDED';
-      await runActorSync(input, { actorId: APIDOJO });
+      await runActorSync(input, { actorId: APIDOJO, plataforma: 'instagram' });
       assert.deepEqual(requests.map((r) => r.method), ['POST', 'GET'], 'POST + items');
       postStatus = 'RUNNING';
 
@@ -275,7 +275,7 @@ describe('costo de Apify', { concurrency: false }, () => {
         return respond(200, '', [{ id: 1 }]);
       };
       requests.length = 0;
-      assert.deepEqual(await runActorSync(input, { actorId: APIDOJO }), [{ id: 1 }]);
+      assert.deepEqual(await runActorSync(input, { actorId: APIDOJO, plataforma: 'instagram' }), [{ id: 1 }]);
       assert.equal(requests.length, 1);
       row = lastCall();
       assert.equal(row.actor, APIDOJO);
@@ -476,7 +476,7 @@ describe('costo de Apify', { concurrency: false }, () => {
         throw new Error('base bloqueada');
       };
       console.error = (...args) => logged.push(args.join(' '));
-      assert.deepEqual(await runActorSync({ directUrls: ['u'], resultsType: 'posts' }), [{ id: 1 }]);
+      assert.deepEqual(await runActorSync({ directUrls: ['u'], resultsType: 'posts' }, { plataforma: 'instagram' }), [{ id: 1 }]);
       assert.ok(logged.some((l) => l.includes('No se pudo registrar') && l.includes('base bloqueada')));
     } finally {
       global.fetch = originalFetch;

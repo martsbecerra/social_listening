@@ -65,9 +65,14 @@ const RATIO_HIGH = 1.5;
 // ciclos siguientes, en orden de llegada.
 const MAX_ACCOUNTS_PER_CYCLE = Number(process.env.MAX_ACCOUNTS_PER_CYCLE) || 10;
 
-// Plataforma por defecto de las funciones de una sola cuenta (script de
-// recálculo, llamadas sin plataforma explícita).
-const PLATAFORMA = 'instagram';
+// Las funciones de una sola cuenta reciben la plataforma SIEMPRE: no hay
+// default a Instagram (un llamador que la olvide etiquetaría mal sin error).
+function requirePlataforma(plataforma, fn) {
+  if (typeof plataforma !== 'string' || !plataforma.trim()) {
+    throw new Error(`${fn}: falta plataforma (instagram | x); no hay default.`);
+  }
+  return plataforma;
+}
 
 function median(numbers) {
   const sorted = numbers.filter(Number.isFinite).sort((a, b) => a - b);
@@ -101,10 +106,11 @@ function benchmarkPlatformIds(plataformas) {
  * Dedupe case-insensitive: si la misma cuenta aparece con distinta
  * capitalización en config vs. en un post, se conserva la forma de config
  * (viene primero en el array de entrada).
- * @param {string} [plataforma]
+ * @param {string} plataforma
  * @returns {string[]}
  */
-function buildAccountUniverse(plataforma = PLATAFORMA) {
+function buildAccountUniverse(plataforma) {
+  requirePlataforma(plataforma, 'buildAccountUniverse');
   const { accounts: tracked } = monitor.loadConfig(plataforma);
   const fromPosts = db.listDistinctPostAccounts(plataforma);
   const seen = new Map(); // lowercase -> forma "canónica" (la primera vista)
@@ -146,10 +152,11 @@ function buildAccountUniverse(plataforma = PLATAFORMA) {
  * cola de recálculo en cada ciclo en que tenga un posteo.
  *
  * @param {string} account
- * @param {string} [plataforma]
+ * @param {string} plataforma
  * @returns {Promise<{ account: string, plataforma: string, fetched: number, recent: number, groupsSaved: number, attemptOnly: boolean, referenceKept: boolean, followersChecked: number, followersFound: boolean, postsUpdated: number, skipped?: boolean }>}
  */
-async function computeAccountStats(account, plataforma = PLATAFORMA) {
+async function computeAccountStats(account, plataforma) {
+  requirePlataforma(plataforma, 'computeAccountStats');
   const adapter = getPlatform(plataforma);
   const capabilities = adapter.capabilities || {};
   if (!capabilities.benchmark) {
@@ -490,12 +497,13 @@ function classifyValue(value, medianValue, nPosts, basis) {
  * Cada métrica devuelve basis: 'tipo' | 'global' (ausente si sin-referencia),
  * para poder mostrar cuál referencia se usó.
  *
- * @param {{ account: string, plataforma?: string, postType?: string|null,
+ * @param {{ account: string, plataforma: string, postType?: string|null,
  *   likes: number|null, comments: number|null, statsMap?: Map }} params
  *   statsMap opcional (ver buildAccountStatsMap): evita una query por post
  *   cuando se clasifican muchos posteos seguidos (server.js).
  */
-function classifyPostAgainstBenchmark({ account, plataforma = PLATAFORMA, postType = null, likes, comments, statsMap }) {
+function classifyPostAgainstBenchmark({ account, plataforma, postType = null, likes, comments, statsMap }) {
+  requirePlataforma(plataforma, 'classifyPostAgainstBenchmark');
   const lookup = (pt) =>
     statsMap ? statsMap.get(statsMapKey(account || '', plataforma, pt)) : account ? db.getAccountStats(account, plataforma, pt) : null;
 

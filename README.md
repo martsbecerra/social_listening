@@ -751,6 +751,24 @@ sentiment, plataforma)`): un id de otra red responde 404 y no toca nada,
 aunque los ids ya sean únicos entre redes. Sin plataforma, las funciones
 tiran: no hay default a Instagram.
 
+**Sin defaults a Instagram, en ningún lado.** Antes, varias funciones
+asumían `'instagram'` cuando no les pasaban la plataforma
+(`saveDetectedPost`, `listDistinctPostAccounts`, `updateFollowersForAccount`,
+`listAccountsDueForRefresh`, `get/is/markSearchSeen`, `loadConfig` y las
+altas/bajas de cuentas, keywords y búsquedas, `backfillClassification`,
+`computeAccountStats`, `classifyPostAgainstBenchmark`, `buildAccountUniverse`,
+`runActorSync`, y el middleware de `/api/monitoring`). Era la única vía
+realista para que algo de X terminara etiquetado como Instagram: un llamador
+nuevo que olvidara el parámetro. Ahora todas tiran `"<función>: falta
+plataforma (instagram | x); no hay default."` y el middleware responde 400
+`Falta el parámetro plataforma` — salvo en las rutas que no filtran por
+plataforma (`/status`, `/progress`, `/counts`, `/costs`), que la aceptan pero
+no la exigen. `scripts/recalc-account-stats.js` (solo Instagram) la pasa
+explícita. Las lecturas "todas las plataformas" (`listDetectedPosts` y
+`listUnclassified` sin `plataforma`, `countRecentPosts(days)`) siguen
+existiendo para el dashboard y scripts: no defaultean a una red, devuelven
+todas. Test: `test/plataformaObligatoria.test.js`.
+
 ### Septiembre 2026: cambio de actor de monitoreo
 
 El monitoreo de Instagram pasó de `apify/instagram-scraper` a

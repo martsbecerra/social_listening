@@ -210,13 +210,13 @@ describe('benchmark: criterio de recálculo', { concurrency: false }, () => {
     assert.equal(vieja.nPosts, 12);
     assert.equal(vieja.medianLikes, 100);
     assert.ok(new Date(vieja.computedAt) > new Date(iso(1)));
-    assert.equal(accountStats.classifyPostAgainstBenchmark({ account: 'vieja', likes: 100, comments: 10 }).likes.level, 'normal');
+    assert.equal(accountStats.classifyPostAgainstBenchmark({ account: 'vieja', plataforma: 'instagram', likes: 100, comments: 10 }).likes.level, 'normal');
 
     // Sin referencia previa: fila global con n_posts real (0) como marca; sigue "sin referencia".
     const nueva = db.getAccountStats('nueva', 'instagram', null);
     assert.equal(nueva.nPosts, 0);
     assert.equal(nueva.medianLikes, null);
-    assert.equal(accountStats.classifyPostAgainstBenchmark({ account: 'nueva', likes: 5, comments: 1 }).likes.level, 'sin-referencia');
+    assert.equal(accountStats.classifyPostAgainstBenchmark({ account: 'nueva', plataforma: 'instagram', likes: 5, comments: 1 }).likes.level, 'sin-referencia');
 
     // Capitalización: se tocó la fila existente, no se creó otra.
     assert.equal(statsRowsOf('mayuscula').length, 1);
@@ -239,7 +239,7 @@ describe('benchmark: criterio de recálculo', { concurrency: false }, () => {
     assert.equal(result.attemptsOnly, 0);
     assert.equal(benchmarkCalls('nueva2'), 1);
     assert.deepEqual(statsRowsOf('nueva2').map((r) => [r.postType, r.nPosts]).sort(), [[null, 6], ['imagen', 6]]);
-    const benchmark = accountStats.classifyPostAgainstBenchmark({ account: 'nueva2', postType: 'imagen', likes: 100, comments: 10 });
+    const benchmark = accountStats.classifyPostAgainstBenchmark({ account: 'nueva2', plataforma: 'instagram', postType: 'imagen', likes: 100, comments: 10 });
     assert.equal(benchmark.likes.level, 'normal');
     assert.equal(benchmark.likes.basis, 'tipo');
     // La misma pasada propagó los seguidores al posteo guardado.

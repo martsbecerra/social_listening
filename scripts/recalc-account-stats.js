@@ -40,6 +40,11 @@ const { getPlatform } = require('../src/platforms');
 const { isQuotaExceeded } = require('../src/platforms/errors');
 const { runWithContext } = require('../src/usageContext');
 
+// Este script es solo de Instagram (la única plataforma con benchmark). La
+// plataforma se pasa explícita en cada llamada: ninguna función tiene
+// default a Instagram.
+const PLATAFORMA = 'instagram';
+
 const PENDIENTES_PATH = path.join(__dirname, 'pendientes-benchmark.txt');
 
 function parseArgs(argv) {
@@ -79,7 +84,7 @@ async function recalcOne(account, { index, total } = {}) {
   const prefix = index && total ? `[${index}/${total}] ` : '';
   console.log(`${prefix}@${account}...`);
 
-  const result = await accountStats.computeAccountStats(account);
+  const result = await accountStats.computeAccountStats(account, PLATAFORMA);
   let refLine = 'sin datos suficientes (menos de 5 posteos recientes)';
   if (result.groupsSaved > 0) {
     refLine = `${result.groupsSaved} grupo(s) con referencia guardada`;
@@ -101,7 +106,7 @@ async function recalcOne(account, { index, total } = {}) {
  * con lo que va a mostrar la tabla.
  */
 function printGoalCheck() {
-  const { posts, total } = db.listDetectedPosts({ page: 1, pageSize: 1_000_000, plataforma: 'instagram' });
+  const { posts, total } = db.listDetectedPosts({ page: 1, pageSize: 1_000_000, plataforma: PLATAFORMA });
   const statsMap = accountStats.buildAccountStatsMap();
 
   let withBenchmark = 0;
@@ -113,6 +118,7 @@ function printGoalCheck() {
   for (const post of posts) {
     const benchmark = accountStats.classifyPostAgainstBenchmark({
       account: post.account,
+      plataforma: PLATAFORMA,
       postType: post.post_type,
       likes: post.likes,
       comments: post.comments,
@@ -250,7 +256,7 @@ async function main() {
   }
 
   if (todas) {
-    await runAccountList(accountStats.buildAccountUniverse(), { si });
+    await runAccountList(accountStats.buildAccountUniverse(PLATAFORMA), { si });
     return;
   }
 
