@@ -69,7 +69,7 @@ const MAX_ACCOUNTS_PER_REFRESH = Number(process.env.MAX_ACCOUNTS_PER_REFRESH) ||
 // Limitador PROPIO del nivel "cuenta" del refresco — nunca el apifyLimiter
 // de src/apify.js (mismo motivo que benchmarkLimiter en accountStats.js: un
 // deadlock real si compartiera instancia con runActorSync, ver Cambio G).
-const refreshLimiter = createLimiter(Number(process.env.APIFY_MAX_CONCURRENT) || 3, 'refresco');
+const refreshLimiter = createLimiter(Number(process.env.APIFY_MAX_CONCURRENT) || 10, 'refresco');
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;

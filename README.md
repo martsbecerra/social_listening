@@ -743,16 +743,18 @@ de runs simultáneos (abajo) y siguen corriendo a la vez mientras haya lugar.
 
 ### Runs simultáneos de Apify (cola global)
 
-El plan Free de Apify permite **5 Actor runs a la vez**. La detección del
-monitoreo lanza todas las fuentes de Instagram juntas (12 cuentas más
-hashtags), así que sin control varias fallaban con `402
+Apify limita los **Actor runs simultáneos** (y la memoria total) según el
+plan: se ve en la consola, Settings → Limits. La detección del monitoreo
+lanza todas las fuentes juntas, y en su momento, con el plan Free (5 runs),
+12 cuentas más hashtags fallaban sin control con `402
 concurrent-runs-limit-exceeded` y esas fuentes se perdían ese ciclo. Todas las
 llamadas a Apify de la app (detección, benchmark, refresco de métricas,
 análisis a demanda, validación de cuentas y hashtags) pasan por una cola
 única en `src/apify.js` (`runActorSync`, con `src/concurrencyLimiter.js`):
-como mucho `APIFY_MAX_CONCURRENT` corridas en vuelo (default 3, que deja
-margen para que dos cosas corran a la vez sin llegar a 5), el resto espera su
-turno en orden de llegada. El lugar se retiene mientras dura el run, porque
+como mucho `APIFY_MAX_CONCURRENT` corridas en vuelo (default 10; era 3,
+pensado para el plan Free: con el plan pago, 10 en vuelo corrieron ciclos
+reales sin un solo 402 y el ciclo dura la mitad; ajustalo al tope de tu
+plan), el resto espera su turno en orden de llegada. El lugar se retiene mientras dura el run, porque
 el endpoint sincrónico mantiene la conexión abierta hasta que el actor
 termina.
 

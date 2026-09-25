@@ -39,7 +39,7 @@ const { createLimiter } = require('./concurrencyLimiter');
 // cupos, ninguna llegaría a conseguir un cupo para su propia llamada real
 // (deadlock — así se colgó un ciclo real ~30 min, Cambio G). Mismo valor de
 // APIFY_MAX_CONCURRENT, instancia distinta.
-const benchmarkLimiter = createLimiter(Number(process.env.APIFY_MAX_CONCURRENT) || 3, 'benchmark');
+const benchmarkLimiter = createLimiter(Number(process.env.APIFY_MAX_CONCURRENT) || 10, 'benchmark');
 
 // Cuántos posteos recientes pedir por cuenta. Con apidojo la consulta de
 // perfil incluye 10 y cobra 0,0005 usd por cada uno de más; con el actor

@@ -32,9 +32,10 @@
 //
 // RUNS SIMULTÁNEOS (cola global)
 // --------------------------------------------------------------------------
-// El plan Free de Apify permite 5 Actor runs a la vez. La detección del
-// monitoreo lanza todas las fuentes de Instagram juntas y con 12 cuentas +
-// hashtags varias fallaban con 402 "concurrent-runs-limit-exceeded". Por eso
+// Apify limita los Actor runs simultáneos y la memoria total según el plan
+// (en la consola: Settings → Limits). La detección del monitoreo lanza
+// todas las fuentes juntas y, en su momento con el plan Free (5 runs), 12
+// cuentas + hashtags fallaban con 402 "concurrent-runs-limit-exceeded". Por eso
 // TODAS las llamadas a Apify de la app (detección, benchmark, refresco de
 // métricas, análisis a demanda, validación de cuentas y hashtags) pasan por
 // runActorSync y este único limitador: como mucho APIFY_MAX_CONCURRENT
@@ -77,10 +78,12 @@ const APIFY_BASE = 'https://api.apify.com/v2';
 // Cuánto esperamos como máximo antes de cortar por nuestra cuenta (5 min).
 const REQUEST_TIMEOUT_MS = 300000;
 
-// Runs simultáneos permitidos a esta app. 3 deja margen para que dos cosas
-// corran a la vez (ej. el cron y un análisis a demanda) sin llegar a los 5
-// del plan Free. Al pasar a un plan con más runs, subirlo en el .env.
-const APIFY_MAX_CONCURRENT = Math.max(1, Math.floor(Number(process.env.APIFY_MAX_CONCURRENT) || 3));
+// Runs simultáneos permitidos a esta app. 10 (era 3, pensado para los 5
+// runs del plan Free): con el plan pago, 10 en vuelo corrieron ciclos
+// reales sin un solo 402 (septiembre 2026) y el ciclo dura la mitad. Si tu
+// plan permite menos runs o menos memoria (Settings → Limits en la consola
+// de Apify), bajalo en el .env; si permite más, subilo.
+const APIFY_MAX_CONCURRENT = Math.max(1, Math.floor(Number(process.env.APIFY_MAX_CONCURRENT) || 10));
 // Cuánto esperar antes del único reintento de un 402 por runs simultáneos
 // (otro proceso usando el mismo token, o el tope de arriba demasiado alto).
 const APIFY_RETRY_DELAY_MS = parseDelayMs(process.env.APIFY_RETRY_DELAY_MS, 5000);
