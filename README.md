@@ -98,7 +98,9 @@ social_listening_app/
 │   ├── import-reclamos.js       # Importador genérico de Excel/CSV (solo CLI).
 │   ├── migrate-categorias.js    # Migra categorías viejas al esquema de dos niveles.
 │   ├── costo-apify.js           # Gasto en Apify por ventana, fase y actor (npm run costo).
-│   └── stop-server.js           # Mata el proceso que ocupa el puerto (npm run stop).
+│   ├── stop-server.js           # Mata el proceso que ocupa el puerto (npm run stop).
+│   ├── iniciar-con-reinicio.bat # Arranca la app en bucle (reinicio solo) con log a archivo.
+│   └── quickedit-off.ps1        # Apaga QuickEdit en la consola del .bat (un clic no congela).
 ├── CLAUDE.md                  # Guía corta del proyecto para trabajar con Claude Code.
 ├── .env.example               # Plantilla de las claves (copiala a .env).
 ├── .gitignore                 # Evita subir node_modules, .env y data/.
@@ -350,9 +352,12 @@ Hace falta `SESSION_SECRET` (string largo aleatorio) y `APP_BASE_URL` (p. ej.
 
   > ⚠️ **Esto SOLO funciona mientras el servidor esté corriendo sin cortes.**
   > Hoy la app corre con `npm start` en esta PC — si cerrás la terminal o la
-  > PC se suspende, esa corrida del monitoreo se saltea en silencio. El día
-  > que se despliegue a un hosting siempre encendido (Render, Railway, un
-  > VPS, etc.), no hace falta cambiar nada de este código.
+  > PC se suspende, esa corrida del monitoreo se saltea en silencio. Para
+  > dejarla sola varios días, usá `scripts\iniciar-con-reinicio.bat` y
+  > apagá la suspensión (ver "Dejarla corriendo sola varios días" en
+  > Instalación y uso). El día que se despliegue a un hosting siempre
+  > encendido (Render, Railway, un VPS, etc.), no hace falta cambiar nada
+  > de este código.
   >
   > **¿Por qué no usar los "Schedules" de Apify en vez de esto?** Apify puede
   > disparar el actor en su propia nube aunque tu PC esté apagada, pero el
@@ -633,6 +638,51 @@ El padrón ANTIK-PRO se carga solo al arrancar si la tabla está vacía, desde
 
 ```powershell
 npm run import-x-influencers
+```
+
+#### Dejarla corriendo sola varios días
+
+`npm start` en una terminal no alcanza para un piloto de varios días: si el
+proceso muere por un error no atrapado nadie lo levanta, un clic adentro de
+la ventana de la consola (modo QuickEdit de Windows) congela el proceso
+hasta que alguien aprieta una tecla, y si la PC se suspende el cron no
+corre. Para eso está `scripts\iniciar-con-reinicio.bat`:
+
+1. Primero, que la PC no se suspenda ni hiberne mientras está enchufada
+   (una sola vez, en cualquier consola; `-ac` es "con corriente"):
+
+   ```powershell
+   powercfg /change standby-timeout-ac 0
+   powercfg /change hibernate-timeout-ac 0
+   ```
+
+   Para volver a como estaba, el mismo comando con los minutos que quieras
+   (ej. `powercfg /change standby-timeout-ac 60`). Apagar la pantalla no
+   molesta (`monitor-timeout-ac` puede quedar como está).
+
+2. Arrancar con el script, desde el explorador (doble clic) o desde una
+   consola:
+
+   ```powershell
+   scripts\iniciar-con-reinicio.bat
+   ```
+
+   Qué hace: corre `node server.js`; si el proceso termina por lo que sea,
+   lo vuelve a levantar a los 10 segundos; toda la salida va a
+   `logs\server.<fecha>_<hora>.log` (un archivo por arranque, la carpeta no
+   se versiona) y en la ventana solo se ven los arranques y las caídas;
+   apaga QuickEdit en esa consola (`scripts\quickedit-off.ps1`, solo esa
+   ventana, no cambia nada en Windows). Si el arranque falla (por ejemplo,
+   puerto ocupado), reintenta cada 10 segundos: el motivo queda en el log.
+
+3. Para pararla de verdad: **Ctrl+C en esa ventana** (cmd pregunta si
+   terminar el trabajo por lotes: sí) o cerrar la ventana. `npm run stop`
+   mata el `node`, pero el bucle lo vuelve a levantar.
+
+Para leer el log del arranque actual mientras corre:
+
+```powershell
+Get-Content (Get-ChildItem logs\server.*.log | Sort-Object LastWriteTime | Select-Object -Last 1) -Tail 50 -Wait
 ```
 
 ### 5. Reclamos del mapa
