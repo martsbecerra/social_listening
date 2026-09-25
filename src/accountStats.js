@@ -53,8 +53,10 @@ const BENCHMARK_MAX_AGE_DAYS = 90;
 // nuevo de la cuenta dispare un recálculo. Los hábitos de una cuenta no
 // cambian de una semana a la otra y cada recálculo cuesta una consulta a
 // la fuente. Es también la cadencia máxima con la que se refrescan los
-// seguidores (van en la misma pasada).
-const BENCHMARK_RECALC_DAYS = Number(process.env.BENCHMARK_RECALC_DAYS) || 90;
+// seguidores (van en la misma pasada): 30 (era 90) para que la columna de
+// seguidores y la mediana no queden tres meses viejas; cuesta una consulta
+// de perfil por cuenta y por mes (0,0075 usd), solo para las que reaparecen.
+const BENCHMARK_RECALC_DAYS = Number(process.env.BENCHMARK_RECALC_DAYS) || 30;
 // Umbrales de clasificación (ratio = valor del posteo / mediana de la cuenta).
 const RATIO_LOW = 0.5;
 const RATIO_HIGH = 1.5;
@@ -276,7 +278,7 @@ async function computeAccountStats(account, plataforma) {
   } else {
     // Sin datos suficientes pero con una referencia previa: no se pisa una
     // mediana válida con una muestra vacía o chica (una cuenta privada de
-    // paso o un hipo de la fuente dejaría 90 días de "sin referencia" en
+    // paso o un hipo de la fuente dejaría BENCHMARK_RECALC_DAYS de "sin referencia" en
     // toda la tabla). Solo avanza la fecha para que el intento cuente.
     db.touchAccountStatsComputedAt(account, plataforma, computedAt);
     attemptOnly = true;

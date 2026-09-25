@@ -312,8 +312,9 @@ Hace falta `SESSION_SECRET` (string largo aleatorio) y `APP_BASE_URL` (p. ej.
 
   **Cuándo se calcula.** Una cuenta se (re)calcula SOLO cuando aparece con
   un posteo nuevo en el monitoreo (`detected_posts`) y, además, nunca se
-  calculó o ese posteo se detectó `BENCHMARK_RECALC_DAYS` (default 90) o
-  más días después del último cálculo. Vale igual para trackeadas y para
+  calculó o ese posteo se detectó `BENCHMARK_RECALC_DAYS` (default 30; era
+  90 y seguidores y mediana quedaban tres meses viejos) o más días después
+  del último cálculo. Vale igual para trackeadas y para
   cuentas llegadas por hashtag: scrapear una trackeada sin guardar ningún
   posteo relevante no dispara nada; agregar una cuenta trackeada tampoco
   (queda sin referencia hasta su primera publicación relevante, y ahí se
@@ -859,8 +860,8 @@ exitosa se guarda en `refresh_state` (`detection_last_success:<plataforma>`)
 apenas esa fase termina sin error, aunque el ciclo completo falle después
 en benchmark o refresco. En Instagram la usan las búsquedas por palabra
 clave (la única fuente de detección); en X, cuentas y hashtags. Las keywords
-de X (search de Grok, `MONITOR_LOOKBACK` fijo) y el benchmark (90 días
-fijos) no cambian.
+de X (search de Grok, `MONITOR_LOOKBACK` fijo) y el benchmark
+(`BENCHMARK_RECALC_DAYS`, 30 días fijos) no cambian.
 
 Si la ventana calculada supera 1 día, `SEARCH_RESULTS_LIMIT`,
 `MONITOR_ACCOUNT_LIMIT` y `MONITOR_HASHTAG_LIMIT` de esa corrida suben

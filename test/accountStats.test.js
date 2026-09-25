@@ -150,7 +150,7 @@ describe('benchmark: criterio de recálculo', { concurrency: false }, () => {
     assert.deepEqual(accountStats.selectAccountsForRecalc(rows, 10).toProcess.map((r) => r.account), ['alfa', 'gama', 'zeta']);
     assert.deepEqual(accountStats.selectAccountsForRecalc(rows, 0).toProcess, []);
     assert.deepEqual(accountStats.selectAccountsForRecalc([], 5), { toProcess: [], deferred: 0, upToDate: 0 });
-    assert.equal(accountStats.BENCHMARK_RECALC_DAYS, 90);
+    assert.equal(accountStats.BENCHMARK_RECALC_DAYS, 30);
   });
 
   test('listAccountBenchmarkActivity: la condición sale de detected_at vs. computed_at de la fila global', () => {
@@ -259,15 +259,15 @@ describe('benchmark: criterio de recálculo', { concurrency: false }, () => {
     assert.equal(benchmarkCalls('nueva2'), 1);
   });
 
-  test('cálculo de menos de 90 días: un posteo nuevo no recalcula; con 90 o más, sí', async () => {
+  test('cálculo de menos de 30 días (BENCHMARK_RECALC_DAYS): un posteo nuevo no recalcula; con 30 o más, sí', async () => {
     insertPost({ id: 'nueva2-2', account: 'nueva2' }); // posteo nuevo, cálculo de recién
     assert.equal((await accountStats.refreshStaleAccountStats({ plataformas: ['instagram'] })).recalculated, 0);
 
-    db.touchAccountStatsComputedAt('nueva2', 'instagram', iso(60)); // último cálculo hace 60 días, posteo de hoy
+    db.touchAccountStatsComputedAt('nueva2', 'instagram', iso(20)); // último cálculo hace 20 días, posteo de hoy
     assert.equal((await accountStats.refreshStaleAccountStats({ plataformas: ['instagram'] })).recalculated, 0);
     assert.equal(benchmarkCalls('nueva2'), 1);
 
-    db.touchAccountStatsComputedAt('nueva2', 'instagram', iso(91)); // 91 días: el posteo de hoy dispara
+    db.touchAccountStatsComputedAt('nueva2', 'instagram', iso(31)); // 31 días: el posteo de hoy dispara
     assert.equal((await accountStats.refreshStaleAccountStats({ plataformas: ['instagram'] })).recalculated, 1);
     assert.equal(benchmarkCalls('nueva2'), 2);
     assert.ok(new Date(db.getAccountStats('nueva2', 'instagram', null).computedAt) > new Date(iso(1)));
