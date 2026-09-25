@@ -2,8 +2,10 @@
 // classifier.js
 // --------------------------------------------------------------------------
 // Clasificación de un posteo del monitoreo en UNA llamada al LLM: relevancia
-// (¿habla de Jorge Macri o de la gestión de la Ciudad?), título y
-// sentimiento. Una sola función, clasificarPosteo, para todas las
+// (¿habla de Jorge Macri o de la gestión de la Ciudad?), título, sentimiento
+// y el MOTIVO de la decisión (una frase corta que queda en matched_reason,
+// para auditar por qué entró o salió cada posteo). Una sola función,
+// clasificarPosteo, para todas las
 // plataformas (Instagram, X, ...): solo cambia la etiqueta de la red en el
 // prompt (platformLabel).
 //
@@ -38,7 +40,8 @@ const llm = require('./llm');
 const VALID_SENTIMENTS = ['positivo', 'neutral', 'negativo'];
 const DEFAULT_PLATFORM_LABEL = 'Instagram';
 const MAX_CAPTION_CHARS = 2000;
-// Un título de hasta 10 palabras, el sentimiento y el JSON: sobra con esto.
+// Un título de hasta 10 palabras, el sentimiento, un motivo de hasta 12 y el
+// JSON: sobra con esto.
 const MAX_TOKENS = 300;
 const SCHEMA_NAME = 'clasificacion_posteo';
 
@@ -46,7 +49,7 @@ const SCHEMA_NAME = 'clasificacion_posteo';
 const CLASIFICACION_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['relevant', 'title', 'sentiment'],
+  required: ['relevant', 'title', 'sentiment', 'motivo'],
   properties: {
     relevant: {
       type: 'boolean',
@@ -54,6 +57,7 @@ const CLASIFICACION_SCHEMA = {
     },
     title: { type: 'string', description: 'De qué habla el posteo, en español, máximo 10 palabras' },
     sentiment: { type: 'string', enum: VALID_SENTIMENTS },
+    motivo: { type: 'string', description: 'Razón de la decisión en una frase corta (máximo 12 palabras), para auditoría' },
   },
 };
 
@@ -69,7 +73,8 @@ El mensaje puede incluir una línea "CONTEXTO" con cómo llegó el posteo: conti
 RESPUESTA (JSON según el schema)
 - relevant: true solo si habla de Jorge Macri o de la gestión de CABA según lo de arriba.
 - title: frase corta (máximo 10 palabras) en español de qué habla el posteo. Siempre, también si relevant es false.
-- sentiment: cómo retrata a Jorge Macri o a su gestión. "positivo" si lo muestra favorablemente o destaca un logro; "negativo" si lo critica, cuestiona o muestra un hecho desfavorable; "neutral" si es informativo, no queda claro o relevant es false. Ante la duda, "neutral".`;
+- sentiment: cómo retrata a Jorge Macri o a su gestión. "positivo" si lo muestra favorablemente o destaca un logro; "negativo" si lo critica, cuestiona o muestra un hecho desfavorable; "neutral" si es informativo, no queda claro o relevant es false. Ante la duda, "neutral".
+- motivo: una frase corta (máximo 12 palabras) con la razón de la decisión, para auditoría. Ejemplos: "habla de una obra en CABA", "es de la Ciudad de México", "Mauricio Macri sin relación con la gestión porteña", "menciona a Sheinbaum pero critica a Jorge Macri".`;
 }
 
 /**
@@ -99,7 +104,7 @@ function buildUserPrompt(caption, { pista, platformLabel }) {
  * criterio es title IS NULL).
  */
 function unclassifiedResult() {
-  return { relevant: true, title: null, sentiment: null, unclassified: true };
+  return { relevant: true, title: null, sentiment: null, motivo: null, unclassified: true };
 }
 
 /** Log uniforme, distinguiendo el tipo de fallo para poder diagnosticar. */
@@ -112,20 +117,20 @@ function logClassifierFailure(err) {
 }
 
 /**
- * Clasifica un caption en una sola llamada: relevancia + título + sentimiento.
- * Si el LLM falla o responde algo fuera del schema, devuelve
+ * Clasifica un caption en una sola llamada: relevancia + título + sentimiento
+ * + motivo. Si el LLM falla o responde algo fuera del schema, devuelve
  * unclassified:true en vez de inventar un "neutral" o un "no relevante".
  * @param {string} caption
  * @param {{ platformLabel?: string, pista?: object|null }} [options]
  *   platformLabel: etiqueta de la red para el prompt; pista: cómo llegó el
  *   posteo (ver renderContexto), va como contexto para el modelo.
- * @returns {Promise<{ relevant: boolean, title: string|null, sentiment: string|null, unclassified?: true }>}
+ * @returns {Promise<{ relevant: boolean, title: string|null, sentiment: string|null, motivo: string|null, unclassified?: true }>}
  */
 async function clasificarPosteo(caption, { platformLabel = DEFAULT_PLATFORM_LABEL, pista = null } = {}) {
   if (!caption || !caption.trim()) {
     // Nada que evaluar; quien llama decide qué hacer con un posteo sin texto
     // (evaluateRelevance ni siquiera llega acá).
-    return { relevant: false, title: 'Sin descripción', sentiment: 'neutral' };
+    return { relevant: false, title: 'Sin descripción', sentiment: 'neutral', motivo: null };
   }
 
   try {
@@ -142,14 +147,15 @@ async function clasificarPosteo(caption, { platformLabel = DEFAULT_PLATFORM_LABE
     }
     const title = typeof parsed.title === 'string' && parsed.title.trim() ? parsed.title.trim() : null;
     const sentiment = VALID_SENTIMENTS.includes(parsed.sentiment) ? parsed.sentiment : 'neutral';
+    const motivo = typeof parsed.motivo === 'string' && parsed.motivo.trim() ? parsed.motivo.trim() : null;
 
-    if (!parsed.relevant) return { relevant: false, title, sentiment };
+    if (!parsed.relevant) return { relevant: false, title, sentiment, motivo };
 
     // Dijo que es relevante pero no dio título: sirve como hallazgo, no como
     // clasificación — se guarda para reintentar el título después.
     if (!title) return unclassifiedResult();
 
-    return { relevant: true, title, sentiment };
+    return { relevant: true, title, sentiment, motivo };
   } catch (err) {
     logClassifierFailure(err);
     return unclassifiedResult();

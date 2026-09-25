@@ -160,11 +160,16 @@ const listPostsPageStmt = db.prepare('SELECT * FROM detected_posts WHERE ignored
 const listPostsPageByPlataformaStmt = db.prepare(
   'SELECT * FROM detected_posts WHERE ignored = 0 AND plataforma = ? ORDER BY detected_at DESC LIMIT ? OFFSET ?'
 );
-const listUnclassifiedStmt = db.prepare('SELECT id, caption FROM detected_posts WHERE title IS NULL AND ignored = 0 ORDER BY detected_at ASC');
+const listUnclassifiedStmt = db.prepare(
+  'SELECT id, account, caption, matched_reason FROM detected_posts WHERE title IS NULL AND ignored = 0 ORDER BY detected_at ASC'
+);
 const listUnclassifiedByPlataformaStmt = db.prepare(
-  'SELECT id, caption FROM detected_posts WHERE title IS NULL AND ignored = 0 AND plataforma = ? ORDER BY detected_at ASC'
+  'SELECT id, account, caption, matched_reason FROM detected_posts WHERE title IS NULL AND ignored = 0 AND plataforma = ? ORDER BY detected_at ASC'
 );
 const updateClassificationStmt = db.prepare('UPDATE detected_posts SET title = ?, sentiment = ? WHERE id = ?');
+const updateClassificationConMotivoStmt = db.prepare(
+  'UPDATE detected_posts SET title = ?, sentiment = ?, matched_reason = ? WHERE id = ?'
+);
 // Las acciones de la tabla (ignorar, corregir sentimiento) van por id Y
 // plataforma: desde la solapa de Instagram no se toca un posteo de X aunque
 // se conozca su id (los ids ya son únicos entre redes, esto es el contrato).
@@ -927,8 +932,17 @@ function listUnclassified({ plataforma } = {}) {
   return plataforma ? listUnclassifiedByPlataformaStmt.all(plataforma) : listUnclassifiedStmt.all();
 }
 
-function updateClassification(id, { title, sentiment }) {
-  updateClassificationStmt.run(title, sentiment, id);
+/**
+ * Completa título y sentimiento de un posteo (backfill). Con `matchedReason`
+ * también reescribe matched_reason (el backfill le suma el motivo del modelo
+ * y le saca la marca "sin clasificar"); sin él, no lo toca.
+ */
+function updateClassification(id, { title, sentiment, matchedReason }) {
+  if (matchedReason === undefined) {
+    updateClassificationStmt.run(title, sentiment, id);
+  } else {
+    updateClassificationConMotivoStmt.run(title, sentiment, matchedReason, id);
+  }
 }
 
 /**

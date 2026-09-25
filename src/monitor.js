@@ -564,6 +564,10 @@ function pickMetrics(platform, post) {
  * Si el clasificador falla, el posteo se guarda igual marcado "sin
  * clasificar" (relevancia sin verificar): un falso positivo se ve y se
  * borra; uno descartado en silencio no vuelve nunca.
+ * Trazabilidad: el motivo que da el modelo queda al final de matchedReason
+ * (`<motivo base> · <motivo>`) y un descarte se loguea con cuenta, url y
+ * motivo, para poder auditar por qué entró o salió cada posteo. En el
+ * camino 1 (X) no hay motivo: el modelo no decidió nada ahí.
  *
  * @param {object} post posteo normalizado por el adapter
  * @param {string[]} keywords keywords planas (sin "#") de la plataforma
@@ -636,10 +640,22 @@ async function evaluateRelevance(post, keywords, { platform } = {}) {
     };
   }
 
-  // Un relevant:false del modelo es una respuesta legítima: descarta.
-  if (!result.relevant) return { relevant: false };
+  // Un relevant:false del modelo es una respuesta legítima: descarta. Queda
+  // en el log el porqué, que es lo único que sobrevive de un descartado.
+  if (!result.relevant) {
+    console.log(
+      `[clasificador] descartado (${platformLabel || 'sin red'}) @${post.account || '?'} ${post.url || ''}: ${result.motivo || 'sin motivo'}`
+    );
+    return { relevant: false, motivo: result.motivo || null };
+  }
 
-  return { relevant: true, title: result.title, sentiment: result.sentiment, matchedReason: base };
+  return {
+    relevant: true,
+    title: result.title,
+    sentiment: result.sentiment,
+    motivo: result.motivo || null,
+    matchedReason: result.motivo ? `${base} · ${result.motivo}` : base,
+  };
 }
 
 /**
@@ -1126,16 +1142,31 @@ async function backfillClassification(platformId) {
 
   for (const row of pending) {
     // Sin pista: el origen ya quedó en matched_reason. El modelo también
-    // devuelve relevant, pero desde acá no se borra nada ya guardado: solo
-    // se completan título y sentimiento.
-    const { title, sentiment, unclassified } = await clasificarPosteo(row.caption, { platformLabel: platform.label });
-    if (unclassified || !title) {
+    // devuelve relevant, pero desde acá no se borra nada ya guardado: se
+    // completan título, sentimiento y motivo, y si el modelo dice que no es
+    // relevante queda avisado en matched_reason para que alguien lo revise.
+    const r = await clasificarPosteo(row.caption, { platformLabel: platform.label });
+    if (r.unclassified || !r.title) {
       // Sigue fallando: no pisamos la fila con los mismos nulls, queda
       // pendiente para el próximo intento.
       stillPending++;
       continue;
     }
-    db.updateClassification(row.id, { title, sentiment });
+    // Sale la marca "— sin clasificar" del ciclo que falló; entra el motivo.
+    // En X, lo que llegó por búsqueda por término no lleva motivo (stand by:
+    // ahí el modelo no decide relevancia).
+    let matchedReason = String(row.matched_reason || '').replace(/ — sin clasificar.*$/, '');
+    const sinMotivo = platformId === 'x' && /^Búsqueda por /.test(matchedReason);
+    if (r.motivo && !sinMotivo) {
+      const nota = r.relevant ? r.motivo : `no relevante según el modelo: ${r.motivo}`;
+      matchedReason = matchedReason ? `${matchedReason} · ${nota}` : nota;
+    }
+    if (!r.relevant && !sinMotivo) {
+      console.warn(
+        `[monitor] backfill: el modelo considera NO relevante el posteo ${row.id} de @${row.account || '?'} (${r.motivo || 'sin motivo'}); queda guardado para revisión.`
+      );
+    }
+    db.updateClassification(row.id, { title: r.title, sentiment: r.sentiment, matchedReason });
     classified++;
   }
 

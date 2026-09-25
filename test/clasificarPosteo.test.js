@@ -2,7 +2,7 @@
 
 // Clasificación con contexto (septiembre 2026): src/classifier.js pasa a una
 // sola función, clasificarPosteo, que en UNA llamada con schema devuelve
-// relevancia + título + sentimiento con el mismo modelo que el análisis. La
+// relevancia + título + sentimiento + motivo con el mismo modelo que el análisis. La
 // coincidencia literal con una keyword es una pista para el modelo, no una
 // garantía de relevancia. Sin red: llm.requestStructuredAnalysis stubeado con
 // un "modelo" de reglas sobre el caption, así los casos se leen como los
@@ -89,14 +89,15 @@ describe('clasificarPosteo: una sola llamada, con schema', { concurrency: false 
       platformLabel: 'Instagram',
       pista: { termino: 'jorge macri', cuenta: 'cuenta' },
     });
-    assert.deepEqual(r, { relevant: true, title: 'Jorge Macri y la gestión porteña', sentiment: 'positivo' });
+    assert.deepEqual(r, { relevant: true, title: 'Jorge Macri y la gestión porteña', sentiment: 'positivo', motivo: 'habla de CABA' });
 
     assert.equal(llamadas.length, 1);
     const req = ultima();
     assert.equal(req.schemaName, 'clasificacion_posteo');
     assert.equal(req.maxTokens, 300);
     assert.equal(req.schema.additionalProperties, false);
-    assert.deepEqual(req.schema.required, ['relevant', 'title', 'sentiment']);
+    assert.deepEqual(req.schema.required, ['relevant', 'title', 'sentiment', 'motivo']);
+    assert.match(req.system, /motivo: una frase corta/);
     assert.deepEqual(req.schema.properties.sentiment.enum, ['positivo', 'neutral', 'negativo']);
     assert.match(req.system, /posteo de Instagram/);
     assert.equal(
@@ -108,19 +109,19 @@ describe('clasificarPosteo: una sola llamada, con schema', { concurrency: false 
 
   test('sin pista no hay línea CONTEXTO; el caption se recorta a 2000 caracteres; sin caption no llama al modelo', async () => {
     const r = await classifier.clasificarPosteo('receta de pan casero');
-    assert.deepEqual(r, { relevant: false, title: 'Otro tema', sentiment: 'neutral' });
+    assert.deepEqual(r, { relevant: false, title: 'Otro tema', sentiment: 'neutral', motivo: 'no habla de la Ciudad' });
     assert.equal(ultima().userPrompt, 'POSTEO:\nreceta de pan casero');
 
     await classifier.clasificarPosteo('a'.repeat(3000));
     assert.equal(ultima().userPrompt.length, 'POSTEO:\n'.length + 2000);
 
     const antes = llamadas.length;
-    assert.deepEqual(await classifier.clasificarPosteo('   '), { relevant: false, title: 'Sin descripción', sentiment: 'neutral' });
+    assert.deepEqual(await classifier.clasificarPosteo('   '), { relevant: false, title: 'Sin descripción', sentiment: 'neutral', motivo: null });
     assert.equal(llamadas.length, antes, 'sin texto no hay nada que preguntar');
   });
 
   test('fallo de la API o respuesta fuera del schema: sin clasificar, nunca descartado en silencio', async () => {
-    const sinClasificar = { relevant: true, title: null, sentiment: null, unclassified: true };
+    const sinClasificar = { relevant: true, title: null, sentiment: null, motivo: null, unclassified: true };
     const errores = [];
     const originalError = console.error;
     console.error = (msg) => errores.push(String(msg));
@@ -138,22 +139,33 @@ describe('clasificarPosteo: una sola llamada, con schema', { concurrency: false 
 });
 
 describe('evaluateRelevance: el modelo decide, la keyword es una pista', { concurrency: false }, () => {
-  test('coincidencia literal de keyword ya no da relevancia por hecho: un posteo de la Ciudad de México con "Jefe de Gobierno" no entra', async () => {
-    const r = await evaluar({
-      caption: 'Martí Batres, Jefe de Gobierno de la Ciudad de México, presentó el plan de movilidad del gobierno de la ciudad',
-      sourceType: 'hashtag',
-      account: 'noticiascdmx',
-    });
-    assert.equal(r.relevant, false);
+  test('coincidencia literal de keyword ya no da relevancia por hecho: un posteo de la Ciudad de México con "Jefe de Gobierno" no entra, y el descarte queda logueado con su motivo', async () => {
+    const logs = [];
+    const originalLog = console.log;
+    console.log = (msg) => logs.push(String(msg));
+    let r;
+    try {
+      r = await evaluar({
+        caption: 'Martí Batres, Jefe de Gobierno de la Ciudad de México, presentó el plan de movilidad del gobierno de la ciudad',
+        sourceType: 'hashtag',
+        account: 'noticiascdmx',
+        url: 'https://www.instagram.com/p/CDMX1/',
+      });
+    } finally {
+      console.log = originalLog;
+    }
+    assert.deepEqual(r, { relevant: false, motivo: 'es de la Ciudad de México' });
     assert.match(ultima().userPrompt, /^CONTEXTO: el texto contiene el término "jefe de gobierno" de nuestra lista de seguimiento; llegó por un hashtag monitoreado/);
+    assert.deepEqual(logs, ['[clasificador] descartado (Instagram) @noticiascdmx https://www.instagram.com/p/CDMX1/: es de la Ciudad de México']);
   });
 
-  test('un posteo porteño con coincidencia literal entra, con el motivo base de siempre', async () => {
+  test('un posteo porteño con coincidencia literal entra, con el motivo base de siempre más el motivo del modelo', async () => {
     const r = await evaluar({ caption: 'Jorge Macri recorrió la obra del Paseo del Bajo', sourceType: 'account', account: 'cuenta' });
     assert.equal(r.relevant, true);
     assert.equal(r.title, 'Jorge Macri y la gestión porteña');
     assert.equal(r.sentiment, 'positivo');
-    assert.equal(r.matchedReason, 'Cuenta trackeada: @cuenta (coincidencia: "jorge macri")');
+    assert.equal(r.motivo, 'habla de CABA');
+    assert.equal(r.matchedReason, 'Cuenta trackeada: @cuenta (coincidencia: "jorge macri") · habla de CABA');
   });
 
   test('X en stand by: lo que llega por búsqueda por término entra directo, con título y sentimiento del modelo pero sin mirar relevant', async () => {
@@ -172,9 +184,12 @@ describe('evaluateRelevance: el modelo decide, la keyword es una pista', { concu
     instagram.isConfigured = () => true;
     instagram.scrapeHashtag = async () => [];
     if (instagram.scrapeSearch) instagram.scrapeSearch = async () => [];
+    const ahora = new Date().toISOString();
     instagram.scrapeAccount = async (account) => [
-      { id: '9001', url: 'https://www.instagram.com/p/CAIDO/', caption: 'Jorge Macri anunció obras en Caballito', account, sourceType: 'account', likes: 1, comments: 1, postedAt: new Date().toISOString() },
+      { id: '9001', url: 'https://www.instagram.com/p/CAIDO/', caption: 'Jorge Macri anunció obras en Caballito', account, sourceType: 'account', likes: 1, comments: 1, postedAt: ahora },
+      { id: '9002', url: 'https://www.instagram.com/p/CAIDO2/', caption: 'Milei y Adorni anunciaron el veto al presupuesto', account, sourceType: 'account', likes: 1, comments: 1, postedAt: ahora },
     ];
+    const guardado = (id) => db.listDetectedPosts({ plataforma: 'instagram' }).posts.find((p) => p.id === id);
     try {
       modo = 'falla';
       const originalError = console.error;
@@ -185,19 +200,34 @@ describe('evaluateRelevance: el modelo decide, la keyword es una pista', { concu
       } finally {
         console.error = originalError;
       }
-      assert.equal(result.porPlataforma.instagram.newCount, 1);
-      const guardado = db.listDetectedPosts({ plataforma: 'instagram' }).posts.find((p) => p.id === '9001');
-      assert.ok(guardado, 'el posteo se guardó aunque el modelo haya fallado');
-      assert.equal(guardado.title, null);
-      assert.equal(guardado.sentiment, null);
-      assert.equal(guardado.matched_reason, 'Cuenta trackeada: @cuenta (coincidencia: "jorge macri") — sin clasificar (falló el clasificador, relevancia sin verificar)');
+      assert.equal(result.porPlataforma.instagram.newCount, 2, 'los dos se guardaron aunque el modelo haya fallado');
+      assert.equal(guardado('9001').title, null);
+      assert.equal(guardado('9001').sentiment, null);
+      assert.equal(guardado('9001').matched_reason, 'Cuenta trackeada: @cuenta (coincidencia: "jorge macri") — sin clasificar (falló el clasificador, relevancia sin verificar)');
+      assert.equal(guardado('9002').matched_reason, 'Cuenta trackeada: @cuenta — sin clasificar (falló el clasificador, relevancia sin verificar)');
 
+      // Backfill con el modelo de vuelta: título, sentimiento y motivo; la
+      // marca "sin clasificar" desaparece. Al que el modelo ahora considera no
+      // relevante no lo borra: lo deja avisado para revisión.
       modo = 'normal';
-      const backfill = await monitor.backfillClassification('instagram');
-      assert.deepEqual(backfill, { classified: 1, stillPending: 0 });
-      const completado = db.listDetectedPosts({ plataforma: 'instagram' }).posts.find((p) => p.id === '9001');
-      assert.equal(completado.title, 'Jorge Macri y la gestión porteña');
-      assert.equal(completado.sentiment, 'positivo');
+      const avisos = [];
+      const originalWarn = console.warn;
+      console.warn = (msg) => avisos.push(String(msg));
+      let backfill;
+      try {
+        backfill = await monitor.backfillClassification('instagram');
+      } finally {
+        console.warn = originalWarn;
+      }
+      assert.deepEqual(backfill, { classified: 2, stillPending: 0 });
+      assert.equal(guardado('9001').title, 'Jorge Macri y la gestión porteña');
+      assert.equal(guardado('9001').sentiment, 'positivo');
+      assert.equal(guardado('9001').matched_reason, 'Cuenta trackeada: @cuenta (coincidencia: "jorge macri") · habla de CABA');
+      assert.equal(guardado('9002').title, 'Gobierno nacional');
+      assert.equal(guardado('9002').matched_reason, 'Cuenta trackeada: @cuenta · no relevante según el modelo: política nacional sin relación con CABA');
+      assert.deepEqual(avisos, [
+        '[monitor] backfill: el modelo considera NO relevante el posteo 9002 de @cuenta (política nacional sin relación con CABA); queda guardado para revisión.',
+      ]);
     } finally {
       Object.assign(instagram, originals);
     }
