@@ -9,6 +9,9 @@
 //   - requestStructuredAnalysis: response_format json_schema (análisis de
 //                                post y clasificador del monitoreo)
 //   - requestText:               texto plano (reclamos, importador)
+// Toda request tiene timeout (`timeoutMs`, ver DEFAULT_TIMEOUT_MS) y un
+// fallo transitorio (429, 5xx, corte de red, timeout) se reintenta UNA vez
+// (ver postChatCompletion).
 // ==========================================================================
 
 const { ANALYSIS_JSON_SCHEMA } = require('../analysisSchema');
@@ -17,6 +20,29 @@ const { getAnalysisModel } = require('./providerConfig');
 
 const DEFAULT_BASE_URL = 'https://openrouter.ai/api/v1';
 const STRUCTURED_OUTPUT_MAX_ATTEMPTS = 2;
+
+// Timeout por request y reintento único ante fallos transitorios. El timeout
+// default es holgado a propósito: el análisis de comentarios pide hasta 8000
+// tokens de salida y puede tardar minutos; el clasificador del monitoreo
+// pasa el suyo (60 s, ver src/classifier.js). Transitorio = 429, 408, 5xx,
+// corte de red o timeout: se espera TRANSIENT_RETRY_DELAY_MS y se prueba una
+// vez más. Sin esto, un hipo de OpenRouter en medio de un ciclo dejaba a
+// TODOS los candidatos de ese ciclo "sin clasificar" (guardados como
+// relevantes, y sus cuentas disparaban benchmark y refresco en Apify). Un
+// 400/401/402 no se reintenta: no va a cambiar en tres segundos.
+const DEFAULT_TIMEOUT_MS = 300000;
+const TRANSIENT_MAX_ATTEMPTS = 2;
+// LLM_RETRY_DELAY_MS existe solo para que los tests no esperen 3 s.
+const TRANSIENT_RETRY_DELAY_MS = Number(process.env.LLM_RETRY_DELAY_MS) >= 0 ? Number(process.env.LLM_RETRY_DELAY_MS) : 3000;
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function isTransientError(err) {
+  if (!err) return false;
+  if (err.transient === true) return true;
+  const status = Number(err.status);
+  return status === 408 || status === 429 || (status >= 500 && status < 600);
+}
 
 // Header opcional pero recomendado por OpenRouter para identificar la app
 // (aparece en los rankings de openrouter.ai). Se puede pisar desde .env.
@@ -55,13 +81,34 @@ function buildHeaders(apiKey) {
 }
 
 /**
- * Una llamada a /chat/completions. Devuelve el JSON crudo de la respuesta.
- * Cualquier fallo sale como Error con isApiFailure = true, para que el
- * clasificador pueda distinguir "no pude hablar con el modelo" de "el modelo
- * respondió algo que no entiendo".
+ * Una llamada a /chat/completions, con timeout y un reintento si el fallo
+ * es transitorio (ver isTransientError). Devuelve el JSON crudo de la
+ * respuesta. Cualquier fallo sale como Error con isApiFailure = true, para
+ * que el clasificador pueda distinguir "no pude hablar con el modelo" de
+ * "el modelo respondió algo que no entiendo".
+ * @param {object} body
+ * @param {{ timeoutMs?: number }} [options]
  */
-async function postChatCompletion(body) {
+async function postChatCompletion(body, { timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
   const apiKey = requireApiKey();
+
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await postChatCompletionOnce(body, apiKey, timeoutMs);
+    } catch (err) {
+      if (!isTransientError(err) || attempt >= TRANSIENT_MAX_ATTEMPTS) throw err;
+      console.warn(
+        `OpenRouter: fallo transitorio (${err.status || err.message}); se reintenta una vez en ${TRANSIENT_RETRY_DELAY_MS} ms.`
+      );
+      await sleep(TRANSIENT_RETRY_DELAY_MS);
+    }
+  }
+}
+
+/** Un solo intento: la request con su timeout (AbortController). Marca `transient` en red y timeout. */
+async function postChatCompletionOnce(body, apiKey, timeoutMs) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   let res;
   let data;
@@ -70,11 +117,27 @@ async function postChatCompletion(body) {
       method: 'POST',
       headers: buildHeaders(apiKey),
       body: JSON.stringify(body),
+      signal: controller.signal,
     });
-    data = await res.json().catch(() => ({}));
+    // Un cuerpo ilegible es {} (el status decide abajo); un abort en medio
+    // de la lectura del cuerpo es un timeout como cualquier otro.
+    data = await res.json().catch((err) => {
+      if (controller.signal.aborted) throw err;
+      return {};
+    });
   } catch (err) {
-    // Falla de red / DNS / timeout: nunca llegamos a hablar con el modelo.
-    throw mapOpenRouterError(err);
+    if (err && err.name === 'AbortError') {
+      const e = new Error(`OpenRouter no respondió en ${timeoutMs} ms`);
+      e.userMessage = 'El servicio de análisis (OpenRouter) tardó demasiado en responder. Intentá de nuevo en unos minutos.';
+      e.transient = true;
+      throw mapOpenRouterError(e);
+    }
+    // Falla de red / DNS: nunca llegamos a hablar con el modelo.
+    const e = mapOpenRouterError(err);
+    e.transient = true;
+    throw e;
+  } finally {
+    clearTimeout(timer);
   }
 
   if (!res.ok) throw mapOpenRouterHttpError(res.status, data);
@@ -89,6 +152,7 @@ async function requestStructuredAnalysis({
   model: modelOverride,
   jsonFallback = false,
   maxTokens = 8000,
+  timeoutMs,
 }) {
   const model = (modelOverride || '').trim() || getAnalysisModel('openrouter');
 
@@ -120,23 +184,23 @@ async function requestStructuredAnalysis({
   };
 
   try {
-    return await runStructuredAttempts(schemaBody);
+    return await runStructuredAttempts(schemaBody, timeoutMs);
   } catch (err) {
     const msg = `${err.message || ''} ${err.userMessage || ''}`;
     if (jsonFallback && /structured|json_schema|response_format/i.test(msg)) {
       console.warn('OpenRouter json_schema no soportado en este modelo; reintento con json_object.');
-      return runStructuredAttempts(jsonObjectBody);
+      return runStructuredAttempts(jsonObjectBody, timeoutMs);
     }
     throw err;
   }
 }
 
-async function runStructuredAttempts(body) {
+async function runStructuredAttempts(body, timeoutMs) {
   let lastError;
   let usage = null;
   for (let attempt = 1; attempt <= STRUCTURED_OUTPUT_MAX_ATTEMPTS; attempt++) {
     try {
-      const data = await postChatCompletion(body);
+      const data = await postChatCompletion(body, { timeoutMs });
 
       const callUsage = fromOpenRouterUsage(data.usage);
       if (callUsage) usage = usage ? addTokenUsage(usage, callUsage) : callUsage;
@@ -172,17 +236,20 @@ async function runStructuredAttempts(body) {
  * reintenta ni traga errores: quien llama decide qué hacer.
  * @returns {Promise<{ text: string, usage: import('./usage').TokenUsage | null }>}
  */
-async function requestText({ system, userPrompt, maxTokens = 200 }) {
+async function requestText({ system, userPrompt, maxTokens = 200, timeoutMs }) {
   const model = getAnalysisModel('openrouter');
 
-  const data = await postChatCompletion({
-    model,
-    max_tokens: maxTokens,
-    messages: [
-      { role: 'system', content: system },
-      { role: 'user', content: userPrompt },
-    ],
-  });
+  const data = await postChatCompletion(
+    {
+      model,
+      max_tokens: maxTokens,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: userPrompt },
+      ],
+    },
+    { timeoutMs }
+  );
 
   return { text: extractText(data), usage: fromOpenRouterUsage(data.usage) };
 }

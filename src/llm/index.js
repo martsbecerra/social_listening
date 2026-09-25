@@ -30,6 +30,7 @@ async function requestStructuredAnalysis({
   model: modelOverride,
   jsonFallback = false,
   maxTokens,
+  timeoutMs,
 }) {
   const provider = providerOverride || getLlmProvider();
   const result = await providerModule(provider).requestStructuredAnalysis({
@@ -40,6 +41,7 @@ async function requestStructuredAnalysis({
     model: modelOverride,
     jsonFallback,
     maxTokens,
+    timeoutMs,
   });
   result.usage = finalizeLlmUsage(result.usage, {
     provider,
@@ -55,9 +57,9 @@ async function requestStructuredAnalysis({
  * porque son dos decisiones distintas.
  * @returns {Promise<{ text: string, usage: import('./usage').TokenUsage | null }>}
  */
-async function requestText({ system, userPrompt, maxTokens }) {
+async function requestText({ system, userPrompt, maxTokens, timeoutMs }) {
   const provider = getLlmProvider();
-  return providerModule(provider).requestText({ system, userPrompt, maxTokens });
+  return providerModule(provider).requestText({ system, userPrompt, maxTokens, timeoutMs });
 }
 
 module.exports = { requestStructuredAnalysis, requestText };

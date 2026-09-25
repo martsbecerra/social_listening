@@ -16,7 +16,16 @@ const { getAnalysisModel } = require('./providerConfig');
 const client = new Anthropic();
 const STRUCTURED_OUTPUT_MAX_ATTEMPTS = 2;
 
-async function requestStructuredAnalysis({ system, userPrompt, schema, maxTokens = 8000 }) {
+/**
+ * Opciones de request del SDK: `timeoutMs` (el clasificador pasa 60 s; sin
+ * él, el default del SDK, 10 min). Los reintentos ante 429/5xx/red ya los
+ * hace el SDK (maxRetries 2), en espejo con openrouterProvider.js.
+ */
+function requestOptions(timeoutMs) {
+  return Number.isFinite(timeoutMs) && timeoutMs > 0 ? { timeout: timeoutMs } : undefined;
+}
+
+async function requestStructuredAnalysis({ system, userPrompt, schema, maxTokens = 8000, timeoutMs }) {
   const model = getAnalysisModel('anthropic');
 
   const requestParams = {
@@ -33,7 +42,7 @@ async function requestStructuredAnalysis({ system, userPrompt, schema, maxTokens
   let usage = null;
   for (let attempt = 1; attempt <= STRUCTURED_OUTPUT_MAX_ATTEMPTS; attempt++) {
     try {
-      const message = await client.messages.parse(requestParams);
+      const message = await client.messages.parse(requestParams, requestOptions(timeoutMs));
       const callUsage = fromAnthropicUsage(message.usage);
       if (callUsage) usage = usage ? addTokenUsage(usage, callUsage) : callUsage;
       if (message.parsed_output != null) {
@@ -63,17 +72,20 @@ async function requestStructuredAnalysis({ system, userPrompt, schema, maxTokens
  * reintenta ni traga errores: quien llama decide qué hacer.
  * @returns {Promise<{ text: string, usage: import('./usage').TokenUsage | null }>}
  */
-async function requestText({ system, userPrompt, maxTokens = 200 }) {
+async function requestText({ system, userPrompt, maxTokens = 200, timeoutMs }) {
   const model = getAnalysisModel('anthropic');
 
   let message;
   try {
-    message = await client.messages.create({
-      model,
-      max_tokens: maxTokens,
-      system,
-      messages: [{ role: 'user', content: userPrompt }],
-    });
+    message = await client.messages.create(
+      {
+        model,
+        max_tokens: maxTokens,
+        system,
+        messages: [{ role: 'user', content: userPrompt }],
+      },
+      requestOptions(timeoutMs)
+    );
   } catch (err) {
     throw mapAnthropicError(err);
   }

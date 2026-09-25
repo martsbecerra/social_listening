@@ -43,6 +43,11 @@ const MAX_CAPTION_CHARS = 2000;
 // Un título de hasta 10 palabras, el sentimiento, un motivo de hasta 12 y el
 // JSON: sobra con esto.
 const MAX_TOKENS = 300;
+// Una clasificación tarda segundos; si en un minuto no llegó, el proveedor
+// está trabado. El provider aborta la request y reintenta una vez (ver
+// src/llm/openrouterProvider.js); si tampoco, el posteo queda sin
+// clasificar en vez de frenar el ciclo entero durante minutos por posteo.
+const TIMEOUT_MS = 60000;
 const SCHEMA_NAME = 'clasificacion_posteo';
 
 /** Schema de la respuesta (structured outputs). Estricto: todo requerido, sin extras. */
@@ -160,6 +165,7 @@ async function clasificarPosteo(caption, { platformLabel = DEFAULT_PLATFORM_LABE
       schema: CLASIFICACION_SCHEMA,
       schemaName: SCHEMA_NAME,
       maxTokens: MAX_TOKENS,
+      timeoutMs: TIMEOUT_MS,
     });
 
     if (!parsed || typeof parsed.relevant !== 'boolean') {

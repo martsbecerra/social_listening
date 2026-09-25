@@ -158,8 +158,13 @@ libera su cupo y la deja en `apify_calls` con `error='TIMEOUT'`.
 
 `src/classifier.js` tiene UNA función, `clasificarPosteo(caption, {
 platformLabel, pista })`: una llamada con schema
-(`llm.requestStructuredAnalysis`, `maxTokens` 300) que devuelve `relevant`,
-`title`, `sentiment` y `motivo`, con el modelo de análisis. No hay modelo
+(`llm.requestStructuredAnalysis`, `maxTokens` 300, `timeoutMs` 60000) que
+devuelve `relevant`, `title`, `sentiment` y `motivo`, con el modelo de
+análisis. En `openrouterProvider.js` toda request lleva timeout (default
+5 min; el clasificador pasa 60 s) y un fallo transitorio (429, 408, 5xx,
+red, timeout) se reintenta UNA vez a los 3 s (`LLM_RETRY_DELAY_MS` solo para
+tests); 400/401/402 no. Con Anthropic el timeout va al SDK, que ya
+reintenta solo. No hay modelo
 clasificador aparte: `CLASSIFIER_MODEL` / `OPENROUTER_CLASSIFIER_MODEL` no
 existen (si están en el `.env`, `warnObsoleteModelVars` avisa al arrancar);
 `requestText` (reclamos, importador) usa el mismo modelo. La coincidencia

@@ -1361,6 +1361,16 @@ verificar. Es a propósito — un falso positivo se ve y se borra, uno descartad
 en silencio no vuelve nunca. Un `relevant: false` legítimo del modelo sí sigue
 descartando: eso es una respuesta, no un fallo.
 
+Para que un hipo del proveedor no convierta a todos los candidatos de un
+ciclo en "sin clasificar" (y sus cuentas disparen benchmark y refresco en
+Apify), cada llamada del clasificador tiene **timeout de 60 s** y un fallo
+transitorio (429, 5xx, corte de red, timeout) se **reintenta una vez** a
+los 3 s (`src/llm/openrouterProvider.js`; con Anthropic, el timeout va al
+SDK, que ya reintenta solo). Un 401/402 no se reintenta. Las demás
+llamadas al LLM (análisis de comentarios, reclamos) tienen el mismo
+reintento con un timeout holgado de 5 min, porque un análisis largo puede
+tardar minutos.
+
 ---
 
 ## ⚠️ Nota sobre los nombres de campos de Apify
