@@ -488,6 +488,74 @@ proyección mensual (promedio diario de los últimos 7 días × 30).
 `GET /api/monitoring/costs?days=30` devuelve lo mismo en JSON. Nada de esto
 llama a Apify.
 
+#### Consultas SQL listas sobre `apify_calls`
+
+Cada llamada a Apify queda en `data/monitoring.db`, tabla `apify_calls`, con
+lo que hace falta para auditar el gasto: `at` (UTC), `run_id` (ciclo),
+`phase` (fase), `query_type` (`search` = búsqueda de la lupita, `details` =
+detalle de resultados de búsqueda, `user` = perfil de una cuenta, `hashtag`,
+`post`), `target` (el término de la búsqueda, o el usuario/URL consultado),
+`items` (resultados que devolvió), `usd` (estimado), `usd_real` (lo que Apify
+cobró, apidojo, conciliado minutos después), `ok` y `error`. Las fases del
+ciclo: **`busqueda` = detección** (la lupita y el detalle de sus resultados;
+desde septiembre 2026 Instagram no detecta por otra vía, así que `monitoreo`
+solo aparece en filas viejas), **`benchmark`**, **`refresco`** (refresco de
+métricas); fuera del ciclo, `validacion`, `recalc-script` y `analisis`.
+Abrí la base con cualquier cliente SQLite (DB Browser for SQLite, o
+`sqlite3 data/monitoring.db`) con la app apagada o en modo solo lectura.
+`at` está en UTC: `datetime(at, '-3 hours')` la pasa a hora argentina.
+
+Gasto por fase y por día (real cuando existe, si no el estimado):
+
+```sql
+SELECT substr(datetime(at, '-3 hours'), 1, 10) AS dia,
+       phase AS fase,
+       COUNT(*) AS llamadas,
+       SUM(items) AS resultados,
+       ROUND(SUM(COALESCE(usd_real, usd)), 4) AS usd
+FROM apify_calls
+GROUP BY dia, fase
+ORDER BY dia DESC, fase;
+```
+
+Resultados y gasto por término de búsqueda (cuántos trajo cada uno, por ejemplo "blackri"):
+
+```sql
+SELECT target AS termino,
+       COUNT(*) AS consultas,
+       SUM(items) AS resultados,
+       ROUND(AVG(items), 1) AS promedio_por_consulta,
+       ROUND(SUM(COALESCE(usd_real, usd)), 4) AS usd
+FROM apify_calls
+WHERE query_type = 'search'
+GROUP BY target
+ORDER BY resultados DESC;
+```
+
+Un término, día por día:
+
+```sql
+SELECT substr(datetime(at, '-3 hours'), 1, 10) AS dia,
+       COUNT(*) AS consultas,
+       SUM(items) AS resultados,
+       ROUND(SUM(COALESCE(usd_real, usd)), 4) AS usd
+FROM apify_calls
+WHERE query_type = 'search' AND target = 'blackri'
+GROUP BY dia
+ORDER BY dia DESC;
+```
+
+Gasto por ciclo (una fila por corrida, con lo que trajo):
+
+```sql
+SELECT id AS ciclo, datetime(started_at, '-3 hours') AS inicio, trigger,
+       new_posts AS nuevos, calls AS llamadas, results AS resultados,
+       ROUND(usd, 4) AS usd
+FROM monitoring_runs
+ORDER BY id DESC
+LIMIT 30;
+```
+
 ---
 
 ## ⚙️ Instalación y uso (paso a paso)
