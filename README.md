@@ -12,7 +12,7 @@ App web que:
    con **Grok** vía OpenRouter (`OPENROUTER_X_MODEL`, no Apify ni el Claude
    de Instagram) y arma el reporte con la plantilla de X (solapa Análisis
    en `x.html`). El mapa de X usa el mismo Leaflet, filtrado por plataforma.
-3. Monitorea automáticamente, cada 4 horas, si aparece algún posteo nuevo de
+3. Monitorea automáticamente, a las 8, 12, 16 y 20 h, si aparece algún posteo nuevo de
    las cuentas trackeadas o que mencione las palabras clave/hashtags
    configurados, en todas las redes registradas en `src/platforms/`: cada
    red tiene su **adapter** (Instagram trae con Apify, X trae con Grok) y el
@@ -65,7 +65,7 @@ social_listening_app/
 │   ├── mailer.js             # Envío de emails (alertas + magic link).
 │   ├── auth/                 # Allowlist, magic link, sesión, rate limit, gate.
 │   ├── notify.js             # Orquesta las notificaciones (email + WhatsApp a futuro).
-│   ├── scheduler.js          # Agenda el monitoreo cada 4hs (node-cron).
+│   ├── scheduler.js          # Agenda el monitoreo (node-cron; default 8, 12, 16 y 20 h).
 │   ├── concurrencyLimiter.js # Cola FIFO para los runs simultáneos de Apify.
 │   ├── usageContext.js       # En qué ciclo y fase estamos (AsyncLocalStorage), para medir Apify.
 │   ├── apifyCost.js          # Tarifas de los dos actores, registro de cada llamada a Apify (estimado y real) y reporte de gasto.
@@ -181,7 +181,7 @@ Hace falta `SESSION_SECRET` (string largo aleatorio) y `APP_BASE_URL` (p. ej.
   base de datos que vive en **un solo archivo** (`data/monitoring.db`), sin
   necesidad de instalar ni correr ningún servidor de base de datos aparte
   (a diferencia de Postgres/MySQL). Para este volumen (unos pocos posteos
-  nuevos cada 4hs) es más que suficiente. En vez de la librería
+  nuevos por corrida) es más que suficiente. En vez de la librería
   `better-sqlite3` usamos el módulo **`node:sqlite`**, que viene incluido en
   Node desde la versión 22.5 — esto evita tener que compilar código nativo
   (que en Windows requiere Visual Studio Build Tools, algo que esta PC no
@@ -344,7 +344,8 @@ Hace falta `SESSION_SECRET` (string largo aleatorio) y `APP_BASE_URL` (p. ej.
   es simplemente "una tarea que se repite sola cada tanto tiempo", sin que
   nadie tenga que apretar un botón. Usamos la librería **node-cron** porque
   es chica, no necesita base de datos propia ni configuración compleja: solo
-  le decís un horario (acá, `0 */4 * * *` = cada 4 horas) y una función para
+  le decís un horario (acá, `0 8,12,16,20 * * *` = a las 8, 12, 16 y 20 h,
+  hora local; configurable con `MONITOR_CRON`) y una función para
   correr. Vive dentro del mismo proceso de `server.js`.
 
   > ⚠️ **Esto SOLO funciona mientras el servidor esté corriendo sin cortes.**
@@ -572,7 +573,7 @@ El mapa se alimenta solo: cada vez que analizás una publicación
 ("Análisis de publicación"), los comentarios con una dirección concreta
 quedan guardados como reclamos en `geo_status = 'pendiente'`, y se
 geocodifican con USIG poco después (sin bloquear la respuesta del análisis).
-También corren cada 4hs junto con el cron de monitoreo, por si algo quedó
+También corren en cada corrida del cron de monitoreo, por si algo quedó
 pendiente por una falla transitoria de USIG.
 
 Para cargar un lote desde un Excel o CSV está el **importador genérico**, que

@@ -27,7 +27,9 @@ const { formatCycleCostLine, reconcileRealCosts } = require('./apifyCost');
 const { apifyLimiter } = require('./apify');
 const progress = require('./monitoringProgress');
 
-const DEFAULT_CRON = '0 */4 * * *';
+// Corridas a las 8, 12, 16 y 20 (hora local del server): sin las de 0 y 4,
+// que costaban lo mismo y casi no traían nada. Configurable con MONITOR_CRON.
+const DEFAULT_CRON = '0 8,12,16,20 * * *';
 
 // Heartbeat del ciclo en curso (Cambio G — diagnóstico del cuelgue real de
 // ~30 min): si pasan estos ms sin que NINGUNA llamada termine (ni de
