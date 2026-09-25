@@ -11,9 +11,15 @@
 //                 columna `plataforma` y la clave de sección en
 //                 config/monitoring.json.
 //   label         Nombre para mostrar y para los prompts del clasificador.
-//   capabilities  { benchmark, followers, metricsRefresh }: qué sabe hacer
-//                 la plataforma ADEMÁS de detectar posteos. Quien orquesta
-//                 decide por acá, nunca por el nombre de la plataforma.
+//   capabilities  { benchmark, followers, metricsRefresh, detectAccounts,
+//                 detectHashtags }: qué sabe hacer la plataforma ADEMÁS de
+//                 detectar posteos, y con qué fuentes detecta. Con
+//                 detectAccounts: false el orquestador NO consulta los
+//                 perfiles de las cuentas trackeadas en la detección (son
+//                 guía para el clasificador; Instagram desde septiembre
+//                 2026); con detectHashtags: false no recorre páginas de
+//                 hashtag. Ausentes valen true. Quien orquesta decide por
+//                 acá, nunca por el nombre de la plataforma.
 //   isConfigured() true si están las credenciales que necesita su fuente.
 //                 Sin ellas, el ciclo la saltea con un aviso en vez de
 //                 fallar fuente por fuente.
@@ -22,6 +28,10 @@
 //   scrapeAccount(username, { resultsLimit, lookback })
 //   scrapeHashtag(tag, { resultsLimit, lookback })
 //   scrapeKeyword(keyword, { resultsLimit, lookback })   [opcional]
+//   scrapeSearch(term, { resultsLimit, lookback })        [opcional]
+//                 Búsqueda por palabra clave de la lista `searches` del
+//                 config (Instagram con apidojo). Si el adapter no la
+//                 expone, el orquestador avisa e ignora los términos.
 //                 Devuelven posteos normalizados (ver normalizePost). Los
 //                 dos parámetros son sugerencias del orquestador; cada
 //                 adapter los traduce a su fuente o los pisa con su propio
@@ -31,8 +41,12 @@
 //                 de la plataforma entera, no de esa fuente.
 //   normalizePost(raw, { account, sourceType, sourceQuery })
 //                 → { id, account, url, caption, hashtagsText, likes,
-//                     comments, postedAt, postType, sourceType, sourceQuery,
-//                     ...métricas propias (retweets, views) }
+//                     comments, postedAt, postType, followers, sourceType,
+//                     sourceQuery, ...métricas propias (retweets, views) }
+//                 `followers`: seguidores del autor si la fuente los trae en
+//                 el mismo posteo (Instagram con apidojo), si no null. El
+//                 orquestador los usa como snapshot del posteo nuevo y para
+//                 actualizar la caché account_followers (rememberFollowers).
 //                 `id` tiene que ser único ENTRE plataformas (X usa el
 //                 prefijo "x:").
 //                 sourceType le dice al orquestador cómo evaluar relevancia:
@@ -40,13 +54,28 @@
 //                   'hashtag'  página/feed de descubrimiento (Instagram):
 //                              trae todo lo que usa el tag, hay que filtrar.
 //                   'keyword'  resultado de una búsqueda por término: la
-//                              fuente ya lo validó, relevante sin pasar por
-//                              classifyRelevance. En X vale tanto para las
+//                              fuente ya lo validó, relevante sin que el
+//                              clasificador decida. En X vale tanto para las
 //                              keywords como para los hashtags (allá un
 //                              hashtag es una búsqueda más), con el término
 //                              en sourceQuery.
+//                   'search'   búsqueda por palabra clave de Instagram
+//                              (lista `searches`, scrapeSearch): Instagram
+//                              asocia al término mucho contenido ajeno, así
+//                              que se filtra como un hashtag (literal o
+//                              semántica), con el término en sourceQuery.
+//   fetchPostDetails(urls)                                [opcional]
+//                 Detalle de posteos sueltos por URL, en una sola consulta:
+//                 posteos normalizados con caption y métricas. El orquestador
+//                 la usa para completar los resultados de 'search' que llegan
+//                 sin caption (Instagram con apidojo) antes de evaluar
+//                 relevancia; los cruza por id o por url. Tira si la consulta
+//                 falla; un posteo que no vino simplemente falta.
 //   buildProfileUrl(username)
-//   fetchAccountFollowers(username) → number | null. Nunca tira.
+//   fetchAccountFollowers(username) → number | null. Nunca tira. Es el
+//                 camino de respaldo cuando los posteos no traen
+//                 `followers`; un adapter cuya fuente los trae en cada
+//                 posteo puede devolver null sin consultar nada.
 //   metrics       [{ key, label, primary }]: qué métricas del posteo expone
 //                 la plataforma. El orquestador guarda y refresca solo esas
 //                 claves; el frontend va a armar las columnas leyendo de acá.
@@ -54,6 +83,7 @@
 
 const instagram = require('./instagram');
 const x = require('./x');
+const { platformForUrl } = require('./urlPlatform');
 
 const PLATFORMS = { instagram, x };
 
@@ -75,4 +105,6 @@ function listPlatformIds() {
   return Object.keys(PLATFORMS);
 }
 
-module.exports = { getPlatform, listPlatformIds, DEFAULT_PLATFORM_ID };
+// platformForUrl vive en urlPlatform.js (sin dependencias, porque también lo
+// usa db.js); se re-exporta acá para quien ya tiene el registro a mano.
+module.exports = { getPlatform, listPlatformIds, DEFAULT_PLATFORM_ID, platformForUrl };

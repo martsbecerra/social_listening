@@ -12,7 +12,7 @@ App web que:
    con **Grok** vía OpenRouter (`OPENROUTER_X_MODEL`, no Apify ni el Claude
    de Instagram) y arma el reporte con la plantilla de X (solapa Análisis
    en `x.html`). El mapa de X usa el mismo Leaflet, filtrado por plataforma.
-3. Monitorea automáticamente, cada 4 horas, si aparece algún posteo nuevo de
+3. Monitorea automáticamente, a las 8, 12, 16 y 20 h, si aparece algún posteo nuevo de
    las cuentas trackeadas o que mencione las palabras clave/hashtags
    configurados, en todas las redes registradas en `src/platforms/`: cada
    red tiene su **adapter** (Instagram trae con Apify, X trae con Grok) y el
@@ -41,7 +41,7 @@ social_listening_app/
 │   ├── apify.js              # Extrae comentarios y datos del posteo desde Apify.
 │   ├── analyzeComments.js    # Orquestación del análisis (Apify → LLM → reporte).
 │   ├── x/                    # Análisis de publicación de X: Grok fetch, KPIs, reporte, padrón.
-│   ├── platforms/            # Adapters del monitoreo por red (instagram.js, x.js) + registro y contrato.
+│   ├── platforms/            # Adapters del monitoreo por red (instagram.js con dos proveedores: instagramApidojo.js e instagramApify.js, elegidos por igActor.js; x.js) + registro y contrato.
 │   ├── llm/                  # Proveedores: anthropicProvider, openrouterProvider.
 │   ├── prompt.js             # La metodología de análisis (system prompt).
 │   ├── temasConversacion.js  # Temas emergentes del reporte (IG y X).
@@ -61,15 +61,18 @@ social_listening_app/
 │   ├── monitor.js            # Orquestador del monitoreo (todas las redes) + config.
 │   ├── accountStats.js       # Benchmark por cuenta (solo redes con esa capability).
 │   ├── metricsRefresh.js     # Refresco de métricas de posteos ya guardados (ídem).
-│   ├── classifier.js         # Título + sentimiento de cada posteo (Claude Haiku), para todas las redes.
+│   ├── classifier.js         # Relevancia + título + sentimiento + motivo de cada posteo (una llamada, mismo modelo que el análisis), para todas las redes.
 │   ├── mailer.js             # Envío de emails (alertas + magic link).
 │   ├── auth/                 # Allowlist, magic link, sesión, rate limit, gate.
 │   ├── notify.js             # Orquesta las notificaciones (email + WhatsApp a futuro).
-│   ├── scheduler.js          # Agenda el monitoreo cada 4hs (node-cron).
+│   ├── scheduler.js          # Agenda el monitoreo (node-cron; default 8, 12, 16 y 20 h).
+│   ├── concurrencyLimiter.js # Cola FIFO para los runs simultáneos de Apify.
+│   ├── usageContext.js       # En qué ciclo y fase estamos (AsyncLocalStorage), para medir Apify.
+│   ├── apifyCost.js          # Tarifas de los dos actores, registro de cada llamada a Apify (estimado y real) y reporte de gasto.
 │   └── notifiers/
 │       └── whatsapp.js       # Placeholder para notificación por WhatsApp (no implementado).
 ├── config/
-│   ├── monitoring.json       # Cuentas y palabras clave/hashtags, una sección por red (instagram, x).
+│   ├── monitoring.json       # Cuentas, palabras clave/hashtags y búsquedas por palabra clave, una sección por red (instagram, x).
 │   ├── categorias-reclamos.json # Categorías y subcategorías del cliente (26/85).
 │   ├── x-influencers/        # CSV ANTIK-PRO (padrón de actores de X).
 │   └── allowed-emails.example.txt  # Plantilla de emails que pueden entrar.
@@ -94,7 +97,11 @@ social_listening_app/
 ├── scripts/
 │   ├── import-reclamos.js       # Importador genérico de Excel/CSV (solo CLI).
 │   ├── migrate-categorias.js    # Migra categorías viejas al esquema de dos niveles.
-│   └── stop-server.js           # Mata el proceso que ocupa el puerto (npm run stop).
+│   ├── costo-apify.js           # Gasto en Apify por ventana, fase y actor (npm run costo).
+│   ├── stop-server.js           # Mata el proceso que ocupa el puerto (npm run stop).
+│   ├── iniciar-con-reinicio.bat # Arranca la app en bucle (reinicio solo) con log a archivo.
+│   └── quickedit-off.ps1        # Apaga QuickEdit en la consola del .bat (un clic no congela).
+├── CLAUDE.md                  # Guía corta del proyecto para trabajar con Claude Code.
 ├── .env.example               # Plantilla de las claves (copiala a .env).
 ├── .gitignore                 # Evita subir node_modules, .env y data/.
 └── package.json                # Dependencias y scripts del proyecto.
@@ -138,25 +145,48 @@ Hace falta `SESSION_SECRET` (string largo aleatorio) y `APP_BASE_URL` (p. ej.
 
 - **`config/monitoring.json`**: qué se monitorea, con una sección por red
   registrada en `src/platforms/` (`instagram`, `x`), cada una con sus
-  `accounts` (usuarios de esa red a trackear) y `keywords` (palabras clave o
-  hashtags, estos últimos empezando con `#`). Se puede editar a mano, o desde
-  la propia web (solapa "Monitoreo en vivo" → agregar/quitar; cada solapa
-  escribe su sección). Formato y semántica de cada campo en
-  `config/README.md`. La relevancia de lo que traen esas fuentes se decide
-  igual para todas las redes (ver `src/monitor.js` más abajo).
+  `accounts` (usuarios de esa red a trackear), `keywords` (palabras clave o
+  hashtags, estos últimos empezando con `#`) y, en Instagram, `searches`
+  (búsquedas por palabra clave). Se puede editar a mano, o desde la propia
+  web (solapa "Monitoreo en vivo" → agregar/quitar; cada solapa escribe su
+  sección). Formato y semántica de cada campo en `config/README.md`. La
+  relevancia de lo que traen esas fuentes se decide igual para todas las
+  redes (ver `src/monitor.js` más abajo).
 
-  > **Limitación importante (Instagram)**: las keywords que NO son hashtag
-  > (ej. "Jorge Macri" a secas) no hacen una búsqueda libre en todo Instagram
-  > — Apify no ofrece eso de forma confiable. Solo se buscan dentro de lo que
-  > ya se scrapea: posteos de las cuentas trackeadas y posteos de los hashtags
-  > configurados. En X es al revés: cada keyword, con `#` o sin él, es una
-  > búsqueda de Grok con costo por corrida.
+  **Qué busca publicaciones en Instagram** (desde septiembre 2026, una sola
+  fuente) y qué queda como guía:
+  1. **Búsquedas por palabra clave** (`searches`, actor apidojo; la "lupita"
+     de la solapa): la búsqueda nativa de Instagram para ese término, una
+     consulta por término y por ciclo. Es **lo único que trae publicaciones
+     nuevas**. Lo que trae lo filtra el clasificador. Pocos términos,
+     elegidos a mano. La búsqueda devuelve los posteos recortados (sin
+     caption ni contadores): a los resultados nuevos se les pide el detalle
+     en una sola consulta por ciclo antes de filtrarlos (ver "Detalle de los
+     resultados de búsqueda").
+  2. **Cuentas trackeadas** (`accounts`): NO se consultan en la detección
+     (antes era una consulta de perfil por cuenta y por ciclo). Quedan como
+     guía para el clasificador y como universo del benchmark. El adapter lo
+     declara con `capabilities.detectAccounts: false`.
+  3. **Palabras clave y hashtags** (`keywords`, con `#` o sin él): NO se
+     buscan ni se recorren páginas de hashtag (`detectHashtags: false`). Una
+     coincidencia literal con una de ellas viaja como pista al clasificador,
+     que decide por el contenido (ver "Clasificación con contexto").
+
+  El benchmark por cuenta y el refresco de métricas siguen como siempre:
+  consultan el perfil de las cuentas que aparecen en `detected_posts`.
+
+  En X es distinto: cada cuenta es una búsqueda `from:handle` y cada keyword,
+  con `#` o sin él, una búsqueda de Grok con costo por corrida; no hay lista
+  `searches`. **X está en stand by** (su detección no funciona hoy): el
+  ciclo automático corre solo las plataformas de `MONITOR_PLATFORMS`
+  (default `instagram`; `instagram,x` la vuelve a sumar). Su código sigue
+  ahí y "Actualizar ahora" en la solapa X la corre igual.
 
 - **`src/db.js`** — ¿qué es SQLite y por qué lo usamos así?: SQLite es una
   base de datos que vive en **un solo archivo** (`data/monitoring.db`), sin
   necesidad de instalar ni correr ningún servidor de base de datos aparte
   (a diferencia de Postgres/MySQL). Para este volumen (unos pocos posteos
-  nuevos cada 4hs) es más que suficiente. En vez de la librería
+  nuevos por corrida) es más que suficiente. En vez de la librería
   `better-sqlite3` usamos el módulo **`node:sqlite`**, que viene incluido en
   Node desde la versión 22.5 — esto evita tener que compilar código nativo
   (que en Windows requiere Visual Studio Build Tools, algo que esta PC no
@@ -169,8 +199,9 @@ Hace falta `SESSION_SECRET` (string largo aleatorio) y `APP_BASE_URL` (p. ej.
 - **`src/monitor.js`**: el orquestador del monitoreo, agnóstico de red. Por
   cada plataforma registrada en `src/platforms/` lee su sección de
   `config/monitoring.json` y le pide a su adapter los posteos recientes de
-  cada cuenta trackeada, de cada hashtag y — solo si el adapter sabe
-  buscarlas — de cada keyword suelta. Compara todo contra `src/db.js` para
+  las fuentes que ese adapter declara consultar (`capabilities`): en
+  Instagram solo las búsquedas por palabra clave (`searches`); en X cada
+  cuenta trackeada, cada hashtag y cada keyword. Compara todo contra `src/db.js` para
   no volver a evaluar ni guardar algo que ya se vio. Antes de guardar una
   cuenta o hashtag nuevo (al agregarlo desde la interfaz) el adapter valida
   lo que puede: Instagram consulta a Apify que exista (el actor no tira un
@@ -185,24 +216,64 @@ Hace falta `SESSION_SECRET` (string largo aleatorio) y `APP_BASE_URL` (p. ej.
      página de descubrimiento como en Instagram) → relevante directo: la
      búsqueda ya lo encontró para ese término, descartarlo después sería
      perder lo que la búsqueda validó. Solo se le ponen título y sentimiento.
-  2. Si el caption/hashtags contienen alguna palabra clave configurada
-     literalmente → relevante directo.
-  3. Si no hay coincidencia literal → le pregunta a **Claude** si el
-     contenido igual habla del Jefe de Gobierno porteño o de su gestión,
-     sin necesidad de que lo nombre explícitamente (`classifyRelevance` en
-     `src/classifier.js`). Así se detectan menciones indirectas (ej. un
-     anuncio de una política de vivienda que no dice su nombre) que el
-     matching de texto solo, se perdería.
+  2. Todo lo demás (cuenta trackeada, hashtag, búsqueda de Instagram) lo
+     decide **Claude** en una sola llamada (`clasificarPosteo` en
+     `src/classifier.js`, con el mismo modelo que el análisis): ¿habla de
+     Jorge Macri o de la gestión de CABA? Si el caption/hashtags contienen
+     una palabra clave configurada, eso NO lo da por relevante: viaja como
+     **pista de contexto** ("el texto contiene el término X de nuestra lista
+     de seguimiento"), junto con la cuenta trackeada (señal débil), el
+     hashtag o la búsqueda, y el modelo decide. Así se detectan menciones
+     indirectas (una política de vivienda que no lo nombra) y se frenan las
+     colisiones geográficas: "Jefe de Gobierno" es también el título del
+     titular de la Ciudad de México, y "gobierno de la ciudad" o PDLC son
+     ambiguos entre ciudades; el prompt lo dice explícitamente (ver
+     "Clasificación con contexto" en las decisiones técnicas). El modelo
+     devuelve además un `motivo` corto que queda en `matched_reason`.
      Un posteo sin caption (nada que evaluar) solo se acepta si viene de una
      cuenta trackeada — de un hashtag o una búsqueda se descarta, porque no
      hay ninguna señal de que se relacione con el tema.
+     **Detalle de los resultados de búsqueda**: la búsqueda por palabra clave
+     de apidojo devuelve objetos recortados, con `caption`, likes y
+     comentarios en null aunque el posteo los tenga (verificado con el mismo
+     reel pedido por URL). Antes de evaluar relevancia,
+     `enrichSearchResults` junta los resultados de búsqueda sin texto que
+     son NUEVOS (no están en `detected_posts` ni en la tabla `search_seen`)
+     y pide su detalle en **un solo run por ciclo** de
+     `apify/instagram-scraper` con todas las URLs (`fetchPostDetails`, fase
+     `busqueda`), porque cobra por resultado (0,0023 por posteo en Starter)
+     contra 0,005 de la consulta de posteo suelto de apidojo. El caption,
+     los hashtags y los contadores del detalle se vuelcan sobre el mismo
+     posteo, que sigue siendo de la búsqueda (`Búsqueda: <término>`), y
+     recién ahí corre el filtro de siempre. `SEARCH_ENRICH_LIMIT` (default
+     100, `0` lo apaga) es el tope por ciclo: van los más nuevos y el resto
+     entra en el ciclo siguiente solo si la búsqueda lo vuelve a traer (por
+     eso el tope es holgado: solo cuesta si hay volumen). Cada posteo se
+     paga una sola vez:
+     `search_seen` anota lo consultado con su resultado (`guardado`,
+     `descartado`, `sin_caption`, `sin_detalle`) y un descartado no se vuelve
+     a consultar ni a evaluar; la tabla se purga a los 30 días. Si el run de
+     detalle falla entero no se anota nada y se reintenta en el próximo
+     ciclo.
+     La búsqueda por palabra clave de Instagram (`searches`) NO entra por el
+     camino 1: Instagram asocia al término mucho contenido ajeno, así que sus
+     resultados pasan por el 2 y el 3 como los de un hashtag, con el motivo
+     `Búsqueda: <término>`. Si el mismo posteo llega por una cuenta trackeada
+     y por una búsqueda en el mismo ciclo, queda como de la cuenta trackeada.
 
 - **`src/platforms/`**: un adapter por red, con el contrato documentado en
   `index.js` (`id`, `label`, `capabilities`, `isConfigured`, `scrapeAccount`,
   `scrapeHashtag`, `scrapeKeyword` opcional, `normalizePost`, `metrics`,
   errores con `code`). Sumar una red es escribir su adapter y registrarlo.
-  - **`instagram.js`**: trae con Apify. Tiene todas las capabilities:
-    benchmark por cuenta, seguidores y refresco de métricas.
+  - **`instagram.js`**: fachada sobre dos proveedores con la misma interfaz,
+    elegidos por `IG_ACTOR` (`src/platforms/igActor.js`): `instagramApidojo.js`
+    (default, actor `apidojo/instagram-scraper-api`: cobra por consulta, trae
+    los seguidores en cada posteo de perfil y busca por palabra clave con
+    `scrapeSearch`) e `instagramApify.js` (actor `apify/instagram-scraper`, el
+    de siempre: cobra por resultado, seguidores por consulta aparte, sin
+    búsqueda). Tiene todas las capabilities: benchmark por cuenta, seguidores
+    y refresco de métricas. Ver "Septiembre 2026: cambio de actor de
+    monitoreo" en las decisiones técnicas.
   - **`x.js`**: trae con **Grok** (búsqueda en X vía OpenRouter o xAI):
     `from:handle` por cuenta, `#hashtag` y el texto literal de cada keyword;
     hashtags y keywords son búsquedas por término, así que lo que traen es
@@ -241,8 +312,9 @@ Hace falta `SESSION_SECRET` (string largo aleatorio) y `APP_BASE_URL` (p. ej.
 
   **Cuándo se calcula.** Una cuenta se (re)calcula SOLO cuando aparece con
   un posteo nuevo en el monitoreo (`detected_posts`) y, además, nunca se
-  calculó o ese posteo se detectó `BENCHMARK_RECALC_DAYS` (default 90) o
-  más días después del último cálculo. Vale igual para trackeadas y para
+  calculó o ese posteo se detectó `BENCHMARK_RECALC_DAYS` (default 30; era
+  90 y seguidores y mediana quedaban tres meses viejos) o más días después
+  del último cálculo. Vale igual para trackeadas y para
   cuentas llegadas por hashtag: scrapear una trackeada sin guardar ningún
   posteo relevante no dispara nada; agregar una cuenta trackeada tampoco
   (queda sin referencia hasta su primera publicación relevante, y ahí se
@@ -252,9 +324,11 @@ Hace falta `SESSION_SECRET` (string largo aleatorio) y `APP_BASE_URL` (p. ej.
   memoria. El benchmark corre después de guardar los posteos del ciclo, así
   el posteo de una cuenta nueva ya sale con referencia en la tabla.
 
-  Tope `MAX_ACCOUNTS_PER_CYCLE` (default 10) por ciclo: si aparecen muchas
-  cuentas pendientes de golpe, las que quedan afuera siguen pendientes y
-  salen en los ciclos siguientes, en orden de llegada. Un intento que no
+  Tope `MAX_ACCOUNTS_PER_CYCLE` (default 50; era 10 y con la detección por
+  búsquedas, donde casi cada posteo es de una cuenta distinta, la cola no se
+  vaciaba nunca) por ciclo: si aparecen muchas cuentas pendientes de golpe,
+  las que quedan afuera siguen pendientes y salen en los ciclos siguientes,
+  en orden de llegada. Un intento que no
   trae 5 posteos recientes (cuenta privada, publica poco, la fuente
   devolvió vacío) no borra la referencia anterior: la conserva y solo
   anota la fecha, para no reintentar en cada ciclo. La misma pasada trae
@@ -266,28 +340,36 @@ Hace falta `SESSION_SECRET` (string largo aleatorio) y `APP_BASE_URL` (p. ej.
   `node scripts/recalc-account-stats.js <cuenta>`, `--todas` o
   `--pendientes` (ver el encabezado del script).
 
-- **`src/classifier.js`**: acá vive el llamado a **Claude Haiku 4.5** (modelo
-  barato, configurable con `CLASSIFIER_MODEL`) para dos cosas: `classifyPost`
-  (título + sentimiento de un posteo que ya se sabe relevante) y
-  `classifyRelevance` (título + sentimiento + si aplica o no, para posteos
-  sin coincidencia literal — ver arriba). Todo a partir del caption, no de
-  los comentarios de la gente (eso sigue siendo un análisis aparte, manual,
-  en "Análisis de publicación"). Si el clasificador falla, el posteo no se
-  descarta: se guarda marcado como "sin clasificar" para revisarlo a mano
-  (ver "Cuando falla el clasificador del monitoreo", más abajo).
+- **`src/classifier.js`**: acá vive el llamado al LLM del monitoreo, una
+  sola función, `clasificarPosteo`: en una llamada con schema (structured
+  outputs) devuelve `relevant`, `title`, `sentiment` y `motivo`, con el
+  mismo modelo que el análisis de publicación (Sonnet; ya no hay un modelo
+  clasificador aparte). Todo a partir del caption, no de los comentarios de
+  la gente (eso sigue siendo un análisis aparte, manual, en "Análisis de
+  publicación"). Si el clasificador falla, el posteo no se descarta: se
+  guarda marcado como "sin clasificar" para revisarlo a mano (ver "Cuando
+  falla el clasificador del monitoreo", más abajo).
 
 - **`src/scheduler.js`** — ¿qué es un "cron" y por qué `node-cron`?: un cron
   es simplemente "una tarea que se repite sola cada tanto tiempo", sin que
   nadie tenga que apretar un botón. Usamos la librería **node-cron** porque
   es chica, no necesita base de datos propia ni configuración compleja: solo
-  le decís un horario (acá, `0 */4 * * *` = cada 4 horas) y una función para
-  correr. Vive dentro del mismo proceso de `server.js`.
+  le decís un horario (acá, `0 8,12,16,20 * * *` = a las 8, 12, 16 y 20 h,
+  hora local; configurable con `MONITOR_CRON`) y una función para
+  correr. Vive dentro del mismo proceso de `server.js`. Qué plataformas
+  corre lo decide `MONITOR_PLATFORMS` (default `instagram`: X quedó en
+  stand by y fuera del ciclo automático; `instagram,x` la suma de nuevo).
+  En el cron un error de plataforma nunca corta el ciclo, aunque quede una
+  sola: se anota y siguen benchmark y refresco.
 
   > ⚠️ **Esto SOLO funciona mientras el servidor esté corriendo sin cortes.**
   > Hoy la app corre con `npm start` en esta PC — si cerrás la terminal o la
-  > PC se suspende, esa corrida del monitoreo se saltea en silencio. El día
-  > que se despliegue a un hosting siempre encendido (Render, Railway, un
-  > VPS, etc.), no hace falta cambiar nada de este código.
+  > PC se suspende, esa corrida del monitoreo se saltea en silencio. Para
+  > dejarla sola varios días, usá `scripts\iniciar-con-reinicio.bat` y
+  > apagá la suspensión (ver "Dejarla corriendo sola varios días" en
+  > Instalación y uso). El día que se despliegue a un hosting siempre
+  > encendido (Render, Railway, un VPS, etc.), no hace falta cambiar nada
+  > de este código.
   >
   > **¿Por qué no usar los "Schedules" de Apify en vez de esto?** Apify puede
   > disparar el actor en su propia nube aunque tu PC esté apagada, pero el
@@ -308,34 +390,189 @@ Hace falta `SESSION_SECRET` (string largo aleatorio) y `APP_BASE_URL` (p. ej.
   placeholder sin implementar todavía, a la espera de definir el proveedor
   (WhatsApp Business API, Twilio, etc.).
 
-### 💸 Costo adicional en Apify del monitoreo
+### 💸 Costo en Apify del monitoreo
 
-`apify/instagram-scraper` cobra **por resultado obtenido** (no por tiempo de
-cómputo): ronda entre US$1,50 y US$2,70 por cada 1.000 resultados según tu
-plan de Apify (verificado mayo 2026). El monitoreo agrega scraping de
-**posts** cada 4hs, adicional a los análisis puntuales de siempre.
+El monitoreo de Instagram corre con el actor que elija `IG_ACTOR`
+(`apidojo/instagram-scraper-api` por defecto; `apify/instagram-scraper` con
+`IG_ACTOR=apify`). Cobran distinto:
 
-```
-costo diario ≈ (nº de fuentes) × (resultsLimit) × (corridas por día) × tarifa/1000
-```
+- **apify/instagram-scraper** cobra **por resultado devuelto** (item del
+  dataset, incluidos los items de error `no_items` / `not_found`): entre
+  US$ 1,90 y 2,70 por cada 1.000 según el plan (`APIFY_RATE_*`).
+- **apidojo/instagram-scraper-api** cobra **por consulta**, con posteos
+  incluidos, más US$ 0,0005 por cada posteo de más (`APIDOJO_*` en el
+  `.env`): perfil 0,005 con 10 incluidos, hashtag 0,015 con 30, búsqueda por
+  palabra clave 0,015 con 20, posteo suelto 0,005. Uso de plataforma incluido.
 
-Con la config por defecto (`MONITOR_RESULTS_LIMIT=15`, cron cada 4hs = 6
-corridas/día) y un ejemplo de 5 cuentas + 3 hashtags: `8 × 15 × 6 = 720
-resultados/día ≈ $1,66/día ≈ ~$50/mes` (plan Starter) **en el peor caso**.
+Con los topes por defecto (`MONITOR_ACCOUNT_LIMIT=10`,
+`MONITOR_HASHTAG_LIMIT=30`, `SEARCH_RESULTS_LIMIT=100`,
+`BENCHMARK_POST_LIMIT=15`), una llamada por fuente y el oficial en plan
+Starter (2,30 por 1.000):
 
-En la práctica es bastante menos: las cuentas trackeadas usan
-`onlyPostsNewerThan` + `skipPinnedPosts`, así que si no publicaron nada nuevo
-esa corrida devuelve ~0 resultados (no se paga por posteos viejos ya vistos).
-Los hashtags sí pagan siempre el `resultsLimit` completo. Para bajar el costo:
-reducí `MONITOR_RESULTS_LIMIT`, sacá hashtags, o espaciá el cron
-(`MONITOR_CRON` en el `.env`, ej. cada 6-8hs).
+| Operación | apify/instagram-scraper | apidojo/instagram-scraper-api |
+|---|---|---|
+| Cuenta trackeada por ciclo, con posteos nuevos | hasta 0,0345 (15 res.) | 0,005 (10 incl.) |
+| Cuenta trackeada por ciclo, sin novedades | 0,0023 (1 item de error) | 0,005 |
+| Hashtag por ciclo | 0,0345 | 0,015 (30 incl.) |
+| Búsqueda por palabra clave, 100 resultados (el tope; lo normal son menos de 20: 0,015) | no existe | 0,055 |
+| Detalle de un resultado de búsqueda nuevo (una sola vez por posteo) | 0,0023, siempre con este actor | — (0,005 si se pidiera acá) |
+| Benchmark de una cuenta (15 posteos + seguidores) | 0,0368 (+1 consulta de perfil) | 0,0075 |
+| Refresco de métricas de una cuenta (15 posteos) | 0,0345 | 0,0075 |
+| Validar una cuenta / un hashtag al agregarlos | 0,0023 / 0,0023 | 0,005 / 0,015 |
+
+Desde septiembre 2026 la detección de Instagram son **solo las búsquedas**
+(cuentas y hashtags no se consultan): con 8 términos y
+`SEARCH_RESULTS_LIMIT=100`, como mucho 8 × 0,055 = 0,44 por ciclo (0,015 por
+término si trae 20 o menos, que es lo normal: en septiembre 2026 ninguna
+búsqueda pasó de 7), más el detalle de los resultados nuevos, como
+mucho `SEARCH_ENRICH_LIMIT` × 0,0023 por ciclo (0,23 con el default de 100)
+y en régimen mucho menos (unos 6 posteos nuevos por ciclo en septiembre
+2026): solo se paga por posteos que la búsqueda trae por primera vez. La búsqueda por palabra clave solo existe en apidojo. El
+benchmark y el refresco siguen pagando consultas de perfil (ver abajo). Para
+bajar el costo: menos búsquedas, topes más chicos, o espaciar el cron
+(`MONITOR_CRON`).
 
 El benchmark por cuenta (`src/accountStats.js`) solo gasta cuando una cuenta
 aparece con un posteo nuevo y nunca se calculó o pasaron
-`BENCHMARK_RECALC_DAYS` desde el último cálculo: `BENCHMARK_POST_LIMIT`
-resultados más una consulta de perfil por cuenta, como mucho
-`MAX_ACCOUNTS_PER_CYCLE` cuentas por ciclo. Una cuenta que no vuelve a
-aparecer no cuesta nada.
+`BENCHMARK_RECALC_DAYS` desde el último cálculo, como mucho
+`MAX_ACCOUNTS_PER_CYCLE` cuentas por ciclo. Con apidojo los seguidores
+vienen en esa misma consulta; con el oficial es una consulta de perfil
+aparte. Una cuenta que no vuelve a aparecer no cuesta nada.
+
+#### Medir lo que se gasta de verdad
+
+Lo de arriba es la estimación; la app además **registra cada llamada a
+Apify** (`src/apifyCost.js`, todas pasan por `runActorSync`):
+
+- `apify_calls`: una fila por llamada, con la fase, el ciclo (`run_id`), el
+  `actor`, el tipo de consulta (`query_type`: `user`, `hashtag`, `search`,
+  `post`, `details`), qué se pidió (`target`), cuántos items devolvió Apify,
+  si salió bien, el error si no (`QUOTA_EXCEEDED` cuando fue la cuota), la
+  duración, el `usd` estimado y, para el actor apidojo, `usd_real` (lo que
+  Apify cobró por ese run, `usageTotalUsd`) y `apify_run_id`.
+- `monitoring_runs`: una fila por ciclo (cron o "Actualizar ahora"), con
+  posteos nuevos, llamadas, resultados, usd y si alguna llamada cortó por
+  cuota. Al cerrar cada ciclo el server imprime
+  `[costo] ciclo #N: X llamadas, Y resultados ≈ US$ Z (monitoreo A · busqueda B · benchmark C · refresco D)`,
+  con el total ESTIMADO en dólares (el real se concilia después, ver abajo)
+  y el desglose en resultados por fase.
+
+Las fases son `monitoreo`, `busqueda`, `benchmark` y `refresco` dentro del
+ciclo (`src/scheduler.js` y `src/monitor.js` las marcan con
+`src/usageContext.js`), y fuera de él `validacion` (agregar cuenta o
+hashtag), `recalc-script` (`scripts/recalc-account-stats.js`) y `analisis`
+(análisis de una publicación). Una llamada sin fase conocida queda como
+`desconocida`.
+
+**Costo real.** El endpoint sincrónico de Apify no devuelve el id del run,
+y lo que Apify cobró de verdad solo se lee del objeto del run. Por eso las
+llamadas al actor apidojo van por el flujo asincrónico (arrancar el run,
+esperar y bajar sus items: dos o tres requests en vez de una, sin costo
+extra) y la fila guarda el `apify_run_id`. El cobro NO está asentado cuando
+el run termina: en el primer ciclo real, leído en ese momento, 10 de 29
+llamadas daban 0 y a las demás les faltaban los posteos extra; minutos
+después el total era 0,1945 usd y no 0,125. Por eso `usd_real` se
+**concilia después**: al cerrar cada ciclo el scheduler relee los runs de
+las llamadas de más de 10 minutos (`apifyCost.reconcileRealCosts`, lecturas
+gratis de la API, no son runs), guarda `usageTotalUsd` y corrige el usd del
+ciclo en `monitoring_runs`. `node scripts/costo-apify.js --conciliar` hace
+lo mismo a mano. `APIFY_REAL_COST=0` lo apaga (vuelve al endpoint
+sincrónico, sin run id). El actor oficial sigue con el sincrónico y sus
+filas no tienen `usd_real`. Dato del ciclo real: la consulta de perfil
+cobró posteos extra recién a partir del 13 (15 posteos = 0,0065), y la
+búsqueda se cobra como consulta de hashtag (`tag-query`).
+
+Tarifas en el `.env`: `APIFY_RATE_FREE` (2.70), `APIFY_RATE_STARTER`
+(2.30), `APIFY_RATE_SCALE` (1.90) y `APIFY_PLAN` (default `starter`) para el
+oficial; `APIDOJO_RATE_USER` (0.005), `APIDOJO_RATE_HASHTAG` (0.015),
+`APIDOJO_RATE_SEARCH` (0.015), `APIDOJO_RATE_POST` (0.005),
+`APIDOJO_RATE_ITEM` (0.0005) y `APIDOJO_INCLUDED_USER` (10), `_HASHTAG`
+(30), `_SEARCH` (20) para apidojo. El reporte recalcula las filas del
+oficial desde los resultados con las tres tarifas a la vez (cambiar de plan
+no invalida el histórico) y para apidojo usa `usd_real` cuando existe:
+
+```bash
+npm run costo
+```
+
+```bash
+node scripts/costo-apify.js --dias 90
+```
+
+Muestra hoy, últimos 7 días y últimos N días (30 por defecto) con llamadas,
+resultados y usd, desglosado por actor (las tres columnas por plan solo
+aplican al oficial; apidojo muestra estimado y real) y por fase, más la
+proyección mensual (promedio diario de los últimos 7 días × 30).
+`GET /api/monitoring/costs?days=30` devuelve lo mismo en JSON. Nada de esto
+llama a Apify.
+
+#### Consultas SQL listas sobre `apify_calls`
+
+Cada llamada a Apify queda en `data/monitoring.db`, tabla `apify_calls`, con
+lo que hace falta para auditar el gasto: `at` (UTC), `run_id` (ciclo),
+`phase` (fase), `query_type` (`search` = búsqueda de la lupita, `details` =
+detalle de resultados de búsqueda, `user` = perfil de una cuenta, `hashtag`,
+`post`), `target` (el término de la búsqueda, o el usuario/URL consultado),
+`items` (resultados que devolvió), `usd` (estimado), `usd_real` (lo que Apify
+cobró, apidojo, conciliado minutos después), `ok` y `error`. Las fases del
+ciclo: **`busqueda` = detección** (la lupita y el detalle de sus resultados;
+desde septiembre 2026 Instagram no detecta por otra vía, así que `monitoreo`
+solo aparece en filas viejas), **`benchmark`**, **`refresco`** (refresco de
+métricas); fuera del ciclo, `validacion`, `recalc-script` y `analisis`.
+Abrí la base con cualquier cliente SQLite (DB Browser for SQLite, o
+`sqlite3 data/monitoring.db`) con la app apagada o en modo solo lectura.
+`at` está en UTC: `datetime(at, '-3 hours')` la pasa a hora argentina.
+
+Gasto por fase y por día (real cuando existe, si no el estimado):
+
+```sql
+SELECT substr(datetime(at, '-3 hours'), 1, 10) AS dia,
+       phase AS fase,
+       COUNT(*) AS llamadas,
+       SUM(items) AS resultados,
+       ROUND(SUM(COALESCE(usd_real, usd)), 4) AS usd
+FROM apify_calls
+GROUP BY dia, fase
+ORDER BY dia DESC, fase;
+```
+
+Resultados y gasto por término de búsqueda (cuántos trajo cada uno, por ejemplo "blackri"):
+
+```sql
+SELECT target AS termino,
+       COUNT(*) AS consultas,
+       SUM(items) AS resultados,
+       ROUND(AVG(items), 1) AS promedio_por_consulta,
+       ROUND(SUM(COALESCE(usd_real, usd)), 4) AS usd
+FROM apify_calls
+WHERE query_type = 'search'
+GROUP BY target
+ORDER BY resultados DESC;
+```
+
+Un término, día por día:
+
+```sql
+SELECT substr(datetime(at, '-3 hours'), 1, 10) AS dia,
+       COUNT(*) AS consultas,
+       SUM(items) AS resultados,
+       ROUND(SUM(COALESCE(usd_real, usd)), 4) AS usd
+FROM apify_calls
+WHERE query_type = 'search' AND target = 'blackri'
+GROUP BY dia
+ORDER BY dia DESC;
+```
+
+Gasto por ciclo (una fila por corrida, con lo que trajo):
+
+```sql
+SELECT id AS ciclo, datetime(started_at, '-3 hours') AS inicio, trigger,
+       new_posts AS nuevos, calls AS llamadas, results AS resultados,
+       ROUND(usd, 4) AS usd
+FROM monitoring_runs
+ORDER BY id DESC
+LIMIT 30;
+```
 
 ---
 
@@ -416,13 +653,58 @@ El padrón ANTIK-PRO se carga solo al arrancar si la tabla está vacía, desde
 npm run import-x-influencers
 ```
 
+#### Dejarla corriendo sola varios días
+
+`npm start` en una terminal no alcanza para un piloto de varios días: si el
+proceso muere por un error no atrapado nadie lo levanta, un clic adentro de
+la ventana de la consola (modo QuickEdit de Windows) congela el proceso
+hasta que alguien aprieta una tecla, y si la PC se suspende el cron no
+corre. Para eso está `scripts\iniciar-con-reinicio.bat`:
+
+1. Primero, que la PC no se suspenda ni hiberne mientras está enchufada
+   (una sola vez, en cualquier consola; `-ac` es "con corriente"):
+
+   ```powershell
+   powercfg /change standby-timeout-ac 0
+   powercfg /change hibernate-timeout-ac 0
+   ```
+
+   Para volver a como estaba, el mismo comando con los minutos que quieras
+   (ej. `powercfg /change standby-timeout-ac 60`). Apagar la pantalla no
+   molesta (`monitor-timeout-ac` puede quedar como está).
+
+2. Arrancar con el script, desde el explorador (doble clic) o desde una
+   consola:
+
+   ```powershell
+   scripts\iniciar-con-reinicio.bat
+   ```
+
+   Qué hace: corre `node server.js`; si el proceso termina por lo que sea,
+   lo vuelve a levantar a los 10 segundos; toda la salida va a
+   `logs\server.<fecha>_<hora>.log` (un archivo por arranque, la carpeta no
+   se versiona) y en la ventana solo se ven los arranques y las caídas;
+   apaga QuickEdit en esa consola (`scripts\quickedit-off.ps1`, solo esa
+   ventana, no cambia nada en Windows). Si el arranque falla (por ejemplo,
+   puerto ocupado), reintenta cada 10 segundos: el motivo queda en el log.
+
+3. Para pararla de verdad: **Ctrl+C en esa ventana** (cmd pregunta si
+   terminar el trabajo por lotes: sí) o cerrar la ventana. `npm run stop`
+   mata el `node`, pero el bucle lo vuelve a levantar.
+
+Para leer el log del arranque actual mientras corre:
+
+```powershell
+Get-Content (Get-ChildItem logs\server.*.log | Sort-Object LastWriteTime | Select-Object -Last 1) -Tail 50 -Wait
+```
+
 ### 5. Reclamos del mapa
 
 El mapa se alimenta solo: cada vez que analizás una publicación
 ("Análisis de publicación"), los comentarios con una dirección concreta
 quedan guardados como reclamos en `geo_status = 'pendiente'`, y se
 geocodifican con USIG poco después (sin bloquear la respuesta del análisis).
-También corren cada 4hs junto con el cron de monitoreo, por si algo quedó
+También corren en cada corrida del cron de monitoreo, por si algo quedó
 pendiente por una falla transitoria de USIG.
 
 Para cargar un lote desde un Excel o CSV está el **importador genérico**, que
@@ -457,30 +739,270 @@ mantiene la conexión abierta.
 Una en modo `comments` (los comentarios) y otra en modo `posts` (caption, likes,
 comentarios totales, reproducciones, autor). Corren **en paralelo**, así que casi
 no suma tiempo. Además, en la corrida de comentarios activamos `addParentData`
-como respaldo por si la de `posts` no trajera datos.
+como respaldo por si la de `posts` no trajera datos. Las dos pasan por la cola
+de runs simultáneos (abajo) y siguen corriendo a la vez mientras haya lugar.
+
+### Runs simultáneos de Apify (cola global)
+
+Apify limita los **Actor runs simultáneos** (y la memoria total) según el
+plan: se ve en la consola, Settings → Limits. La detección del monitoreo
+lanza todas las fuentes juntas, y en su momento, con el plan Free (5 runs),
+12 cuentas más hashtags fallaban sin control con `402
+concurrent-runs-limit-exceeded` y esas fuentes se perdían ese ciclo. Todas las
+llamadas a Apify de la app (detección, benchmark, refresco de métricas,
+análisis a demanda, validación de cuentas y hashtags) pasan por una cola
+única en `src/apify.js` (`runActorSync`, con `src/concurrencyLimiter.js`):
+como mucho `APIFY_MAX_CONCURRENT` corridas en vuelo (default 10; era 3,
+pensado para el plan Free: con el plan pago, 10 en vuelo corrieron ciclos
+reales sin un solo 402 y el ciclo dura la mitad; ajustalo al tope de tu
+plan), el resto espera su turno en orden de llegada. El lugar se retiene mientras dura el run, porque
+el endpoint sincrónico mantiene la conexión abierta hasta que el actor
+termina.
+
+Si igual llega un 402 por runs simultáneos (otro proceso con el mismo token,
+o el tope del `.env` demasiado alto), esa llamada espera
+`APIFY_RETRY_DELAY_MS` (default 5 s) y reintenta **una sola vez** sin soltar
+su lugar; si vuelve a fallar, sale como error `RATE_LIMITED`: en "Actualizar
+ahora" se muestra, después de guardar lo que sí llegó, y en el cron se anota
+y se sigue.
+
+Efecto en el tiempo: con 13 fuentes y tope 3, un ciclo de Instagram pasa de
+un minuto a unos 3-5 (cada corrida de 15 posteos tarda 30-60 s). El botón
+"Actualizar ahora" espera esa respuesta, como siempre.
+
+### Progreso real de "Actualizar ahora"
+
+Mientras el ciclo corre, `src/monitoringProgress.js` guarda en memoria la
+fase actual (detectando posteos nuevos, detalle de búsquedas, clasificando
+relevancia, benchmark de cuentas, refrescando métricas), cuánto de esa fase
+se completó y un porcentaje global = trabajo completado / trabajo conocido
+hasta ese momento (se recalcula cada vez que una fase arranca y suma su
+propio total). `GET /api/monitoring/progress` (mismo control de acceso que
+el resto de `/api/monitoring`) devuelve `{ phase, done, total, percent }` o
+`null` si no hay ningún ciclo corriendo. El frontend (`public/js/monitoring.js`)
+lo consulta cada 1,5 s mientras espera la respuesta de "Actualizar ahora" y
+pinta la fase y el porcentaje reales en la misma tarjeta de siempre — ya no
+hay frases fijas rotando ni una barra que avanza sola.
+
+Cuentas, hashtags, búsquedas por palabra clave y keywords (X) se lanzan
+todas juntas (`Promise.allSettled`), no son fases secuenciales de verdad:
+se muestran combinadas en una sola fase visible, "Detectando posteos
+nuevos", con un tick por cada llamada que termina. Una fase sin trabajo
+(ej. benchmark en un ciclo de solo X, que no tiene esa capability) nunca se
+anuncia — no hace falta ningún caso especial por plataforma: la solapa de X
+muestra progreso real en "Detectando posteos nuevos" y "Clasificando
+relevancia" igual que Instagram, y simplemente no pasa por las fases que su
+adapter no tiene.
+
+### Benchmark y refresco de métricas en paralelo
+
+`refreshStaleAccountStats` (`src/accountStats.js`) y `refreshPostMetrics`
+(`src/metricsRefresh.js`) lanzan todas sus cuentas juntas con
+`Promise.allSettled`, igual que la detección con sus fuentes, en vez de un
+`for` secuencial. Cada uno regula cuántas llamadas van a la vez con SU
+PROPIO limitador (`benchmarkLimiter`, `refreshLimiter`; mismo valor de
+`APIFY_MAX_CONCURRENT`, instancia separada del `apifyLimiter` de
+`src/apify.js` — ver más abajo "Cuelgue real (~30 min)..." para por qué
+NUNCA tiene que ser la misma instancia). Los topes por ciclo
+(`MAX_ACCOUNTS_PER_CYCLE`, `MAX_ACCOUNTS_PER_REFRESH`),
+la prioridad de posteos recientes del refresco, `rememberFollowers`, el
+registro de costos, las escrituras a la base y el detector de saltos
+siguen igual; solo cambia que las cuentas se piden en paralelo. Corte por
+cuota: apenas una llamada devuelve `QUOTA_EXCEEDED`, un flag compartido
+hace que ninguna cuenta todavía no arrancada llegue a llamar a la fuente
+(las que ya estaban en vuelo terminan). El benchmark automático (antes solo
+lo tenía el refresco) ahora también corta así, en vez de reintentar cada
+cuenta igual hasta agotar la lista.
+
+### Cuelgue real (~30 min) y diagnóstico: dos limitadores nunca deben ser el mismo
+
+Un ciclo real quedó colgado ~30 minutos y hubo que matar el proceso a mano.
+Causa: la primera versión de "benchmark y refresco en paralelo" (arriba)
+envolvía cada cuenta en el MISMO `apifyLimiter` que usa `runActorSync` más
+adentro. Con `APIFY_MAX_CONCURRENT` cuentas en vuelo ocupando **todos** los
+cupos de ese limitador, cuando cada una intenta su propia llamada real a
+Apify, esa llamada pide OTRO cupo del mismo limitador — que ya está
+agotado por las propias cuentas que están esperando esa llamada. Ninguna
+termina nunca: un deadlock real, no un cuelgue de red.
+
+**Arreglo**: `accountStats.js` y `metricsRefresh.js` tienen su propio
+limitador (`benchmarkLimiter`, `refreshLimiter`; mismo valor de
+`APIFY_MAX_CONCURRENT`, instancia **separada** de `apifyLimiter`). Compartir
+el número entre capas está bien; compartir la cola no. `src/concurrencyLimiter.js`
+documenta esto en su encabezado, y `test/concurrencyLimiter.test.js`
+reproduce el deadlock con capas iguales y confirma que capas separadas no
+cuelgan.
+
+**Diagnóstico agregado** (siempre activo, sin flag de `DEBUG`):
+- `[ciclo] inicio`/`[ciclo] fin` (trigger, plataforma, duración, resultado) en `src/scheduler.js`.
+- `[fase] arranca`/`[fase] termina` (duración, N ok, N error) en `src/monitoringProgress.js`, cada vez que una fase empieza o cede lugar a la siguiente.
+- `[apify] →`/`[apify] ←` por cada llamada real (fase, target, actor; al resolver, ok/error, duración, items) en `src/apify.js`.
+- `[limiter:<nombre>]` cuando una tarea espera cupo, lo adquiere o lo libera (activos/cola), en cualquier `createLimiter`.
+- `[heartbeat]`: si pasan 15s sin que termine ninguna llamada mientras un ciclo está en curso, un snapshot de la fase actual y qué target tiene cada tarea activa en `apifyLimiter`, `benchmarkLimiter` y `refreshLimiter` — se repite cada 15s mientras siga sin actividad.
+- `APIFY_CALL_TIMEOUT_MS` (default 300000, piso 1000; era 120000 y hubo consultas reales de más de 100 s que quedaban al borde): cada llamada a Apify se corta a los ms configurados si no respondió, libera su cupo y queda en `apify_calls` con `error='TIMEOUT'`, sin tirar abajo el resto del ciclo. Una llamada cortada se cobra igual y sus resultados se pierden: el tope es contra el cuelgue, no contra una consulta lenta.
+
+### Ventana de detección dinámica (búsquedas en Instagram; cuentas y hashtags en X)
+
+`monitor.detectionWindowFor(platformId)` calcula, para cada corrida, la
+ventana de "solo posteos más nuevos que":
+
+- **Sin ninguna corrida previa registrada** (primera vez en esta base):
+  `MONITOR_LOOKBACK`, default 1 día hacia atrás.
+- **Con corrida previa**: desde el fin de la última detección exitosa de esa
+  plataforma hasta ahora, con techo `MONITOR_LOOKBACK_MAX` (default 30
+  días; era 7 y una caída de más de una semana perdía lo anterior;
+  recuperar un mes de búsquedas son centavos). Así, si el server estuvo
+  apagado, lo publicado en el medio no se pierde.
+
+En el caso normal (cron al día) la ventana redondea a "1 day" — el techo
+solo se nota después de una caída real. El fin de la última detección
+exitosa se guarda en `refresh_state` (`detection_last_success:<plataforma>`)
+apenas esa fase termina sin error, aunque el ciclo completo falle después
+en benchmark o refresco. En Instagram la usan las búsquedas por palabra
+clave (la única fuente de detección); en X, cuentas y hashtags. Las keywords
+de X (search de Grok, `MONITOR_LOOKBACK` fijo) y el benchmark
+(`BENCHMARK_RECALC_DAYS`, 30 días fijos) no cambian.
+
+Si la ventana calculada supera 1 día, `SEARCH_RESULTS_LIMIT`,
+`MONITOR_ACCOUNT_LIMIT` y `MONITOR_HASHTAG_LIMIT` de esa corrida suben
+proporcionalmente (`raiseLimitForWindow`: factor = días de ventana, nunca
+más de 10x el tope configurado) para no perderse posteos por el tope de
+cantidad en vez de por fecha: el excedente sobre los posteos incluidos por
+consulta (20 en la búsqueda de apidojo) se paga a 0,0005 usd por posteo, no
+se corta. La consola lo registra cuando no fue la ventana default. Si aun
+así una búsqueda llena su tope (`maxItems`), el adapter lo avisa por log
+(`[apidojo] la búsqueda "..." devolvió N posteos, el tope de la consulta`):
+lo más viejo de la ventana puede haber quedado afuera; subir
+`SEARCH_RESULTS_LIMIT` es pagar el excedente en vez de cortar.
+
+### Separación por plataforma: la url manda
+
+Regla del producto: una publicación de X nunca se muestra ni se procesa en
+la solapa de Instagram, ni al revés. Toda la app ya filtra por la columna
+`plataforma` de `detected_posts` (cada solapa manda `?plataforma=` y cada
+consulta la usa), pero eso protege la lectura; lo que garantiza que la
+etiqueta sea correcta es el guard al **escribir**:
+`src/platforms/urlPlatform.js` (`platformForUrl(url)` → `'instagram'` |
+`'x'` | `null` por el dominio, subdominios incluidos) y `db.saveDetectedPost`,
+que rechaza con `code: 'PLATAFORMA_INCONSISTENTE'` un posteo cuya url es de
+otra red que su `plataforma`. Un dominio desconocido no se valida (no es
+"Instagram por defecto"). El ciclo (`runMonitoringCycle`) atrapa ese error,
+loguea `descartado` y sigue con los demás posteos: un adapter que devolviera
+un link ajeno no tira abajo la corrida ni contamina la otra solapa. El
+módulo no tiene dependencias porque lo requiere `db.js` (el registro de
+adapters lo re-exporta).
+
+**Análisis de publicación**: el mismo módulo tiene `checkAnalyzeUrl(url,
+plataforma)`, que `POST /api/analyze` corre con `'instagram'` y
+`POST /api/x/analyze` con `'x'` **antes** de pedirle nada a Apify o a Grok.
+Un link de otra red responde 400 con "Esta sección solo analiza
+publicaciones de Instagram." (o "…de X."), más "Usá la solapa de X/Instagram"
+si el dominio es de la otra red conocida; un link de la red pero que no es
+una publicación (perfil, story) recibe el mensaje de formato con ejemplo, y
+lo que no es una url también. El cliente (`analysis.js`, `x-analysis.js`)
+repite solo el chequeo de dominio para avisar al instante sin request; el
+server es quien manda.
+
+**Acciones de la tabla**: ignorar (`POST /api/monitoring/posts/:id/ignore`)
+y corregir sentimiento (`PATCH /api/monitoring/posts/:id`) van por id **y**
+plataforma (`db.ignorePost(id, plataforma)`, `db.updateSentiment(id,
+sentiment, plataforma)`): un id de otra red responde 404 y no toca nada,
+aunque los ids ya sean únicos entre redes. Sin plataforma, las funciones
+tiran: no hay default a Instagram.
+
+**Sin defaults a Instagram, en ningún lado.** Antes, varias funciones
+asumían `'instagram'` cuando no les pasaban la plataforma
+(`saveDetectedPost`, `listDistinctPostAccounts`, `updateFollowersForAccount`,
+`listAccountsDueForRefresh`, `get/is/markSearchSeen`, `loadConfig` y las
+altas/bajas de cuentas, keywords y búsquedas, `backfillClassification`,
+`computeAccountStats`, `classifyPostAgainstBenchmark`, `buildAccountUniverse`,
+`runActorSync`, y el middleware de `/api/monitoring`). Era la única vía
+realista para que algo de X terminara etiquetado como Instagram: un llamador
+nuevo que olvidara el parámetro. Ahora todas tiran `"<función>: falta
+plataforma (instagram | x); no hay default."` y el middleware responde 400
+`Falta el parámetro plataforma` — salvo en las rutas que no filtran por
+plataforma (`/status`, `/progress`, `/counts`, `/costs`), que la aceptan pero
+no la exigen. `scripts/recalc-account-stats.js` (solo Instagram) la pasa
+explícita. Las lecturas "todas las plataformas" (`listDetectedPosts` y
+`listUnclassified` sin `plataforma`, `countRecentPosts(days)`) siguen
+existiendo para el dashboard y scripts: no defaultean a una red, devuelven
+todas. Test: `test/plataformaObligatoria.test.js`.
+
+### Septiembre 2026: cambio de actor de monitoreo
+
+El monitoreo de Instagram pasó de `apify/instagram-scraper` a
+`apidojo/instagram-scraper-api` (rama `actor_apidojo`). **Por qué**: el actor
+oficial cobra por resultado (2,30 usd por 1.000 en plan Starter, y un
+hashtag paga siempre el tope completo) y no tiene búsqueda por palabra
+clave, que es la fuente que faltaba para ver menciones fuera de las cuentas
+y hashtags que ya conocíamos. apidojo cobra por consulta con posteos
+incluidos (una cuenta o un hashtag cuestan lo mismo traigan lo que traigan),
+no necesita login ni cookies, trae los seguidores del autor en cada posteo
+de perfil y tiene la búsqueda nativa de Instagram.
+
+**Qué se conservó**:
+
+- El análisis de una publicación (comentarios, `src/apify.js`) sigue con
+  `apify/instagram-scraper`: apidojo no devuelve comentarios.
+- La forma de los datos: `detected_posts.id` (id numérico de Instagram) y
+  `url` (`/p/{code}/`) son los mismos en los dos actores, verificado contra
+  una corrida real; el dedupe y el refresco de métricas siguen matcheando y
+  `post_type` usa los mismos valores (`reel`, `imagen`, `carrusel`). No se
+  migró ningún dato.
+- El contrato del adapter: el orquestador, el benchmark, el refresco, la
+  base y el frontend no saben qué actor hay abajo. `IG_ACTOR=apify` vuelve
+  al actor anterior con el comportamiento exacto de antes
+  (`src/platforms/instagramApify.js` es el código viejo movido sin cambios).
+- La cola de runs simultáneos, el reintento del 402 y el registro de costo,
+  que ahora distingue actor y tipo de consulta y guarda el costo real.
+
+**Qué cambió al pasar**: `until` (fecha) en vez de `onlyPostsNewerThan`, con
+descarte del lado nuestro de lo anterior a la ventana real y de los fijados
+viejos; topes por tipo de fuente (`MONITOR_ACCOUNT_LIMIT`,
+`MONITOR_HASHTAG_LIMIT`, `SEARCH_RESULTS_LIMIT`) en vez de
+`MONITOR_RESULTS_LIMIT`; seguidores desde los posteos en cualquier fase en
+vez de una consulta de perfil aparte; la lista `searches` y la fase
+`busqueda`. Validar una cuenta o un hashtag al agregarlos cuesta 0,005 y
+0,015 usd respectivamente (antes, un resultado cada uno).
+
+**Lo que quedó en el actor oficial además del análisis**: el detalle de los
+resultados de búsqueda. La búsqueda de apidojo devuelve los posteos sin
+caption ni contadores; se probó pedir el mismo reel por URL a los dos
+actores y los dos traen el texto, pero el oficial cobra 0,0023 por posteo y
+acepta varias URLs en un run, contra 0,005 por posteo de apidojo. Por eso
+`fetchPostDetails` va siempre por `apify/instagram-scraper`, con cualquier
+`IG_ACTOR` (`SEARCH_ENRICH_LIMIT`, tabla `search_seen`).
+
+**Para volver al actor anterior**: `IG_ACTOR=apify` en el `.env` y reiniciar
+el server. Las búsquedas por palabra clave configuradas quedan guardadas
+pero se ignoran (con un aviso por ciclo) hasta volver a apidojo.
 
 ### ¿Qué modelo usa cada tarea?
 
-Hay **dos** tareas con LLM, y cada una tiene su modelo:
+Desde septiembre 2026 hay **un solo modelo** para todo el LLM (análisis de
+publicación, clasificación del monitoreo, subcategoría de reclamos e
+importador):
 
-| Tarea | Dónde | `anthropic` | `openrouter` |
-|---|---|---|---|
-| Análisis de publicación | `src/llm/` | `claude-sonnet-5` | `anthropic/claude-sonnet-5` |
-| Relevancia + sentimiento del monitoreo | `src/classifier.js` | `claude-haiku-4-5` | `anthropic/claude-haiku-4.5` |
+| `anthropic` | `openrouter` |
+|---|---|
+| `claude-sonnet-5` | `anthropic/claude-sonnet-5` |
 
-Son **los mismos dos modelos** en ambos proveedores: OpenRouter sólo cambia el
-formato del id (prefijo del proveedor y punto en la versión). Cambiar
-`LLM_PROVIDER` no cambia qué modelo se usa en cada tarea.
+Es **el mismo modelo** en ambos proveedores: OpenRouter sólo cambia el
+formato del id (prefijo del proveedor). Cambiar `LLM_PROVIDER` no cambia qué
+modelo se usa.
 
-Para pisarlos: `CLAUDE_MODEL` / `CLASSIFIER_MODEL` con `anthropic`, y
-`OPENROUTER_MODEL` / `OPENROUTER_CLASSIFIER_MODEL` con `openrouter`. Si elegís
-otro modelo para el análisis, tiene que soportar structured outputs —
-verificalo en https://openrouter.ai/models (debe listar `structured_outputs`).
+Para pisarlo: `CLAUDE_MODEL` con `anthropic`, `OPENROUTER_MODEL` con
+`openrouter`. Tiene que soportar structured outputs (el análisis y el
+clasificador los usan) — verificalo en https://openrouter.ai/models (debe
+listar `structured_outputs`). `CLASSIFIER_MODEL` y
+`OPENROUTER_CLASSIFIER_MODEL` (el modelo clasificador aparte, Haiku, de
+antes) ya no existen: si siguen en el `.env` se ignoran, con un aviso al
+arrancar.
 
 `LLM_PROVIDER` sólo acepta `anthropic` u `openrouter`: cualquier otro valor
 aborta el arranque en vez de caer en un default silencioso. Lo mismo si falta
 la clave del proveedor elegido. Al arrancar, el servidor imprime el proveedor
-activo y los dos modelos.
+activo y el modelo.
 
 `OPENROUTER_BASE_URL` (default `https://openrouter.ai/api/v1`) permite apuntar
 a cualquier gateway compatible con OpenAI, no sólo a OpenRouter.
@@ -777,13 +1299,62 @@ La app muestra mensajes claros cuando:
 
 - El link no es una publicación válida de Instagram.
 - Falta o es inválida alguna clave (Apify o el proveedor LLM activo).
-- Apify falla, se demora demasiado o alcanzó su límite de uso.
+- Apify falla, se demora demasiado o alcanzó su límite de uso (incluido el
+  402 por runs simultáneos, que primero se reintenta una vez; ver "Runs
+  simultáneos de Apify" más arriba).
 - La publicación no tiene comentarios extraíbles.
 - El LLM falla o alcanzó su límite de uso.
 
 Si faltan credenciales, el servidor **no levanta**: aborta con el detalle de
 qué variable falta. Antes era un `console.warn` y el problema aparecía a mitad
 de un análisis.
+
+### Clasificación con contexto (septiembre 2026)
+
+Antes había dos caminos en `src/classifier.js` y ninguno verificaba
+geografía: con una keyword literal en el caption el posteo entraba sin
+preguntarle nada al modelo (solo título y sentimiento), y sin keyword se le
+preguntaba a Haiku si "igual hablaba del Jefe de Gobierno". "Jefe de
+Gobierno" es también el título del titular de la Ciudad de México, y
+"gobierno de la ciudad" o PDLC (Policía de la Ciudad) son ambiguos entre
+ciudades: entraban falsos positivos.
+
+Ahora:
+
+- **Una sola función, `clasificarPosteo`**, una llamada con schema
+  (structured outputs) que devuelve `relevant`, `title`, `sentiment` y
+  `motivo`, con el mismo modelo que el análisis (ver "¿Qué modelo usa cada
+  tarea?"). `classifyPost` y `classifyRelevance` no existen más.
+- **La keyword es una pista, no un veredicto.** `evaluateRelevance` sigue
+  buscando la coincidencia literal, pero la manda como línea `CONTEXTO:`
+  del mensaje de usuario ("el texto contiene el término X de nuestra lista
+  de seguimiento"), junto con la cuenta trackeada, el hashtag o la búsqueda.
+  El prompt dice que los términos de la lista son una guía (no una señal
+  fuerte ni una garantía) y la cuenta trackeada una señal débil: decide el
+  contenido.
+- **Desambiguación geográfica en el system prompt**: objetivo Jorge Macri /
+  CABA; la Ciudad de México no es relevante aunque use "Jefe de Gobierno";
+  PDLC, "gobierno de la ciudad", alcalde, intendente solo valen en contexto
+  porteño; señales a favor (CABA, porteño, Legislatura porteña, comunas,
+  subte, SUBE, AUSA, el PRO, Rodríguez Larreta...) y señales de alerta
+  (figuras de la Ciudad de México, Colombia, España, Chile) que NO descartan
+  por sí solas: si además habla de Jorge Macri o de CABA, es relevante.
+  También se descarta Mauricio Macri sin relación con Jorge ni la gestión
+  porteña, la política nacional argentina (gobierno nacional, Milei,
+  Adorni, el Congreso) que no toque a Jorge Macri ni a la Ciudad, y la
+  Provincia de Buenos Aires sin la Ciudad.
+- **Trazabilidad**: `matched_reason` queda como `<motivo base de siempre> ·
+  <motivo del modelo>` (ej. `Cuenta trackeada: @cuenta (coincidencia:
+  "pdlc") · habla de la Policía de la Ciudad en CABA`), visible en
+  `GET /api/monitoring/posts` y en la base. Un descarte se loguea
+  `[clasificador] descartado (<red>) @cuenta <url>: <motivo>`. El backfill
+  completa título, sentimiento y motivo; si el modelo dice que un posteo ya
+  guardado no es relevante, no lo borra: deja `no relevante según el
+  modelo: <motivo>` y avisa por consola.
+- **X en stand by**: lo que llega por búsqueda por término de X sigue
+  entrando directo (título y sentimiento del modelo, `relevant` ignorado,
+  sin motivo).
+- Los posteos guardados antes del cambio quedan como están (sin motivo).
 
 ### Cuando falla el clasificador del monitoreo
 
@@ -806,6 +1377,16 @@ verificar. Es a propósito — un falso positivo se ve y se borra, uno descartad
 en silencio no vuelve nunca. Un `relevant: false` legítimo del modelo sí sigue
 descartando: eso es una respuesta, no un fallo.
 
+Para que un hipo del proveedor no convierta a todos los candidatos de un
+ciclo en "sin clasificar" (y sus cuentas disparen benchmark y refresco en
+Apify), cada llamada del clasificador tiene **timeout de 60 s** y un fallo
+transitorio (429, 5xx, corte de red, timeout) se **reintenta una vez** a
+los 3 s (`src/llm/openrouterProvider.js`; con Anthropic, el timeout va al
+SDK, que ya reintenta solo). Un 401/402 no se reintenta. Las demás
+llamadas al LLM (análisis de comentarios, reclamos) tienen el mismo
+reintento con un timeout holgado de 5 min, porque un análisis largo puede
+tardar minutos.
+
 ---
 
 ## ⚠️ Nota sobre los nombres de campos de Apify
@@ -815,6 +1396,19 @@ variar según la versión. El código en `src/apify.js` intenta varias alternati
 (`ownerUsername`, `owner.is_verified`, `videoPlayCount`/`videoViewCount`, etc.).
 Si algún dato aparece como `N/D`, revisá una corrida real en el panel de Apify
 para ver el nombre exacto del campo y ajustá `normalizePost` / `normalizeComments`.
+
+Para el actor `apidojo/instagram-scraper-api` (monitoreo) los nombres están
+verificados contra una corrida real del 2026-09-18 y guardados como fixtures
+en `test/fixtures/apidojo/` (ver su README): `id`, `code`, `url`,
+`createdAt`, `caption`, `likeCount`, `commentCount`, `isVideo`,
+`video.playCount`, `isCarousel` + `carouselMedia`, `isPinned`,
+`owner.username` y `owner.followerCount`. Este último viene solo en
+consultas de perfil y es el del PERFIL CONSULTADO: en un posteo en
+colaboración (owner distinto) el actor repite ese número, así que solo se
+toma cuando el owner del item es la cuenta consultada. En la búsqueda por
+palabra clave los items llegan con `caption`, `likeCount` y `commentCount`
+en null. Si el actor cambia algo, esas fixtures y
+`src/platforms/instagramApidojo.js` son el lugar a mirar.
 
 ### ⚠️ Verificar en la primera corrida real: ids del refresco de métricas
 

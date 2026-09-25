@@ -16,7 +16,7 @@
 // así que scrapeHashtag busca "#tag" exactamente igual que scrapeKeyword
 // busca "Jorge Macri", y las dos devuelven posteos con sourceType 'keyword':
 // para el orquestador eso significa "resultado de una búsqueda que ya lo
-// validó" (relevante sin pasar por classifyRelevance; solo título y
+// validó" (relevante sin que el clasificador decida; solo título y
 // sentimiento). Instagram no ofrece scrapeKeyword: ahí las keywords planas
 // son solo un filtro de texto sobre lo que ya se scrapeó, y sus hashtags
 // (sourceType 'hashtag') son descubrimiento que hay que filtrar.
@@ -179,7 +179,7 @@ async function scrapeAccount(handle, { lookback } = {}) {
 /**
  * Búsqueda del término "#tag". En X no es una página de descubrimiento sino
  * una búsqueda más, así que el resultado sale como sourceType 'keyword'
- * (relevante sin classifyRelevance, igual que scrapeKeyword) con el "#" en
+ * (relevante sin que el clasificador decida, igual que scrapeKeyword) con el "#" en
  * sourceQuery para que el motivo diga "Búsqueda por hashtag".
  */
 async function scrapeHashtag(tag, { lookback } = {}) {
@@ -191,8 +191,8 @@ async function scrapeHashtag(tag, { lookback } = {}) {
  * Búsqueda literal de una keyword sin "#" (por ejemplo "Jorge Macri").
  * Opcional en el contrato: el orquestador la usa solo si el adapter la
  * ofrece. Un posteo que llega por acá ya fue "validado" por la búsqueda:
- * el orquestador no lo pasa por classifyRelevance, solo le pone título y
- * sentimiento.
+ * el orquestador no le pide al clasificador que decida relevancia, solo
+ * título y sentimiento.
  */
 async function scrapeKeyword(keyword, { lookback } = {}) {
   const clean = String(keyword || '').trim();
@@ -221,7 +221,10 @@ module.exports = {
    * metricsRefresh: false — el único refresco que tiene X es el gratuito del
    * propio ciclo (posteos conocidos que vuelven a aparecer en la búsqueda).
    */
-  capabilities: { benchmark: false, followers: false, metricsRefresh: false },
+  // En X la detección sí consulta cuentas (from:handle) y hashtags (una
+  // búsqueda más), además de las keywords: X quedó fuera del cambio de
+  // septiembre 2026 que dejó a Instagram solo con las búsquedas.
+  capabilities: { benchmark: false, followers: false, metricsRefresh: false, detectAccounts: true, detectHashtags: true },
   isConfigured,
   validateAccount,
   validateHashtag,

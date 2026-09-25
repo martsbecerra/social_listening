@@ -1,26 +1,36 @@
 // ==========================================================================
 // anthropicProvider.js — API de Anthropic (SDK oficial).
 // --------------------------------------------------------------------------
-// Dos modos de uso, en espejo con openrouterProvider.js:
-//   - requestStructuredAnalysis: Structured Outputs (análisis de post)
-//   - requestText:               texto plano (clasificador del monitoreo)
+// Dos modos de uso, en espejo con openrouterProvider.js, con el mismo modelo:
+//   - requestStructuredAnalysis: Structured Outputs (análisis de post y
+//                                clasificador del monitoreo)
+//   - requestText:               texto plano (reclamos, importador)
 // ==========================================================================
 
 const Anthropic = require('@anthropic-ai/sdk');
 const { jsonSchemaOutputFormat } = require('@anthropic-ai/sdk/helpers/json-schema');
 const { ANALYSIS_JSON_SCHEMA } = require('../analysisSchema');
 const { addTokenUsage, fromAnthropicUsage } = require('./usage');
-const { getAnalysisModel, getClassifierModel } = require('./providerConfig');
+const { getAnalysisModel } = require('./providerConfig');
 
 const client = new Anthropic();
 const STRUCTURED_OUTPUT_MAX_ATTEMPTS = 2;
 
-async function requestStructuredAnalysis({ system, userPrompt, schema }) {
+/**
+ * Opciones de request del SDK: `timeoutMs` (el clasificador pasa 60 s; sin
+ * él, el default del SDK, 10 min). Los reintentos ante 429/5xx/red ya los
+ * hace el SDK (maxRetries 2), en espejo con openrouterProvider.js.
+ */
+function requestOptions(timeoutMs) {
+  return Number.isFinite(timeoutMs) && timeoutMs > 0 ? { timeout: timeoutMs } : undefined;
+}
+
+async function requestStructuredAnalysis({ system, userPrompt, schema, maxTokens = 8000, timeoutMs }) {
   const model = getAnalysisModel('anthropic');
 
   const requestParams = {
     model,
-    max_tokens: 8000,
+    max_tokens: maxTokens,
     system,
     messages: [{ role: 'user', content: userPrompt }],
     output_config: {
@@ -32,7 +42,7 @@ async function requestStructuredAnalysis({ system, userPrompt, schema }) {
   let usage = null;
   for (let attempt = 1; attempt <= STRUCTURED_OUTPUT_MAX_ATTEMPTS; attempt++) {
     try {
-      const message = await client.messages.parse(requestParams);
+      const message = await client.messages.parse(requestParams, requestOptions(timeoutMs));
       const callUsage = fromAnthropicUsage(message.usage);
       if (callUsage) usage = usage ? addTokenUsage(usage, callUsage) : callUsage;
       if (message.parsed_output != null) {
@@ -58,22 +68,24 @@ async function requestStructuredAnalysis({ system, userPrompt, schema }) {
 }
 
 /**
- * Texto plano, sin schema — lo que necesita el clasificador del monitoreo.
- * No reintenta ni traga errores: quien llama decide qué hacer (ver
- * src/classifier.js).
+ * Texto plano, sin schema — subcategoría de reclamos e importador. No
+ * reintenta ni traga errores: quien llama decide qué hacer.
  * @returns {Promise<{ text: string, usage: import('./usage').TokenUsage | null }>}
  */
-async function requestText({ system, userPrompt, maxTokens = 200 }) {
-  const model = getClassifierModel('anthropic');
+async function requestText({ system, userPrompt, maxTokens = 200, timeoutMs }) {
+  const model = getAnalysisModel('anthropic');
 
   let message;
   try {
-    message = await client.messages.create({
-      model,
-      max_tokens: maxTokens,
-      system,
-      messages: [{ role: 'user', content: userPrompt }],
-    });
+    message = await client.messages.create(
+      {
+        model,
+        max_tokens: maxTokens,
+        system,
+        messages: [{ role: 'user', content: userPrompt }],
+      },
+      requestOptions(timeoutMs)
+    );
   } catch (err) {
     throw mapAnthropicError(err);
   }

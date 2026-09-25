@@ -27,10 +27,23 @@
 
 const db = require('./db');
 const monitor = require('./monitor');
+const progress = require('./monitoringProgress');
 const { getPlatform, listPlatformIds } = require('./platforms');
+const { isQuotaExceeded } = require('./platforms/errors');
+const { createLimiter } = require('./concurrencyLimiter');
 
-// Plan gratuito de Apify: ~15 resultados por corrida. Al pasar a plan pago,
-// subir esto en el .env alcanza — no hace falta tocar código.
+// Limitador PROPIO para el nivel "cuenta" del benchmark — nunca el
+// apifyLimiter de src/apify.js. computeAccountStats termina llamando a
+// runActorSync, que usa ese otro limitador; si esta capa compartiera la
+// MISMA instancia, con maxPerCycle cuentas en vuelo ocupando todos sus
+// cupos, ninguna llegaría a conseguir un cupo para su propia llamada real
+// (deadlock — así se colgó un ciclo real ~30 min, Cambio G). Mismo valor de
+// APIFY_MAX_CONCURRENT, instancia distinta.
+const benchmarkLimiter = createLimiter(Number(process.env.APIFY_MAX_CONCURRENT) || 10, 'benchmark');
+
+// Cuántos posteos recientes pedir por cuenta. Con apidojo la consulta de
+// perfil incluye 10 y cobra 0,0005 usd por cada uno de más; con el actor
+// oficial cada uno es un resultado. Se cambia en el .env, sin tocar código.
 const BENCHMARK_POST_LIMIT = Number(process.env.BENCHMARK_POST_LIMIT) || 15;
 // Una mediana sobre menos de esto no significa nada.
 const BENCHMARK_MIN_POSTS = 5;
@@ -40,21 +53,31 @@ const BENCHMARK_MAX_AGE_DAYS = 90;
 // nuevo de la cuenta dispare un recálculo. Los hábitos de una cuenta no
 // cambian de una semana a la otra y cada recálculo cuesta una consulta a
 // la fuente. Es también la cadencia máxima con la que se refrescan los
-// seguidores (van en la misma pasada).
-const BENCHMARK_RECALC_DAYS = Number(process.env.BENCHMARK_RECALC_DAYS) || 90;
+// seguidores (van en la misma pasada): 30 (era 90) para que la columna de
+// seguidores y la mediana no queden tres meses viejas; cuesta una consulta
+// de perfil por cuenta y por mes (0,0075 usd), solo para las que reaparecen.
+const BENCHMARK_RECALC_DAYS = Number(process.env.BENCHMARK_RECALC_DAYS) || 30;
 // Umbrales de clasificación (ratio = valor del posteo / mediana de la cuenta).
 const RATIO_LOW = 0.5;
 const RATIO_HIGH = 1.5;
 // Tope de cuentas que recalcula CADA ciclo automático (ver
 // refreshStaleAccountStats). Si en un ciclo aparecen muchas cuentas con
-// recálculo pendiente (ej. un hashtag nuevo trae 30 cuentas desconocidas),
-// esto lo escalona; las que quedan afuera siguen elegibles y salen en los
-// ciclos siguientes, en orden de llegada.
-const MAX_ACCOUNTS_PER_CYCLE = Number(process.env.MAX_ACCOUNTS_PER_CYCLE) || 10;
+// recálculo pendiente, esto lo escalona; las que quedan afuera siguen
+// elegibles y salen en los ciclos siguientes, en orden de llegada. Con la
+// detección por búsquedas casi cada posteo nuevo es de una cuenta distinta:
+// con el tope viejo de 10 la cola no se vaciaba nunca (82 pendientes el
+// 25/9/2026) y esos posteos quedaban días "sin referencia". 50 la vacía en
+// un ciclo normal; cada cuenta cuesta una consulta de perfil (0,0075 usd).
+const MAX_ACCOUNTS_PER_CYCLE = Number(process.env.MAX_ACCOUNTS_PER_CYCLE) || 50;
 
-// Plataforma por defecto de las funciones de una sola cuenta (script de
-// recálculo, llamadas sin plataforma explícita).
-const PLATAFORMA = 'instagram';
+// Las funciones de una sola cuenta reciben la plataforma SIEMPRE: no hay
+// default a Instagram (un llamador que la olvide etiquetaría mal sin error).
+function requirePlataforma(plataforma, fn) {
+  if (typeof plataforma !== 'string' || !plataforma.trim()) {
+    throw new Error(`${fn}: falta plataforma (instagram | x); no hay default.`);
+  }
+  return plataforma;
+}
 
 function median(numbers) {
   const sorted = numbers.filter(Number.isFinite).sort((a, b) => a - b);
@@ -88,10 +111,11 @@ function benchmarkPlatformIds(plataformas) {
  * Dedupe case-insensitive: si la misma cuenta aparece con distinta
  * capitalización en config vs. en un post, se conserva la forma de config
  * (viene primero en el array de entrada).
- * @param {string} [plataforma]
+ * @param {string} plataforma
  * @returns {string[]}
  */
-function buildAccountUniverse(plataforma = PLATAFORMA) {
+function buildAccountUniverse(plataforma) {
+  requirePlataforma(plataforma, 'buildAccountUniverse');
   const { accounts: tracked } = monitor.loadConfig(plataforma);
   const fromPosts = db.listDistinctPostAccounts(plataforma);
   const seen = new Map(); // lowercase -> forma "canónica" (la primera vista)
@@ -133,10 +157,11 @@ function buildAccountUniverse(plataforma = PLATAFORMA) {
  * cola de recálculo en cada ciclo en que tenga un posteo.
  *
  * @param {string} account
- * @param {string} [plataforma]
+ * @param {string} plataforma
  * @returns {Promise<{ account: string, plataforma: string, fetched: number, recent: number, groupsSaved: number, attemptOnly: boolean, referenceKept: boolean, followersChecked: number, followersFound: boolean, postsUpdated: number, skipped?: boolean }>}
  */
-async function computeAccountStats(account, plataforma = PLATAFORMA) {
+async function computeAccountStats(account, plataforma) {
+  requirePlataforma(plataforma, 'computeAccountStats');
   const adapter = getPlatform(plataforma);
   const capabilities = adapter.capabilities || {};
   if (!capabilities.benchmark) {
@@ -162,23 +187,32 @@ async function computeAccountStats(account, plataforma = PLATAFORMA) {
     }
   }
 
-  // Seguidores: solo si la plataforma los expone. fetchAccountFollowers ya
-  // nunca tira (devuelve null sin token/cuenta privada/etc.), pero el
-  // try/catch queda igual acá: si algo inesperado fallara guardando la
-  // caché, no tiene que tirar abajo el cálculo del benchmark — la cuenta
-  // simplemente sigue sin seguidores cacheados (columna en "-" hasta el
-  // próximo recálculo).
+  // Seguidores: solo si la plataforma los expone. Primero los que vinieron
+  // con los posteos de esta misma pasada (Instagram con apidojo trae
+  // owner.followerCount en cada uno: cero consultas extra); si ninguno lo
+  // trajo, la consulta aparte del adapter (actor oficial), que cuenta como
+  // followersChecked. fetchAccountFollowers ya nunca tira (devuelve null sin
+  // token/cuenta privada/etc.), pero el try/catch queda igual acá: si algo
+  // inesperado fallara guardando la caché, no tiene que tirar abajo el
+  // cálculo del benchmark — la cuenta simplemente sigue sin seguidores
+  // cacheados (columna en "-" hasta el próximo recálculo).
   let followersChecked = 0;
   let followersFound = false;
   if (capabilities.followers) {
     try {
-      const followers = await adapter.fetchAccountFollowers(account);
+      const fromPosts = posts.find((p) => p && p.followers != null);
+      let followers;
+      if (fromPosts) {
+        followers = fromPosts.followers;
+      } else {
+        followers = await adapter.fetchAccountFollowers(account);
+        followersChecked = 1;
+      }
       if (followers != null) {
         db.upsertAccountFollowers({ account, plataforma, followers, updatedAt: new Date().toISOString() });
         db.updateFollowersForAccount(account, followers, plataforma);
         followersFound = true;
       }
-      followersChecked = 1;
     } catch (err) {
       console.error(`[accountStats] No se pudo traer seguidores de @${account}:`, err.message);
     }
@@ -244,7 +278,7 @@ async function computeAccountStats(account, plataforma = PLATAFORMA) {
   } else {
     // Sin datos suficientes pero con una referencia previa: no se pisa una
     // mediana válida con una muestra vacía o chica (una cuenta privada de
-    // paso o un hipo de la fuente dejaría 90 días de "sin referencia" en
+    // paso o un hipo de la fuente dejaría BENCHMARK_RECALC_DAYS de "sin referencia" en
     // toda la tabla). Solo avanza la fecha para que el intento cuente.
     db.touchAccountStatsComputedAt(account, plataforma, computedAt);
     attemptOnly = true;
@@ -296,12 +330,54 @@ function selectAccountsForRecalc(activityRows, maxPerCycle) {
  * Recalcula, para UNA plataforma, las cuentas que aparecieron con un posteo
  * nuevo en detected_posts y nunca se calcularon o cuyo último cálculo tiene
  * BENCHMARK_RECALC_DAYS o más días al momento de detectar ese posteo. Como
- * mucho `maxPerCycle` por corrida, en orden de llegada. Ver
- * refreshStaleAccountStats.
+ * mucho `maxPerCycle` por corrida. Ver refreshStaleAccountStats.
+ *
+ * Las cuentas se lanzan TODAS juntas con Promise.allSettled — el orden de
+ * llegada de selectAccountsForRecalc decide la prioridad del tope, no el
+ * orden de ejecución — y benchmarkLimiter (propio de este módulo, NUNCA el
+ * apifyLimiter de src/apify.js: ver el comentario junto a su declaración)
+ * regula cuántas corren a la vez, igual que ya hace la detección con sus
+ * fuentes. Un flag compartido (`quotaExceeded`) hace que, apenas una
+ * llamada devuelve cuota agotada, ninguna tarea TODAVÍA no arrancada
+ * llegue a llamar a la fuente — las que ya estaban en vuelo terminan igual.
  */
 async function refreshStaleAccountStatsFor(plataforma, { maxPerCycle = MAX_ACCOUNTS_PER_CYCLE } = {}) {
   const activity = db.listAccountBenchmarkActivity(plataforma, BENCHMARK_RECALC_DAYS);
   const { toProcess, deferred, upToDate } = selectAccountsForRecalc(activity, maxPerCycle);
+  progress.startPhase('Calculando benchmark de cuentas', toProcess.length);
+
+  let quotaExceeded = false;
+  let skippedByQuota = 0;
+  let quotaLoggedOnce = false;
+
+  const settled = await Promise.allSettled(
+    toProcess.map(({ account }) =>
+      benchmarkLimiter.run(async () => {
+        if (quotaExceeded) {
+          skippedByQuota += 1;
+          return { account, skipped: true };
+        }
+        try {
+          const result = await computeAccountStats(account, plataforma);
+          progress.tick(1, { ok: true });
+          return { account, result };
+        } catch (err) {
+          const quotaHit = isQuotaExceeded(err);
+          if (quotaHit) {
+            quotaExceeded = true;
+            if (!quotaLoggedOnce) {
+              quotaLoggedOnce = true;
+              console.log(`[accountStats] (${plataforma}) cuota de la fuente agotada, cortando la corrida en @${account}.`);
+            }
+          } else {
+            console.error(`[accountStats] (${plataforma}) No se pudo recalcular @${account}:`, err.message);
+          }
+          progress.tick(1, { ok: false });
+          return quotaHit ? { account, quotaHit: true } : { account, failed: true };
+        }
+      }, `@${account}`)
+    )
+  );
 
   let recalculated = 0;
   let attemptsOnly = 0;
@@ -310,18 +386,15 @@ async function refreshStaleAccountStatsFor(plataforma, { maxPerCycle = MAX_ACCOU
   let postsUpdated = 0;
   const recalculatedAccounts = [];
 
-  for (const { account } of toProcess) {
-    try {
-      const result = await computeAccountStats(account, plataforma);
-      recalculated += 1;
-      if (result.attemptOnly) attemptsOnly += 1;
-      resultsConsumed += result.fetched;
-      followersChecked += result.followersChecked;
-      postsUpdated += result.postsUpdated;
-      recalculatedAccounts.push(account);
-    } catch (err) {
-      console.error(`[accountStats] (${plataforma}) No se pudo recalcular @${account}:`, err.message);
-    }
+  for (const outcome of settled) {
+    const r = outcome.status === 'fulfilled' ? outcome.value : null;
+    if (!r || r.skipped || r.quotaHit || r.failed) continue;
+    recalculated += 1;
+    if (r.result.attemptOnly) attemptsOnly += 1;
+    resultsConsumed += r.result.fetched;
+    followersChecked += r.result.followersChecked;
+    postsUpdated += r.result.postsUpdated;
+    recalculatedAccounts.push(r.account);
   }
 
   console.log(
@@ -330,7 +403,8 @@ async function refreshStaleAccountStatsFor(plataforma, { maxPerCycle = MAX_ACCOU
       `, ${upToDate} al día` +
       (deferred > 0 ? `, ${deferred} quedan para el próximo ciclo (tope ${maxPerCycle})` : '') +
       `; ${resultsConsumed} resultados consumidos, ${followersChecked} consultas de seguidores, ` +
-      `${postsUpdated} posteos actualizados`
+      `${postsUpdated} posteos actualizados` +
+      (skippedByQuota > 0 ? `; ${skippedByQuota} cuenta(s) no se intentaron por corte de cuota` : '')
   );
 
   return {
@@ -343,6 +417,7 @@ async function refreshStaleAccountStatsFor(plataforma, { maxPerCycle = MAX_ACCOU
     deferred,
     withPosts: activity.length,
     recalculatedAccounts,
+    quotaExceeded,
   };
 }
 
@@ -380,6 +455,7 @@ async function refreshStaleAccountStats({ plataformas, maxPerCycle = MAX_ACCOUNT
     withPosts: 0,
     recalculatedAccounts: {},
     porPlataforma: {},
+    quotaExceeded: false,
   };
   for (const plataforma of benchmarkPlatformIds(plataformas)) {
     const result = await refreshStaleAccountStatsFor(plataforma, { maxPerCycle });
@@ -388,6 +464,7 @@ async function refreshStaleAccountStats({ plataformas, maxPerCycle = MAX_ACCOUNT
     for (const key of ['recalculated', 'attemptsOnly', 'resultsConsumed', 'followersChecked', 'postsUpdated', 'upToDate', 'deferred', 'withPosts']) {
       totals[key] += result[key];
     }
+    totals.quotaExceeded = totals.quotaExceeded || result.quotaExceeded;
   }
   return totals;
 }
@@ -425,12 +502,13 @@ function classifyValue(value, medianValue, nPosts, basis) {
  * Cada métrica devuelve basis: 'tipo' | 'global' (ausente si sin-referencia),
  * para poder mostrar cuál referencia se usó.
  *
- * @param {{ account: string, plataforma?: string, postType?: string|null,
+ * @param {{ account: string, plataforma: string, postType?: string|null,
  *   likes: number|null, comments: number|null, statsMap?: Map }} params
  *   statsMap opcional (ver buildAccountStatsMap): evita una query por post
  *   cuando se clasifican muchos posteos seguidos (server.js).
  */
-function classifyPostAgainstBenchmark({ account, plataforma = PLATAFORMA, postType = null, likes, comments, statsMap }) {
+function classifyPostAgainstBenchmark({ account, plataforma, postType = null, likes, comments, statsMap }) {
+  requirePlataforma(plataforma, 'classifyPostAgainstBenchmark');
   const lookup = (pt) =>
     statsMap ? statsMap.get(statsMapKey(account || '', plataforma, pt)) : account ? db.getAccountStats(account, plataforma, pt) : null;
 
@@ -468,4 +546,6 @@ module.exports = {
   refreshStaleAccountStats,
   buildAccountStatsMap,
   classifyPostAgainstBenchmark,
+  // Para el heartbeat del ciclo (Cambio G, ver src/scheduler.js).
+  benchmarkLimiter,
 };

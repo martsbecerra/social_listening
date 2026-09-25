@@ -26,14 +26,14 @@ fs.writeFileSync(LEGACY_X_PATH, JSON.stringify({ accounts: ['vecino'], keywords:
 // Clasificador stubeado ANTES de cargar monitor.js (que lo destructura al
 // hacer require): nada de acá llama a un LLM.
 const classifier = require('../src/classifier');
-const classifierCalls = { post: 0, relevance: 0 };
-classifier.classifyPost = async (caption) => {
-  classifierCalls.post += 1;
-  return { title: `titulo: ${String(caption).slice(0, 12)}`, sentiment: 'neutral' };
-};
-classifier.classifyRelevance = async () => {
-  classifierCalls.relevance += 1;
-  return { relevant: false };
+const classifierCalls = { llamadas: 0 };
+// Una sola función. Reproduce el criterio viejo: coincidencia literal en la
+// pista → relevante; sin ella, relevant:false. Lo que llega por búsqueda de
+// X entra igual (el orquestador no mira relevant en ese camino): eso es lo
+// que verifican los tests de abajo.
+classifier.clasificarPosteo = async (caption, { pista } = {}) => {
+  classifierCalls.llamadas += 1;
+  return { relevant: Boolean(pista && pista.termino), title: `titulo: ${String(caption).slice(0, 12)}`, sentiment: 'neutral' };
 };
 
 const db = require('../src/db');
@@ -84,7 +84,7 @@ describe('adapter X', { concurrency: false }, () => {
     assert.deepEqual(listPlatformIds(), ['instagram', 'x']);
     assert.equal(x.id, 'x');
     assert.equal(x.label, 'X');
-    assert.deepEqual(x.capabilities, { benchmark: false, followers: false, metricsRefresh: false });
+    assert.deepEqual(x.capabilities, { benchmark: false, followers: false, metricsRefresh: false, detectAccounts: true, detectHashtags: true });
     for (const fn of ['isConfigured', 'validateAccount', 'validateHashtag', 'scrapeAccount', 'scrapeHashtag', 'scrapeKeyword', 'normalizePost', 'buildProfileUrl', 'fetchAccountFollowers']) {
       assert.equal(typeof x[fn], 'function', fn);
     }
@@ -220,7 +220,7 @@ describe('adapter X', { concurrency: false }, () => {
 
     assert.deepEqual(db.listDistinctPostAccounts('instagram'), ['gcba']);
     assert.deepEqual(db.listDistinctPostAccounts('x'), ['otrovecino']);
-    assert.deepEqual(db.listDistinctPostAccounts(), ['gcba']); // default instagram
+    assert.throws(() => db.listDistinctPostAccounts(), /falta plataforma/); // sin default a instagram
 
     // Seguidores por plataforma: no pisa la fila de X con el mismo handle.
     assert.equal(db.saveDetectedPost(samplePost({ id: 'x:100', account: 'gcba', url: 'https://x.com/gcba/status/100', plataforma: 'x', followers: null })), true);
@@ -229,7 +229,7 @@ describe('adapter X', { concurrency: false }, () => {
     assert.equal(db.listDetectedPosts({ plataforma: 'x' }).posts.find((p) => p.id === 'x:100').followers, null);
   });
 
-  test('evaluateRelevance: llegado por búsqueda (keyword o hashtag de X) es relevante sin classifyRelevance; el hashtag de descubrimiento de Instagram sí pregunta', async () => {
+  test('evaluateRelevance: llegado por búsqueda (keyword o hashtag de X) es relevante sin que el clasificador decida; el hashtag de descubrimiento de Instagram sí pregunta', async () => {
     const before = { ...classifierCalls };
     const byKeyword = await monitor.evaluateRelevance(
       { caption: 'texto que no nombra a nadie', hashtagsText: '', sourceType: 'keyword', sourceQuery: 'Jorge Macri', account: 'alguien' },
@@ -239,8 +239,7 @@ describe('adapter X', { concurrency: false }, () => {
     assert.equal(byKeyword.relevant, true);
     assert.equal(byKeyword.matchedReason, 'Búsqueda por palabra clave: "Jorge Macri"');
     assert.match(byKeyword.title, /^titulo:/);
-    assert.equal(classifierCalls.relevance, before.relevance);
-    assert.equal(classifierCalls.post, before.post + 1);
+    assert.equal(classifierCalls.llamadas, before.llamadas + 1); // el stub dijo relevant:false y entró igual
 
     // Hashtag de X, tal cual lo devuelve x.scrapeHashtag: una búsqueda más.
     const byXHashtag = await monitor.evaluateRelevance(
@@ -251,8 +250,7 @@ describe('adapter X', { concurrency: false }, () => {
     assert.equal(byXHashtag.relevant, true);
     assert.equal(byXHashtag.matchedReason, 'Búsqueda por hashtag: "#CABA"');
     assert.match(byXHashtag.title, /^titulo:/);
-    assert.equal(classifierCalls.relevance, before.relevance);
-    assert.equal(classifierCalls.post, before.post + 2);
+    assert.equal(classifierCalls.llamadas, before.llamadas + 2);
 
     // Hashtag de Instagram (sourceType 'hashtag'): página de descubrimiento,
     // sin coincidencia literal hay que preguntarle al clasificador.
@@ -262,7 +260,7 @@ describe('adapter X', { concurrency: false }, () => {
       { platform: instagram }
     );
     assert.equal(byIgHashtag.relevant, false);
-    assert.equal(classifierCalls.relevance, before.relevance + 1);
+    assert.equal(classifierCalls.llamadas, before.llamadas + 3);
 
     // Sin caption, una búsqueda no alcanza: no hay nada que evaluar.
     const empty = await monitor.evaluateRelevance({ caption: '', sourceType: 'keyword', sourceQuery: '#CABA' }, [], { platform: x });
@@ -352,7 +350,7 @@ describe('adapter X', { concurrency: false }, () => {
       // Clave inválida en la corrida de esa sola solapa: falla con el mensaje
       // de la clave, pero lo que trajeron las otras dos fuentes queda guardado
       // y el mensaje lo aclara.
-      const relevanceBefore = classifierCalls.relevance;
+      const llamadasBefore = classifierCalls.llamadas;
       keywordFailure = typed('AUTH_INVALID', 'La clave de OpenRouter (OPENROUTER_API_KEY) es inválida. Revisá el archivo .env.');
       await assert.rejects(monitor.runMonitoringCycle({ plataformas: ['x'] }), (err) => {
         assert.equal(err.code, 'AUTH_INVALID');
@@ -367,7 +365,7 @@ describe('adapter X', { concurrency: false }, () => {
       const byHashtag = xPosts.find((p) => p.id === 'x:557');
       assert.ok(byHashtag, 'el posteo del hashtag quedó guardado');
       assert.equal(byHashtag.matched_reason, 'Búsqueda por hashtag: "#CABA"');
-      assert.equal(classifierCalls.relevance, relevanceBefore); // ninguno pasó por classifyRelevance
+      assert.equal(classifierCalls.llamadas, llamadasBefore + 2); // una llamada por posteo; el de #CABA entró aunque el stub diga relevant:false
 
       // Cuota agotada y nada nuevo: el mensaje del adapter va tal cual.
       keywordFailure = typed('QUOTA_EXCEEDED', 'OpenRouter no tiene créditos suficientes para Grok (cuota agotada).');
@@ -398,7 +396,7 @@ describe('adapter X', { concurrency: false }, () => {
     }
   });
 
-  test('el mismo tweet por cuenta trackeada y por hashtag: gana la versión de la búsqueda (relevante sin classifyRelevance)', async () => {
+  test('el mismo tweet por cuenta trackeada y por hashtag: gana la versión de la búsqueda (relevante sin que el clasificador decida)', async () => {
     const originals = { callGrokJson: grokFetch.callGrokJson, isConfigured: x.isConfigured };
     await monitor.addKeyword('#Obras', 'x'); // fuentes: from:vecino, #Obras, "Jorge Macri"
     const same = () => rawTweet({ id: '777', url: 'https://x.com/vecino/status/777', text: 'obra nueva en el barrio' }); // sin keyword literal
@@ -417,8 +415,7 @@ describe('adapter X', { concurrency: false }, () => {
       assert.ok(saved, 'el tweet que trajo la búsqueda #Obras quedó guardado');
       assert.equal(saved.account, 'Vecino');
       assert.equal(saved.matched_reason, 'Búsqueda por hashtag: "#Obras"');
-      assert.equal(classifierCalls.relevance, before.relevance); // la versión 'account' no llegó a classifyRelevance
-      assert.equal(classifierCalls.post, before.post + 1);
+      assert.equal(classifierCalls.llamadas, before.llamadas + 1); // una sola evaluación: la versión 'account' no se clasificó aparte
     } finally {
       grokFetch.callGrokJson = originals.callGrokJson;
       x.isConfigured = originals.isConfigured;
@@ -427,12 +424,13 @@ describe('adapter X', { concurrency: false }, () => {
   });
 
   test('cron con Instagram caído por cuota (error de Apify sin code): se anota y X sigue corriendo', async () => {
-    const originals = { callGrokJson: grokFetch.callGrokJson, xConfigured: x.isConfigured, igConfigured: instagram.isConfigured, igScrapeAccount: instagram.scrapeAccount };
+    const originals = { callGrokJson: grokFetch.callGrokJson, xConfigured: x.isConfigured, igConfigured: instagram.isConfigured, igScrapeSearch: instagram.scrapeSearch };
     const rawConfig = fs.readFileSync(CONFIG_PATH, 'utf8');
-    // Directo al archivo: addAccount('gcba', 'instagram') validaría contra Apify.
-    fs.writeFileSync(CONFIG_PATH, JSON.stringify({ instagram: { accounts: ['gcba'], keywords: [] }, x: JSON.parse(rawConfig).x }, null, 2) + '\n');
+    // Directo al archivo (sin validar contra Apify). La detección de
+    // Instagram va solo por las búsquedas: es la búsqueda la que se cae.
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify({ instagram: { accounts: [], keywords: [], searches: ['gcba'] }, x: JSON.parse(rawConfig).x }, null, 2) + '\n');
     instagram.isConfigured = () => true;
-    instagram.scrapeAccount = async () => {
+    instagram.scrapeSearch = async () => {
       // Como lo tira apify.js si la cuota vence por texto y sin `code`.
       throw Object.assign(new Error('Apify respondió 403: {"error":{"type":"actor-disabled","message":"Monthly usage hard limit exceeded"}}'), { userMessage: 'Se agotó la cuota mensual de Apify.' });
     };
@@ -453,12 +451,21 @@ describe('adapter X', { concurrency: false }, () => {
         assert.equal(err.userMessage, 'Se agotó la cuota mensual de Apify.');
         return true;
       });
+
+      // El cron con MONITOR_PLATFORMS=instagram (X en stand by): también una
+      // sola plataforma, pero NO es "Actualizar ahora": el error se anota y
+      // el ciclo sigue (benchmark y refresco), en vez de tirarse. X no corre.
+      const cronSoloIg = await monitor.runMonitoringCycle({ plataformas: ['instagram'], trigger: 'cron' });
+      assert.deepEqual(cronSoloIg.porPlataforma.instagram.error, { code: 'QUOTA_EXCEEDED', message: 'Se agotó la cuota mensual de Apify.' });
+      assert.equal(cronSoloIg.porPlataforma.x, undefined, 'X quedó fuera del ciclo automático');
     } finally {
       fs.writeFileSync(CONFIG_PATH, rawConfig);
       grokFetch.callGrokJson = originals.callGrokJson;
       x.isConfigured = originals.xConfigured;
       instagram.isConfigured = originals.igConfigured;
-      instagram.scrapeAccount = originals.igScrapeAccount;
+      // Con IG_ACTOR=apify la fachada no tiene scrapeSearch: no dejar el stub.
+      if (originals.igScrapeSearch) instagram.scrapeSearch = originals.igScrapeSearch;
+      else delete instagram.scrapeSearch;
     }
   });
 });

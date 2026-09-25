@@ -12,15 +12,29 @@
 // inclusión de la cuenta.
 //
 // Tres tramos por antigüedad (ver posted_at):
-//   - Caliente (< REFRESH_HOT_HOURS): sin cadencia propia, el cron de 4hs
-//     que llama a refreshPostMetrics ya es la cadencia.
+//   - Caliente (< REFRESH_HOT_HOURS): cadencia por posteo
+//     (metrics_updated_at contra REFRESH_HOT_EVERY_HOURS, 12 h), sin marca
+//     de tramo: cada ciclo evalúa el tramo y refresca solo lo que no se
+//     refrescó en las últimas 12 h. Antes se refrescaba en CADA ciclo (cada
+//     4 h) y era más de la mitad del gasto en Apify sin traer ninguna
+//     publicación nueva. Un posteo recién detectado (metrics_updated_at
+//     null) entra en el ciclo siguiente.
 //   - Tibio (REFRESH_HOT_HOURS a REFRESH_WARM_DAYS): gateado dos veces —
 //     a nivel de tramo (no se evalúa nada si no pasó REFRESH_WARM_EVERY_HOURS
 //     desde el último pase, marca persistida en refresh_state) y a nivel de
 //     posteo (metrics_updated_at contra esa misma cadencia).
 //   - Frío (REFRESH_WARM_DAYS a REFRESH_COLD_MAX_DAYS): barrido semanal,
-//     gateado solo a nivel de tramo (refresh_state, REFRESH_COLD_EVERY_DAYS).
-//     Más viejo que REFRESH_COLD_MAX_DAYS: congelado, ninguna consulta lo toca.
+//     gateado igual que el tibio: a nivel de tramo (refresh_state,
+//     REFRESH_COLD_EVERY_DAYS) y por posteo (metrics_updated_at contra esa
+//     misma cadencia). Más viejo que REFRESH_COLD_MAX_DAYS: congelado,
+//     ninguna consulta lo toca.
+//
+// Tope MAX_ACCOUNTS_PER_REFRESH por corrida. Si deja cuentas afuera, las
+// marcas de pase de tibio y frío NO avanzan: el tramo se vuelve a evaluar
+// en el próximo ciclo y, como cada posteo ya refrescado queda fuera por su
+// cadencia (metrics_updated_at), se retoma exactamente lo que faltaba sin
+// pagar dos veces. Antes la marca avanzaba igual y lo que quedaba afuera
+// esperaba un día (tibio) o una semana (frío) más.
 //
 // Multiplataforma: corre por cada plataforma cuyo adapter declara
 // capabilities.metricsRefresh (hoy Instagram), con sus propias marcas de
@@ -33,18 +47,29 @@
 // ==========================================================================
 
 const db = require('./db');
+const progress = require('./monitoringProgress');
 const { getPlatform, listPlatformIds } = require('./platforms');
 const { isQuotaExceeded } = require('./platforms/errors');
+const { createLimiter } = require('./concurrencyLimiter');
 const { BENCHMARK_POST_LIMIT } = require('./accountStats');
-const { pickMetrics } = require('./monitor');
+const { pickMetrics, rememberFollowers } = require('./monitor');
 const { checkAndLogJump } = require('./viralJumpDetector');
 
 const REFRESH_HOT_HOURS = Number(process.env.REFRESH_HOT_HOURS) || 48;
+const REFRESH_HOT_EVERY_HOURS = Number(process.env.REFRESH_HOT_EVERY_HOURS) || 12;
 const REFRESH_WARM_DAYS = Number(process.env.REFRESH_WARM_DAYS) || 7;
 const REFRESH_WARM_EVERY_HOURS = Number(process.env.REFRESH_WARM_EVERY_HOURS) || 24;
 const REFRESH_COLD_EVERY_DAYS = Number(process.env.REFRESH_COLD_EVERY_DAYS) || 7;
 const REFRESH_COLD_MAX_DAYS = Number(process.env.REFRESH_COLD_MAX_DAYS) || 60;
-const MAX_ACCOUNTS_PER_REFRESH = Number(process.env.MAX_ACCOUNTS_PER_REFRESH) || 30;
+// 100 (era 30): con la detección por búsquedas el tramo caliente solo ya
+// llenaba el tope y el tibio y el frío casi nunca entraban. Cada cuenta es
+// una consulta de perfil (0,0075 usd).
+const MAX_ACCOUNTS_PER_REFRESH = Number(process.env.MAX_ACCOUNTS_PER_REFRESH) || 100;
+
+// Limitador PROPIO del nivel "cuenta" del refresco — nunca el apifyLimiter
+// de src/apify.js (mismo motivo que benchmarkLimiter en accountStats.js: un
+// deadlock real si compartiera instancia con runActorSync, ver Cambio G).
+const refreshLimiter = createLimiter(Number(process.env.APIFY_MAX_CONCURRENT) || 10, 'refresco');
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
@@ -90,8 +115,13 @@ async function refreshPostMetricsFor(plataforma, skipSet) {
   const warmMaxAgeIso = daysAgoIso(REFRESH_WARM_DAYS, now);
   const coldMaxAgeIso = daysAgoIso(REFRESH_COLD_MAX_DAYS, now);
 
-  // Caliente: siempre, sin gate propio.
-  const hotAccounts = db.listAccountsDueForRefresh({ sinceIso: hotSinceIso, untilIso: nowIso, cadenceIso: null, plataforma });
+  // Caliente: sin marca de tramo, con cadencia por posteo (ver encabezado).
+  const hotAccounts = db.listAccountsDueForRefresh({
+    sinceIso: hotSinceIso,
+    untilIso: nowIso,
+    cadenceIso: hoursAgoIso(REFRESH_HOT_EVERY_HOURS, now),
+    plataforma,
+  });
 
   // Tibio: gate de tramo (marca persistida) antes de siquiera consultar.
   const warmKey = stateKey('warm_last_pass_at', plataforma);
@@ -106,13 +136,19 @@ async function refreshPostMetricsFor(plataforma, skipSet) {
       })
     : [];
 
-  // Frío: mismo mecanismo, cadencia semanal, sin gate por posteo (todo el
-  // tramo ya está gateado a nivel semana).
+  // Frío: mismo mecanismo, cadencia semanal. El gate por posteo hace que,
+  // si el tope dejó cuentas afuera y el tramo se vuelve a evaluar en el
+  // próximo ciclo, no se vuelva a pagar lo ya refrescado.
   const coldKey = stateKey('cold_last_pass_at', plataforma);
   const coldLastPassAt = db.getRefreshState(coldKey);
   const coldDue = !coldLastPassAt || now - new Date(coldLastPassAt).getTime() >= REFRESH_COLD_EVERY_DAYS * DAY_MS;
   const coldAccounts = coldDue
-    ? db.listAccountsDueForRefresh({ sinceIso: coldMaxAgeIso, untilIso: warmMaxAgeIso, cadenceIso: null, plataforma })
+    ? db.listAccountsDueForRefresh({
+        sinceIso: coldMaxAgeIso,
+        untilIso: warmMaxAgeIso,
+        cadenceIso: daysAgoIso(REFRESH_COLD_EVERY_DAYS, now),
+        plataforma,
+      })
     : [];
 
   const hotCount = sumPostCount(hotAccounts);
@@ -132,6 +168,9 @@ async function refreshPostMetricsFor(plataforma, skipSet) {
     .sort((a, b) => (b[1] > a[1] ? 1 : b[1] < a[1] ? -1 : 0))
     .slice(0, MAX_ACCOUNTS_PER_REFRESH)
     .map(([account]) => account);
+  // Cuentas que el tope dejó afuera en esta corrida (ver el encabezado).
+  const leftOut = byAccount.size - prioritized.length;
+  progress.startPhase('Refrescando métricas', prioritized.length);
 
   let accountsChecked = 0;
   let resultsConsumed = 0;
@@ -139,44 +178,69 @@ async function refreshPostMetricsFor(plataforma, skipSet) {
   let postsMatched = 0;
   let jumpsDetected = 0;
   let quotaExceeded = false;
+  let skippedByQuota = 0;
+  let quotaLoggedOnce = false;
 
-  for (const account of prioritized) {
-    let posts;
-    try {
-      posts = await platform.scrapeAccount(account, { resultsLimit: BENCHMARK_POST_LIMIT, lookback: undefined });
-    } catch (err) {
-      if (isQuotaExceeded(err)) {
-        console.log(`[metricsRefresh] (${plataforma}) cuota de la fuente agotada, cortando la corrida en @${account}.`);
-        quotaExceeded = true;
-        break;
-      }
-      console.error(`[metricsRefresh] (${plataforma}) No se pudo refrescar @${account}:`, err.message);
-      continue;
-    }
-    accountsChecked += 1;
-    resultsConsumed += posts.length;
+  // Las cuentas se lanzan TODAS juntas (Promise.allSettled) — la prioridad
+  // por recencia decide el orden de `prioritized`, no el de ejecución — y
+  // refreshLimiter (propio de este módulo, NUNCA el apifyLimiter de
+  // src/apify.js: ver el comentario junto a su declaración) regula cuántas
+  // corren a la vez. Un flag compartido corta los LANZAMIENTOS pendientes
+  // apenas una llamada devuelve cuota agotada; las que ya estaban en vuelo
+  // terminan y sus resultados se guardan igual.
+  await Promise.allSettled(
+    prioritized.map((account) =>
+      refreshLimiter.run(async () => {
+        if (quotaExceeded) {
+          skippedByQuota += 1;
+          return;
+        }
+        let posts;
+        try {
+          posts = await platform.scrapeAccount(account, { resultsLimit: BENCHMARK_POST_LIMIT, lookback: undefined });
+        } catch (err) {
+          if (isQuotaExceeded(err)) {
+            quotaExceeded = true;
+            if (!quotaLoggedOnce) {
+              quotaLoggedOnce = true;
+              console.log(`[metricsRefresh] (${plataforma}) cuota de la fuente agotada, cortando la corrida en @${account}.`);
+            }
+          } else {
+            console.error(`[metricsRefresh] (${plataforma}) No se pudo refrescar @${account}:`, err.message);
+          }
+          progress.tick(1, { ok: false });
+          return;
+        }
+        progress.tick(1, { ok: true });
+        accountsChecked += 1;
+        resultsConsumed += posts.length;
+        // Seguidores que vinieron con los posteos (apidojo): solo la caché;
+        // propagarlos a las filas guardadas sigue siendo cosa del benchmark.
+        rememberFollowers(posts, plataforma);
 
-    for (const post of posts) {
-      const result = db.applyMetricsRefresh(post.id, pickMetrics(platform, post));
-      if (!result) continue; // no estaba guardado -> no corresponde tocarlo (eso es cosa de runMonitoringCycle)
-      postsMatched += 1;
-      if (result.changed) rowsUpdated += 1;
+        for (const post of posts) {
+          const result = db.applyMetricsRefresh(post.id, pickMetrics(platform, post));
+          if (!result) continue; // no estaba guardado -> no corresponde tocarlo (eso es cosa de runMonitoringCycle)
+          postsMatched += 1;
+          if (result.changed) rowsUpdated += 1;
 
-      if (
-        checkAndLogJump({ account: result.account, id: post.id, postedAt: result.postedAt, metric: 'comentarios', previous: result.previousComments, current: result.comments })
-      ) jumpsDetected += 1;
-      if (
-        checkAndLogJump({ account: result.account, id: post.id, postedAt: result.postedAt, metric: 'likes', previous: result.previousLikes, current: result.likes })
-      ) jumpsDetected += 1;
-    }
-  }
+          if (
+            checkAndLogJump({ account: result.account, id: post.id, postedAt: result.postedAt, metric: 'comentarios', previous: result.previousComments, current: result.comments })
+          ) jumpsDetected += 1;
+          if (
+            checkAndLogJump({ account: result.account, id: post.id, postedAt: result.postedAt, metric: 'likes', previous: result.previousLikes, current: result.likes })
+          ) jumpsDetected += 1;
+        }
+      }, `@${account}`)
+    )
+  );
 
-  // Las marcas de pase NO se avanzan si se cortó por cuota — mejor
+  // Las marcas de pase NO se avanzan si se cortó por cuota (mejor
   // reintentar antes en el próximo ciclo que esperar el intervalo completo
-  // de nuevo. Si terminó normal (con o sin cuentas que quedaron afuera por
-  // el tope), sí se avanzan: esas cuentas vuelven a competir por prioridad
-  // en el próximo pase, ya no dentro de este.
-  if (!quotaExceeded) {
+  // de nuevo) ni si el tope dejó cuentas afuera: el tramo se vuelve a
+  // evaluar en el próximo ciclo y la cadencia por posteo retoma solo lo que
+  // faltaba. Recién cuando un pase cubrió todo, avanzan.
+  if (!quotaExceeded && leftOut === 0) {
     if (warmDue) db.setRefreshState(warmKey, nowIso);
     if (coldDue) db.setRefreshState(coldKey, nowIso);
   }
@@ -184,7 +248,11 @@ async function refreshPostMetricsFor(plataforma, skipSet) {
   console.log(
     `[metricsRefresh] (${plataforma}) ${hotCount} posteos en tramo caliente, ${warmCount} en tibio, ${coldCount} en frío, ` +
       `${accountsChecked} cuentas consultadas, ${resultsConsumed} resultados consumidos, ` +
-      `${rowsUpdated} filas actualizadas, ${jumpsDetected} saltos detectados`
+      `${rowsUpdated} filas actualizadas, ${jumpsDetected} saltos detectados` +
+      (skippedByQuota > 0 ? `; ${skippedByQuota} cuenta(s) no se intentaron por corte de cuota` : '') +
+      (leftOut > 0
+        ? `; ${leftOut} cuenta(s) quedaron afuera por el tope (MAX_ACCOUNTS_PER_REFRESH=${MAX_ACCOUNTS_PER_REFRESH}) y se retoman en el próximo ciclo`
+        : '')
   );
 
   // Falla silenciosa: si se consultaron cuentas de verdad pero ni un solo
@@ -206,6 +274,7 @@ async function refreshPostMetricsFor(plataforma, skipSet) {
     resultsConsumed,
     rowsUpdated,
     jumpsDetected,
+    leftOut,
     quotaExceeded,
   };
 }
@@ -229,6 +298,7 @@ async function refreshPostMetrics({ plataformas, skipAccounts = {} } = {}) {
     resultsConsumed: 0,
     rowsUpdated: 0,
     jumpsDetected: 0,
+    leftOut: 0,
     quotaExceeded: false,
     porPlataforma: {},
   };
@@ -237,7 +307,7 @@ async function refreshPostMetrics({ plataformas, skipAccounts = {} } = {}) {
     const skipSet = new Set(skipList.map((a) => String(a).toLowerCase()));
     const result = await refreshPostMetricsFor(plataforma, skipSet);
     totals.porPlataforma[plataforma] = result;
-    for (const key of ['hotCount', 'warmCount', 'coldCount', 'accountsChecked', 'resultsConsumed', 'rowsUpdated', 'jumpsDetected']) {
+    for (const key of ['hotCount', 'warmCount', 'coldCount', 'accountsChecked', 'resultsConsumed', 'rowsUpdated', 'jumpsDetected', 'leftOut']) {
       totals[key] += result[key];
     }
     totals.quotaExceeded = totals.quotaExceeded || result.quotaExceeded;
@@ -249,9 +319,12 @@ module.exports = {
   refreshPostMetrics,
   refreshPlatformIds,
   REFRESH_HOT_HOURS,
+  REFRESH_HOT_EVERY_HOURS,
   REFRESH_WARM_DAYS,
   REFRESH_WARM_EVERY_HOURS,
   REFRESH_COLD_EVERY_DAYS,
   REFRESH_COLD_MAX_DAYS,
   MAX_ACCOUNTS_PER_REFRESH,
+  // Para el heartbeat del ciclo (Cambio G, ver src/scheduler.js).
+  refreshLimiter,
 };

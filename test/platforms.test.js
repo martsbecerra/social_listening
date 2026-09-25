@@ -33,7 +33,7 @@ const { getPlatform, listPlatformIds } = require('../src/platforms');
 
 describe('platforms', { concurrency: false }, () => {
   test('el config plano se migra a secciones sin perder nada', () => {
-    const config = monitor.loadConfig();
+    const config = monitor.loadConfig('instagram');
     assert.deepEqual(config.accounts, ['cuentaig']);
     assert.equal(config.keywords.length, 52);
     assert.deepEqual(config.keywords, FLAT_KEYWORDS);
@@ -72,7 +72,7 @@ describe('platforms', { concurrency: false }, () => {
       ];
       for (const [status, text, code, messageRe] of cases) {
         global.fetch = respond(status, text);
-        await assert.rejects(runActorSync({}, { actorId: 'apify~instagram-scraper' }), (err) => {
+        await assert.rejects(runActorSync({}, { actorId: 'apify~instagram-scraper', plataforma: 'instagram' }), (err) => {
           assert.equal(err.code, code, `${status} ${text}`);
           assert.match(err.userMessage, messageRe);
           return true;
@@ -94,10 +94,10 @@ describe('platforms', { concurrency: false }, () => {
   });
 
   test('la migración es idempotente: en formato nuevo no reescribe', () => {
-    monitor.loadConfig(); // asegura formato nuevo
+    monitor.loadConfig('instagram'); // asegura formato nuevo
     const before = fs.statSync(configPath).mtimeMs;
     const raw = fs.readFileSync(configPath, 'utf8');
-    monitor.loadConfig();
+    monitor.loadConfig('instagram');
     assert.equal(fs.statSync(configPath).mtimeMs, before);
     assert.equal(fs.readFileSync(configPath, 'utf8'), raw);
   });
@@ -108,9 +108,12 @@ describe('platforms', { concurrency: false }, () => {
     assert.equal(ig.id, 'instagram');
     assert.equal(ig.label, 'Instagram');
     // Apify es un detalle interno de este adapter, no parte del contrato.
-    assert.equal(ig.actorId, 'apify~instagram-scraper');
+    // El actor depende de IG_ACTOR (default apidojo): lo que se fija acá es la
+    // coherencia proveedor <-> actor; cada proveedor tiene su propio test.
+    assert.ok(['apidojo', 'apify'].includes(ig.provider), ig.provider);
+    assert.equal(ig.actorId, ig.provider === 'apidojo' ? 'apidojo~instagram-scraper-api' : 'apify~instagram-scraper');
     assert.equal(ig.buildProfileUrl('pepe'), 'https://www.instagram.com/pepe/');
-    assert.deepEqual(ig.capabilities, { benchmark: true, followers: true, metricsRefresh: true });
+    assert.deepEqual(ig.capabilities, { benchmark: true, followers: true, metricsRefresh: true, detectAccounts: false, detectHashtags: false });
 
     // Contrato genérico: lo mismo para cada adapter del registro.
     for (const id of listPlatformIds()) {
@@ -139,15 +142,15 @@ describe('platforms', { concurrency: false }, () => {
     };
     assert.equal(db.saveDetectedPost({ ...base, id: 'ig1', account: 'a', url: 'https://ex.com/1', plataforma: 'instagram' }), true);
     assert.equal(db.saveDetectedPost({ ...base, id: 'tk1', account: 'b', url: 'https://ex.com/2', plataforma: 'tiktok' }), true);
-    // Sin plataforma en el post: default instagram (filas de antes del refactor).
-    assert.equal(db.saveDetectedPost({ ...base, id: 'ig2', account: 'c', url: 'https://ex.com/3' }), true);
+    // Sin plataforma en el post no hay default a instagram: tira y no escribe.
+    assert.throws(() => db.saveDetectedPost({ ...base, id: 'ig2', account: 'c', url: 'https://ex.com/3' }), /falta plataforma/);
 
-    assert.equal(db.listDetectedPosts({ page: 1, pageSize: 20 }).total, 3);
+    assert.equal(db.listDetectedPosts({ page: 1, pageSize: 20 }).total, 2);
     const ig = db.listDetectedPosts({ page: 1, pageSize: 20, plataforma: 'instagram' });
-    assert.equal(ig.total, 2);
+    assert.equal(ig.total, 1);
     assert.ok(ig.posts.every((p) => p.plataforma === 'instagram'));
     assert.equal(db.listDetectedPosts({ page: 1, pageSize: 20, plataforma: 'tiktok' }).total, 1);
-    assert.equal(db.countRecentPosts(7), 3);
+    assert.equal(db.countRecentPosts(7), 2);
     assert.equal(db.countRecentPosts(7, 'tiktok'), 1);
   });
 });

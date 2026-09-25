@@ -9,13 +9,26 @@
 // dotenv carga las variables del archivo .env a process.env (APIFY_API_TOKEN, etc.)
 require('dotenv').config();
 
+// IG_ACTOR (apidojo | apify, ver src/platforms/igActor.js) se valida ANTES
+// de cargar el resto: src/platforms/instagram.js tira al cargar si el valor
+// no es válido, y el arranque tiene que abortar con un mensaje claro en vez
+// de un stack trace. abortarArranque está más abajo (función hoisted).
+const { resolveIgActor } = require('./src/platforms/igActor');
+try {
+  resolveIgActor();
+} catch (err) {
+  abortarArranque([err.message]);
+}
+
 const express = require('express');
 const path = require('path');
 
 const { scrapeInstagram } = require('./src/apify');
+const apifyCost = require('./src/apifyCost');
+const { runWithContext } = require('./src/usageContext');
 const { analyzeComments } = require('./src/analyzeComments');
 const { resolveMaxCommentsLimit } = require('./src/commentSample');
-const { isValidXPostUrl } = require('./src/x/url');
+const { checkAnalyzeUrl } = require('./src/platforms/urlPlatform');
 const { fetchXThread, getModel: getXaiModel, getFetchBackend } = require('./src/x/grokFetch');
 const { analyzeXThread } = require('./src/x/analyze');
 const { seedXInfluencersIfEmpty } = require('./src/x/influencers');
@@ -24,12 +37,13 @@ const {
   requiredLlmEnvKeys,
   getProviderLabel,
   getAnalysisModel,
-  getClassifierModel,
+  warnObsoleteModelVars,
 } = require('./src/llm/providerConfig');
 const db = require('./src/db');
 const monitor = require('./src/monitor');
 const { listPlatformIds, getPlatform } = require('./src/platforms');
 const { startScheduler, runCycle, getCronExpression, getLastRunAt, estimateRunsPerDay, getNextRunAt } = require('./src/scheduler');
+const monitoringProgress = require('./src/monitoringProgress');
 const { processPendingReclamosInBackground } = require('./src/geoWorker');
 const accountStats = require('./src/accountStats');
 const { CATEGORIAS_RECLAMO, ESTADOS_RECLAMO, isValidEstado } = require('./src/categoriaReclamo');
@@ -132,20 +146,9 @@ function abortarArranque(lineas) {
   process.exit(1);
 }
 
-// --------------------------------------------------------------------------
-// Valida que el link sea de una publicación de Instagram (post, reel o tv).
-// --------------------------------------------------------------------------
-function isValidInstagramPostUrl(url) {
-  try {
-    const u = new URL(url);
-    const esInstagram = /(^|\.)instagram\.com$/.test(u.hostname);
-    const esPublicacion = /^\/(p|reel|reels|tv)\/[\w-]+/.test(u.pathname);
-    return esInstagram && esPublicacion;
-  } catch {
-    // Si new URL() falla, el texto no es una URL válida.
-    return false;
-  }
-}
+// La validación del link de cada análisis (¿es una publicación de ESA red?)
+// vive en src/platforms/urlPlatform.js (checkAnalyzeUrl) y corre antes de
+// pedirle nada a Apify o a Grok.
 
 // --------------------------------------------------------------------------
 // Auth: allowlist + magic link + sesión.
@@ -232,12 +235,12 @@ app.post('/api/analyze', async (req, res) => {
   const { url } = req.body || {};
   const startedAt = Date.now();
 
-  // 1) Validación del link.
-  if (!isValidInstagramPostUrl(url)) {
-    logTask('validación fallida', { url: url || null });
-    return res.status(400).json({
-      error: 'Ingresá un link válido de una publicación de Instagram (por ejemplo: https://www.instagram.com/p/XXXXXXXX/).',
-    });
+  // 1) Validación del link: esta sección solo analiza publicaciones de
+  //    Instagram (un link de X u otra red se rechaza acá, sin llamar a Apify).
+  const guard = checkAnalyzeUrl(url, 'instagram');
+  if (!guard.ok) {
+    logTask('validación fallida', { url: url || null, motivo: guard.motivo });
+    return res.status(400).json({ error: guard.error });
   }
 
   logTask('inicio', { url });
@@ -246,7 +249,8 @@ app.post('/api/analyze', async (req, res) => {
     // 2) Extraemos datos con Apify (comentarios + datos del posteo).
     logTask('extracción Apify iniciada');
     const scrapeStartedAt = Date.now();
-    const { post, comments, scrapeMeta } = await scrapeInstagram(url);
+    // Fase 'analisis' para el registro de gasto en Apify (src/apifyCost.js).
+    const { post, comments, scrapeMeta } = await runWithContext({ phase: 'analisis' }, () => scrapeInstagram(url));
     logTask('extracción Apify completada', {
       ms: Date.now() - scrapeStartedAt,
       comentariosExtraidos: comments?.length ?? 0,
@@ -332,11 +336,12 @@ app.post('/api/x/analyze', async (req, res) => {
   const { url } = req.body || {};
   const startedAt = Date.now();
 
-  if (!isValidXPostUrl(url)) {
-    logXTask('validación fallida', { url: url || null });
-    return res.status(400).json({
-      error: 'Ingresá un link válido de una publicación de X (por ejemplo: https://x.com/usuario/status/1234567890).',
-    });
+  // Esta sección solo analiza publicaciones de X (un link de Instagram u
+  // otra red se rechaza acá, sin llamar a Grok).
+  const guard = checkAnalyzeUrl(url, 'x');
+  if (!guard.ok) {
+    logXTask('validación fallida', { url: url || null, motivo: guard.motivo });
+    return res.status(400).json({ error: guard.error });
   }
 
   logXTask('inicio', { url });
@@ -419,18 +424,23 @@ app.post('/api/x/analyze', async (req, res) => {
 // --------------------------------------------------------------------------
 // Monitoreo automático: config, tabla de posteos detectados, disparo manual.
 // --------------------------------------------------------------------------
-// Todos los endpoints de monitoreo aceptan `plataforma` (query en GET/DELETE,
-// body en POST). Sin él, default 'instagram': el frontend viejo no manda el
-// parámetro y tiene que seguir funcionando igual. Un id que no esté en el
-// registro de src/platforms/ NO cae en silencio a instagram: el middleware
-// de abajo responde 400 antes del handler.
+// Todos los endpoints de monitoreo reciben `plataforma` (query en GET/DELETE,
+// body en POST). Sin ella NO hay default a instagram: el middleware de abajo
+// responde 400 antes del handler (el frontend la manda en toda llamada, ver
+// withPlataforma en public/js/monitoring.js). Un id que no esté en el
+// registro de src/platforms/ tampoco cae en silencio a instagram: 400.
+// Las rutas que no filtran por plataforma la aceptan pero no la exigen.
 function monitoringPlataforma(req) {
-  const raw = String(req.query?.plataforma || req.body?.plataforma || '').trim();
-  return raw || 'instagram';
+  return String(req.query?.plataforma || req.body?.plataforma || '').trim();
 }
+const RUTAS_MONITORING_SIN_PLATAFORMA = new Set(['/status', '/progress', '/counts', '/costs']);
 
 app.use('/api/monitoring', (req, res, next) => {
   const plataforma = monitoringPlataforma(req);
+  if (!plataforma) {
+    if (RUTAS_MONITORING_SIN_PLATAFORMA.has(req.path)) return next();
+    return res.status(400).json({ error: 'Falta el parámetro plataforma (instagram | x).' });
+  }
   const soportadas = listPlatformIds();
   if (!soportadas.includes(plataforma)) {
     return res.status(400).json({
@@ -482,6 +492,14 @@ app.get('/api/monitoring/status', (req, res) => {
   res.json({ nextRunAt: getNextRunAt(getCronExpression()).toISOString() });
 });
 
+// Progreso real del ciclo en curso (fase + contador + porcentaje), para que
+// "Actualizar ahora" lo muestre en vivo en vez de una barra simulada. null si
+// no hay ningún ciclo corriendo. Mismo control de acceso que el resto de
+// /api/monitoring (el middleware de arriba corre antes que esta ruta).
+app.get('/api/monitoring/progress', (req, res) => {
+  res.json(monitoringProgress.getProgress());
+});
+
 // Menciones detectadas en los últimos 7 días, para el resumen del dashboard,
 // con una clave por plataforma registrada en src/platforms/ (el resto de
 // las tarjetas simplemente no encuentra su clave en la respuesta).
@@ -506,20 +524,27 @@ app.get('/api/footer-stats', (req, res) => {
 });
 
 // Ignora un registro puntual de la tabla (cruz de la fila). La fila queda
-// en SQLite con ignored=1 para no re-detectarlo; deja de listarse.
+// en SQLite con ignored=1 para no re-detectarlo; deja de listarse. Solo si
+// el posteo es de la plataforma de la solapa: desde Instagram no se ignora
+// un posteo de X aunque se conozca su id.
 app.post('/api/monitoring/posts/:id/ignore', (req, res) => {
-  db.ignorePost(req.params.id);
+  if (!db.ignorePost(req.params.id, monitoringPlataforma(req))) {
+    return res.status(404).json({ error: 'Ese posteo no existe en esta plataforma.' });
+  }
   res.json({ ok: true });
 });
 
 // Corrige a mano el sentimiento de un registro (por si Haiku se equivocó).
+// Mismo contrato: id Y plataforma.
 const VALID_SENTIMENTS = ['positivo', 'neutral', 'negativo'];
 app.patch('/api/monitoring/posts/:id', (req, res) => {
   const { sentiment } = req.body || {};
   if (!VALID_SENTIMENTS.includes(sentiment)) {
     return res.status(400).json({ error: 'Sentimiento inválido.' });
   }
-  db.updateSentiment(req.params.id, sentiment);
+  if (!db.updateSentiment(req.params.id, sentiment, monitoringPlataforma(req))) {
+    return res.status(404).json({ error: 'Ese posteo no existe en esta plataforma.' });
+  }
   res.json({ ok: true });
 });
 
@@ -545,6 +570,30 @@ app.post('/api/monitoring/keywords', async (req, res) => {
 
 app.delete('/api/monitoring/keywords/:keyword', (req, res) => {
   res.json(monitor.removeKeyword(req.params.keyword, monitoringPlataforma(req)));
+});
+
+// Búsquedas por palabra clave (lista `searches`, ver monitor.addSearch): sin
+// validación contra Apify; se rechaza solo si la plataforma no sabe buscar
+// (Instagram con IG_ACTOR=apify, o X).
+app.post('/api/monitoring/searches', (req, res) => {
+  try {
+    res.json(monitor.addSearch(req.body && req.body.search, monitoringPlataforma(req)));
+  } catch (err) {
+    res.status(400).json({ error: err.userMessage || err.message });
+  }
+});
+
+app.delete('/api/monitoring/searches/:search', (req, res) => {
+  res.json(monitor.removeSearch(req.params.search, monitoringPlataforma(req)));
+});
+
+// Gasto en Apify por ventana (hoy, últimos 7 días, últimos `days` días) y
+// por fase, con el usd en las tres tarifas (free, starter, scale) y la
+// proyección mensual: lo mismo que imprime `npm run costo`, en JSON, para
+// una tarjeta en la UI. Ver src/apifyCost.js.
+app.get('/api/monitoring/costs', (req, res) => {
+  const days = Math.min(365, Math.max(1, Math.floor(Number(req.query.days)) || 30));
+  res.json(apifyCost.summarizeCosts({ days }));
 });
 
 // Dispara un ciclo de monitoreo a mano, sin esperar los 4hs del cron
@@ -629,8 +678,8 @@ const server = app.listen(PORT, () => {
   const provider = getLlmProvider();
   console.log(`\n✅ Servidor listo en http://localhost:${PORT}`);
   console.log(`   Proveedor LLM: ${getProviderLabel(provider)} (${provider})`);
-  console.log(`   Modelo análisis: ${getAnalysisModel(provider)}`);
-  console.log(`   Modelo clasificador: ${getClassifierModel(provider)}`);
+  console.log(`   Modelo LLM (análisis y clasificador del monitoreo): ${getAnalysisModel(provider)}`);
+  warnObsoleteModelVars();
   const grokBackend = getFetchBackend();
   const grokHint =
     grokBackend === 'openrouter'
@@ -639,6 +688,8 @@ const server = app.listen(PORT, () => {
         ? 'xAI directo'
         : 'sin clave (OPENROUTER_API_KEY o XAI_API_KEY)';
   console.log(`   Modelo Grok (X): ${getXaiModel()} · ${grokHint}`);
+  const ig = getPlatform('instagram');
+  console.log(`   Actor de Instagram (monitoreo): ${ig.actorId} (IG_ACTOR=${ig.provider}) · análisis: apify~instagram-scraper`);
   console.log(
     `   Límites: COMMENTS_LIMIT (Apify)=${process.env.COMMENTS_LIMIT || 100}, COMMENTS_ANALYSIS_LIMIT (LLM)=${resolveMaxCommentsLimit()}`
   );

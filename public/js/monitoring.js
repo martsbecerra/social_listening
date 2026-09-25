@@ -1,7 +1,12 @@
 const newAccountInput = document.getElementById('newAccount');
 const addAccountBtn = document.getElementById('addAccountBtn');
-const accountListEl = document.getElementById('accountList');
+const accountListPreviewEl = document.getElementById('accountListPreview');
+const accountListFullEl = document.getElementById('accountListFull');
+const viewAllAccountsBtn = document.getElementById('viewAllAccountsBtn');
 const accountErrorEl = document.getElementById('accountError');
+
+const accountsModal = document.getElementById('accountsModal');
+const accountsModalCloseBtn = document.getElementById('accountsModalCloseBtn');
 
 const newKeywordInput = document.getElementById('newKeyword');
 const addKeywordBtn = document.getElementById('addKeywordBtn');
@@ -12,6 +17,21 @@ const keywordErrorEl = document.getElementById('keywordError');
 
 const keywordsModal = document.getElementById('keywordsModal');
 const keywordsModalCloseBtn = document.getElementById('keywordsModalCloseBtn');
+
+// Búsquedas por palabra clave (lista `searches`): la caja existe solo en la
+// solapa de Instagram (x.html no la tiene), así que todo lo que las usa
+// chequea HAS_SEARCHES.
+const newSearchInput = document.getElementById('newSearch');
+const addSearchBtn = document.getElementById('addSearchBtn');
+const searchListPreviewEl = document.getElementById('searchListPreview');
+const searchListFullEl = document.getElementById('searchListFull');
+const viewAllSearchesBtn = document.getElementById('viewAllSearchesBtn');
+const searchErrorEl = document.getElementById('searchError');
+const searchesModal = document.getElementById('searchesModal');
+const searchesModalCloseBtn = document.getElementById('searchesModalCloseBtn');
+const HAS_SEARCHES = Boolean(
+  newSearchInput && addSearchBtn && searchListPreviewEl && searchListFullEl && viewAllSearchesBtn && searchErrorEl && searchesModal && searchesModalCloseBtn
+);
 
 const ignoreModal = document.getElementById('ignoreModal');
 const ignoreCancelBtn = document.getElementById('ignoreCancelBtn');
@@ -91,21 +111,55 @@ function renderTagList(listEl, items, onRemove, extraClass) {
   });
 }
 
-function renderKeywordLists(keywords) {
-  const preview = keywords.slice(0, KEYWORDS_PREVIEW_COUNT);
-  renderTagList(keywordListPreviewEl, preview, removeKeyword, 'kw');
-  renderTagList(keywordListFullEl, keywords, removeKeyword, 'kw');
+// Lista con vista previa + "Ver todas (N)" + listado completo en un modal.
+// El mismo componente para cuentas, palabras clave y búsquedas.
+function renderPreviewLists({ previewEl, fullEl, viewAllBtn, items, onRemove, extraClass }) {
+  const preview = items.slice(0, KEYWORDS_PREVIEW_COUNT);
+  renderTagList(previewEl, preview, onRemove, extraClass);
+  renderTagList(fullEl, items, onRemove, extraClass);
 
   // renderTagList reemplaza todo el contenido del contenedor, así que el
   // botón "Ver todas" (que vive ahí adentro para quedar en la misma fila
   // que los chips) hay que volver a engancharlo después.
-  if (keywords.length > KEYWORDS_PREVIEW_COUNT) {
-    viewAllKeywordsBtn.textContent = `Ver todas (${keywords.length})`;
-    viewAllKeywordsBtn.classList.remove('hidden');
+  if (items.length > KEYWORDS_PREVIEW_COUNT) {
+    viewAllBtn.textContent = `Ver todas (${items.length})`;
+    viewAllBtn.classList.remove('hidden');
   } else {
-    viewAllKeywordsBtn.classList.add('hidden');
+    viewAllBtn.classList.add('hidden');
   }
-  keywordListPreviewEl.appendChild(viewAllKeywordsBtn);
+  previewEl.appendChild(viewAllBtn);
+}
+
+function renderAccountLists(accounts) {
+  renderPreviewLists({
+    previewEl: accountListPreviewEl,
+    fullEl: accountListFullEl,
+    viewAllBtn: viewAllAccountsBtn,
+    items: accounts,
+    onRemove: removeAccount,
+  });
+}
+
+function renderKeywordLists(keywords) {
+  renderPreviewLists({
+    previewEl: keywordListPreviewEl,
+    fullEl: keywordListFullEl,
+    viewAllBtn: viewAllKeywordsBtn,
+    items: keywords,
+    onRemove: removeKeyword,
+    extraClass: 'kw',
+  });
+}
+
+function renderSearchLists(searches) {
+  renderPreviewLists({
+    previewEl: searchListPreviewEl,
+    fullEl: searchListFullEl,
+    viewAllBtn: viewAllSearchesBtn,
+    items: searches,
+    onRemove: removeSearch,
+    extraClass: 'kw',
+  });
 }
 
 async function loadConfig() {
@@ -113,11 +167,13 @@ async function loadConfig() {
     const resp = await fetch(withPlataforma('/api/monitoring/config'));
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const config = await resp.json();
-    renderTagList(accountListEl, config.accounts, removeAccount);
+    renderAccountLists(config.accounts);
     renderKeywordLists(config.keywords);
+    if (HAS_SEARCHES) renderSearchLists(config.searches || []);
   } catch (err) {
-    accountListEl.innerHTML = '<span class="muted">No se pudo cargar. Reiniciá el servidor y recargá la página.</span>';
+    accountListPreviewEl.innerHTML = '<span class="muted">No se pudo cargar. Reiniciá el servidor y recargá la página.</span>';
     keywordListPreviewEl.innerHTML = '<span class="muted">No se pudo cargar. Reiniciá el servidor y recargá la página.</span>';
+    if (HAS_SEARCHES) searchListPreviewEl.innerHTML = '<span class="muted">No se pudo cargar. Reiniciá el servidor y recargá la página.</span>';
     console.error('Error cargando config de monitoreo:', err);
   }
 }
@@ -194,8 +250,52 @@ async function removeKeyword(keyword) {
   loadConfig();
 }
 
+function openAccountsModal() { accountsModal.classList.remove('hidden'); }
+function closeAccountsModal() { accountsModal.classList.add('hidden'); }
+
 function openKeywordsModal() { keywordsModal.classList.remove('hidden'); }
 function closeKeywordsModal() { keywordsModal.classList.add('hidden'); }
+
+// Búsquedas por palabra clave: sin verificación contra Apify al agregar
+// (el backend solo rechaza si el actor activo no busca).
+async function addSearch() {
+  const search = newSearchInput.value.trim();
+  if (!search) return;
+
+  searchErrorEl.classList.add('hidden');
+  addSearchBtn.disabled = true;
+  addSearchBtn.textContent = 'Agregando…';
+
+  try {
+    const resp = await fetch(withPlataforma('/api/monitoring/searches'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ search, plataforma: MONITOR_PLATFORM }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'No se pudo agregar la búsqueda.');
+    newSearchInput.value = '';
+    loadConfig();
+  } catch (err) {
+    searchErrorEl.textContent = err.message;
+    searchErrorEl.classList.remove('hidden');
+  } finally {
+    addSearchBtn.disabled = false;
+    addSearchBtn.textContent = 'Agregar';
+  }
+}
+
+async function removeSearch(search) {
+  try {
+    await fetch(withPlataforma(`/api/monitoring/searches/${encodeURIComponent(search)}`), { method: 'DELETE' });
+  } catch (err) {
+    console.error('Error quitando búsqueda:', err);
+  }
+  loadConfig();
+}
+
+function openSearchesModal() { searchesModal.classList.remove('hidden'); }
+function closeSearchesModal() { searchesModal.classList.add('hidden'); }
 
 // --------------------------------------------------------------------
 // Tabla de posteos detectados, con Tabulator.
@@ -809,6 +909,13 @@ const MONITORING_COLUMNS = [
       select.addEventListener('change', () => {
         if (select.value === SENTIMENT_UNSET) return;
         updateSentiment(id, select.value, select);
+        // También el dato de la fila en Tabulator: desplegar o replegar la
+        // fila re-corre este formatter desde row.getData(), y sin esto el
+        // select se volvía a armar con el valor viejo (el PATCH ya se había
+        // guardado bien; solo la tabla quedaba atrás). row.update re-corre
+        // el rowFormatter, así el panel abierto también queda al día.
+        cell.getRow().update({ sentiment: select.value });
+        if (monitoringTable) renderHighlightCards(monitoringTable.getData());
       });
       return select;
     },
@@ -1006,60 +1113,43 @@ async function loadNextRun() {
 }
 
 // --------------------------------------------------------------------
-// Barra de progreso "simulada", igual que en el análisis de publicación:
-// el backend no avisa en tiempo real cómo va el ciclo (una sola llamada
-// que responde al final), así que animamos una barra que avanza rápido al
-// principio y se frena cerca del 92%, más mensajes rotativos, para que se
-// vea que algo está pasando mientras se espera.
+// Progreso real del ciclo (GET /api/monitoring/progress, ver
+// src/monitoringProgress.js): mientras "Actualizar ahora" está en curso,
+// se consulta cada PROGRESS_POLL_MS y se muestra la fase con su contador
+// real y el porcentaje real. null (sin ciclo corriendo, o entre el fetch
+// inicial y que el scheduler arranque la primera fase) deja el texto/barra
+// como estaban, no los pisa con nada inventado.
 // --------------------------------------------------------------------
-const MONITOR_LOADING_MESSAGES = IS_X_MONITOR
-  ? [
-      'Buscando posteos nuevos con Grok…',
-      'Revisando las cuentas y palabras clave…',
-      'Evaluando relevancia…',
-      'Clasificando título y sentimiento…',
-      'Guardando resultados…',
-    ]
-  : [
-      'Buscando posteos nuevos en las cuentas trackeadas…',
-      'Revisando los hashtags configurados…',
-      'Evaluando relevancia con IA…',
-      'Clasificando título y sentimiento…',
-      'Guardando resultados…',
-    ];
+const PROGRESS_POLL_MS = 1500;
+let progressPollTimer = null;
 
-let monitorProgressTimer = null;
-let monitorMessageTimer = null;
+async function pollMonitorProgress() {
+  try {
+    const resp = await fetch(withPlataforma('/api/monitoring/progress'));
+    if (!resp.ok) return;
+    const data = await resp.json();
+    if (!data) return;
+    monitoringStatusTextEl.textContent = `${data.phase} · ${data.done} de ${data.total}`;
+    monitoringProgressFillEl.style.width = `${data.percent}%`;
+  } catch (err) {
+    // Un fallo puntual de polling no tiene que interrumpir la espera del
+    // resultado real (runNow sigue esperando su propio fetch).
+  }
+}
 
 function startMonitorLoading() {
   monitoringResultEl.classList.add('hidden');
   monitoringStatusCard.classList.remove('hidden');
-
-  let pct = 0;
+  monitoringStatusTextEl.textContent = IS_X_MONITOR ? 'Buscando posteos nuevos con Grok…' : 'Buscando posteos nuevos…';
   monitoringProgressFillEl.style.width = '0%';
 
-  monitorProgressTimer = setInterval(() => {
-    const restante = 92 - pct;
-    pct += Math.max(0.3, restante * 0.04);
-    if (pct > 92) pct = 92;
-    monitoringProgressFillEl.style.width = pct + '%';
-  }, 200);
-
-  let msgIndex = 0;
-  monitoringStatusTextEl.textContent = MONITOR_LOADING_MESSAGES[0];
-  monitorMessageTimer = setInterval(() => {
-    msgIndex = (msgIndex + 1) % MONITOR_LOADING_MESSAGES.length;
-    monitoringStatusTextEl.style.opacity = 0;
-    setTimeout(() => {
-      monitoringStatusTextEl.textContent = MONITOR_LOADING_MESSAGES[msgIndex];
-      monitoringStatusTextEl.style.opacity = 1;
-    }, 250);
-  }, 2500);
+  pollMonitorProgress();
+  progressPollTimer = setInterval(pollMonitorProgress, PROGRESS_POLL_MS);
 }
 
 function stopMonitorLoading(exito) {
-  clearInterval(monitorProgressTimer);
-  clearInterval(monitorMessageTimer);
+  clearInterval(progressPollTimer);
+  progressPollTimer = null;
 
   if (exito) {
     monitoringProgressFillEl.style.width = '100%';
@@ -1103,11 +1193,21 @@ async function runNow() {
 
 addAccountBtn.addEventListener('click', addAccount);
 newAccountInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') addAccount(); });
+viewAllAccountsBtn.addEventListener('click', openAccountsModal);
+accountsModalCloseBtn.addEventListener('click', closeAccountsModal);
+accountsModal.addEventListener('click', (e) => { if (e.target === accountsModal) closeAccountsModal(); });
 addKeywordBtn.addEventListener('click', addKeyword);
 newKeywordInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') addKeyword(); });
 viewAllKeywordsBtn.addEventListener('click', openKeywordsModal);
 keywordsModalCloseBtn.addEventListener('click', closeKeywordsModal);
 keywordsModal.addEventListener('click', (e) => { if (e.target === keywordsModal) closeKeywordsModal(); });
+if (HAS_SEARCHES) {
+  addSearchBtn.addEventListener('click', addSearch);
+  newSearchInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') addSearch(); });
+  viewAllSearchesBtn.addEventListener('click', openSearchesModal);
+  searchesModalCloseBtn.addEventListener('click', closeSearchesModal);
+  searchesModal.addEventListener('click', (e) => { if (e.target === searchesModal) closeSearchesModal(); });
+}
 ignoreCancelBtn.addEventListener('click', closeIgnoreModal);
 ignoreConfirmBtn.addEventListener('click', confirmIgnore);
 ignoreModal.addEventListener('click', (e) => { if (e.target === ignoreModal) closeIgnoreModal(); });

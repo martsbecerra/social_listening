@@ -121,6 +121,23 @@ function formatMetaLine(m) {
   return parts.join(' · ');
 }
 
+/**
+ * "Esta sección solo analiza publicaciones de Instagram." si el link es de
+ * otro dominio (con el consejo de la solapa de X si es x.com/twitter.com);
+ * '' si es de instagram.com o no es una url (eso lo responde el server).
+ */
+function linkDeOtraRed(url) {
+  let host;
+  try {
+    host = new URL(url).hostname.toLowerCase();
+  } catch {
+    return '';
+  }
+  const esDe = (dominios) => dominios.some((d) => host === d || host.endsWith(`.${d}`));
+  if (esDe(['instagram.com'])) return '';
+  return `Esta sección solo analiza publicaciones de Instagram.${esDe(['x.com', 'twitter.com']) ? ' Usá la solapa de X.' : ''}`;
+}
+
 async function analyze() {
   const url = urlInput.value.trim();
 
@@ -130,6 +147,17 @@ async function analyze() {
 
   if (!url) {
     errorEl.textContent = 'Pegá primero el link de la publicación.';
+    show(errorEl);
+    return;
+  }
+
+  // Mismo criterio que el backend (checkAnalyzeUrl en src/platforms/
+  // urlPlatform.js), acá solo por el dominio: un link de otra red se avisa
+  // al instante, sin request. Lo demás (formato, perfil vs. posteo) lo
+  // decide el server, que es quien manda.
+  const otraRed = linkDeOtraRed(url);
+  if (otraRed) {
+    errorEl.textContent = otraRed;
     show(errorEl);
     return;
   }

@@ -1091,6 +1091,16 @@ pre.report a:hover {
 .config > div:first-child {
   border-right: 1px solid var(--line);
 }
+/* Búsquedas por palabra clave: misma caja de .config pero a todo el ancho,
+   en su propia fila debajo de cuentas/keywords (Instagram). */
+.card.config-full {
+  padding: 0;
+  margin-top: 16px;
+}
+.config-full > div {
+  padding: 18px 20px;
+  min-width: 0;
+}
 @media (max-width: 860px) {
   .card.config {
     grid-template-columns: 1fr;
@@ -1100,7 +1110,8 @@ pre.report a:hover {
     border-bottom: 1px solid var(--line);
   }
 }
-.config h3 {
+.config h3,
+.config-full h3 {
   color: var(--clay-500);
   margin-bottom: 10px;
 }

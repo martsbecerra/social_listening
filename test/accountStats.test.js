@@ -24,18 +24,24 @@ process.env.MONITORING_DB_PATH = DB_PATH;
 process.env.MONITORING_CONFIG_PATH = CONFIG_PATH;
 process.env.MONITORING_X_CONFIG_PATH = path.join(tmp, 'monitoring-x.json');
 
-// Config escrita directo (nunca por addAccount): una cuenta trackeada que
-// no va a traer nada, y una keyword literal para que los posteos de hashtag
-// entren sin pasar por el clasificador de relevancia.
+// Config escrita directo (nunca por addAccount): una cuenta trackeada (que
+// la detección de Instagram no consulta: es guía), una keyword literal para
+// que los resultados de búsqueda entren con el clasificador stubeado, y la
+// búsqueda "obras", la única fuente de detección.
 fs.writeFileSync(
   CONFIG_PATH,
-  JSON.stringify({ instagram: { accounts: ['trackeada'], keywords: ['obras', '#caba'] } }, null, 2) + '\n'
+  JSON.stringify({ instagram: { accounts: ['trackeada'], keywords: ['obras', '#caba'], searches: ['obras'] } }, null, 2) + '\n'
 );
 
 // Clasificador stubeado ANTES de cargar monitor.js (que lo destructura).
 const classifier = require('../src/classifier');
-classifier.classifyPost = async (caption) => ({ title: `titulo: ${String(caption).slice(0, 12)}`, sentiment: 'neutral' });
-classifier.classifyRelevance = async () => ({ relevant: false });
+// Una sola función, con el criterio de siempre para estos tests:
+// coincidencia literal en la pista → relevante; sin ella, no.
+classifier.clasificarPosteo = async (caption, { pista } = {}) => ({
+  relevant: Boolean(pista && pista.termino),
+  title: `titulo: ${String(caption).slice(0, 12)}`,
+  sentiment: 'neutral',
+});
 
 const db = require('../src/db');
 const accountStats = require('../src/accountStats');
@@ -54,8 +60,8 @@ const raw = new DatabaseSync(DB_PATH);
 // métricas) va sin lookback; la del ciclo de monitoreo, con lookback.
 const calls = { benchmark: [], monitor: [], followers: [] };
 let benchmarkPosts = {}; // cuenta (minúscula) -> posteos que devuelve la pasada del benchmark
-let monitorPosts = {}; // cuenta (minúscula) -> posteos que devuelve el ciclo de monitoreo
-let hashtagPosts = {}; // tag -> posteos
+let monitorPosts = {}; // cuenta (minúscula) -> posteos que devolvería el ciclo de monitoreo (Instagram ya no consulta cuentas en la detección)
+let searchPosts = {}; // término -> posteos que devuelve la búsqueda (la única fuente de detección de Instagram)
 instagram.isConfigured = () => true;
 instagram.scrapeAccount = async (account, { lookback } = {}) => {
   const key = String(account).toLowerCase();
@@ -66,7 +72,8 @@ instagram.scrapeAccount = async (account, { lookback } = {}) => {
   calls.monitor.push(key);
   return monitorPosts[key] || [];
 };
-instagram.scrapeHashtag = async (tag) => hashtagPosts[tag] || [];
+instagram.scrapeHashtag = async () => [];
+instagram.scrapeSearch = async (term) => searchPosts[term] || [];
 instagram.fetchAccountFollowers = async (account) => {
   calls.followers.push(String(account).toLowerCase());
   return 1234;
@@ -79,7 +86,9 @@ function insertPost({ id, account, detectedDaysAgo = 0, postedDaysAgo = 70, igno
   const inserted = db.saveDetectedPost({
     id,
     account,
-    url: `https://www.instagram.com/p/${id}/`,
+    // La url tiene que ser de la red del posteo: saveDetectedPost rechaza
+    // una url de instagram.com etiquetada como X (ver urlPlatform.js).
+    url: plataforma === 'x' ? `https://x.com/${account}/status/${id.replace(/\D/g, '') || '1'}` : `https://www.instagram.com/p/${id}/`,
     caption: 'obras',
     matchedReason: 'test',
     likes: 10,
@@ -141,7 +150,7 @@ describe('benchmark: criterio de recálculo', { concurrency: false }, () => {
     assert.deepEqual(accountStats.selectAccountsForRecalc(rows, 10).toProcess.map((r) => r.account), ['alfa', 'gama', 'zeta']);
     assert.deepEqual(accountStats.selectAccountsForRecalc(rows, 0).toProcess, []);
     assert.deepEqual(accountStats.selectAccountsForRecalc([], 5), { toProcess: [], deferred: 0, upToDate: 0 });
-    assert.equal(accountStats.BENCHMARK_RECALC_DAYS, 90);
+    assert.equal(accountStats.BENCHMARK_RECALC_DAYS, 30);
   });
 
   test('listAccountBenchmarkActivity: la condición sale de detected_at vs. computed_at de la fila global', () => {
@@ -208,13 +217,13 @@ describe('benchmark: criterio de recálculo', { concurrency: false }, () => {
     assert.equal(vieja.nPosts, 12);
     assert.equal(vieja.medianLikes, 100);
     assert.ok(new Date(vieja.computedAt) > new Date(iso(1)));
-    assert.equal(accountStats.classifyPostAgainstBenchmark({ account: 'vieja', likes: 100, comments: 10 }).likes.level, 'normal');
+    assert.equal(accountStats.classifyPostAgainstBenchmark({ account: 'vieja', plataforma: 'instagram', likes: 100, comments: 10 }).likes.level, 'normal');
 
     // Sin referencia previa: fila global con n_posts real (0) como marca; sigue "sin referencia".
     const nueva = db.getAccountStats('nueva', 'instagram', null);
     assert.equal(nueva.nPosts, 0);
     assert.equal(nueva.medianLikes, null);
-    assert.equal(accountStats.classifyPostAgainstBenchmark({ account: 'nueva', likes: 5, comments: 1 }).likes.level, 'sin-referencia');
+    assert.equal(accountStats.classifyPostAgainstBenchmark({ account: 'nueva', plataforma: 'instagram', likes: 5, comments: 1 }).likes.level, 'sin-referencia');
 
     // Capitalización: se tocó la fila existente, no se creó otra.
     assert.equal(statsRowsOf('mayuscula').length, 1);
@@ -237,7 +246,7 @@ describe('benchmark: criterio de recálculo', { concurrency: false }, () => {
     assert.equal(result.attemptsOnly, 0);
     assert.equal(benchmarkCalls('nueva2'), 1);
     assert.deepEqual(statsRowsOf('nueva2').map((r) => [r.postType, r.nPosts]).sort(), [[null, 6], ['imagen', 6]]);
-    const benchmark = accountStats.classifyPostAgainstBenchmark({ account: 'nueva2', postType: 'imagen', likes: 100, comments: 10 });
+    const benchmark = accountStats.classifyPostAgainstBenchmark({ account: 'nueva2', plataforma: 'instagram', postType: 'imagen', likes: 100, comments: 10 });
     assert.equal(benchmark.likes.level, 'normal');
     assert.equal(benchmark.likes.basis, 'tipo');
     // La misma pasada propagó los seguidores al posteo guardado.
@@ -250,15 +259,15 @@ describe('benchmark: criterio de recálculo', { concurrency: false }, () => {
     assert.equal(benchmarkCalls('nueva2'), 1);
   });
 
-  test('cálculo de menos de 90 días: un posteo nuevo no recalcula; con 90 o más, sí', async () => {
+  test('cálculo de menos de 30 días (BENCHMARK_RECALC_DAYS): un posteo nuevo no recalcula; con 30 o más, sí', async () => {
     insertPost({ id: 'nueva2-2', account: 'nueva2' }); // posteo nuevo, cálculo de recién
     assert.equal((await accountStats.refreshStaleAccountStats({ plataformas: ['instagram'] })).recalculated, 0);
 
-    db.touchAccountStatsComputedAt('nueva2', 'instagram', iso(60)); // último cálculo hace 60 días, posteo de hoy
+    db.touchAccountStatsComputedAt('nueva2', 'instagram', iso(20)); // último cálculo hace 20 días, posteo de hoy
     assert.equal((await accountStats.refreshStaleAccountStats({ plataformas: ['instagram'] })).recalculated, 0);
     assert.equal(benchmarkCalls('nueva2'), 1);
 
-    db.touchAccountStatsComputedAt('nueva2', 'instagram', iso(91)); // 91 días: el posteo de hoy dispara
+    db.touchAccountStatsComputedAt('nueva2', 'instagram', iso(31)); // 31 días: el posteo de hoy dispara
     assert.equal((await accountStats.refreshStaleAccountStats({ plataformas: ['instagram'] })).recalculated, 1);
     assert.equal(benchmarkCalls('nueva2'), 2);
     assert.ok(new Date(db.getAccountStats('nueva2', 'instagram', null).computedAt) > new Date(iso(1)));
@@ -292,21 +301,21 @@ describe('benchmark: criterio de recálculo', { concurrency: false }, () => {
   });
 
   test('mismo ciclo (scheduler): el posteo de una cuenta nueva sale con benchmark; la trackeada sin posteos no se calcula; el refresco no repite el scrape', async () => {
-    monitorPosts = { trackeada: [] }; // se scrapea, no trae nada relevante
-    hashtagPosts = {
-      caba: [
+    monitorPosts = { trackeada: [] }; // no se consulta en la detección: es guía
+    searchPosts = {
+      obras: [
         {
           id: 'aparecida-1',
           account: 'aparecida',
           url: 'https://www.instagram.com/p/aparecida-1/',
           caption: 'obras en la ciudad',
-          hashtagsText: '#caba',
+          hashtagsText: '',
           likes: 30,
           comments: 3,
           postedAt: iso(0),
           postType: 'imagen',
-          sourceType: 'hashtag',
-          sourceQuery: '#caba',
+          sourceType: 'search',
+          sourceQuery: 'obras',
         },
       ],
     };
@@ -315,7 +324,7 @@ describe('benchmark: criterio de recálculo', { concurrency: false }, () => {
 
     const result = await scheduler.runCycle({ plataforma: 'instagram' });
     assert.equal(result.newCount, 1);
-    assert.ok(calls.monitor.includes('trackeada'), 'la trackeada se scrapeó en el ciclo');
+    assert.ok(!calls.monitor.includes('trackeada'), 'la trackeada no se consulta en la detección: es solo guía');
     assert.equal(benchmarkCalls('trackeada'), 0, 'sin posteo guardado no hay recálculo');
     assert.equal(benchmarkCalls('aparecida'), 1, 'una sola pasada: el refresco de métricas no la repite');
     assert.equal(calls.benchmark.length, before + 1);

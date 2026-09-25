@@ -30,6 +30,7 @@ function samplePost(overrides = {}) {
     sentiment: 'neutral',
     postType: 'imagen',
     followers: 100,
+    plataforma: 'instagram',
     ...overrides,
   };
 }
@@ -52,8 +53,25 @@ test('un posteo nuevo se lista y cuenta (REQ-IGNORE-03)', () => {
   assert.equal(db.countRecentPosts(7), 1);
 });
 
+test('ignorar y corregir sentimiento van por id Y plataforma: desde otra solapa no se toca nada', () => {
+  // Sin plataforma no hay default: es un error de programación.
+  assert.throws(() => db.ignorePost('p1'), /falta plataforma/);
+  assert.throws(() => db.updateSentiment('p1', 'positivo'), /falta plataforma/);
+
+  // Desde X, el posteo p1 (de Instagram) no existe: false y sin cambios.
+  assert.equal(db.ignorePost('p1', 'x'), false);
+  assert.equal(db.getPostIgnoreState('p1').ignored, false);
+  assert.equal(db.updateSentiment('p1', 'positivo', 'x'), false);
+  assert.equal(db.listDetectedPosts({ page: 1, pageSize: 20 }).posts[0].sentiment, 'neutral');
+
+  // Desde Instagram sí.
+  assert.equal(db.updateSentiment('p1', 'positivo', 'instagram'), true);
+  assert.equal(db.listDetectedPosts({ page: 1, pageSize: 20 }).posts[0].sentiment, 'positivo');
+  assert.equal(db.updateSentiment('no-existe', 'positivo', 'instagram'), false);
+});
+
 test('ignorar deja la fila, la saca del listado y no pisa ignored_at (REQ-IGNORE-02, REQ-IGNORE-03)', async () => {
-  db.ignorePost('p1');
+  assert.equal(db.ignorePost('p1', 'instagram'), true);
   const after = db.getPostIgnoreState('p1');
   assert.equal(after.ignored, true);
   assert.ok(after.ignoredAt);
@@ -68,8 +86,9 @@ test('ignorar deja la fila, la saca del listado y no pisa ignored_at (REQ-IGNORE
   assert.ok(row.ignored_at);
 
   await new Promise((resolve) => setTimeout(resolve, 20));
-  db.ignorePost('p1');
+  assert.equal(db.ignorePost('p1', 'instagram'), true, 'ya ignorado: existe igual, no es un 404');
   assert.equal(db.getPostIgnoreState('p1').ignoredAt, after.ignoredAt);
+  assert.equal(db.ignorePost('no-existe', 'instagram'), false);
 });
 
 test('un ignorado sigue siendo conocido: misma URL no re-inserta (REQ-IGNORE-04)', () => {

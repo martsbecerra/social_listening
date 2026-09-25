@@ -20,6 +20,7 @@ const fs = require('fs');
 const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
 const { normalizeClasificacion } = require('./categoriasConfig');
+const { platformForUrl } = require('./platforms/urlPlatform');
 
 const DATA_DIR = path.join(__dirname, '..', 'data');
 // MONITORING_DB_PATH: solo para tests (tempfile). En runtime normal sigue
@@ -159,17 +160,34 @@ const listPostsPageStmt = db.prepare('SELECT * FROM detected_posts WHERE ignored
 const listPostsPageByPlataformaStmt = db.prepare(
   'SELECT * FROM detected_posts WHERE ignored = 0 AND plataforma = ? ORDER BY detected_at DESC LIMIT ? OFFSET ?'
 );
-const listUnclassifiedStmt = db.prepare('SELECT id, caption FROM detected_posts WHERE title IS NULL AND ignored = 0 ORDER BY detected_at ASC');
+const listUnclassifiedStmt = db.prepare(
+  'SELECT id, account, caption, matched_reason FROM detected_posts WHERE title IS NULL AND ignored = 0 ORDER BY detected_at ASC'
+);
 const listUnclassifiedByPlataformaStmt = db.prepare(
-  'SELECT id, caption FROM detected_posts WHERE title IS NULL AND ignored = 0 AND plataforma = ? ORDER BY detected_at ASC'
+  'SELECT id, account, caption, matched_reason FROM detected_posts WHERE title IS NULL AND ignored = 0 AND plataforma = ? ORDER BY detected_at ASC'
 );
 const updateClassificationStmt = db.prepare('UPDATE detected_posts SET title = ?, sentiment = ? WHERE id = ?');
-const updateSentimentStmt = db.prepare('UPDATE detected_posts SET sentiment = ? WHERE id = ?');
+const updateClassificationConMotivoStmt = db.prepare(
+  'UPDATE detected_posts SET title = ?, sentiment = ?, matched_reason = ? WHERE id = ?'
+);
+// Las acciones de la tabla (ignorar, corregir sentimiento) van por id Y
+// plataforma: desde la solapa de Instagram no se toca un posteo de X aunque
+// se conozca su id (los ids ya son únicos entre redes, esto es el contrato).
+const postExistsInPlataformaStmt = db.prepare('SELECT 1 FROM detected_posts WHERE id = ? AND plataforma = ?');
+const updateSentimentStmt = db.prepare('UPDATE detected_posts SET sentiment = ? WHERE id = ? AND plataforma = ?');
 // Solo la primera vez: si ya estaba ignorado, ignored_at se conserva.
 const ignorePostStmt = db.prepare(
-  'UPDATE detected_posts SET ignored = 1, ignored_at = ? WHERE id = ? AND ignored = 0'
+  'UPDATE detected_posts SET ignored = 1, ignored_at = ? WHERE id = ? AND ignored = 0 AND plataforma = ?'
 );
 const getPostIgnoredAtStmt = db.prepare('SELECT ignored, ignored_at FROM detected_posts WHERE id = ?');
+
+/** Las funciones por plataforma no tienen default: sin ella es un error de programación, no "instagram". */
+function requirePlataforma(plataforma, fn) {
+  if (typeof plataforma !== 'string' || !plataforma.trim()) {
+    throw new Error(`${fn}: falta plataforma (instagram | x); no hay default.`);
+  }
+  return plataforma;
+}
 
 // La forma vieja de `reclamos` (source/username/comment_text/lat/lng/tematica
 // libre) es incompatible con el esquema de categorías cerradas + USIG. La
@@ -580,6 +598,135 @@ const setRefreshStateStmt = db.prepare(`
   ON CONFLICT(key) DO UPDATE SET value = excluded.value
 `);
 
+// Resultados de la búsqueda por palabra clave de Instagram a los que ya se
+// les pidió el detalle (ver enrichSearchResults en src/monitor.js). La
+// búsqueda devuelve los posteos sin caption ni contadores, así que evaluar
+// uno nuevo cuesta una consulta de detalle; esta tabla evita pagarla dos
+// veces por un posteo que terminó descartado (los guardados ya están en
+// detected_posts). outcome: guardado | descartado | sin_caption |
+// sin_detalle. Se purga a los 30 días: la búsqueda trae contenido de la
+// ventana del ciclo, un id viejo no vuelve.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS search_seen (
+    post_id TEXT NOT NULL,
+    plataforma TEXT NOT NULL,
+    url TEXT,
+    term TEXT,
+    outcome TEXT NOT NULL,
+    first_seen_at TEXT NOT NULL,
+    PRIMARY KEY (post_id, plataforma)
+  )
+`);
+const getSearchSeenStmt = db.prepare(`
+  SELECT post_id AS postId, plataforma, url, term, outcome, first_seen_at AS firstSeenAt
+  FROM search_seen WHERE post_id = ? AND plataforma = ?
+`);
+// first_seen_at no se pisa: es la fecha del primer detalle pagado, la que
+// cuenta para la purga.
+const markSearchSeenStmt = db.prepare(`
+  INSERT INTO search_seen (post_id, plataforma, url, term, outcome, first_seen_at)
+  VALUES (@postId, @plataforma, @url, @term, @outcome, @firstSeenAt)
+  ON CONFLICT(post_id, plataforma) DO UPDATE SET outcome = excluded.outcome
+`);
+const purgeSearchSeenStmt = db.prepare('DELETE FROM search_seen WHERE first_seen_at < ?');
+
+// Gasto en Apify (ver src/apifyCost.js): una fila por llamada a runActorSync
+// (src/apify.js) y una por ciclo de monitoreo (src/scheduler.js). Apify
+// cobra por item devuelto, así que `items` cuenta TODO lo que vino en el
+// dataset, incluidos los items de error (no_items / not_found), que se
+// cobran igual. Una llamada fallida también se registra (items 0, ok 0,
+// error con el mensaje, o 'QUOTA_EXCEEDED' si fue la cuota). `usd` va con
+// la tarifa del plan activo al momento de registrar; los reportes
+// recalculan desde `items` con las tres tarifas.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS apify_calls (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    at TEXT NOT NULL,
+    run_id INTEGER,
+    phase TEXT NOT NULL,
+    plataforma TEXT NOT NULL,
+    target TEXT,
+    results_type TEXT,
+    items INTEGER NOT NULL DEFAULT 0,
+    ok INTEGER NOT NULL DEFAULT 0,
+    error TEXT,
+    duration_ms INTEGER,
+    usd REAL NOT NULL DEFAULT 0
+  )
+`);
+db.exec('CREATE INDEX IF NOT EXISTS idx_apify_calls_at ON apify_calls(at)');
+db.exec('CREATE INDEX IF NOT EXISTS idx_apify_calls_run_id ON apify_calls(run_id)');
+// Costo por actor (ver src/apifyCost.js): qué actor corrió la llamada, el
+// tipo de consulta (user | hashtag | search | post | details), lo que Apify
+// cobró de verdad por el run (usageTotalUsd; solo cuando la llamada fue por
+// el flujo asincrónico, hoy el actor apidojo) y el id del run. Las filas
+// anteriores a estas columnas quedan con actor NULL = el actor oficial.
+const apifyCallsColumns = db.prepare('PRAGMA table_info(apify_calls)').all().map((c) => c.name);
+for (const [col, type] of [['actor', 'TEXT'], ['query_type', 'TEXT'], ['usd_real', 'REAL'], ['apify_run_id', 'TEXT']]) {
+  if (!apifyCallsColumns.includes(col)) db.exec(`ALTER TABLE apify_calls ADD COLUMN ${col} ${type}`);
+}
+// Una fila por ciclo (cron o "Actualizar ahora"); los totales se completan
+// al terminar sumando las filas de apify_calls con ese run_id.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS monitoring_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    started_at TEXT NOT NULL,
+    finished_at TEXT,
+    "trigger" TEXT NOT NULL,
+    plataforma TEXT NOT NULL,
+    new_posts INTEGER NOT NULL DEFAULT 0,
+    calls INTEGER NOT NULL DEFAULT 0,
+    results INTEGER NOT NULL DEFAULT 0,
+    usd REAL NOT NULL DEFAULT 0,
+    quota_exceeded INTEGER NOT NULL DEFAULT 0
+  )
+`);
+const insertApifyCallStmt = db.prepare(`
+  INSERT INTO apify_calls (at, run_id, phase, plataforma, actor, query_type, target, results_type, items, ok, error, duration_ms, usd, usd_real, apify_run_id)
+  VALUES (@at, @runId, @phase, @plataforma, @actor, @queryType, @target, @resultsType, @items, @ok, @error, @durationMs, @usd, @usdReal, @apifyRunId)
+`);
+// Las sumas van por fase Y por actor: el actor oficial se valúa por
+// resultados (tres tarifas), apidojo por consulta. usdBest = lo que cobró
+// Apify si se sabe (usd_real), si no el estimado (usd).
+const OFFICIAL_ACTOR_SQL = "'apify~instagram-scraper'";
+const insertMonitoringRunStmt = db.prepare(
+  'INSERT INTO monitoring_runs (started_at, "trigger", plataforma) VALUES (@startedAt, @trigger, @plataforma)'
+);
+const sumApifyCallsByRunStmt = db.prepare(`
+  SELECT phase, COALESCE(actor, ${OFFICIAL_ACTOR_SQL}) AS actor, COUNT(*) AS calls, COALESCE(SUM(items), 0) AS results,
+         COALESCE(SUM(usd), 0) AS usd, SUM(usd_real) AS usdReal, SUM(usd_real IS NOT NULL) AS withReal,
+         COALESCE(SUM(COALESCE(usd_real, usd)), 0) AS usdBest,
+         SUM(CASE WHEN error = 'QUOTA_EXCEEDED' THEN 1 ELSE 0 END) AS quotaErrors
+  FROM apify_calls WHERE run_id = ? GROUP BY phase, actor ORDER BY phase, actor
+`);
+const finishMonitoringRunStmt = db.prepare(`
+  UPDATE monitoring_runs
+  SET finished_at = @finishedAt, new_posts = @newPosts, calls = @calls, results = @results, usd = @usd, quota_exceeded = @quotaExceeded
+  WHERE id = @id
+`);
+const getMonitoringRunStmt = db.prepare('SELECT * FROM monitoring_runs WHERE id = ?');
+// Conciliación del costo real (apifyCost.reconcileRealCosts): llamadas con
+// run de Apify conocido y sin usd_real todavía, en una ventana de antigüedad.
+const listApifyCallsPendingRealCostStmt = db.prepare(`
+  SELECT id, run_id AS runId, apify_run_id AS apifyRunId, usd, at
+  FROM apify_calls
+  WHERE apify_run_id IS NOT NULL AND usd_real IS NULL AND at <= @olderThanIso AND at >= @newerThanIso
+  ORDER BY id LIMIT @limit
+`);
+const setApifyCallRealCostStmt = db.prepare('UPDATE apify_calls SET usd_real = @usdReal WHERE id = @id');
+const recomputeMonitoringRunUsdStmt = db.prepare(`
+  UPDATE monitoring_runs
+  SET usd = (SELECT COALESCE(SUM(COALESCE(usd_real, usd)), 0) FROM apify_calls WHERE run_id = @id)
+  WHERE id = @id
+`);
+const sumApifyCallsSinceStmt = db.prepare(`
+  SELECT phase, COALESCE(actor, ${OFFICIAL_ACTOR_SQL}) AS actor, COUNT(*) AS calls, COALESCE(SUM(items), 0) AS results,
+         SUM(CASE WHEN ok = 0 THEN 1 ELSE 0 END) AS failed,
+         COALESCE(SUM(usd), 0) AS usd, SUM(usd_real) AS usdReal, SUM(usd_real IS NOT NULL) AS withReal,
+         COALESCE(SUM(COALESCE(usd_real, usd)), 0) AS usdBest
+  FROM apify_calls WHERE at >= ? GROUP BY phase, actor ORDER BY phase, actor
+`);
+
 // Cuentas con posteos en una ventana de edad (sinceIso, untilIso], agrupadas
 // con el conteo de posteos y el más reciente — para poder priorizar y armar
 // el log de "N posteos en tramo X" sin una query aparte por cuenta. Un solo
@@ -725,8 +872,21 @@ function rejectNegative(value) {
 /**
  * @returns {boolean} true si se insertó una fila nueva. false si ya existía
  * (mismo id o misma url) — no tira UNIQUE.
+ * @throws {Error} code 'PLATAFORMA_INCONSISTENTE' si el dominio de la url es
+ *   de otra red que `plataforma` (una publicación de X nunca se guarda como
+ *   Instagram, ni al revés). Un dominio desconocido no se valida: la regla
+ *   se garantiza acá, al escribir, no solo al leer.
  */
 function saveDetectedPost(post) {
+  const plataforma = requirePlataforma(post.plataforma, 'saveDetectedPost');
+  const plataformaDeLaUrl = platformForUrl(post.url);
+  if (plataformaDeLaUrl && plataformaDeLaUrl !== plataforma) {
+    const e = new Error(
+      `El posteo ${post.id} tiene url de ${plataformaDeLaUrl} (${post.url}) pero plataforma "${plataforma}": no se guarda.`
+    );
+    e.code = 'PLATAFORMA_INCONSISTENTE';
+    throw e;
+  }
   const result = insertPostStmt.run({
     id: post.id,
     account: post.account || null,
@@ -741,7 +901,7 @@ function saveDetectedPost(post) {
     sentiment: post.sentiment || null,
     postType: post.postType || null,
     followers: post.followers ?? null,
-    plataforma: post.plataforma || 'instagram',
+    plataforma,
     retweets: rejectNegative(post.retweets ?? null),
     views: rejectNegative(post.views ?? null),
   });
@@ -772,16 +932,28 @@ function listUnclassified({ plataforma } = {}) {
   return plataforma ? listUnclassifiedByPlataformaStmt.all(plataforma) : listUnclassifiedStmt.all();
 }
 
-function updateClassification(id, { title, sentiment }) {
-  updateClassificationStmt.run(title, sentiment, id);
+/**
+ * Completa título y sentimiento de un posteo (backfill). Con `matchedReason`
+ * también reescribe matched_reason (el backfill le suma el motivo del modelo
+ * y le saca la marca "sin clasificar"); sin él, no lo toca.
+ */
+function updateClassification(id, { title, sentiment, matchedReason }) {
+  if (matchedReason === undefined) {
+    updateClassificationStmt.run(title, sentiment, id);
+  } else {
+    updateClassificationConMotivoStmt.run(title, sentiment, matchedReason, id);
+  }
 }
 
 /**
  * Corrección manual del sentimiento de un registro (por si Haiku se
- * equivocó). No toca el título ni ningún otro campo.
+ * equivocó). No toca el título ni ningún otro campo. Solo si el posteo es
+ * de ESA plataforma.
+ * @returns {boolean} true si existía en esa plataforma y se actualizó.
  */
-function updateSentiment(id, sentiment) {
-  updateSentimentStmt.run(sentiment, id);
+function updateSentiment(id, sentiment, plataforma) {
+  requirePlataforma(plataforma, 'updateSentiment');
+  return updateSentimentStmt.run(sentiment, id, plataforma).changes > 0;
 }
 
 /**
@@ -789,10 +961,15 @@ function updateSentiment(id, sentiment) {
  * se queda: findExistingPostId y el unique de url siguen viéndola, así que
  * la próxima corrida no la re-detecta ni re-notifica. No hay deshacer en
  * la UI; ignored_at queda para auditoría. Si ya estaba ignorado, no pisa
- * la fecha original.
+ * la fecha original. Solo si el posteo es de ESA plataforma.
+ * @returns {boolean} true si el posteo existe en esa plataforma (ignorado
+ *   recién o de antes); false si no existe ahí — nada se toca.
  */
-function ignorePost(id) {
-  ignorePostStmt.run(new Date().toISOString(), id);
+function ignorePost(id, plataforma) {
+  requirePlataforma(plataforma, 'ignorePost');
+  if (!postExistsInPlataformaStmt.get(id, plataforma)) return false;
+  ignorePostStmt.run(new Date().toISOString(), id, plataforma);
+  return true;
 }
 
 function getPostIgnoreState(id) {
@@ -1107,7 +1284,8 @@ function getAccountFollowers(account, plataforma) {
 }
 
 /** @returns {string[]} Cuentas distintas de una plataforma presentes en detected_posts (sin NULL ni 'N/D'). */
-function listDistinctPostAccounts(plataforma = 'instagram') {
+function listDistinctPostAccounts(plataforma) {
+  requirePlataforma(plataforma, 'listDistinctPostAccounts');
   return listDistinctPostAccountsStmt.all(plataforma).map((row) => row.account);
 }
 
@@ -1163,8 +1341,149 @@ function updatePostMetricsIfChanged(id, { likes, comments, postType }) {
 }
 
 /** Propaga la cantidad de seguidores a TODOS los posteos ya guardados de una cuenta de esa plataforma (no solo a los nuevos). */
-function updateFollowersForAccount(account, followers, plataforma = 'instagram') {
+function updateFollowersForAccount(account, followers, plataforma) {
+  requirePlataforma(plataforma, 'updateFollowersForAccount');
   updateFollowersForAccountStmt.run(followers ?? null, account, plataforma);
+}
+
+/** @returns {number} id de la fila nueva en apify_calls. Ver src/apifyCost.js (recordApifyCall), que es quien la llama. */
+function insertApifyCall(row) {
+  const result = insertApifyCallStmt.run({
+    at: row.at || new Date().toISOString(),
+    runId: row.runId ?? null,
+    phase: row.phase || 'desconocida',
+    plataforma: row.plataforma || 'instagram',
+    actor: row.actor ?? null,
+    queryType: row.queryType ?? null,
+    target: row.target ?? null,
+    resultsType: row.resultsType ?? null,
+    items: Number(row.items) || 0,
+    ok: row.ok ? 1 : 0,
+    error: row.error ?? null,
+    durationMs: row.durationMs == null ? null : Math.round(row.durationMs),
+    usd: Number(row.usd) || 0,
+    usdReal: row.usdReal == null || !Number.isFinite(Number(row.usdReal)) ? null : Number(row.usdReal),
+    apifyRunId: row.apifyRunId ?? null,
+  });
+  return Number(result.lastInsertRowid);
+}
+
+/** Abre la fila del ciclo en monitoring_runs. @returns {number} id (el run_id de sus apify_calls). */
+function startMonitoringRun({ trigger, plataforma, startedAt } = {}) {
+  const result = insertMonitoringRunStmt.run({
+    startedAt: startedAt || new Date().toISOString(),
+    trigger: trigger || 'manual',
+    plataforma: plataforma || 'todas',
+  });
+  return Number(result.lastInsertRowid);
+}
+
+/**
+ * Cierra la fila del ciclo sumando sus apify_calls: llamadas, resultados,
+ * usd (el real donde Apify lo devolvió, si no el estimado) y si alguna
+ * cortó por cuota. Devuelve los totales con el desglose por fase y, dentro
+ * de cada fase, por actor (para la línea "[costo] ciclo #N ..." del
+ * scheduler).
+ * @returns {{ id: number, calls: number, results: number, usd: number, quotaExceeded: boolean,
+ *   porFase: Object<string, {calls: number, results: number, usd: number,
+ *     porActor: Object<string, {calls: number, results: number, usd: number, usdReal: number|null, withReal: number}>}> }}
+ */
+function finishMonitoringRun(id, { newPosts = 0, finishedAt } = {}) {
+  const byPhaseActor = sumApifyCallsByRunStmt.all(id);
+  const totals = { calls: 0, results: 0, usd: 0, quotaExceeded: false };
+  const porFase = {};
+  for (const row of byPhaseActor) {
+    totals.calls += row.calls;
+    totals.results += row.results;
+    totals.usd += row.usdBest;
+    if (row.quotaErrors > 0) totals.quotaExceeded = true;
+    const phase = porFase[row.phase] || (porFase[row.phase] = { calls: 0, results: 0, usd: 0, porActor: {} });
+    phase.calls += row.calls;
+    phase.results += row.results;
+    phase.usd += row.usdBest;
+    phase.porActor[row.actor] = { calls: row.calls, results: row.results, usd: row.usd, usdReal: row.usdReal, withReal: row.withReal };
+  }
+  finishMonitoringRunStmt.run({
+    id,
+    finishedAt: finishedAt || new Date().toISOString(),
+    newPosts: Number(newPosts) || 0,
+    calls: totals.calls,
+    results: totals.results,
+    usd: totals.usd,
+    quotaExceeded: totals.quotaExceeded ? 1 : 0,
+  });
+  return { id, ...totals, porFase };
+}
+
+function getMonitoringRun(id) {
+  const row = getMonitoringRunStmt.get(id);
+  if (!row) return null;
+  return {
+    id: row.id,
+    startedAt: row.started_at,
+    finishedAt: row.finished_at,
+    trigger: row.trigger,
+    plataforma: row.plataforma,
+    newPosts: row.new_posts,
+    calls: row.calls,
+    results: row.results,
+    usd: row.usd,
+    quotaExceeded: Boolean(row.quota_exceeded),
+  };
+}
+
+/** @returns {{id: number, runId: number|null, apifyRunId: string, usd: number, at: string}[]} llamadas con run conocido y sin costo real, con `at` entre newerThanIso y olderThanIso. */
+function listApifyCallsPendingRealCost({ olderThanIso, newerThanIso, limit = 100 }) {
+  return listApifyCallsPendingRealCostStmt.all({ olderThanIso, newerThanIso, limit: Math.max(1, Math.floor(Number(limit)) || 100) });
+}
+
+/** Guarda lo que Apify cobró de verdad por esa llamada. */
+function setApifyCallRealCost(id, usdReal) {
+  return setApifyCallRealCostStmt.run({ id, usdReal: Number(usdReal) }).changes;
+}
+
+/** Recalcula el usd del ciclo desde sus llamadas (real donde exista, si no estimado). */
+function recomputeMonitoringRunUsd(id) {
+  return recomputeMonitoringRunUsdStmt.run({ id }).changes;
+}
+
+/**
+ * apify_calls desde sinceIso, agrupadas por fase y actor.
+ * @returns {{phase: string, actor: string, calls: number, results: number, failed: number,
+ *   usd: number, usdReal: number|null, withReal: number, usdBest: number}[]}
+ */
+function sumApifyCallsSince(sinceIso) {
+  return sumApifyCallsSinceStmt.all(sinceIso);
+}
+
+/** @returns {{postId: string, plataforma: string, url: string|null, term: string|null, outcome: string, firstSeenAt: string}|null} */
+function getSearchSeen(postId, plataforma) {
+  requirePlataforma(plataforma, 'getSearchSeen');
+  const row = getSearchSeenStmt.get(String(postId), plataforma);
+  return row ? { ...row } : null;
+}
+
+function isSearchSeen(postId, plataforma) {
+  requirePlataforma(plataforma, 'isSearchSeen');
+  return Boolean(getSearchSeenStmt.get(String(postId), plataforma));
+}
+
+/** Anota un resultado de búsqueda al que ya se le pidió el detalle. Si ya estaba, solo cambia el outcome. */
+function markSearchSeen({ postId, plataforma, url = null, term = null, outcome, firstSeenAt }) {
+  requirePlataforma(plataforma, 'markSearchSeen');
+  markSearchSeenStmt.run({
+    postId: String(postId),
+    plataforma,
+    url: url || null,
+    term: term || null,
+    outcome: String(outcome),
+    firstSeenAt: firstSeenAt || new Date().toISOString(),
+  });
+}
+
+/** Borra los vistos anteriores a olderThanIso. @returns {number} filas borradas */
+function purgeSearchSeen(olderThanIso) {
+  return purgeSearchSeenStmt.run(olderThanIso).changes;
 }
 
 function getRefreshState(key) {
@@ -1181,7 +1500,8 @@ function setRefreshState(key, value) {
  * cumpla la cadencia (cadenceIso null = sin filtro de metrics_updated_at).
  * @returns {{account: string, mostRecentPostedAt: string, postCount: number}[]}
  */
-function listAccountsDueForRefresh({ sinceIso, untilIso, cadenceIso = null, plataforma = 'instagram' }) {
+function listAccountsDueForRefresh({ sinceIso, untilIso, cadenceIso = null, plataforma }) {
+  requirePlataforma(plataforma, 'listAccountsDueForRefresh');
   return listAccountsDueForRefreshStmt.all({ sinceIso, untilIso, cadenceIso, plataforma });
 }
 
@@ -1280,6 +1600,18 @@ module.exports = {
   updateFollowersForAccount,
   getRefreshState,
   setRefreshState,
+  getSearchSeen,
+  isSearchSeen,
+  markSearchSeen,
+  purgeSearchSeen,
+  insertApifyCall,
+  startMonitoringRun,
+  finishMonitoringRun,
+  getMonitoringRun,
+  sumApifyCallsSince,
+  listApifyCallsPendingRealCost,
+  setApifyCallRealCost,
+  recomputeMonitoringRunUsd,
   listAccountsDueForRefresh,
   applyMetricsRefresh,
   upsertReclamo,
