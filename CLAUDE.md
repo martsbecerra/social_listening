@@ -163,7 +163,11 @@ revés. La lectura filtra por `detected_posts.plataforma` (cada solapa manda
 (`code: 'PLATAFORMA_INCONSISTENTE'`) un posteo cuya url sea de otra red
 según `platformForUrl` (`src/platforms/urlPlatform.js`, sin dependencias
 porque lo requiere db.js). El ciclo atrapa ese error, loguea `descartado` y
-sigue. Dominio desconocido = null, nunca "instagram por defecto".
+sigue. Dominio desconocido = null, nunca "instagram por defecto". El
+análisis de publicación valida con `checkAnalyzeUrl(url, plataforma)` del
+mismo módulo antes de llamar a Apify/Grok: otra red → 400 "Esta sección
+solo analiza publicaciones de <red>"; el cliente repite solo el chequeo de
+dominio.
 
 ## Datos que no se tocan
 

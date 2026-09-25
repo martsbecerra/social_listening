@@ -733,6 +733,17 @@ un link ajeno no tira abajo la corrida ni contamina la otra solapa. El
 módulo no tiene dependencias porque lo requiere `db.js` (el registro de
 adapters lo re-exporta).
 
+**Análisis de publicación**: el mismo módulo tiene `checkAnalyzeUrl(url,
+plataforma)`, que `POST /api/analyze` corre con `'instagram'` y
+`POST /api/x/analyze` con `'x'` **antes** de pedirle nada a Apify o a Grok.
+Un link de otra red responde 400 con "Esta sección solo analiza
+publicaciones de Instagram." (o "…de X."), más "Usá la solapa de X/Instagram"
+si el dominio es de la otra red conocida; un link de la red pero que no es
+una publicación (perfil, story) recibe el mensaje de formato con ejemplo, y
+lo que no es una url también. El cliente (`analysis.js`, `x-analysis.js`)
+repite solo el chequeo de dominio para avisar al instante sin request; el
+server es quien manda.
+
 ### Septiembre 2026: cambio de actor de monitoreo
 
 El monitoreo de Instagram pasó de `apify/instagram-scraper` a

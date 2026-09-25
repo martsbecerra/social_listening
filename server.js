@@ -28,7 +28,7 @@ const apifyCost = require('./src/apifyCost');
 const { runWithContext } = require('./src/usageContext');
 const { analyzeComments } = require('./src/analyzeComments');
 const { resolveMaxCommentsLimit } = require('./src/commentSample');
-const { isValidXPostUrl } = require('./src/x/url');
+const { checkAnalyzeUrl } = require('./src/platforms/urlPlatform');
 const { fetchXThread, getModel: getXaiModel, getFetchBackend } = require('./src/x/grokFetch');
 const { analyzeXThread } = require('./src/x/analyze');
 const { seedXInfluencersIfEmpty } = require('./src/x/influencers');
@@ -146,20 +146,9 @@ function abortarArranque(lineas) {
   process.exit(1);
 }
 
-// --------------------------------------------------------------------------
-// Valida que el link sea de una publicación de Instagram (post, reel o tv).
-// --------------------------------------------------------------------------
-function isValidInstagramPostUrl(url) {
-  try {
-    const u = new URL(url);
-    const esInstagram = /(^|\.)instagram\.com$/.test(u.hostname);
-    const esPublicacion = /^\/(p|reel|reels|tv)\/[\w-]+/.test(u.pathname);
-    return esInstagram && esPublicacion;
-  } catch {
-    // Si new URL() falla, el texto no es una URL válida.
-    return false;
-  }
-}
+// La validación del link de cada análisis (¿es una publicación de ESA red?)
+// vive en src/platforms/urlPlatform.js (checkAnalyzeUrl) y corre antes de
+// pedirle nada a Apify o a Grok.
 
 // --------------------------------------------------------------------------
 // Auth: allowlist + magic link + sesión.
@@ -246,12 +235,12 @@ app.post('/api/analyze', async (req, res) => {
   const { url } = req.body || {};
   const startedAt = Date.now();
 
-  // 1) Validación del link.
-  if (!isValidInstagramPostUrl(url)) {
-    logTask('validación fallida', { url: url || null });
-    return res.status(400).json({
-      error: 'Ingresá un link válido de una publicación de Instagram (por ejemplo: https://www.instagram.com/p/XXXXXXXX/).',
-    });
+  // 1) Validación del link: esta sección solo analiza publicaciones de
+  //    Instagram (un link de X u otra red se rechaza acá, sin llamar a Apify).
+  const guard = checkAnalyzeUrl(url, 'instagram');
+  if (!guard.ok) {
+    logTask('validación fallida', { url: url || null, motivo: guard.motivo });
+    return res.status(400).json({ error: guard.error });
   }
 
   logTask('inicio', { url });
@@ -347,11 +336,12 @@ app.post('/api/x/analyze', async (req, res) => {
   const { url } = req.body || {};
   const startedAt = Date.now();
 
-  if (!isValidXPostUrl(url)) {
-    logXTask('validación fallida', { url: url || null });
-    return res.status(400).json({
-      error: 'Ingresá un link válido de una publicación de X (por ejemplo: https://x.com/usuario/status/1234567890).',
-    });
+  // Esta sección solo analiza publicaciones de X (un link de Instagram u
+  // otra red se rechaza acá, sin llamar a Grok).
+  const guard = checkAnalyzeUrl(url, 'x');
+  if (!guard.ok) {
+    logXTask('validación fallida', { url: url || null, motivo: guard.motivo });
+    return res.status(400).json({ error: guard.error });
   }
 
   logXTask('inicio', { url });
