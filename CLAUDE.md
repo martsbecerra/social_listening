@@ -113,7 +113,10 @@ purga a los 30 días. Si el run falla entero no se anota nada.
   `src/scheduler.js` y `src/monitor.js` con `src/usageContext.js`),
   `validacion`, `recalc-script`, `analisis`.
 - Salidas: la línea `[costo] ciclo #N: X llamadas, Y resultados ≈ US$ Z
-  (monitoreo · busqueda · benchmark · refresco)`, `npm run costo` y
+  (monitoreo · busqueda · benchmark · refresco)`, `npm run costo`,
+  `npm run gastos` (`scripts/gastos.js`: por corrida, por corrida y fase,
+  por término de búsqueda y total; `--desde "AAAA-MM-DD HH:MM"` en hora de
+  Argentina, default últimas 24 h; abre la base en solo lectura) y
   `GET /api/monitoring/costs`.
 
 ## Ciclo de monitoreo: progreso real
