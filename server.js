@@ -44,6 +44,7 @@ const monitor = require('./src/monitor');
 const { listPlatformIds, getPlatform } = require('./src/platforms');
 const { startScheduler, runCycle, getCronExpression, getLastRunAt, estimateRunsPerDay, getNextRunAt } = require('./src/scheduler');
 const monitoringProgress = require('./src/monitoringProgress');
+const { startKeepAwake, stopKeepAwake } = require('./src/keepAwake');
 const { processPendingReclamosInBackground } = require('./src/geoWorker');
 const accountStats = require('./src/accountStats');
 const { CATEGORIAS_RECLAMO, ESTADOS_RECLAMO, isValidEstado } = require('./src/categoriaReclamo');
@@ -696,6 +697,9 @@ const server = app.listen(PORT, () => {
   console.log(
     `   Login: APP_BASE_URL=${process.env.APP_BASE_URL || '(falta)'} | SMTP=${process.env.SMTP_HOST || '(falta SMTP_HOST)'}\n`
   );
+  // Windows: que la máquina no se suspenda mientras la app corre (ver
+  // src/keepAwake.js). Nunca tira; en otros sistemas no hace nada.
+  startKeepAwake();
 });
 
 server.on('error', (err) => {
@@ -711,6 +715,7 @@ server.on('error', (err) => {
 
 function shutdown(signal) {
   console.log(`\n${signal} recibido. Cerrando servidor...`);
+  stopKeepAwake();
   server.close(() => process.exit(0));
 }
 

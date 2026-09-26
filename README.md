@@ -66,6 +66,7 @@ social_listening_app/
 │   ├── auth/                 # Allowlist, magic link, sesión, rate limit, gate.
 │   ├── notify.js             # Orquesta las notificaciones (email + WhatsApp a futuro).
 │   ├── scheduler.js          # Agenda el monitoreo (node-cron; default 8, 12, 16 y 20 h).
+│   ├── keepAwake.js          # Windows: lanza scripts/keep-awake.ps1 para que la máquina no se suspenda.
 │   ├── concurrencyLimiter.js # Cola FIFO para los runs simultáneos de Apify.
 │   ├── usageContext.js       # En qué ciclo y fase estamos (AsyncLocalStorage), para medir Apify.
 │   ├── apifyCost.js          # Tarifas de los dos actores, registro de cada llamada a Apify (estimado y real) y reporte de gasto.
@@ -100,7 +101,8 @@ social_listening_app/
 │   ├── costo-apify.js           # Gasto en Apify por ventana, fase y actor (npm run costo).
 │   ├── stop-server.js           # Mata el proceso que ocupa el puerto (npm run stop).
 │   ├── iniciar-con-reinicio.bat # Arranca la app en bucle (reinicio solo) con log a archivo.
-│   └── quickedit-off.ps1        # Apaga QuickEdit en la consola del .bat (un clic no congela).
+│   ├── quickedit-off.ps1        # Apaga QuickEdit en la consola del .bat (un clic no congela).
+│   └── keep-awake.ps1           # Pide a Windows no suspender ni apagar la pantalla (lo lanza el server).
 ├── CLAUDE.md                  # Guía corta del proyecto para trabajar con Claude Code.
 ├── .env.example               # Plantilla de las claves (copiala a .env).
 ├── .gitignore                 # Evita subir node_modules, .env y data/.
@@ -665,8 +667,21 @@ la ventana de la consola (modo QuickEdit de Windows) congela el proceso
 hasta que alguien aprieta una tecla, y si la PC se suspende el cron no
 corre. Para eso está `scripts\iniciar-con-reinicio.bat`:
 
-1. Primero, que la PC no se suspenda ni hiberne mientras está enchufada
-   (una sola vez, en cualquier consola; `-ac` es "con corriente"):
+0. La suspensión la evita el propio server: mientras corre, en Windows
+   lanza un PowerShell hijo (`scripts\keep-awake.ps1`) que le pide a
+   Windows no suspender el sistema ni apagar la pantalla
+   (`SetThreadExecutionState`, sin permisos de administrador). Hace falta
+   sobre todo en una notebook con **Modern Standby (S0)**: ahí, apenas se
+   apaga la pantalla, la máquina entra en reposo y frena la app aunque
+   `powercfg` diga "nunca suspender". Al terminar el server, el hijo sale
+   solo y Windows vuelve a su política normal. En el log aparece
+   `[keep-awake] keep-awake: activo.`; `KEEP_AWAKE=0` en el `.env` lo apaga.
+   La pantalla queda encendida todo el tiempo: bajale el brillo o
+   cerrá la tapa solo si la tapa está configurada para "no hacer nada".
+
+1. Igual, como red de seguridad, que la PC no se suspenda ni hiberne
+   mientras está enchufada (una sola vez, en cualquier consola; `-ac` es
+   "con corriente"):
 
    ```powershell
    powercfg /change standby-timeout-ac 0

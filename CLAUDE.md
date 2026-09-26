@@ -157,6 +157,18 @@ fase actual y qué target tiene cada tarea activa en `apifyLimiter`,
 resultados, por eso es holgado) corta cada llamada a Apify que no respondió
 a tiempo, libera su cupo y la deja en `apify_calls` con `error='TIMEOUT'`.
 
+## Máquina despierta (Windows)
+
+Al arrancar, `server.js` llama a `startKeepAwake` (`src/keepAwake.js`): en
+Windows lanza un PowerShell hijo, `scripts/keep-awake.ps1`, que pide
+`SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED |
+ES_DISPLAY_REQUIRED)` sin permisos de administrador y se queda leyendo su
+stdin (pipe): cuando el server muere, el pipe se cierra y el hijo sale
+solo. `KEEP_AWAKE=0` lo apaga; fuera de Windows no hace nada; nunca tira.
+Los tests inyectan `spawnFn` y nunca lanzan PowerShell. Para dejar la app
+sola varios días: `scripts/iniciar-con-reinicio.bat` (reinicio automático,
+log en `logs/`, QuickEdit apagado).
+
 ## Clasificación con contexto (LLM del monitoreo)
 
 `src/classifier.js` tiene UNA función, `clasificarPosteo(caption, {
