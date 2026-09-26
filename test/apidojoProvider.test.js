@@ -397,10 +397,21 @@ describe('proveedor apidojo del adapter de Instagram', { concurrency: false }, (
       { id: '5', account: 'medio_local', followers: 45000 },
       null,
     ];
+    // Un posteo ya guardado de la cuenta, sin seguidores (llegó por búsqueda
+    // antes de que se consultara el perfil): la caché se propaga también a él.
+    assert.equal(
+      db.saveDetectedPost({
+        id: 'rf-medio-1', account: 'medio_local', url: 'https://www.instagram.com/p/rf-medio-1/', caption: 'obras', matchedReason: 'test',
+        likes: 1, comments: 1, postedAt: new Date().toISOString(), title: 't', sentiment: 'neutral', postType: null, followers: null, plataforma: 'instagram',
+      }),
+      true
+    );
     assert.equal(monitor.rememberFollowers(posts, 'instagram'), 2);
     assert.equal(db.getAccountFollowers('cuenta_prueba', 'instagram'), 100);
     assert.equal(db.getAccountFollowers('medio_local', 'instagram'), 45000);
     assert.equal(db.getAccountFollowers('otra_cuenta', 'instagram'), null);
+    const guardado = db.listDetectedPosts({ page: 1, pageSize: 1000, plataforma: 'instagram' }).posts.find((p) => p.id === 'rf-medio-1');
+    assert.equal(guardado.followers, 45000, 'el posteo guardado tomó los seguidores que trajo esta respuesta');
     assert.equal(monitor.rememberFollowers([{ id: '9', account: 'vecino', followers: 7 }], 'x'), 0, 'X no tiene seguidores');
     assert.equal(db.getAccountFollowers('vecino', 'x'), null);
     assert.equal(monitor.rememberFollowers([], 'instagram'), 0);
