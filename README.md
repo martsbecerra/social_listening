@@ -99,6 +99,7 @@ social_listening_app/
 │   ├── import-reclamos.js       # Importador genérico de Excel/CSV (solo CLI).
 │   ├── migrate-categorias.js    # Migra categorías viejas al esquema de dos niveles.
 │   ├── costo-apify.js           # Gasto en Apify por ventana, fase y actor (npm run costo).
+│   ├── gastos.js                # Gasto por corrida, fase y término de búsqueda (npm run gastos).
 │   ├── stop-server.js           # Mata el proceso que ocupa el puerto (npm run stop).
 │   ├── iniciar-con-reinicio.bat # Arranca la app en bucle (reinicio solo) con log a archivo.
 │   ├── quickedit-off.ps1        # Apaga QuickEdit en la consola del .bat (un clic no congela).
@@ -511,6 +512,46 @@ aplican al oficial; apidojo muestra estimado y real) y por fase, más la
 proyección mensual (promedio diario de los últimos 7 días × 30).
 `GET /api/monitoring/costs?days=30` devuelve lo mismo en JSON. Nada de esto
 llama a Apify.
+
+#### Gasto corrida por corrida: `npm run gastos`
+
+Para seguir la prueba piloto día a día, `scripts/gastos.js` muestra en la
+consola, con la app andando:
+
+```bash
+npm run gastos
+```
+
+```bash
+node scripts/gastos.js --desde "2026-09-25 08:00"
+```
+
+Cuatro tablas, ninguna de más de 80 columnas para que no se corten:
+
+1. **Por corrida**: número, inicio y fin en hora de Argentina, duración,
+   llamadas a Apify, resultados, USD estimado y USD real. `#N*` es una
+   corrida manual ("Actualizar ahora") y `#N!` una en la que alguna llamada
+   cortó por cuota; una corrida sin cierre figura "en curso" (si es la
+   última y empezó hace menos de 3 horas) o "sin cierre".
+2. **Por corrida y fase**: búsqueda (las consultas por término), detalle
+   (el detalle de los resultados nuevos vía `apify/instagram-scraper`),
+   benchmark, refresco y otras (con la fase real entre paréntesis:
+   `monitoreo` de las corridas viejas, `validacion`, `recalc-script`,
+   `analisis`), con llamadas, resultados y USD.
+3. **Por término de búsqueda**: consultas, resultados y USD en el período.
+4. **Total del período**, con el desglose por fase.
+
+`--desde "AAAA-MM-DD HH:MM"` (hora de Argentina; también vale solo la
+fecha) fija el inicio del período, que termina ahora; sin la opción son las
+últimas 24 horas. Las corridas son las iniciadas en el período, con todas
+sus llamadas; los términos y el total son las llamadas con fecha en el
+período, así que el total puede sumar llamadas "fuera de corridas"
+(validación, `recalc-script`, análisis) o "de corridas iniciadas antes del
+período": se informan aparte. `USD est.` es la columna `usd`; `USD real`
+es `usd_real` para apidojo y, para el oficial (que cobra por resultado y no
+tiene run por llamada), el estimado; un `*` avisa que a esa fila le faltan
+llamadas por conciliar. Abre `data/monitoring.db` en solo lectura: nunca
+escribe ni llama a Apify.
 
 #### Consultas SQL listas sobre `apify_calls`
 

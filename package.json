@@ -8,6 +8,7 @@
     "stop": "node scripts/stop-server.js",
     "test": "node --test test/*.test.js",
     "costo": "node scripts/costo-apify.js",
+    "gastos": "node scripts/gastos.js",
     "import-reclamos": "node scripts/import-reclamos.js",
     "import-x-influencers": "node scripts/import-x-influencers.js"
   },
