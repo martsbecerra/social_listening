@@ -478,11 +478,20 @@ function buildAccountStatsMap() {
   return map;
 }
 
+/**
+ * Nivel de un valor contra la mediana de la cuenta. Sin referencia solo si
+ * falta el valor, falta la mediana (likes ocultos: null) o la muestra es
+ * chica (< BENCHMARK_MIN_POSTS). Una mediana de 0 SÍ es referencia: antes
+ * contaba como "sin referencia" y dejaba sin benchmark a las cuentas chicas
+ * que casi no reciben likes ni comentarios (97 posteos de 31 cuentas el
+ * 25/9/2026). Para ellas 0 es lo normal; el ratio se calcula contra 1 para
+ * no dividir por cero (0 o 1 = 1x normal, 2 = 2x alto).
+ */
 function classifyValue(value, medianValue, nPosts, basis) {
-  if (value == null || !Number.isFinite(medianValue) || medianValue <= 0 || nPosts < BENCHMARK_MIN_POSTS) {
+  if (value == null || !Number.isFinite(medianValue) || medianValue < 0 || nPosts < BENCHMARK_MIN_POSTS) {
     return { level: 'sin-referencia', nPosts: nPosts || 0 };
   }
-  const ratio = value / medianValue;
+  const ratio = medianValue > 0 ? value / medianValue : value === 0 ? 1 : value;
   const level = ratio < RATIO_LOW ? 'bajo' : ratio >= RATIO_HIGH ? 'alto' : 'normal';
   return { level, value, median: medianValue, ratio, nPosts, basis };
 }

@@ -153,6 +153,24 @@ describe('benchmark: criterio de recálculo', { concurrency: false }, () => {
     assert.equal(accountStats.BENCHMARK_RECALC_DAYS, 30);
   });
 
+  test('mediana 0 es referencia (0 o 1 = normal, 2 o más = alto); mediana null (likes ocultos) sigue sin referencia', () => {
+    setStats('chiquita', { computedDaysAgo: 1, medianLikes: 0, medianComments: 0 });
+    const cero = accountStats.classifyPostAgainstBenchmark({ account: 'chiquita', plataforma: 'instagram', likes: 0, comments: 0 });
+    assert.equal(cero.likes.level, 'normal');
+    assert.equal(cero.likes.ratio, 1);
+    assert.equal(cero.likes.basis, 'global');
+    const dos = accountStats.classifyPostAgainstBenchmark({ account: 'chiquita', plataforma: 'instagram', likes: 2, comments: 1 });
+    assert.equal(dos.likes.level, 'alto');
+    assert.equal(dos.likes.ratio, 2);
+    assert.equal(dos.comments.level, 'normal');
+    assert.equal(dos.comments.ratio, 1);
+
+    setStats('ocultos', { computedDaysAgo: 1, medianLikes: null, medianComments: 0 });
+    const ocultos = accountStats.classifyPostAgainstBenchmark({ account: 'ocultos', plataforma: 'instagram', likes: 5, comments: 0 });
+    assert.equal(ocultos.likes.level, 'sin-referencia', 'sin mediana de likes no hay contra qué comparar');
+    assert.equal(ocultos.comments.level, 'normal');
+  });
+
   test('listAccountBenchmarkActivity: la condición sale de detected_at vs. computed_at de la fila global', () => {
     insertPost({ id: 'nueva-1', account: 'nueva', detectedDaysAgo: 3 }); // nunca calculada
     setStats('aldia', { computedDaysAgo: 10 });

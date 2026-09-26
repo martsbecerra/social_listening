@@ -308,7 +308,11 @@ Hace falta `SESSION_SECRET` (string largo aleatorio) y `APP_BASE_URL` (p. ej.
   adapter declara `capabilities.benchmark`, hoy Instagram): la mediana de
   likes y comentarios de los últimos 3 meses de ESA cuenta, por tipo de
   posteo más una global de fallback, contra la que cada posteo de la tabla
-  se clasifica como alto/normal/bajo. Se guarda en `account_stats`.
+  se clasifica como alto/normal/bajo. Se guarda en `account_stats`. Una
+  mediana de 0 (cuentas chicas que casi no reciben likes ni comentarios) es
+  una referencia válida: 0 es lo normal y 2 o más es alto (el ratio se
+  calcula contra 1). "Sin referencia" queda solo cuando falta la mediana
+  (likes ocultos) o la cuenta tiene menos de 5 posteos recientes.
 
   **Cuándo se calcula.** Una cuenta se (re)calcula SOLO cuando aparece con
   un posteo nuevo en el monitoreo (`detected_posts`) y, además, nunca se

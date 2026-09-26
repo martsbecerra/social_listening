@@ -76,7 +76,8 @@ Relevancia y dedupe viven en `src/monitor.js` (`evaluateRelevance`; si un
 posteo llega por varias fuentes gana `keyword` (X) > `account` > `hashtag`
 = `search`). Los seguidores vienen en los posteos de perfil de apidojo
 (`owner.followerCount`, solo en consultas de perfil) y actualizan
-`account_followers` en cualquier fase (`monitor.rememberFollowers`). Ese
+`account_followers` y los posteos ya guardados de esa cuenta en cualquier
+fase (`monitor.rememberFollowers`; antes solo el benchmark propagaba). Ese
 número es el del perfil CONSULTADO: en un posteo en colaboración (owner
 distinto de la cuenta consultada) el actor lo repite, así que el proveedor
 deja `followers` en null para esos items.

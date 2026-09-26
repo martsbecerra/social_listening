@@ -514,8 +514,9 @@ function searchBase(post) {
 }
 
 /**
- * Actualiza la caché de seguidores (account_followers) con lo que trajo una
- * respuesta del adapter, en cualquier fase (detección, benchmark,
+ * Actualiza la caché de seguidores (account_followers) y los posteos ya
+ * guardados de esa cuenta con lo que trajo una respuesta del adapter, en
+ * cualquier fase (detección, benchmark,
  * refresco): cada posteo normalizado puede venir con `followers` del autor
  * (Instagram con apidojo los trae en cada posteo; el actor oficial no). Una
  * cuenta por respuesta, con el primer valor que aparece. Solo en plataformas
@@ -536,6 +537,12 @@ function rememberFollowers(posts, platformId) {
     const updatedAt = new Date().toISOString();
     for (const post of byAccount.values()) {
       db.upsertAccountFollowers({ account: post.account, plataforma: platformId, followers: post.followers, updatedAt });
+      // Y a los posteos ya guardados de esa cuenta: un resultado de búsqueda
+      // se guarda antes de que nadie consulte el perfil (seguidores null) y
+      // el refresco suele ser el primero que trae el dato. Antes solo el
+      // benchmark lo propagaba, y hasta que le tocaba a esa cuenta el posteo
+      // quedaba en "-" (11 posteos el 25/9/2026).
+      db.updateFollowersForAccount(post.account, post.followers, platformId);
     }
     return byAccount.size;
   } catch (err) {
