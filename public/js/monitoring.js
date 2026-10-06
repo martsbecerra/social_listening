@@ -413,7 +413,16 @@ function buildBenchLine(label, metric) {
   span.className = `bn ${benchmarkLevelClass(metric)}`;
 
   if (!metric || metric.level === 'sin-referencia') {
-    span.textContent = `${label}: sin referencia (menos de 5 posteos recientes de esta cuenta)`;
+    // El backend dice por qué (classifyValue en src/accountStats.js): no es
+    // lo mismo que falte el dato de este posteo (likes ocultos por el autor)
+    // que la cuenta no tenga muestra suficiente.
+    const reason = metric && metric.reason;
+    span.textContent =
+      reason === 'sin-dato'
+        ? `${label}: sin dato (el contador está oculto o no llegó)`
+        : reason === 'sin-mediana'
+          ? `${label}: sin referencia (los posteos recientes de esta cuenta no traen este dato)`
+          : `${label}: sin referencia (menos de 5 posteos recientes de esta cuenta)`;
     return span;
   }
 
@@ -526,23 +535,18 @@ function toggleRowExpansion(row) {
 
 // -------------------------------------------------------------------------
 // Tarjetas destacadas ("Se despegaron"): posteos — no cuentas — cuya cuenta
-// tiene benchmark real (account_stats) en AMBAS métricas y cuyo ratio mayor
-// (likes o comentarios) llega a 1.5x. Mismo criterio que "dest" en
-// design/monitoreo.html.
+// tiene benchmark real (account_stats) y cuyo ratio mayor (likes o
+// comentarios) llega a 1.5x. La métrica ganadora la calcula el backend
+// (benchmark.top, highlightOf en src/accountStats.js) entre las que tienen
+// referencia: un posteo con likes sin dato (ocultos por el autor) se destaca
+// igual por sus comentarios, en vez de quedar afuera.
 // -------------------------------------------------------------------------
 const HIGHLIGHT_MIN_RATIO = 1.5;
 const HIGHLIGHT_CARD_COUNT = 4;
 
 function highlightTop(post) {
-  const benchmark = post.benchmark || {};
-  const bl = benchmark.likes, bc = benchmark.comments;
-  if (!bl || bl.level === 'sin-referencia' || !bc || bc.level === 'sin-referencia') return null;
-  const useComments = bc.ratio >= bl.ratio;
-  return {
-    best: Math.max(bl.ratio, bc.ratio),
-    label: useComments ? 'comentarios' : 'likes',
-    ratio: useComments ? bc.ratio : bl.ratio,
-  };
+  const top = post.benchmark && post.benchmark.top;
+  return top && Number.isFinite(top.ratio) ? top : null;
 }
 
 function renderHighlightCards(posts) {

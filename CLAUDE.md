@@ -195,6 +195,15 @@ del perfil). SDD en `openspec/changes/refresco-url/`.
   posteo deja de pedirse, con línea de log (cuenta y URL). Una respuesta
   válida por cualquier camino lo reanuda. Un run caído no suma. Sus métricas
   quedan en el último valor conocido.
+- Likes null en la tabla de Monitoreo: es "sin dato", nunca 0. La celda
+  muestra "—" (`formatCount` en `public/js/monitoring.js`);
+  `accountStats.classifyValue` lo deja `sin-referencia` con `reason`
+  (`sin-dato` falta el valor de ese posteo | `muestra-chica` | `sin-mediana`
+  la cuenta no trae esa métrica) y el panel de detalle muestra ese motivo;
+  `median` ignora los null. El destacado de "Se despegaron" lo calcula el
+  backend (`benchmark.top`, `accountStats.highlightOf`) entre las métricas
+  con referencia: un posteo con likes ocultos se destaca igual por sus
+  comentarios. Test: `test/likesNull.test.js`.
 - Seguidores: por URL no llegan (el actor oficial no los trae por posteo);
   los sigue trayendo el benchmark (`BENCHMARK_RECALC_DAYS`) y la validación
   de cuentas. Nada más dependía del refresco para eso.

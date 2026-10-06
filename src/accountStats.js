@@ -486,10 +486,20 @@ function buildAccountStatsMap() {
  * que casi no reciben likes ni comentarios (97 posteos de 31 cuentas el
  * 25/9/2026). Para ellas 0 es lo normal; el ratio se calcula contra 1 para
  * no dividir por cero (0 o 1 = 1x normal, 2 = 2x alto).
+ *
+ * Un valor null (dato faltante: likes ocultos por el autor, contador que no
+ * llegó) NUNCA se compara como si fuera 0: queda "sin-referencia". `reason`
+ * dice por qué, para que la tabla no muestre un motivo falso:
+ *   - 'sin-dato': falta el valor de ESTE posteo.
+ *   - 'muestra-chica': la cuenta tiene menos de BENCHMARK_MIN_POSTS posteos
+ *     recientes (o ningún cálculo todavía).
+ *   - 'sin-mediana': hay muestra, pero ningún posteo de la cuenta trae esta
+ *     métrica (cuenta que oculta los likes).
  */
 function classifyValue(value, medianValue, nPosts, basis) {
   if (value == null || !Number.isFinite(medianValue) || medianValue < 0 || nPosts < BENCHMARK_MIN_POSTS) {
-    return { level: 'sin-referencia', nPosts: nPosts || 0 };
+    const reason = value == null ? 'sin-dato' : nPosts < BENCHMARK_MIN_POSTS ? 'muestra-chica' : 'sin-mediana';
+    return { level: 'sin-referencia', reason, nPosts: nPosts || 0 };
   }
   const ratio = medianValue > 0 ? value / medianValue : value === 0 ? 1 : value;
   const level = ratio < RATIO_LOW ? 'bajo' : ratio >= RATIO_HIGH ? 'alto' : 'normal';
@@ -533,9 +543,36 @@ function classifyPostAgainstBenchmark({ account, plataforma, postType = null, li
   }
   const nPosts = stats ? stats.nPosts : 0;
 
-  return {
+  const result = {
     likes: classifyValue(likes, stats ? stats.medianLikes : null, nPosts, basis),
     comments: classifyValue(comments, stats ? stats.medianComments : null, nPosts, basis),
+  };
+  result.top = highlightOf(result);
+  return result;
+}
+
+/**
+ * Métrica por la que un posteo "se despega" (tarjetas destacadas de la tabla
+ * de Monitoreo): la de mayor ratio contra la mediana de su cuenta, entre las
+ * que tienen referencia. Antes hacían falta las DOS métricas con referencia,
+ * así que un posteo con likes null (ocultos por el autor) nunca se destacaba
+ * aunque sus comentarios explotaran: ahora alcanza con una. El umbral
+ * (1,5x) lo aplica el frontend. Empate: comentarios, como siempre.
+ * @returns {{ metric: 'likes'|'comments', label: string, ratio: number, best: number }|null}
+ *   null si ninguna de las dos métricas tiene referencia.
+ */
+function highlightOf({ likes, comments } = {}) {
+  const usable = (m) => Boolean(m && m.level !== 'sin-referencia' && Number.isFinite(m.ratio));
+  const hasLikes = usable(likes);
+  const hasComments = usable(comments);
+  if (!hasLikes && !hasComments) return null;
+  const useComments = hasComments && (!hasLikes || comments.ratio >= likes.ratio);
+  const chosen = useComments ? comments : likes;
+  return {
+    metric: useComments ? 'comments' : 'likes',
+    label: useComments ? 'comentarios' : 'likes',
+    ratio: chosen.ratio,
+    best: chosen.ratio,
   };
 }
 
@@ -555,6 +592,7 @@ module.exports = {
   refreshStaleAccountStats,
   buildAccountStatsMap,
   classifyPostAgainstBenchmark,
+  highlightOf,
   // Para el heartbeat del ciclo (Cambio G, ver src/scheduler.js).
   benchmarkLimiter,
 };
