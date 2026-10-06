@@ -1948,12 +1948,32 @@ pre.report a:hover {
   color: var(--clay-500);
 }
 
+/* Final de la barra: buscador, contador y "Limpiar". Con el interruptor y el
+   orden ya no entra todo en un renglón; agrupados, cuando falta lugar bajan
+   los tres juntos al segundo (el buscador a lo ancho) en vez de quedar el
+   contador solo abajo. 555px: el buscador con su texto de ayuda entero más
+   el contador y "Limpiar"; así la barra queda igual de alta en las dos
+   vistas y no salta al cambiar. En pantallas angostas el grupo corta adentro
+   como antes. */
+.frow-end {
+  flex: 1 1 555px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
 /* Grilla. Foto chica fija: es la variante "compact" de la maqueta, sin
-   selector de tamaño. */
+   selector de tamaño. El mínimo de la tarjeta es 240px y no los 230px de la
+   maqueta: .container-wide (1240px) es más ancho que la maqueta (1148px) y
+   con 230 entraban 5 columnas de 235px, con las cuentas cortadas y el
+   selector de sentimiento en una segunda línea. Con 240 quedan las 4
+   columnas que muestra la maqueta. */
 .feed {
   --feed-img-h: 150px;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: 16px;
 }
 .feed-empty {
@@ -1968,6 +1988,11 @@ pre.report a:hover {
    neutral es ámbar. Sin clasificar, gris. */
 .feed-card {
   --s: #cfd6d2;
+  /* Son cientos de tarjetas sin paginar: el navegador no calcula ni pinta las
+     que están fuera de la pantalla hasta que se acercan (420px es el alto
+     estimado mientras tanto; una vez dibujada recuerda el real). */
+  content-visibility: auto;
+  contain-intrinsic-height: auto 420px;
   display: flex;
   flex-direction: column;
   overflow: hidden;

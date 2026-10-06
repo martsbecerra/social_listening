@@ -364,6 +364,38 @@ async function updateSentiment(id, sentiment, selectEl) {
   }
 }
 
+// El selector de sentimiento (pastilla con color y marca de forma, ver
+// .sentiment-select en styles.css). Lo arman la celda de la tabla y la
+// tarjeta del feed, cada una con sus propios manejadores. "raw" es el valor
+// guardado: null o vacío es "sin clasificar".
+function buildSentimentSelect(raw) {
+  const sinClasificar = !raw;
+  const sentiment = sinClasificar ? SENTIMENT_UNSET : raw;
+
+  const select = document.createElement('select');
+  select.className = `sentiment-select sentiment-${sentiment}`;
+
+  // La opción "Sin clasificar" existe sólo mientras el posteo lo esté: es
+  // un estado del sistema, no algo que se elija a mano. Elegir cualquier
+  // otro valor lo saca de ahí y no se puede volver.
+  if (sinClasificar) {
+    const opt = document.createElement('option');
+    opt.value = SENTIMENT_UNSET;
+    opt.textContent = SENTIMENT_UNSET_LABEL;
+    opt.selected = true;
+    select.appendChild(opt);
+  }
+
+  SENTIMENT_OPTIONS.forEach((value) => {
+    const opt = document.createElement('option');
+    opt.value = value;
+    opt.textContent = SENTIMENT_LABELS[value];
+    if (value === sentiment) opt.selected = true;
+    select.appendChild(opt);
+  });
+  return select;
+}
+
 // Formatea un número con separador de miles es-AR, o "—" si no hay dato
 // (mismo símbolo que usa design/monitoreo.html en fmt/abbr).
 function formatCount(value) {
@@ -393,8 +425,12 @@ function formatBenchmarkNumber(n) {
   return n == null || !Number.isFinite(n) ? '—' : n.toLocaleString('es-AR');
 }
 
+// Formateador armado una sola vez: toLocaleString con opciones crea uno
+// nuevo en cada llamada, y el feed formatea cientos de tarjetas de un saque.
+const BENCHMARK_RATIO_FORMAT = new Intl.NumberFormat('es-AR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
 function formatBenchmarkRatio(ratio) {
-  return ratio.toLocaleString('es-AR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  return BENCHMARK_RATIO_FORMAT.format(ratio);
 }
 
 // "sin-referencia" (guión, como lo manda el backend) -> "sinref" (la clase
@@ -450,13 +486,17 @@ function buildBenchLine(label, metric) {
 }
 
 // Fecha + hora completas (24hs, no "a. m./p. m."). "N/D" si no hay fecha.
+// Mismo motivo que BENCHMARK_RATIO_FORMAT: formateadores armados una vez.
+const FULL_DATE_FORMAT = new Intl.DateTimeFormat('es-AR');
+const FULL_TIME_FORMAT = new Intl.DateTimeFormat('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false });
+
 function formatFullDateTime(iso) {
   if (!iso) return { date: 'N/D', time: '' };
   const d = new Date(iso);
-  return {
-    date: d.toLocaleDateString('es-AR'),
-    time: d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false }),
-  };
+  // Una fecha inválida hace tirar a Intl.DateTimeFormat (toLocaleDateString
+  // devolvía el texto "Invalid Date"): se conserva ese resultado.
+  if (Number.isNaN(d.getTime())) return { date: 'Invalid Date', time: 'Invalid Date' };
+  return { date: FULL_DATE_FORMAT.format(d), time: FULL_TIME_FORMAT.format(d) };
 }
 
 // Panel desplegable — mismo marcado que .dt en design/monitoreo.html.
@@ -700,6 +740,16 @@ function updateCounts() {
   mEl.textContent = monitoringTable.getDataCount();
 }
 
+// Vistas extra sobre los mismos posteos y los mismos filtros que la tabla.
+// Hoy hay una sola, el Feed de Instagram (public/js/monitoringFeed.js, que
+// x.html no carga): se anota acá y se le avisa cada vez que cambian los
+// datos o los filtros. Sin ninguna anotada no pasa nada.
+const monitoringViewListeners = [];
+
+function notifyMonitoringViews() {
+  for (const listener of monitoringViewListeners) listener();
+}
+
 // Valores actuales de la barra "Filtrar".
 function readFilterValues() {
   return {
@@ -750,6 +800,7 @@ function applyFilters() {
 
   updateCounts();
   updateMonitoringClearButtonState();
+  notifyMonitoringViews();
 }
 
 // -------------------------------------------------------------------------
@@ -938,31 +989,7 @@ const MONITORING_COLUMNS = [
     headerHozAlign: 'left',
     formatter: (cell) => {
       const id = cell.getRow().getData().id;
-      const raw = cell.getValue();
-      const sinClasificar = !raw;
-      const sentiment = sinClasificar ? SENTIMENT_UNSET : raw;
-
-      const select = document.createElement('select');
-      select.className = `sentiment-select sentiment-${sentiment}`;
-
-      // La opción "Sin clasificar" existe sólo mientras el posteo lo esté: es
-      // un estado del sistema, no algo que se elija a mano. Elegir cualquier
-      // otro valor lo saca de ahí y no se puede volver.
-      if (sinClasificar) {
-        const opt = document.createElement('option');
-        opt.value = SENTIMENT_UNSET;
-        opt.textContent = SENTIMENT_UNSET_LABEL;
-        opt.selected = true;
-        select.appendChild(opt);
-      }
-
-      SENTIMENT_OPTIONS.forEach((value) => {
-        const opt = document.createElement('option');
-        opt.value = value;
-        opt.textContent = SENTIMENT_LABELS[value];
-        if (value === sentiment) opt.selected = true;
-        select.appendChild(opt);
-      });
+      const select = buildSentimentSelect(cell.getValue());
       select.addEventListener('click', (e) => e.stopPropagation());
       select.addEventListener('change', () => {
         if (select.value === SENTIMENT_UNSET) return;
