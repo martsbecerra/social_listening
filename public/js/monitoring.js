@@ -49,6 +49,9 @@ const highlightsSectionEl = document.getElementById('monitoringHighlightsSection
 const cardsEl = document.getElementById('cards');
 
 const fSentEl = document.getElementById('fSent');
+// Filtro "Alcance": solo está en instagram.html (la etiqueta sale del
+// benchmark, que X no tiene). En x.html esto es null y el filtro no existe.
+const fAlcanceEl = document.getElementById('fAlcance');
 const fAccBtnEl = document.getElementById('fAccBtn');
 const fAccPanelEl = document.getElementById('fAccPanel');
 const fDesdeEl = document.getElementById('fDesde');
@@ -731,6 +734,7 @@ let fAccValue = '';
 function isDefaultFilterState() {
   return (
     !fSentEl.value &&
+    !(fAlcanceEl && fAlcanceEl.value) &&
     !fAccValue &&
     !fDesdeEl.value &&
     !fHastaEl.value &&
@@ -771,6 +775,7 @@ function notifyMonitoringViews(change) {
 function readFilterValues() {
   return {
     sentiment: fSentEl.value,
+    reach: fAlcanceEl ? fAlcanceEl.value : '', // "" | alto | medio | bajo
     account: fAccValue,
     desde: fDesdeEl.value, // "YYYY-MM-DD" del <input type="date"> o ""
     hasta: fHastaEl.value,
@@ -783,7 +788,7 @@ function readFilterValues() {
 // las dos muestran siempre el mismo conjunto. "filters" es lo que devuelve
 // readFilterValues().
 function postMatchesFilters(data, filters) {
-  const { sentiment, account, desde, hasta, q } = filters;
+  const { sentiment, reach, account, desde, hasta, q } = filters;
   // "sin_clasificar" no es un valor guardado: es la ausencia de valor.
   if (sentiment === SENTIMENT_UNSET) {
     if (data.sentiment) return false;
@@ -791,6 +796,12 @@ function postMatchesFilters(data, filters) {
     return false;
   }
   if (account && data.account !== account) return false;
+  // Alcance: la etiqueta de postReach. Un posteo sin etiqueta (ninguna de sus
+  // dos métricas tiene referencia) no entra en ninguno de los tres niveles.
+  if (reach) {
+    const postLevel = postReach(data);
+    if (!postLevel || postLevel.level !== reach) return false;
+  }
   if (desde || hasta) {
     if (!data.posted_at) return false;
     const posted = new Date(data.posted_at);
@@ -811,6 +822,7 @@ function applyFilters() {
   monitoringTable.setFilter((data) => postMatchesFilters(data, filters));
 
   fSentEl.classList.toggle('on', !!filters.sentiment);
+  if (fAlcanceEl) fAlcanceEl.classList.toggle('on', !!filters.reach);
   fAccBtnEl.classList.toggle('on', !!filters.account);
   fDesdeEl.classList.toggle('on', !!filters.desde);
   fHastaEl.classList.toggle('on', !!filters.hasta);
@@ -916,6 +928,7 @@ function ensureAccountFilterOptions(posts) {
 // de la tabla (no es un filtro de esta barra).
 function resetFilters() {
   fSentEl.value = '';
+  if (fAlcanceEl) fAlcanceEl.value = '';
   fAccValue = '';
   fAccBtnEl.textContent = 'Cuenta';
   fAccBtnEl.classList.remove('on');
@@ -1316,6 +1329,7 @@ ignoreModal.addEventListener('click', (e) => { if (e.target === ignoreModal) clo
 runNowBtn.addEventListener('click', runNow);
 
 fSentEl.addEventListener('change', applyFilters);
+if (fAlcanceEl) fAlcanceEl.addEventListener('change', applyFilters);
 fDesdeEl.addEventListener('change', applyFilters);
 fHastaEl.addEventListener('change', applyFilters);
 qEl.addEventListener('input', applyFilters);
