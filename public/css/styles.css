@@ -2220,6 +2220,17 @@ pre.report a:hover {
   color: var(--jade-700);
   text-underline-offset: 3px;
 }
+/* Una oración (el motivo completo de "Detectado por", o por qué una métrica
+   no tiene referencia) no entra en la columna de la derecha: la etiqueta va
+   arriba y el texto abajo, a lo ancho. */
+.feed-more .stack {
+  display: block;
+}
+.feed-more .stack b {
+  display: block;
+  max-width: none;
+  text-align: left;
+}
 
 /* Likes, comentarios y el selector de sentimiento de la tabla
    (.sentiment-select), que acá va a la derecha en lugar de la pastilla fija
