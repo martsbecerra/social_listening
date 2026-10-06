@@ -162,6 +162,20 @@ describe('proveedor apidojo del adapter de Instagram', { concurrency: false }, (
     assert.equal(search[0].followers, null);
   });
 
+  test('likes ocultos (isLikeAndViewCountsDisabled): likeCount no es un dato y queda null; los comentarios se conservan (REQ-RURL-06)', () => {
+    const [oculto, normal] = provider.normalizeItems(
+      [
+        rawPost({ id: 501, likeCount: 0, commentCount: 1383, isLikeAndViewCountsDisabled: true }),
+        rawPost({ id: 502, likeCount: 0, commentCount: 4, isLikeAndViewCountsDisabled: false }),
+      ],
+      { account: 'cuenta_prueba', sourceType: 'account' }
+    );
+    assert.equal(oculto.likes, null, 'el 0 del contador oculto no es un dato');
+    assert.equal(oculto.comments, 1383);
+    assert.equal(normal.likes, 0, 'un 0 real con el contador visible se conserva');
+    assert.equal(normal.comments, 4);
+  });
+
   test('posteo en colaboración en la respuesta de un perfil: owner.followerCount es del perfil consultado, así que no se le atribuye al autor del item', () => {
     // Visto en el ciclo real del 2026-09-18: la consulta de @somoslupaa (54
     // seguidores) trajo dos posteos cuyo owner es @somos100barrios (19.276),

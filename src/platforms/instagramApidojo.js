@@ -32,7 +32,9 @@
 // MISMO que devuelve el actor oficial: detected_posts dedupea por ese id y
 // el refresco de métricas cruza por él), code, url (/p/{code}/, también
 // igual), createdAt (ISO), caption (puede venir null), likeCount y
-// commentCount (pueden venir null: quedan null, nunca 0), isVideo, video
+// commentCount (pueden venir null: quedan null, nunca 0; con
+// isLikeAndViewCountsDisabled true el autor ocultó los likes y likeCount no
+// es un dato: likes queda null, no el 0 que manda el actor), isVideo, video
 // { playCount, duration }, isCarousel + carouselMedia[], isPinned,
 // isPaidPartnership, isLikeAndViewCountsDisabled, location, audio, owner
 // { username, isVerified, ... }. Los posteos de un perfil vienen del más
@@ -193,7 +195,8 @@ function normalizePost(raw, { account = null, sourceType, sourceQuery = null } =
     url,
     caption,
     hashtagsText: Array.isArray(raw.hashtags) && raw.hashtags.length > 0 ? raw.hashtags.join(' ') : extractHashtags(caption),
-    likes: countOrNull(raw.likeCount),
+    // Likes ocultos por el autor: el contador no es un dato (ver encabezado).
+    likes: raw.isLikeAndViewCountsDisabled === true ? null : countOrNull(raw.likeCount),
     comments: countOrNull(raw.commentCount),
     postedAt: toIso(pick(raw.createdAt, raw.timestamp)),
     postType: derivePostType(raw),

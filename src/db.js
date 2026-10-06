@@ -869,6 +869,18 @@ function rejectNegative(value) {
   return typeof value === 'number' && value < 0 ? null : value;
 }
 
+// Regla única de métricas al REFRESCAR un posteo ya guardado
+// (applyMetricsRefresh, updatePostMetricsIfChanged; ver
+// openspec/changes/refresco-url, REQ-RURL-06): un valor ausente (undefined),
+// null o negativo (el centinela -1 de Apify, un contador oculto) NUNCA pisa
+// lo guardado de ESE campo, aunque el otro campo sí venga; solo un número
+// >= 0 pisa. Antes `likes ?? null` escribía NULL encima de un valor real
+// cuando faltaba uno solo de los dos (y el 0 de un contador oculto pisaba un
+// número real: eso se corta en el adapter, que lo deja en null).
+function keepIfMissing(next, existing) {
+  return typeof next === 'number' && Number.isFinite(next) && next >= 0 ? next : existing;
+}
+
 /**
  * @returns {boolean} true si se insertó una fila nueva. false si ya existía
  * (mismo id o misma url) — no tira UNIQUE.
@@ -1311,8 +1323,8 @@ function touchAccountStatsComputedAt(account, plataforma, computedAt) {
  * cambió (ej. un recálculo de benchmark trae el mismo posteo con métricas
  * nuevas, o con un post_type que antes no se guardaba). No hace nada si el
  * id no existe en detected_posts — nunca inserta, solo actualiza lo que ya
- * está. rejectNegative evita reabrir la puerta al centinela -1 de Apify por
- * esta vía.
+ * está. keepIfMissing (regla única de métricas): un likes o comments
+ * ausente, null o negativo conserva el valor guardado de ese campo.
  *
  * post_type SOLO se completa si faltaba (existing.post_type es NULL) —
  * nunca se pisa un valor ya conocido, a diferencia de likes/comments que sí
@@ -1323,8 +1335,8 @@ function touchAccountStatsComputedAt(account, plataforma, computedAt) {
 function updatePostMetricsIfChanged(id, { likes, comments, postType }) {
   const existing = getPostMetricsStmt.get(id);
   if (!existing || existing.ignored) return false;
-  const cleanLikes = rejectNegative(likes ?? null);
-  const cleanComments = rejectNegative(comments ?? null);
+  const cleanLikes = keepIfMissing(likes, existing.likes);
+  const cleanComments = keepIfMissing(comments, existing.comments);
   const nextPostType = existing.post_type != null ? existing.post_type : postType || null;
 
   if (existing.likes === cleanLikes && existing.comments === cleanComments && existing.post_type === nextPostType) {
@@ -1514,6 +1526,11 @@ function listAccountsDueForRefresh({ sinceIso, untilIso, cadenceIso = null, plat
  * metrics_updated_at) funcione: un posteo estable que no creció tiene que
  * poder marcarse como "ya lo revisé recién", no quedar con la marca vieja
  * y parecer eternamente pendiente.
+ *
+ * Regla única de métricas (keepIfMissing): cada métrica que llega ausente,
+ * null o negativa conserva el valor guardado de ESE campo (vale para las
+ * cuatro columnas; Instagram no manda retweets/views y X sí); solo un número
+ * >= 0 pisa. `changed` solo es true si algún valor realmente cambió.
  * @returns {{changed: boolean, account: string, postedAt: string,
  *   previousLikes: number|null, previousComments: number|null,
  *   likes: number|null, comments: number|null}|null} null si el id no está
@@ -1522,10 +1539,10 @@ function listAccountsDueForRefresh({ sinceIso, untilIso, cadenceIso = null, plat
 function applyMetricsRefresh(id, { likes, comments, retweets, views } = {}) {
   const existing = getPostForMetricsRefreshStmt.get(id);
   if (!existing || existing.ignored) return null;
-  const cleanLikes = rejectNegative(likes ?? null);
-  const cleanComments = rejectNegative(comments ?? null);
-  const cleanRetweets = retweets === undefined ? existing.retweets : rejectNegative(retweets ?? null);
-  const cleanViews = views === undefined ? existing.views : rejectNegative(views ?? null);
+  const cleanLikes = keepIfMissing(likes, existing.likes);
+  const cleanComments = keepIfMissing(comments, existing.comments);
+  const cleanRetweets = keepIfMissing(retweets, existing.retweets);
+  const cleanViews = keepIfMissing(views, existing.views);
   const changed =
     existing.likes !== cleanLikes ||
     existing.comments !== cleanComments ||
