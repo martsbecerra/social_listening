@@ -41,4 +41,4 @@
 - [x] 6.1 `accountStats.classifyValue` devuelve `reason` (`sin-dato` | `muestra-chica` | `sin-mediana`) y `classifyPostAgainstBenchmark` devuelve `top` (`highlightOf`): un posteo con likes sin dato se destaca por sus comentarios en vez de quedar fuera de "Se despegaron" (6 posteos de la base lo perdían al pasar sus 0 a null)
 - [x] 6.2 `public/js/monitoring.js`: el panel de detalle muestra el motivo real ("sin dato" en vez de "menos de 5 posteos") y las tarjetas leen `benchmark.top`; la celda ya mostraba "—"
 - [x] 6.3 `test/likesNull.test.js`
-- [ ] 6.4 Limpieza de una sola vez en la base del piloto: likes a NULL en los posteos de Instagram con likes = 0 y comentarios > 0 (22), con backup previo y OK del dueño
+- [x] 6.4 Limpieza de una sola vez en la base del piloto: likes a NULL en los posteos de Instagram con likes = 0 y comentarios > 0 (22), con backup previo y OK del dueño
