@@ -276,6 +276,36 @@ motivo y no borra: si el modelo dice no relevante, deja `no relevante según
 el modelo: <motivo>`. Los tests stubean `llm.requestStructuredAnalysis` (por
 el objeto del módulo) o `classifier.clasificarPosteo`; nunca el modelo real.
 
+## Vista Feed del Monitoreo (solo Instagram)
+
+La solapa "Monitoreo en vivo" de Instagram tiene dos vistas, Tabla y Feed
+(tarjetas), con un interruptor que recuerda la última en `localStorage`
+(`sl.monitoreo.vista`, con try/catch). El feed es
+`public/js/monitoringFeed.js`: lo carga SOLO `instagram.html`, después de
+`monitoring.js` (scripts clásicos, mismo ámbito global: todo lo suyo lleva
+prefijo `feed` / `FEED_`); `x.html` no lo carga y no cambia. No tiene
+datos propios: dibuja `monitoringTable.getData()` pasado por el filtro
+compartido `postMatchesFilters(post, readFilterValues())` de
+`monitoring.js`, el mismo de la tabla, así las dos vistas muestran siempre
+el mismo conjunto. Un filtro nuevo va en ese predicado; si su control existe
+solo en `instagram.html` (como `fAlcanceEl`), en X es null y hay que
+tratarlo así. `monitoring.js` avisa los cambios con
+`notifyMonitoringViews(change)` (sin argumento = redibujar;
+`{ ignoredId }`; `{ goToId }` desde "Se despegaron"). El alcance de la
+tarjeta y del filtro "Alcance" es `postReach`: combina los niveles que ya
+manda el backend en `benchmark.likes` y `benchmark.comments` (vale el
+mejor de los dos; "normal" se muestra "medio"; sin ninguna métrica con
+referencia no hay etiqueta) y no recalcula nada. Todo dato del posteo entra
+por `textContent`, nunca como HTML. Son cientos de tarjetas sin paginar: el
+redibujo es completo (deja las tarjetas cerradas), con espera de 150 ms y
+`content-visibility: auto`; el detalle de "Ver más" se arma recién al
+abrir. La imagen todavía no existe en los datos: la tarjeta muestra el
+recuadro de reemplazo y el único punto a enchufar es `feedImageUrl`.
+Maqueta aprobada en `design/monitoreo-feed.html`; SDD en
+`openspec/changes/monitoreo-feed/`. La suite no cubre el frontend: se
+prueba en el navegador con un servidor de prueba aparte (otro puerto, copia
+de la base, sin scheduler ni Apify).
+
 ## Separación por plataforma
 
 Una publicación de X nunca se muestra ni se procesa en Instagram, ni al

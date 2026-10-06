@@ -95,6 +95,7 @@ social_listening_app/
 │       ├── x-analysis.js     # Análisis de publicación de X (`/api/x/analyze`).
 │       ├── temasEditor.js    # Temas emergentes editables (antes de copiar/WhatsApp).
 │       ├── monitoring.js     # Monitoreo en vivo (parametrizado por data-platform).
+│       ├── monitoringFeed.js # Vista Feed del Monitoreo (tarjetas). Solo Instagram.
 │       └── claimsMap.js      # Mapa de reclamos (Leaflet, filtrado por plataforma).
 ├── scripts/
 │   ├── import-reclamos.js       # Importador genérico de Excel/CSV (solo CLI).
@@ -925,6 +926,42 @@ exactamente como estaba: el rollback es un cambio de `.env`.
 - SDD en `openspec/changes/refresco-url/`; tests en
   `test/refreshPorUrl.test.js`, `test/refreshPorUrlLotes.test.js` y
   `test/metricasConservadas.test.js`.
+
+### Vista Feed del Monitoreo de Instagram (octubre 2026)
+
+La solapa "Monitoreo en vivo" de Instagram se puede ver como **Tabla** (la
+de siempre) o como **Feed**: una tarjeta por publicación, con la cuenta, el
+título, el texto, likes, comentarios, el sentimiento y una etiqueta de
+alcance. El interruptor está arriba de los resultados y recuerda la última
+vista elegida en ese navegador.
+
+- **Mismos datos y mismos filtros.** El feed no pide nada al servidor:
+  dibuja los posteos que ya trajo la tabla, con el mismo filtro
+  (`postMatchesFilters` en `public/js/monitoring.js`). Sentimiento, Alcance,
+  Cuenta, Desde / Hasta, el buscador y el contador "Mostrando N de M" valen
+  para las dos vistas.
+- **Alcance (alto / medio / bajo).** Sale del benchmark que ya calcula el
+  backend para likes y para comentarios (cortes 1,5× y 0,5× contra la
+  mediana de la cuenta; ese cálculo no cambió). Vale el mejor de los dos:
+  alto si alguno da alto, bajo solo si los dos dan bajo, medio en el resto.
+  Si una métrica no tiene referencia (likes ocultos, cuenta con pocos
+  posteos) decide la otra; si ninguna la tiene, el posteo no lleva etiqueta
+  y solo aparece con el filtro "Alcance" en blanco. La tarjeta muestra la
+  razón ("5,4×") al lado de la métrica que disparó la etiqueta.
+- **Orden** (solo en Feed): más recientes, mayor alcance (la mayor de las
+  dos razones) o más likes. La tabla sigue ordenando por encabezado.
+- **Acciones**: corregir el sentimiento e ignorar, con los mismos endpoints
+  y el mismo cartel de confirmación que la fila de la tabla.
+- **"Ver más"** abre a la vez todas las tarjetas de esa fila visual, con el
+  texto completo y lo que muestra la tabla desplegada (mediana de la cuenta
+  y razón para likes y comentarios, motivo completo de detección, fecha y
+  hora, perfil). Cambiar un filtro, el orden o la vista las cierra.
+- **Imagen**: por ahora siempre el recuadro de reemplazo con el ícono del
+  tipo; la base no guarda fotos. Queda listo para mostrarla cuando el posteo
+  traiga el dato (`feedImageUrl` en `public/js/monitoringFeed.js`).
+- Código en `public/js/monitoringFeed.js` (lo carga solo `instagram.html`);
+  maqueta en `design/monitoreo-feed.html`; SDD en
+  `openspec/changes/monitoreo-feed/`.
 
 ### Benchmark y refresco de métricas en paralelo
 
