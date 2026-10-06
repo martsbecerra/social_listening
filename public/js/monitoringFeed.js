@@ -53,11 +53,15 @@ function feedCount(value) {
 }
 
 // "hace 30 min" / "hace 5 h" / "hace 3 días", desde la fecha de publicación.
+// La unidad se elige con el número ya redondeado: 59,6 minutos es "hace 1 h"
+// y 23,6 horas es "hace 1 día", nunca "hace 60 min" ni "hace 24 h".
 function feedAgo(iso) {
   const hours = iso ? (Date.now() - new Date(iso).getTime()) / 3600e3 : NaN;
   if (!Number.isFinite(hours)) return 'N/D';
-  if (hours < 1) return `hace ${Math.max(0, Math.round(hours * 60))} min`;
-  if (hours < 24) return `hace ${Math.round(hours)} h`;
+  const minutes = Math.max(0, Math.round(hours * 60));
+  if (minutes < 60) return `hace ${minutes} min`;
+  const wholeHours = Math.round(hours);
+  if (wholeHours < 24) return `hace ${wholeHours} h`;
   const days = Math.round(hours / 24);
   return `hace ${days} ${days === 1 ? 'día' : 'días'}`;
 }
