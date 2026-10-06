@@ -20,6 +20,13 @@ saber antes de tocar algo.
   estimado.
 - Un commit por paso, mensajes en castellano; nunca mergear a `main` sin
   confirmación. `.env`, `data/` y backups no se versionan.
+- Scripts sueltos, pruebas a mano y revisiones (de una persona o de un
+  agente) trabajan con una COPIA de la base fuera del repo, nunca con
+  `data/monitoring.db`, y sin `require` de módulos que la abran:
+  `src/db.js` la abre en escritura y corre sus migraciones apenas se lo
+  carga, y lo cargan otros módulos de `src/` (por ejemplo
+  `src/accountStats.js`). Para usar código del backend, fijar
+  `MONITORING_DB_PATH` a la copia ANTES del `require`, como hacen los tests.
 - Los cambios grandes se registran en `openspec/changes/<nombre>/`
   (proposal, design, tasks, spec), con el formato de los que ya están.
 
@@ -284,12 +291,14 @@ La solapa "Monitoreo en vivo" de Instagram tiene dos vistas, Tabla y Feed
 `public/js/monitoringFeed.js`: lo carga SOLO `instagram.html`, después de
 `monitoring.js` (scripts clásicos, mismo ámbito global: todo lo suyo lleva
 prefijo `feed` / `FEED_`); `x.html` no lo carga y no cambia. No tiene
-datos propios: dibuja `monitoringTable.getData()` pasado por el filtro
-compartido `postMatchesFilters(post, readFilterValues())` de
-`monitoring.js`, el mismo de la tabla, así las dos vistas muestran siempre
-el mismo conjunto. Un filtro nuevo va en ese predicado; si su control existe
-solo en `instagram.html` (como `fAlcanceEl`), en X es null y hay que
-tratarlo así. `monitoring.js` avisa los cambios con
+datos propios ni filtro propio: dibuja las filas que la tabla ya filtró
+(`monitoringTable.getData('active')`; la tabla filtra en `applyFilters` con
+`postMatchesFilters(post, readFilterValues())`), así el feed, la tabla y el
+contador muestran siempre el mismo conjunto. Al cambiar un filtro, el orden
+o la vista con la página bajada, los resultados se muestran desde el
+principio (`feedScrollToStart`). Un filtro nuevo va en ese predicado; si su
+control existe solo en `instagram.html` (como `fAlcanceEl`), en X es null y
+hay que tratarlo así. `monitoring.js` avisa los cambios con
 `notifyMonitoringViews(change)` (sin argumento = redibujar;
 `{ ignoredId }`; `{ goToId }` desde "Se despegaron"). El alcance de la
 tarjeta y del filtro "Alcance" es `postReach`: combina los niveles que ya

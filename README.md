@@ -936,10 +936,11 @@ alcance. El interruptor está arriba de los resultados y recuerda la última
 vista elegida en ese navegador.
 
 - **Mismos datos y mismos filtros.** El feed no pide nada al servidor:
-  dibuja los posteos que ya trajo la tabla, con el mismo filtro
+  dibuja los posteos que la tabla ya trajo y ya filtró
   (`postMatchesFilters` en `public/js/monitoring.js`). Sentimiento, Alcance,
   Cuenta, Desde / Hasta, el buscador y el contador "Mostrando N de M" valen
-  para las dos vistas.
+  para las dos vistas. Si se filtra, se ordena o se cambia de vista con la
+  página bajada, los resultados se muestran desde el principio.
 - **Alcance (alto / medio / bajo).** Sale del benchmark que ya calcula el
   backend para likes y para comentarios (cortes 1,5× y 0,5× contra la
   mediana de la cuenta; ese cálculo no cambió). Vale el mejor de los dos:

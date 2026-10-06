@@ -69,7 +69,7 @@ anotado en `design.md`.
    `public/css/styles.css` y el prefijo `feed-` (los nombres de la maqueta
    ya existen ahí con otro uso).
 3. `public/js/monitoringFeed.js`, cargado solo por `instagram.html`: dibuja
-   `monitoringTable.getData()` filtrado con la función compartida.
+   las filas que la tabla ya filtró con la función compartida.
    `monitoring.js` le avisa los cambios por una lista de vistas anotadas.
 4. Acciones de la tarjeta delegadas en el contenedor, reusando
    `updateSentiment`, `openIgnoreModal` y `confirmIgnore`.

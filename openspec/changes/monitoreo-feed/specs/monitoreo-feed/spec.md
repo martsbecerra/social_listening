@@ -26,7 +26,13 @@ La solapa Monitoreo en vivo de Instagram MUST tener un interruptor "Tabla / Feed
 
 ### Requirement: REQ-FEED-02 — Mismos posteos y mismos filtros
 
-El feed MUST mostrar exactamente los posteos que mostraría la tabla con los filtros de la barra: no pide nada nuevo al servidor y usa la misma condición (`postMatchesFilters`). El contador "Mostrando N de M" MUST valer para las dos vistas. El feed MUST mostrar todas las tarjetas filtradas, sin paginar.
+El feed MUST mostrar exactamente los posteos que muestra la tabla con los filtros de la barra: no pide nada nuevo al servidor y dibuja las filas que la tabla ya filtró (con `postMatchesFilters`), sin volver a filtrar por su cuenta. El contador "Mostrando N de M" MUST valer para las dos vistas y coincidir siempre con la cantidad de tarjetas. El feed MUST mostrar todas las tarjetas filtradas, sin paginar.
+
+#### Scenario: Sentimiento corregido con el filtro puesto
+
+- GIVEN el filtro "Negativo" y una tarjeta que se acaba de pasar a "Positivo"
+- WHEN se cambia el orden, o se va a Tabla y se vuelve
+- THEN la tarjeta sigue en el feed, la fila sigue en la tabla y el contador no cambia; al volver a filtrar sale de las dos vistas y el contador baja en uno
 
 #### Scenario: Filtro combinado
 
@@ -178,6 +184,12 @@ Con el feed como vista activa, un clic en un destacado de "Se despegaron" MUST l
 - WHEN se ignora una de sus tarjetas
 - THEN la fila sigue abierta y completa con la tarjeta que ocupó el lugar
 
+#### Scenario: Ignorar la última, sola en su fila
+
+- GIVEN 9 tarjetas en 4 columnas y la novena abierta
+- WHEN se la ignora
+- THEN no queda ninguna tarjeta abierta
+
 ---
 
 ### Requirement: REQ-FEED-10 — Los datos de Instagram nunca van como HTML
@@ -201,6 +213,24 @@ Con unas 470 tarjetas, escribir en el buscador MUST seguir siendo fluido: el fee
 - GIVEN el feed con 470 tarjetas
 - WHEN se escriben cinco letras seguidas
 - THEN el feed se redibuja una vez, al terminar
+
+---
+
+### Requirement: REQ-FEED-13 — Los resultados nuevos se muestran desde el principio
+
+Si al cambiar un filtro o el orden el principio del feed quedó arriba de la barra de filtros, la página MUST volver al principio del feed. Lo mismo MUST pasar con los resultados de la vista nueva al elegir Tabla o Feed en el interruptor. Si el principio ya está a la vista, la página MUST NOT moverse. Tampoco MUST moverse cuando llegan datos nuevos con los mismos filtros y el mismo orden, al ignorar un posteo ni al corregir un sentimiento.
+
+#### Scenario: Ordenar desde abajo
+
+- GIVEN el feed con 470 tarjetas y la página bajada hasta la fila 40
+- WHEN se elige "Mayor alcance"
+- THEN se ve la primera fila del orden nuevo, debajo de la barra
+
+#### Scenario: Datos nuevos
+
+- GIVEN la página bajada y ningún cambio de filtros ni de orden
+- WHEN termina "Actualizar ahora" y el feed se redibuja
+- THEN la página se queda donde estaba
 
 ---
 

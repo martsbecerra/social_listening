@@ -4,9 +4,9 @@
 
 El feed es una segunda vista sobre los mismos datos de la tabla, no un
 módulo con datos propios. La tabla de Tabulator sigue siendo la dueña de
-los posteos (`monitoringTable.getData()`) y de la barra de filtros; el feed
-toma esos posteos, les aplica la misma condición y los dibuja como
-tarjetas. Así no hay una segunda copia que mantener al día: corregir un
+los posteos y de la barra de filtros; el feed toma las filas que la tabla
+ya filtró y las dibuja como tarjetas. Así no hay una segunda copia que
+mantener al día ni un segundo filtro que pueda dar distinto: corregir un
 sentimiento o ignorar un posteo actualiza la fila de la tabla y la tarjeta
 se apoya en eso.
 
@@ -25,7 +25,13 @@ que declara lleva el prefijo `feed` / `FEED_` para no chocar con nada.
   los trata así.
 - **Un solo filtro para las dos vistas.** `readFilterValues()` lee la barra
   y `postMatchesFilters(post, filters)` decide. La tabla lo usa en
-  `setFilter`; el feed, al dibujar. El predicado es el de antes (sentimiento
+  `setFilter` (`applyFilters`) y el feed dibuja sus filas activas
+  (`monitoringTable.getData('active')`), sin volver a filtrar. Al principio
+  el feed filtraba por su cuenta con el mismo predicado; la revisión
+  independiente mostró que así podía quedar distinto del contador (un
+  sentimiento corregido con el filtro puesto se queda en pantalla hasta
+  volver a filtrar, y el feed lo sacaba al reordenar). El predicado es el de
+  antes (sentimiento
   con "sin clasificar" como ausencia de valor, cuenta, fechas inclusivas en
   hora local sobre `posted_at`, buscador sin acentos sobre título, cuenta y
   texto) más el alcance.
@@ -51,6 +57,13 @@ que declara lleva el prefijo `feed` / `FEED_` para no chocar con nada.
   datos rehace todas las tarjetas (`renderFeed`). El buscador avisa una vez
   por tecla: `scheduleFeedRender` espera 150 ms y dibuja una sola vez. En
   la vista Tabla no se arma ninguna tarjeta.
+- **Los resultados nuevos, desde el principio.** La barra de filtros queda
+  pegada arriba, así que se filtra, se ordena o se cambia de vista desde
+  cualquier altura. `renderFeed` recuerda con qué filtros y qué orden
+  dibujó; si el dibujo siguiente llega con otros y el principio del feed
+  quedó arriba de la barra, vuelve ahí (`feedScrollToStart`), y lo mismo al
+  elegir Tabla o Feed. Con los mismos filtros (datos nuevos), al ignorar y
+  al corregir un sentimiento la página no se mueve.
 - **Cientos de tarjetas sin paginar.** `content-visibility: auto` con
   `contain-intrinsic-height: auto 420px` para que el navegador no calcule
   ni pinte las que están fuera de pantalla; `Intl.NumberFormat` y
@@ -82,7 +95,10 @@ que declara lleva el prefijo `feed` / `FEED_` para no chocar con nada.
   (`feedRowCards`, misma tolerancia que la maqueta). Un redibujo las deja
   cerradas, como en la maqueta. `feedOpenIds` recuerda con qué posteo se
   abrió cada fila solo para rearmarlas cuando las tarjetas cambian de lugar
-  sin redibujar: al ignorar una y al cambiar el ancho de la ventana.
+  sin redibujar: al ignorar una y al cambiar el ancho de la ventana. Si se
+  ignora justo esa tarjeta, la fila sigue abierta con la que ocupa su lugar
+  (la siguiente; si era la última de la lista, la que tenía al lado en su
+  fila; si estaba sola en su fila, no queda nada abierto).
 - **Imagen: un solo punto para enchufarla.** `feedImageUrl(post)` devuelve
   hoy siempre null y la tarjeta muestra el recuadro de reemplazo (degradé
   con el tono de la cuenta, ícono del tipo, etiquetas de tipo y alcance).
@@ -107,6 +123,12 @@ que declara lleva el prefijo `feed` / `FEED_` para no chocar con nada.
   métrica sin referencia lleva una sola línea con el texto de la tabla.
 - Cambiar un filtro, el orden o la vista cierra las tarjetas abiertas.
   "Se despegaron" lleva a la tarjeta pero no la abre.
+- Con un filtro de sentimiento puesto, corregir el sentimiento de una
+  tarjeta no la saca hasta volver a filtrar, igual que la fila de la tabla.
+  Si falla "ignorar" no hay aviso, también como en la tabla.
+- De la revisión independiente se arreglaron los hallazgos 1 a 3 y el borde
+  del 4; el 5 y el 6 se dejan como están y el 7 queda pendiente fuera de
+  este cambio (ver `tasks.md`).
 - El selector "Alcance" tiene las tres opciones de la maqueta; los posteos
   sin etiqueta solo se ven con el filtro en blanco.
 - La tabla no suma columna de alcance. "Limpiar" no toca el orden.

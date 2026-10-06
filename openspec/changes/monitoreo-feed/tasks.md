@@ -49,9 +49,18 @@ Un commit por paso en la rama `monitoreo_feed`, cada uno aprobado por el dueño 
 ## Phase 8: cierre
 
 - [x] 8.1 Suite verde con `IG_ACTOR=apidojo` y con `IG_ACTOR=apify` en cada paso
-- [ ] 8.2 Revisión independiente de la rama (solo lectura) y decisión del dueño sobre cada hallazgo
+- [x] 8.2 Revisión independiente de la rama (solo lectura): ningún hallazgo grave, uno medio y seis bajos; el dueño decidió sobre cada uno (Phase 9)
 - [ ] 8.3 PR a `main` (merge commit, sin squash), con OK del dueño
+
+## Phase 9: arreglos tras la revisión independiente
+
+- [x] 9.1 Hallazgo 1: al filtrar, ordenar o cambiar de vista con la página bajada, los resultados se muestran desde el principio (REQ-FEED-13)
+- [x] 9.2 Hallazgo 2: el feed dibuja las filas que la tabla ya filtró; feed, tabla y contador muestran siempre lo mismo (REQ-FEED-02)
+- [x] 9.3 Hallazgo 3: ignorar la última tarjeta, abierta y sola en su fila, ya no abre la fila de arriba (REQ-FEED-09)
+- [x] 9.4 Hallazgo 4, solo el borde: "hace 1 h" y "hace 1 día" en vez de "hace 60 min" y "hace 24 h". Queda como estaba que el texto no se actualiza solo con la página abierta
+- [x] 9.5 Hallazgos 5 (un motivo viejo "palabra clave … — sin clasificar" se ve mal en el pie; hoy no hay ningún caso en la base) y 6 (la razón redondeada puede decir "1,5×" al lado de "Alcance medio"; 3 tarjetas hoy, y el mismo redondeo ya está en la tabla): el dueño decidió dejarlos como están
 
 ## Pendiente fuera de este cambio
 
 - [ ] Imagen del posteo: guardarla o servirla desde el backend y devolverla en `feedImageUrl`
+- [ ] Hallazgo 7 de la revisión: si falla el guardado del sentimiento (el PATCH), la pantalla queda con el valor no guardado hasta recargar (la pastilla, el borde de la tarjeta, la fila y "Se despegaron"). `updateSentiment` en `public/js/monitoring.js` solo lo anota en la consola. Ya estaba en `main` para la tabla y el feed hace lo mismo: se trata aparte de esta rama, para las dos vistas
