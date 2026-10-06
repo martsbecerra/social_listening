@@ -5,8 +5,8 @@
 // feed-*).
 //
 // Lo carga SOLO instagram.html, después de monitoring.js, y se apoya en lo
-// que ese archivo ya define: monitoringTable (la fuente de los posteos),
-// readFilterValues / postMatchesFilters (los filtros de la barra), postReach
+// que ese archivo ya define: monitoringTable (la fuente de los posteos, ya
+// filtrados por la barra con postMatchesFilters), readFilterValues, postReach
 // (el alcance), buildSentimentSelect, buildBenchLine y los formateadores.
 // x.html no lo carga: en X la solapa sigue siendo solo la tabla.
 // --------------------------------------------------------------------
@@ -358,12 +358,18 @@ function renderFeed() {
   feedRenderTimer = null;
   if (feedCurrentView !== 'feed' || !monitoringTable) return;
   feedOpenIds.clear(); // las tarjetas se rehacen cerradas, como en la maqueta
-  const all = monitoringTable.getData();
-  const filters = readFilterValues();
-  const query = JSON.stringify([filters, feedOrderEl.value]);
+  const query = JSON.stringify([readFilterValues(), feedOrderEl.value]);
   const listChanged = feedLastQuery !== null && query !== feedLastQuery;
   feedLastQuery = query;
-  const visible = all.filter((post) => postMatchesFilters(post, filters));
+  // Los posteos a mostrar son las filas "activas" de la tabla: las que dejó
+  // pasar la barra de filtros la última vez que se aplicó (applyFilters, con
+  // postMatchesFilters). El feed no vuelve a filtrar por su cuenta: así
+  // muestra siempre lo mismo que la tabla y que el contador "Mostrando N de
+  // M", también cuando queda en pantalla un posteo que dejó de cumplir el
+  // filtro (un sentimiento recién corregido se queda hasta que se vuelva a
+  // filtrar; reordenar o cambiar de vista no lo saca). getData devuelve un
+  // arreglo nuevo: ordenarlo acá no toca el orden de la tabla.
+  const visible = monitoringTable.getData('active');
   const reachById = new Map(visible.map((post) => [post.id, postReach(post)]));
   visible.sort(feedSorter(feedOrderEl.value, reachById));
 
@@ -371,7 +377,11 @@ function renderFeed() {
   for (const post of visible) fragment.appendChild(buildFeedCard(post, reachById.get(post.id)));
   if (!visible.length) {
     fragment.appendChild(
-      feedNode('div', 'feed-empty', all.length ? 'No hay publicaciones con esos filtros.' : 'Todavía no se detectó ningún posteo.')
+      feedNode(
+        'div',
+        'feed-empty',
+        monitoringTable.getDataCount() ? 'No hay publicaciones con esos filtros.' : 'Todavía no se detectó ningún posteo.'
+      )
     );
   }
   feedContainerEl.replaceChildren(fragment);
