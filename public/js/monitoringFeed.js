@@ -347,6 +347,11 @@ function feedSorter(order, reachById) {
 // Tabla no se arma ninguna tarjeta.
 // -------------------------------------------------------------------------
 let feedRenderTimer = null;
+// Filtros y orden del último dibujo. Si el siguiente llega con otros, la
+// lista es otra y hay que mostrarla desde su principio (ver
+// feedScrollToStart); si son los mismos (llegaron datos nuevos), la página
+// se queda donde está. null: todavía no se dibujó desde que se entró al feed.
+let feedLastQuery = null;
 
 function renderFeed() {
   clearTimeout(feedRenderTimer);
@@ -355,6 +360,9 @@ function renderFeed() {
   feedOpenIds.clear(); // las tarjetas se rehacen cerradas, como en la maqueta
   const all = monitoringTable.getData();
   const filters = readFilterValues();
+  const query = JSON.stringify([filters, feedOrderEl.value]);
+  const listChanged = feedLastQuery !== null && query !== feedLastQuery;
+  feedLastQuery = query;
   const visible = all.filter((post) => postMatchesFilters(post, filters));
   const reachById = new Map(visible.map((post) => [post.id, postReach(post)]));
   visible.sort(feedSorter(feedOrderEl.value, reachById));
@@ -367,6 +375,7 @@ function renderFeed() {
     );
   }
   feedContainerEl.replaceChildren(fragment);
+  if (listChanged) feedScrollToStart();
 }
 
 // Los avisos de monitoring.js llegan de a uno por tecla del buscador. Rehacer
@@ -405,11 +414,17 @@ function setFeedView(view, { save = true } = {}) {
   } else {
     feedContainerEl.replaceChildren();
     feedOpenIds.clear();
+    feedLastQuery = null;
     // La tabla pudo armarse o cambiar mientras estaba oculta: Tabulator
     // necesita redibujarse al volver a verse para calcular bien los anchos.
     if (monitoringTable) monitoringTable.redraw(true);
   }
-  if (save) feedSaveView(feedCurrentView);
+  if (save) {
+    feedSaveView(feedCurrentView);
+    // Lo eligió el usuario (no es la vista recordada al entrar): los
+    // resultados son otros y se muestran desde su principio.
+    feedScrollToStart(isFeed ? feedContainerEl : feedTableWrapEl);
+  }
 }
 
 feedViewSegEl.addEventListener('click', (e) => {
@@ -492,6 +507,18 @@ function feedBarBottom() {
 // un scroll animado caería en otro lado.
 function feedScrollToCard(card) {
   window.scrollTo({ top: card.getBoundingClientRect().top + window.scrollY - feedBarBottom() - 12 });
+}
+
+// La barra de filtros queda pegada arriba, así que se puede filtrar, ordenar
+// o cambiar de vista desde cualquier altura de la lista. Si se estaba más
+// abajo que el principio de los resultados ("el": el feed o la tabla), se
+// vuelve ahí: sin esto se quedaba mirando la mitad de la lista nueva, o su
+// final si era más corta. Si el principio ya está a la vista, la página no
+// se mueve.
+function feedScrollToStart(el = feedContainerEl) {
+  const top = el.getBoundingClientRect().top;
+  const limit = feedBarBottom() + 12;
+  if (top < limit) window.scrollTo({ top: top + window.scrollY - limit });
 }
 
 // -------------------------------------------------------------------------
