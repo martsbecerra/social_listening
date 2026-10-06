@@ -135,9 +135,9 @@ métricas son aditivas y pueden quedar.
 
 ## Success Criteria
 
-- [ ] Con `REFRESH_MODE=perfil` la suite pasa y el refresco se comporta como antes
-- [ ] Con `url`, cada ciclo pide por URL exactamente los posteos vencidos por tramo y cadencia, en lotes de hasta 100, en la fase `refresco`
-- [ ] Un valor ausente, null o negativo nunca pisa un likes o comentarios guardado
-- [ ] Un posteo sin respuesta en 2 intentos seguidos deja de pedirse y queda registrado
-- [ ] `npm run gastos` muestra el refresco por URL con el actor oficial
+- [x] Con `REFRESH_MODE=perfil` la suite pasa y el refresco se comporta como antes
+- [x] Con `url`, cada ciclo pide por URL exactamente los posteos vencidos por tramo y cadencia, en lotes de hasta 100, en la fase `refresco`
+- [x] Un valor ausente, null o negativo nunca pisa un likes o comentarios guardado
+- [x] Un posteo sin respuesta en 2 intentos seguidos deja de pedirse y queda registrado
+- [x] `npm run gastos` muestra el refresco por URL con el actor oficial
 - [ ] Corrida real chica autorizada por el dueño (pendiente)

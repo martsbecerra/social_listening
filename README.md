@@ -60,7 +60,8 @@ social_listening_app/
 │   ├── reclamosFromAnalysis.js # reclamosGeo de Claude -> filas para la tabla reclamos.
 │   ├── monitor.js            # Orquestador del monitoreo (todas las redes) + config.
 │   ├── accountStats.js       # Benchmark por cuenta (solo redes con esa capability).
-│   ├── metricsRefresh.js     # Refresco de métricas de posteos ya guardados (ídem).
+│   ├── metricsRefresh.js     # Refresco de métricas de posteos ya guardados: por URL con el actor oficial (REFRESH_MODE=url) o por perfil.
+│   ├── refreshMode.js        # Interruptor REFRESH_MODE (url | perfil), validado al arrancar.
 │   ├── classifier.js         # Relevancia + título + sentimiento + motivo de cada posteo (una llamada, mismo modelo que el análisis), para todas las redes.
 │   ├── mailer.js             # Envío de emails (alertas + magic link).
 │   ├── auth/                 # Allowlist, magic link, sesión, rate limit, gate.
@@ -175,8 +176,10 @@ Hace falta `SESSION_SECRET` (string largo aleatorio) y `APP_BASE_URL` (p. ej.
      coincidencia literal con una de ellas viaja como pista al clasificador,
      que decide por el contenido (ver "Clasificación con contexto").
 
-  El benchmark por cuenta y el refresco de métricas siguen como siempre:
-  consultan el perfil de las cuentas que aparecen en `detected_posts`.
+  El benchmark por cuenta sigue como siempre: consulta el perfil de las
+  cuentas que aparecen en `detected_posts`. El refresco de métricas pide cada
+  publicación vencida por su URL al actor oficial (ver "Refresco de métricas
+  por URL" más abajo).
 
   En X es distinto: cada cuenta es una búsqueda `from:handle` y cada keyword,
   con `#` o sin él, una búsqueda de Grok con costo por corrida; no hay lista
@@ -424,7 +427,8 @@ Starter (2,30 por 1.000):
 | Búsqueda por palabra clave, 100 resultados (el tope; lo normal son menos de 20: 0,015) | no existe | 0,055 |
 | Detalle de un resultado de búsqueda nuevo (una sola vez por posteo) | 0,0023, siempre con este actor | — (0,005 si se pidiera acá) |
 | Benchmark de una cuenta (15 posteos + seguidores) | 0,0368 (+1 consulta de perfil) | 0,0075 |
-| Refresco de métricas de una cuenta (15 posteos) | 0,0345 | 0,0075 |
+| Refresco de métricas, por publicación (`REFRESH_MODE=url`, default) | 0,0023 por posteo vencido, siempre con este actor | — |
+| Refresco de métricas de una cuenta (15 posteos, `REFRESH_MODE=perfil`) | 0,0345 | 0,0075 |
 | Validar una cuenta / un hashtag al agregarlos | 0,0023 / 0,0023 | 0,005 / 0,015 |
 
 Desde septiembre 2026 la detección de Instagram son **solo las búsquedas**
@@ -435,7 +439,8 @@ búsqueda pasó de 7), más el detalle de los resultados nuevos, como
 mucho `SEARCH_ENRICH_LIMIT` × 0,0023 por ciclo (0,23 con el default de 100)
 y en régimen mucho menos (unos 6 posteos nuevos por ciclo en septiembre
 2026): solo se paga por posteos que la búsqueda trae por primera vez. La búsqueda por palabra clave solo existe en apidojo. El
-benchmark y el refresco siguen pagando consultas de perfil (ver abajo). Para
+benchmark sigue pagando consultas de perfil y el refresco paga 0,0023 por
+publicación vencida (ver abajo). Para
 bajar el costo: menos búsquedas, topes más chicos, o espaciar el cron
 (`MONITOR_CRON`).
 
@@ -445,6 +450,16 @@ aparece con un posteo nuevo y nunca se calculó o pasaron
 `MAX_ACCOUNTS_PER_CYCLE` cuentas por ciclo. Con apidojo los seguidores
 vienen en esa misma consulta; con el oficial es una consulta de perfil
 aparte. Una cuenta que no vuelve a aparecer no cuesta nada.
+
+El refresco de métricas (`src/metricsRefresh.js`, `REFRESH_MODE=url`) paga
+0,0023 por publicación vencida, en un run por ciclo (lotes de hasta 100
+URLs) y como mucho `REFRESH_MAX_POSTS` (150) por ciclo: techo 0,345. Con
+las corridas reales #17 a #32 (28/09 al 2/10/2026, 659 posteos a refrescar):
+3,27 usd por perfil contra 1,52 por URL como techo (0,85 contra 0,39 por
+día), y por URL se actualiza el 100 % de lo pedido. En régimen: un ciclo
+solo caliente pide 11 a 47 posteos (0,03 a 0,11), el pase tibio diario 60 a
+125 (0,14 a 0,29) y el pase frío semanal 242 a 339 (0,56 a 0,78, repartido
+en 2 o 3 ciclos). Ver "Refresco de métricas por URL".
 
 #### Medir lo que se gasta de verdad
 
@@ -854,10 +869,68 @@ muestra progreso real en "Detectando posteos nuevos" y "Clasificando
 relevancia" igual que Instagram, y simplemente no pasa por las fases que su
 adapter no tiene.
 
+### Refresco de métricas por URL (octubre 2026)
+
+Hasta octubre 2026 el refresco de métricas consultaba el PERFIL de cada
+cuenta con posteos vencidos (apidojo, últimos 15 posteos, 0,0065 por
+cuenta). Reconstruido desde la base para las corridas #9 y #14: de 79 y 97
+posteos a refrescar se actualizaron ~18 y ~30; el resto se pagó sin tocarlo,
+porque un posteo de 2 a 7 días de un medio que publica mucho ya no está
+entre los últimos 15. Y el 84 % de las cuentas tenía un solo posteo a
+refrescar: 15 resultados pagados para actualizar 1.
+
+Ahora (`REFRESH_MODE=url`, default; `src/refreshMode.js`, validado al
+arrancar como `IG_ACTOR`) cada publicación vencida se pide por su URL
+`/p/<code>/` a `instagram.fetchPostDetails` — siempre
+`apify/instagram-scraper`, 0,0023 por posteo, el mismo camino del detalle de
+búsqueda — en un run por ciclo, en lotes de hasta 100 URLs (el endpoint
+sincrónico de Apify corta a los 300 s; el detalle de 17 URLs tardó 19 s)
+lanzados con `refreshLimiter`. `REFRESH_MODE=perfil` deja el camino anterior
+exactamente como estaba: el rollback es un cambio de `.env`.
+
+- **Decidido por publicación**, con los mismos tramos y cadencias de
+  siempre (`db.listPostsDueForRefresh`). La cadencia se mide desde la última
+  escritura de métricas o, si nunca se refrescó, desde la detección: un
+  posteo recién detectado ya trae las métricas del detalle y entra a las
+  12 h, no en el mismo ciclo. Las marcas de pase de tibio y frío siguen en
+  `refresh_state`.
+- **Cola por tramo** (caliente, tibio, frío: lo caliente es lo que detecta
+  saltos) y, dentro de cada tramo, lo más atrasado primero. **Tope
+  `REFRESH_MAX_POSTS`** (150) por ciclo: lo que no entra queda para el
+  siguiente y las marcas no avanzan hasta un pase completo (ni si un run
+  falló o se cortó por cuota). 150 porque el pase tibio más grande visto fue
+  125 posteos; el pase frío (278 a 339) se reparte en 2 o 3 ciclos seguidos.
+- **Solo URLs con código** (`monitor.postCodeOf`): el actor no acepta URLs
+  con el id numérico y nunca se arma una. Las 474 publicaciones de la base
+  (6/10/2026) la tienen. La respuesta se cruza por id y, de respaldo, por el
+  código de la URL.
+- **Regla única de métricas** (`db.keepIfMissing`): un likes o comentarios
+  ausente, null o negativo nunca pisa lo guardado, aunque falte solo uno de
+  los dos; solo un número >= 0 pisa. Antes `likes ?? null` escribía NULL
+  encima de un valor real. El adapter apidojo deja likes en null cuando
+  `isLikeAndViewCountsDisabled` es true (22 posteos tenían 0 likes con
+  comentarios: contadores ocultos guardados como 0).
+- **Borrados o privados**: si el run terminó bien y un posteo pedido no
+  volvió, suma 1 a `detected_posts.refresh_misses`; al segundo seguido
+  (`REFRESH_MISSES_TO_STOP`) se escribe `refresh_stopped_at`, deja de pedirse
+  y queda en el log con cuenta y URL. Una respuesta válida lo reanuda. Costo
+  máximo por posteo borrado: 0,0046.
+- **Seguidores**: el actor oficial no los trae por posteo, así que el
+  refresco ya no los actualiza; siguen por el benchmark
+  (`BENCHMARK_RECALC_DAYS`, hasta 30 días para las cuentas que reaparecen) y
+  por la validación al agregar una cuenta.
+- **Costo**: fase `refresco`, `query_type` `post`, actor oficial; `npm run
+  gastos` y `npm run costo` lo muestran sin cambios. Línea de log:
+  `[metricsRefresh] (instagram) H posteos en tramo caliente, W en tibio, C en frío → P pedidos por URL en R run(s): A respondieron, U con cambios, M sin respuesta (S dejan de refrescarse), J saltos detectados`.
+- SDD en `openspec/changes/refresco-url/`; tests en
+  `test/refreshPorUrl.test.js`, `test/refreshPorUrlLotes.test.js` y
+  `test/metricasConservadas.test.js`.
+
 ### Benchmark y refresco de métricas en paralelo
 
 `refreshStaleAccountStats` (`src/accountStats.js`) y `refreshPostMetrics`
-(`src/metricsRefresh.js`) lanzan todas sus cuentas juntas con
+(`src/metricsRefresh.js`) lanzan todas sus cuentas (el refresco por URL, sus
+lotes de URLs) juntas con
 `Promise.allSettled`, igual que la detección con sus fuentes, en vez de un
 `for` secuencial. Cada uno regula cuántas llamadas van a la vez con SU
 PROPIO limitador (`benchmarkLimiter`, `refreshLimiter`; mismo valor de
@@ -1471,6 +1544,12 @@ en null. Si el actor cambia algo, esas fixtures y
 `src/platforms/instagramApidojo.js` son el lugar a mirar.
 
 ### ⚠️ Verificar en la primera corrida real: ids del refresco de métricas
+
+Con `REFRESH_MODE=url` (default) el refresco cruza la respuesta del actor
+oficial por id y, de respaldo, por el código de la URL (`monitor.postCodeOf`),
+y el aviso es `[metricsRefresh] (instagram) ATENCIÓN: N posteos pedidos por
+URL, 0 respondieron`. Lo que sigue describe el cruce del modo perfil (y del
+refresco "gratis" del ciclo), que sigue vigente.
 
 `src/metricsRefresh.js` (y el refresco "gratis" que hace `runMonitoringCycle`
 contra posteos ya conocidos) cruzan lo que devuelve `scrapeAccount` contra
