@@ -2021,6 +2021,25 @@ pre.report a:hover {
   --s: var(--coral-500);
 }
 
+/* Tarjeta a la que lleva un destacado de "Se despegaron": un aro jade que
+   aparece y se va, como el parpadeo de la fila de la tabla
+   (.tabulator-row.flash). */
+@keyframes feedFlash {
+  0%,
+  100% {
+    box-shadow: var(--shadow-sm);
+  }
+  25%,
+  60% {
+    box-shadow:
+      0 0 0 3px var(--jade-300),
+      var(--shadow-md);
+  }
+}
+.feed-card.flash {
+  animation: feedFlash 1.1s ease;
+}
+
 /* Cabecera: inicial de la cuenta, @cuenta + seguidores, "hace X" y la X de
    ignorar de la tabla (.ico.del) arriba a la derecha. */
 .feed-head {

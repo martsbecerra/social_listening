@@ -108,6 +108,10 @@ function feedImageUrl(post) {
   return post.image_url || null;
 }
 
+// La misma X de la fila de la tabla (columna de ignorar en monitoring.js).
+const FEED_IGNORE_ICON =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>';
+
 function feedNode(tag, className, text) {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -159,13 +163,22 @@ function buildFeedHead(post) {
   avatar.setAttribute('aria-hidden', 'true');
 
   const who = feedNode('div', 'feed-who');
-  who.append(feedNode('b', '', account ? `@${account}` : 'N/D'), feedNode('small', '', `${feedCount(post.followers)} seguidores`));
+  const name = feedNode('b', '', account ? `@${account}` : 'N/D');
+  name.title = name.textContent; // entero al pasar el mouse, si quedó cortado
+  who.append(name, feedNode('small', '', `${feedCount(post.followers)} seguidores`));
 
   const when = feedNode('span', 'feed-when', feedAgo(post.posted_at));
   const { date, time } = formatFullDateTime(post.posted_at);
   when.title = time ? `${date} · ${time}` : date;
 
-  head.append(avatar, who, when);
+  // El clic lo atiende el contenedor (ver "Acciones de la tarjeta").
+  const ignore = feedNode('button', 'ico del');
+  ignore.type = 'button';
+  ignore.title = 'Ignorar publicación';
+  ignore.setAttribute('aria-label', 'Ignorar publicación');
+  ignore.innerHTML = FEED_IGNORE_ICON;
+
+  head.append(avatar, who, when, ignore);
   return head;
 }
 
@@ -191,10 +204,10 @@ function buildFeedMetric(symbol, label, value, reach, by) {
 
 function buildFeedMetrics(post, reach) {
   const metrics = feedNode('div', 'feed-metrics');
-  // El mismo selector de la tabla. Por ahora solo muestra el sentimiento.
+  // El mismo selector de la tabla; el cambio lo atiende el contenedor (ver
+  // "Acciones de la tarjeta").
   const sentiment = buildSentimentSelect(post.sentiment);
   sentiment.setAttribute('aria-label', 'Sentimiento');
-  sentiment.disabled = true;
   metrics.append(
     buildFeedMetric('♥', 'Likes', post.likes, reach, 'likes'),
     buildFeedMetric('💬', 'Comentarios', post.comments, reach, 'comments'),
@@ -267,6 +280,7 @@ let feedRenderTimer = null;
 
 function renderFeed() {
   clearTimeout(feedRenderTimer);
+  feedRenderTimer = null;
   if (feedCurrentView !== 'feed' || !monitoringTable) return;
   const all = monitoringTable.getData();
   const filters = readFilterValues();
@@ -331,7 +345,97 @@ feedViewSegEl.addEventListener('click', (e) => {
   if (button) setFeedView(button.dataset.view);
 });
 feedOrderEl.addEventListener('change', renderFeed);
-monitoringViewListeners.push(scheduleFeedRender);
+
+// -------------------------------------------------------------------------
+// Acciones de la tarjeta: las mismas de la fila de la tabla, con los mismos
+// endpoints (updateSentiment y openIgnoreModal / confirmIgnore de
+// monitoring.js). Se atienden en el contenedor y no tarjeta por tarjeta: son
+// cientos y se rehacen con cada filtro.
+// -------------------------------------------------------------------------
+function feedCardById(id) {
+  return feedContainerEl.querySelector(`.feed-card[data-id="${CSS.escape(String(id))}"]`);
+}
+
+// La fila de Tabulator del posteo de una tarjeta: de ahí sale el id tal como
+// vino del backend (data-id es siempre texto) y ahí se actualiza el dato.
+function feedRowOf(card) {
+  return (monitoringTable && monitoringTable.getRow(card.dataset.id)) || null;
+}
+
+feedContainerEl.addEventListener('change', (e) => {
+  const select = e.target.closest('select.sentiment-select');
+  const card = select && select.closest('.feed-card');
+  if (!card || select.value === SENTIMENT_UNSET) return;
+  const row = feedRowOf(card);
+  // PATCH y color de la pastilla, igual que en la tabla.
+  updateSentiment(row ? row.getData().id : card.dataset.id, select.value, select);
+  card.dataset.s = select.value; // borde de arriba de la tarjeta
+  // También el dato de la tabla: de ahí se vuelve a dibujar el feed y es lo
+  // que leen los filtros y "Se despegaron".
+  if (row) row.update({ sentiment: select.value });
+  if (monitoringTable) renderHighlightCards(monitoringTable.getData());
+});
+
+feedContainerEl.addEventListener('click', (e) => {
+  const ignore = e.target.closest('.feed-head .ico.del');
+  if (!ignore) return;
+  const card = ignore.closest('.feed-card');
+  const row = feedRowOf(card);
+  // El mismo cartel de confirmación; al aceptar, confirmIgnore saca la fila
+  // de la tabla y avisa acá con { ignoredId } (ver onMonitoringChange).
+  openIgnoreModal(row ? row.getData().id : card.dataset.id);
+});
+
+// Se ignoró un posteo: sale solo su tarjeta, sin rehacer el resto (así la
+// página no salta). Si era la última queda el cartel de "no hay".
+function removeFeedCard(id) {
+  const card = feedCardById(id);
+  if (!card) return;
+  card.remove();
+  if (!feedContainerEl.querySelector('.feed-card')) renderFeed();
+}
+
+// Deja la tarjeta justo debajo de la barra de filtros (que queda pegada
+// arriba al bajar). De un salto, sin animar: las tarjetas que todavía no se
+// dibujaron tienen un alto estimado y un scroll animado caería en otro lado.
+function feedScrollToCard(card) {
+  const bar = document.querySelector('.filters');
+  const barBottom = bar ? (parseFloat(getComputedStyle(bar).top) || 0) + bar.offsetHeight : 0;
+  window.scrollTo({ top: card.getBoundingClientRect().top + window.scrollY - barBottom - 12 });
+}
+
+// Tarjeta a la que lleva un destacado de "Se despegaron" cuando el feed es la
+// vista activa. Igual que en la tabla, no toca los filtros: si el posteo
+// quedó tapado por uno, no hace nada.
+function feedGoToCard(id) {
+  if (feedCurrentView !== 'feed') return false;
+  if (feedRenderTimer !== null) renderFeed(); // había un redibujo en espera
+  const card = feedCardById(id);
+  if (!card) return true;
+  feedScrollToCard(card);
+  // Al llegar se dibujan las tarjetas de alrededor con su alto real y la
+  // posición puede correrse unos píxeles: se acomoda una vez más.
+  setTimeout(() => {
+    if (card.isConnected) feedScrollToCard(card);
+  }, 80);
+  card.classList.remove('flash');
+  void card.offsetWidth; // reinicia la animación si ya había corrido
+  card.classList.add('flash');
+  return true;
+}
+
+// Aviso de monitoring.js (ver monitoringViewListeners).
+function onMonitoringChange(change) {
+  if (change && change.goToId !== undefined) return feedGoToCard(change.goToId);
+  if (change && change.ignoredId !== undefined) {
+    removeFeedCard(change.ignoredId);
+    return false;
+  }
+  scheduleFeedRender();
+  return false;
+}
+
+monitoringViewListeners.push(onMonitoringChange);
 
 // Al entrar: la última vista elegida. Los posteos todavía no llegaron; el
 // feed se dibuja cuando monitoring.js avisa que ya hay datos.

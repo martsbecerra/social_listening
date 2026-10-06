@@ -333,6 +333,7 @@ async function confirmIgnore() {
       monitoringTable.deleteRow(id);
       updateCounts();
       renderHighlightCards(monitoringTable.getData());
+      notifyMonitoringViews({ ignoredId: id });
     }
   } catch (err) {
     console.error('Error ignorando el registro:', err);
@@ -650,6 +651,9 @@ function renderHighlightCards(posts) {
 // paginación), acá hay que ubicar en qué página de Tabulator cae.
 async function highlightGoToRow(id) {
   if (!monitoringTable) return;
+  // Con el Feed como vista activa (solo Instagram) la tabla está oculta: el
+  // destacado lleva a la tarjeta de ese posteo.
+  if (notifyMonitoringViews({ goToId: id })) return;
   const rows = monitoringTable.getRows('active');
   const idx = rows.findIndex((r) => r.getData().id === id);
   if (idx === -1) return;
@@ -746,12 +750,21 @@ function updateCounts() {
 
 // Vistas extra sobre los mismos posteos y los mismos filtros que la tabla.
 // Hoy hay una sola, el Feed de Instagram (public/js/monitoringFeed.js, que
-// x.html no carga): se anota acá y se le avisa cada vez que cambian los
-// datos o los filtros. Sin ninguna anotada no pasa nada.
+// x.html no carga): se anota acá y se le avisa de cada cambio. Sin ninguna
+// anotada no pasa nada. "change" dice qué pasó:
+//   (nada)         cambiaron los datos o los filtros: hay que redibujar.
+//   { ignoredId }  se ignoró ese posteo (ya salió de la tabla).
+//   { goToId }     hay que mostrar ese posteo (tarjetas de "Se despegaron").
+//                  La vista que esté activa devuelve true y se hace cargo;
+//                  si ninguna lo hace, lo muestra la tabla.
 const monitoringViewListeners = [];
 
-function notifyMonitoringViews() {
-  for (const listener of monitoringViewListeners) listener();
+function notifyMonitoringViews(change) {
+  let handled = false;
+  for (const listener of monitoringViewListeners) {
+    if (listener(change) === true) handled = true;
+  }
+  return handled;
 }
 
 // Valores actuales de la barra "Filtrar".
