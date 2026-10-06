@@ -120,6 +120,18 @@ if (!existingColumns.includes('retweets')) {
 if (!existingColumns.includes('views')) {
   db.exec('ALTER TABLE detected_posts ADD COLUMN views INTEGER');
 }
+// Refresco de métricas por URL (ver src/metricsRefresh.js y
+// openspec/changes/refresco-url): intentos SEGUIDOS en que se pidió este
+// posteo por su URL y el run, que terminó bien, no lo devolvió (borrado,
+// privado) y, al llegar al tope, la fecha en que dejó de pedirse. Una
+// respuesta válida (por el refresco o por el benchmark) vuelve el contador
+// a 0 y levanta el freno. Las filas viejas arrancan en 0 / NULL.
+if (!existingColumns.includes('refresh_misses')) {
+  db.exec('ALTER TABLE detected_posts ADD COLUMN refresh_misses INTEGER NOT NULL DEFAULT 0');
+}
+if (!existingColumns.includes('refresh_stopped_at')) {
+  db.exec('ALTER TABLE detected_posts ADD COLUMN refresh_stopped_at TEXT');
+}
 // Limpieza de datos: Apify devuelve -1 en likesCount cuando el autor ocultó
 // el contador de "me gusta" (centinela documentado del actor, no un error de
 // parseo) — se guardaba tal cual, como si fuera un valor real. Un posteo sin
@@ -576,7 +588,7 @@ const touchAccountStatsComputedAtStmt = db.prepare(
 );
 const getPostMetricsStmt = db.prepare('SELECT likes, comments, post_type, ignored FROM detected_posts WHERE id = ?');
 const updatePostMetricsStmt = db.prepare(
-  'UPDATE detected_posts SET likes = @likes, comments = @comments, post_type = @postType, metrics_updated_at = @metricsUpdatedAt WHERE id = @id'
+  'UPDATE detected_posts SET likes = @likes, comments = @comments, post_type = @postType, metrics_updated_at = @metricsUpdatedAt, refresh_misses = 0, refresh_stopped_at = NULL WHERE id = @id'
 );
 const updateFollowersForAccountStmt = db.prepare(
   'UPDATE detected_posts SET followers = ? WHERE account = ? AND plataforma = ?'
@@ -746,8 +758,36 @@ const listAccountsDueForRefreshStmt = db.prepare(`
 const getPostForMetricsRefreshStmt = db.prepare(
   'SELECT likes, comments, retweets, views, account, posted_at, ignored FROM detected_posts WHERE id = ?'
 );
+// Una respuesta válida reanuda el refresco del posteo (ver refresh_misses).
 const applyMetricsRefreshStmt = db.prepare(
-  'UPDATE detected_posts SET likes = @likes, comments = @comments, retweets = @retweets, views = @views, metrics_updated_at = @metricsUpdatedAt WHERE id = @id'
+  'UPDATE detected_posts SET likes = @likes, comments = @comments, retweets = @retweets, views = @views, metrics_updated_at = @metricsUpdatedAt, refresh_misses = 0, refresh_stopped_at = NULL WHERE id = @id'
+);
+
+// Refresco de métricas POR PUBLICACIÓN (REFRESH_MODE=url, ver
+// src/metricsRefresh.js): los posteos de una ventana de edad cuya última
+// escritura de métricas es anterior a la cadencia. Un posteo nunca
+// refrescado cuenta desde detected_at (al detectarse ya trae las métricas
+// del detalle: entra recién cuando pasa la cadencia, no en el mismo ciclo).
+// Quedan afuera los ignorados y los frenados (refresh_stopped_at). Orden:
+// lo más atrasado primero (es el orden del tope dentro de cada tramo).
+const listPostsDueForRefreshStmt = db.prepare(`
+  SELECT id, url, account, posted_at AS postedAt, detected_at AS detectedAt,
+    metrics_updated_at AS metricsUpdatedAt, COALESCE(metrics_updated_at, detected_at) AS lastWriteAt
+  FROM detected_posts
+  WHERE ignored = 0 AND refresh_stopped_at IS NULL AND plataforma = @plataforma
+    AND url IS NOT NULL AND posted_at IS NOT NULL
+    AND posted_at > @sinceIso AND posted_at <= @untilIso
+    AND (@cadenceIso IS NULL OR COALESCE(metrics_updated_at, detected_at) IS NULL OR COALESCE(metrics_updated_at, detected_at) < @cadenceIso)
+  ORDER BY COALESCE(metrics_updated_at, detected_at) ASC, posted_at DESC
+`);
+const registerRefreshMissStmt = db.prepare(`
+  UPDATE detected_posts
+  SET refresh_misses = refresh_misses + 1,
+      refresh_stopped_at = CASE WHEN refresh_misses + 1 >= @stopAfter THEN @at ELSE refresh_stopped_at END
+  WHERE id = @id AND ignored = 0
+`);
+const getRefreshMissStmt = db.prepare(
+  'SELECT account, url, refresh_misses AS misses, refresh_stopped_at AS stoppedAt FROM detected_posts WHERE id = ?'
 );
 
 const upsertReclamoStmt = db.prepare(`
@@ -867,6 +907,18 @@ function isKnownPost(id, url) {
 // dato faltante se guarda NULL, nunca un número negativo ni 0 inventado.
 function rejectNegative(value) {
   return typeof value === 'number' && value < 0 ? null : value;
+}
+
+// Regla única de métricas al REFRESCAR un posteo ya guardado
+// (applyMetricsRefresh, updatePostMetricsIfChanged; ver
+// openspec/changes/refresco-url, REQ-RURL-06): un valor ausente (undefined),
+// null o negativo (el centinela -1 de Apify, un contador oculto) NUNCA pisa
+// lo guardado de ESE campo, aunque el otro campo sí venga; solo un número
+// >= 0 pisa. Antes `likes ?? null` escribía NULL encima de un valor real
+// cuando faltaba uno solo de los dos (y el 0 de un contador oculto pisaba un
+// número real: eso se corta en el adapter, que lo deja en null).
+function keepIfMissing(next, existing) {
+  return typeof next === 'number' && Number.isFinite(next) && next >= 0 ? next : existing;
 }
 
 /**
@@ -1311,8 +1363,8 @@ function touchAccountStatsComputedAt(account, plataforma, computedAt) {
  * cambió (ej. un recálculo de benchmark trae el mismo posteo con métricas
  * nuevas, o con un post_type que antes no se guardaba). No hace nada si el
  * id no existe en detected_posts — nunca inserta, solo actualiza lo que ya
- * está. rejectNegative evita reabrir la puerta al centinela -1 de Apify por
- * esta vía.
+ * está. keepIfMissing (regla única de métricas): un likes o comments
+ * ausente, null o negativo conserva el valor guardado de ese campo.
  *
  * post_type SOLO se completa si faltaba (existing.post_type es NULL) —
  * nunca se pisa un valor ya conocido, a diferencia de likes/comments que sí
@@ -1323,8 +1375,8 @@ function touchAccountStatsComputedAt(account, plataforma, computedAt) {
 function updatePostMetricsIfChanged(id, { likes, comments, postType }) {
   const existing = getPostMetricsStmt.get(id);
   if (!existing || existing.ignored) return false;
-  const cleanLikes = rejectNegative(likes ?? null);
-  const cleanComments = rejectNegative(comments ?? null);
+  const cleanLikes = keepIfMissing(likes, existing.likes);
+  const cleanComments = keepIfMissing(comments, existing.comments);
   const nextPostType = existing.post_type != null ? existing.post_type : postType || null;
 
   if (existing.likes === cleanLikes && existing.comments === cleanComments && existing.post_type === nextPostType) {
@@ -1506,6 +1558,35 @@ function listAccountsDueForRefresh({ sinceIso, untilIso, cadenceIso = null, plat
 }
 
 /**
+ * Posteos (no ignorados ni frenados) con posted_at en (sinceIso, untilIso]
+ * cuya última escritura de métricas (metrics_updated_at, o detected_at si
+ * nunca se refrescó) es anterior a cadenceIso (null = sin filtro), de lo
+ * más atrasado a lo más reciente. Refresco por URL (REFRESH_MODE=url).
+ * @returns {{id: string, url: string, account: string|null, postedAt: string,
+ *   detectedAt: string, metricsUpdatedAt: string|null, lastWriteAt: string}[]}
+ */
+function listPostsDueForRefresh({ sinceIso, untilIso, cadenceIso = null, plataforma }) {
+  requirePlataforma(plataforma, 'listPostsDueForRefresh');
+  return listPostsDueForRefreshStmt.all({ sinceIso, untilIso, cadenceIso, plataforma });
+}
+
+/**
+ * Anota que se pidió el posteo por su URL y el run (que terminó bien) no lo
+ * devolvió: suma 1 a refresh_misses y, al llegar a stopAfter intentos
+ * seguidos, escribe refresh_stopped_at (el posteo deja de pedirse). Nunca
+ * toca likes/comments ni metrics_updated_at: las métricas quedan en su
+ * último valor conocido. No hace nada con un ignorado.
+ * @returns {{misses: number, stopped: boolean, account: string|null, url: string}|null}
+ *   null si el id no está guardado o está ignorado.
+ */
+function registerRefreshMiss(id, { stopAfter, at = new Date().toISOString() }) {
+  const changes = registerRefreshMissStmt.run({ id, stopAfter, at }).changes;
+  if (changes === 0) return null;
+  const row = getRefreshMissStmt.get(id);
+  return { misses: row.misses, stopped: Boolean(row.stoppedAt), account: row.account, url: row.url };
+}
+
+/**
  * Refresca likes/comments de un posteo YA guardado (nunca inserta, nunca
  * toca título/sentimiento/post_type). A diferencia de
  * updatePostMetricsIfChanged, SIEMPRE escribe (y por lo tanto SIEMPRE
@@ -1514,6 +1595,11 @@ function listAccountsDueForRefresh({ sinceIso, untilIso, cadenceIso = null, plat
  * metrics_updated_at) funcione: un posteo estable que no creció tiene que
  * poder marcarse como "ya lo revisé recién", no quedar con la marca vieja
  * y parecer eternamente pendiente.
+ *
+ * Regla única de métricas (keepIfMissing): cada métrica que llega ausente,
+ * null o negativa conserva el valor guardado de ESE campo (vale para las
+ * cuatro columnas; Instagram no manda retweets/views y X sí); solo un número
+ * >= 0 pisa. `changed` solo es true si algún valor realmente cambió.
  * @returns {{changed: boolean, account: string, postedAt: string,
  *   previousLikes: number|null, previousComments: number|null,
  *   likes: number|null, comments: number|null}|null} null si el id no está
@@ -1522,10 +1608,10 @@ function listAccountsDueForRefresh({ sinceIso, untilIso, cadenceIso = null, plat
 function applyMetricsRefresh(id, { likes, comments, retweets, views } = {}) {
   const existing = getPostForMetricsRefreshStmt.get(id);
   if (!existing || existing.ignored) return null;
-  const cleanLikes = rejectNegative(likes ?? null);
-  const cleanComments = rejectNegative(comments ?? null);
-  const cleanRetweets = retweets === undefined ? existing.retweets : rejectNegative(retweets ?? null);
-  const cleanViews = views === undefined ? existing.views : rejectNegative(views ?? null);
+  const cleanLikes = keepIfMissing(likes, existing.likes);
+  const cleanComments = keepIfMissing(comments, existing.comments);
+  const cleanRetweets = keepIfMissing(retweets, existing.retweets);
+  const cleanViews = keepIfMissing(views, existing.views);
   const changed =
     existing.likes !== cleanLikes ||
     existing.comments !== cleanComments ||
@@ -1613,6 +1699,8 @@ module.exports = {
   setApifyCallRealCost,
   recomputeMonitoringRunUsd,
   listAccountsDueForRefresh,
+  listPostsDueForRefresh,
+  registerRefreshMiss,
   applyMetricsRefresh,
   upsertReclamo,
   listReclamosFiltered,

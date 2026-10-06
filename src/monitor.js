@@ -1258,4 +1258,7 @@ module.exports = {
   evaluateRelevance,
   pickMetrics,
   raiseLimitForWindow,
+  // Código de la URL de un posteo (/p/{code}/): lo usa también el refresco
+  // por URL (src/metricsRefresh.js) para cruzar la respuesta del actor.
+  postCodeOf,
 };

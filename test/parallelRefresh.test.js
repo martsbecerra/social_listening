@@ -11,7 +11,9 @@
 //   3. el corte por cuota frena los LANZAMIENTOS pendientes (las cuentas ya
 //      en vuelo terminan igual).
 // APIFY_MAX_CONCURRENT se fija ANTES del require de accountStats/metricsRefresh
-// (cada uno crea su limitador al cargar, con ese valor).
+// (cada uno crea su limitador al cargar, con ese valor). REFRESH_MODE=perfil:
+// acá se prueba el refresco por cuenta (scrapeAccount); el refresco por URL,
+// que es el default, está en test/refreshPorUrl.test.js.
 
 const fs = require('fs');
 const os = require('os');
@@ -19,6 +21,7 @@ const path = require('path');
 
 process.env.APIFY_MAX_CONCURRENT = '2';
 process.env.APIFY_API_TOKEN = 'token-de-test';
+process.env.REFRESH_MODE = 'perfil';
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sl-parallel-refresh-'));
 process.env.MONITORING_DB_PATH = path.join(tmp, 'monitoring.db');
 process.env.MONITORING_CONFIG_PATH = path.join(tmp, 'monitoring.json');

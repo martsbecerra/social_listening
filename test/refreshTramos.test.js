@@ -5,7 +5,9 @@
 // las marcas de pase (se retoman en el próximo ciclo, y la cadencia por
 // posteo evita pagar dos veces lo ya refrescado); el tramo frío también
 // tiene cadencia por posteo. Los topes y cadencias se fijan ANTES de cargar
-// el módulo (los lee al cargar).
+// el módulo (los lee al cargar). REFRESH_MODE=perfil: este archivo prueba
+// el camino por perfil (scrapeAccount por cuenta); el camino por URL, que es
+// el default, tiene su propio archivo (test/refreshPorUrl.test.js).
 
 const fs = require('fs');
 const os = require('os');
@@ -14,6 +16,7 @@ const path = require('path');
 process.env.APIFY_API_TOKEN = 'token-de-test';
 process.env.MAX_ACCOUNTS_PER_REFRESH = '2';
 process.env.REFRESH_HOT_EVERY_HOURS = '12';
+process.env.REFRESH_MODE = 'perfil';
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sl-refresh-tramos-'));
 process.env.MONITORING_DB_PATH = path.join(tmp, 'monitoring.db');
 process.env.MONITORING_CONFIG_PATH = path.join(tmp, 'monitoring.json');
