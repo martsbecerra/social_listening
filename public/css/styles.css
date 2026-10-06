@@ -2093,7 +2093,7 @@ pre.report a:hover {
 /* Recuadro de la imagen. Hoy siempre el de reemplazo: un degradé con el tono
    de la cuenta (lo pone el JS; el fondo de acá es el respaldo) y el ícono
    del tipo. Cuando el posteo traiga imagen, el <img> lo tapa y las etiquetas
-   quedan encima. */
+   quedan encima. Un clic abre el pop-up del posteo, igual que "Ver más". */
 .feed-media {
   position: relative;
   display: grid;
@@ -2101,6 +2101,7 @@ pre.report a:hover {
   height: var(--feed-img-h);
   overflow: hidden;
   background: var(--jade-700);
+  cursor: pointer;
 }
 .feed-media svg {
   width: 46px;
@@ -2158,7 +2159,7 @@ pre.report a:hover {
   color: var(--clay-500);
 }
 
-/* Título y texto del posteo: tres líneas hasta "Ver más". */
+/* Título y texto del posteo, cortado a tres líneas: entero va en el pop-up. */
 .feed-body {
   flex: 1;
   padding: 12px 12px 4px;
@@ -2180,56 +2181,6 @@ pre.report a:hover {
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
-}
-/* Abierta: texto completo con sus saltos de línea, como .dt-cap. */
-.feed-card.open .feed-cap {
-  display: block;
-  -webkit-line-clamp: unset;
-  white-space: pre-line;
-}
-.feed-more {
-  display: none;
-  margin-top: 10px;
-  padding: 8px 10px;
-  border-radius: 10px;
-  background: var(--jade-50);
-  font-size: 12.5px;
-}
-.feed-card.open .feed-more {
-  display: block;
-}
-.feed-more div {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 2px 0;
-}
-.feed-more span {
-  color: var(--clay-500);
-}
-/* El valor no se achica (un "2,4×" nunca se parte en dos líneas); si es largo
-   ocupa hasta el 62% de la fila y sigue abajo, y la etiqueta se acomoda en
-   el resto. */
-.feed-more b {
-  flex: none;
-  max-width: 62%;
-  text-align: right;
-  overflow-wrap: break-word;
-}
-.feed-more a {
-  color: var(--jade-700);
-  text-underline-offset: 3px;
-}
-/* Una oración (el motivo completo de "Detectado por", o por qué una métrica
-   no tiene referencia) no entra en la columna de la derecha: la etiqueta va
-   arriba y el texto abajo, a lo ancho. */
-.feed-more .stack {
-  display: block;
-}
-.feed-more .stack b {
-  display: block;
-  max-width: none;
-  text-align: left;
 }
 
 /* Likes, comentarios y el selector de sentimiento de la tabla
@@ -2306,6 +2257,399 @@ pre.report a:hover {
   border-color: var(--jade-900);
   background: var(--jade-900);
   color: #fff;
+}
+
+/* ------------------------------------------------------------------ */
+/* Pop-up "Ver más" del feed (solo Instagram)                           */
+/* ------------------------------------------------------------------ */
+/* Calcado de design/monitoreo-popup.html. Los nombres de la maqueta
+   (.modal, .dialog, .chip, .btn...) ya existen acá o son muy generales, así
+   que todo lleva el prefijo feed-pop-. Es un <dialog> abierto con
+   showModal(): el elemento es el fondo oscuro a pantalla completa y la
+   ventana es .feed-pop-box (public/js/monitoringFeedPopup.js). */
+
+/* Mientras está abierto, la página de atrás no se desplaza. --feed-pop-gap
+   es el ancho de la barra de scroll que desaparece (lo mide el JS; 0 en
+   celular): se compensa para que el fondo no salte. */
+html.feed-pop-lock {
+  overflow: hidden;
+}
+html.feed-pop-lock body {
+  padding-right: var(--feed-pop-gap, 0px);
+}
+
+/* El tamaño va en unidades de viewport y no en porcentaje: en celular, si
+   algo de la página es más ancho que la pantalla, el navegador agranda el
+   área de los elementos fijos y un 100% quedaría más grande que lo que se
+   ve, con la ✕ afuera. */
+.feed-pop {
+  position: fixed;
+  inset: 0 auto auto 0;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 24px;
+  border: 0;
+  overflow: hidden;
+  background: rgba(3, 42, 35, 0.66);
+  backdrop-filter: blur(3px);
+  color: var(--clay-900);
+  font-size: 14px;
+  line-height: 1.45;
+}
+/* Solo abierto: un display propio le ganaría al display:none del <dialog>
+   cerrado. */
+.feed-pop[open] {
+  display: grid;
+  place-items: center;
+}
+.feed-pop::backdrop {
+  background: transparent;
+}
+
+/* La ventana: foto a la izquierda y columna de 440px a la derecha. El borde
+   de arriba es el sentimiento, con los colores de la tarjeta. */
+.feed-pop-box {
+  --s: #cfd6d2;
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 440px;
+  width: min(1100px, 100%);
+  height: min(720px, calc(100vh - 48px));
+  height: min(720px, calc(100dvh - 48px));
+  overflow: hidden;
+  background: #fff;
+  border-top: 4px solid var(--s);
+  border-radius: 16px;
+  box-shadow: 0 30px 80px -20px rgba(0, 0, 0, 0.55);
+}
+.feed-pop-box[data-s="positivo"] {
+  --s: var(--jade-400);
+}
+.feed-pop-box[data-s="neutral"] {
+  --s: var(--amber-700);
+}
+.feed-pop-box[data-s="negativo"] {
+  --s: var(--coral-500);
+}
+
+/* Lado de la foto. La imagen se ve entera, sin recortar, sobre fondo oscuro. */
+.feed-pop-photo {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  overflow: hidden;
+  background: #0b1512;
+}
+.feed-pop-photo img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.feed-pop-photo .feed-badge {
+  top: 12px;
+  left: 12px;
+}
+.feed-pop-note {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-family: "DM Mono", monospace;
+  font-size: 11px;
+}
+/* Sin imagen (todavía no se guardan) o la imagen no cargó. */
+.feed-pop-photo.broken {
+  background: repeating-linear-gradient(
+    45deg,
+    var(--clay-100),
+    var(--clay-100) 12px,
+    #f6f1ea 12px,
+    #f6f1ea 24px
+  );
+}
+.feed-pop-photo-msg {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--clay-700);
+  text-align: center;
+}
+
+/* Columna derecha: cabecera fija, contenido con scroll propio y pie fijo. */
+.feed-pop-side {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.feed-pop-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.feed-pop-head .feed-av {
+  width: 38px;
+  height: 38px;
+  font-size: 14px;
+}
+.feed-pop-head .feed-who b {
+  font-size: 14px;
+}
+/* Botón redondo (cerrar). Pisa el button global: ancho 100%, margen, degradé,
+   sombra y el salto del hover. */
+.feed-pop-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: #fff;
+  color: var(--clay-700);
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 1;
+  box-shadow: none;
+}
+.feed-pop-icon:hover:not(:disabled) {
+  background: var(--jade-50);
+  transform: none;
+  box-shadow: none;
+  filter: none;
+}
+.feed-pop-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 16px 16px 20px;
+}
+
+/* Etiquetas de alcance y de tipo. */
+.feed-pop-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.feed-pop-chip {
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.feed-pop-chip.reach.alto {
+  background: var(--coral-500);
+  color: #fff;
+}
+.feed-pop-chip.reach.medio {
+  background: var(--amber-700);
+  color: #fff;
+}
+.feed-pop-chip.reach.bajo {
+  background: #dfe6e2;
+  color: var(--clay-700);
+}
+.feed-pop-chip.reach.sinref {
+  background: #eef1ef;
+  color: var(--clay-500);
+}
+.feed-pop-chip.type {
+  padding: 4px 8px;
+  background: var(--jade-50);
+  color: var(--jade-700);
+  font-family: "DM Mono", monospace;
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.feed-pop-title {
+  margin: 0 0 10px;
+  font-family: "Bricolage Grotesque", sans-serif;
+  font-size: 21px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--jade-950);
+  overflow-wrap: anywhere;
+}
+/* El texto completo, con sus saltos de línea. */
+.feed-pop-cap {
+  margin: 0 0 16px;
+  color: var(--clay-700);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+/* Likes y comentarios: valor, × contra la mediana de la cuenta y, debajo, la
+   mediana (o por qué no hay referencia). */
+.feed-pop-mt {
+  margin-bottom: 14px;
+  padding: 6px 10px;
+  border-radius: 12px;
+  background: var(--jade-50);
+}
+.feed-pop-mt-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: baseline;
+  gap: 4px 12px;
+  padding: 8px 0;
+}
+.feed-pop-mt-row + .feed-pop-mt-row {
+  border-top: 1px solid var(--jade-150);
+}
+.feed-pop-mt-row .k {
+  color: var(--clay-700);
+  font-weight: 500;
+}
+.feed-pop-mt-row .v {
+  font-family: "DM Mono", monospace;
+  font-size: 14px;
+  font-weight: 500;
+  text-align: right;
+}
+.feed-pop-mt-row .x {
+  min-width: 46px;
+  font-family: "DM Mono", monospace;
+  font-size: 12px;
+  color: var(--clay-500);
+  text-align: right;
+}
+.feed-pop-mt-row .x.up {
+  color: var(--coral-700);
+  font-weight: 500;
+}
+.feed-pop-mt-row .sub {
+  grid-column: 1 / -1;
+  margin-top: -2px;
+  font-size: 12px;
+  color: var(--clay-500);
+}
+/* La métrica que disparó un alcance alto. */
+.feed-pop-hit {
+  margin-left: 4px;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--coral-100);
+  color: var(--coral-700);
+  font-family: "DM Mono", monospace;
+  font-size: 10.5px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* Fecha, motivo completo y enlace al perfil. */
+.feed-pop-dl {
+  display: grid;
+  grid-template-columns: 104px 1fr;
+  gap: 8px 12px;
+  margin: 0;
+  font-size: 13px;
+}
+.feed-pop-dl dt {
+  color: var(--clay-500);
+}
+.feed-pop-dl dd {
+  margin: 0;
+  color: var(--clay-900);
+  overflow-wrap: anywhere;
+}
+.feed-pop-dl dd a {
+  color: var(--jade-700);
+  text-underline-offset: 3px;
+}
+
+/* Pie: las acciones. Pisa el button global igual que .feed-pop-icon. */
+.feed-pop-foot {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  border-top: 1px solid var(--line);
+  background: #fff;
+  box-shadow: 0 -10px 14px -12px rgba(3, 42, 35, 0.22);
+}
+.feed-pop-btn {
+  width: auto;
+  margin: 0;
+  padding: 7px 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--clay-700);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+  box-shadow: none;
+}
+.feed-pop-btn:hover:not(:disabled) {
+  background: var(--jade-50);
+  transform: none;
+  box-shadow: none;
+  filter: none;
+}
+.feed-pop-btn.primary {
+  margin-left: auto;
+  border-color: var(--jade-900);
+  background: var(--jade-900);
+  color: #fff;
+}
+.feed-pop-btn.primary:hover:not(:disabled) {
+  border-color: var(--jade-700);
+  background: var(--jade-700);
+}
+
+/* Celular y ventanas angostas: pantalla completa, con la foto arriba. La
+   ventana ocupa todo el <dialog>, que mide lo que se ve de la pantalla (con
+   o sin la barra del navegador). */
+@media (max-width: 860px) {
+  .feed-pop {
+    padding: 0;
+  }
+  .feed-pop[open] {
+    display: block;
+  }
+  .feed-pop-box {
+    grid-template-columns: 1fr;
+    grid-template-rows: 38% minmax(0, 1fr);
+    width: 100%;
+    height: 100%;
+    border-radius: 0;
+  }
+  .feed-pop-title {
+    font-size: 19px;
+  }
+  .feed-pop-dl {
+    grid-template-columns: 92px 1fr;
+  }
+  .feed-pop-btn.primary {
+    flex: 1 0 100%;
+    margin-left: 0;
+    text-align: center;
+  }
 }
 
 /* ------------------------------------------------------------------ */

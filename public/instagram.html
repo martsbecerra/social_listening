@@ -381,6 +381,24 @@
     </div>
   </div>
 
+  <!-- Pop-up "Ver más" del feed (public/js/monitoringFeedPopup.js, solo en
+       Instagram): el posteo completo, con la foto a la izquierda. El
+       <dialog> es el fondo oscuro; la ventana es .feed-pop-box. -->
+  <dialog id="feedPop" class="feed-pop" aria-labelledby="feedPopTitle">
+    <div class="feed-pop-box" id="feedPopBox">
+      <div class="feed-pop-photo" id="feedPopPhoto"></div>
+      <div class="feed-pop-side">
+        <div class="feed-pop-head">
+          <div class="feed-av" id="feedPopAvatar" aria-hidden="true"></div>
+          <div class="feed-who"><b id="feedPopWho"></b><small id="feedPopFollowers"></small></div>
+          <button type="button" class="feed-pop-icon" id="feedPopClose" aria-label="Cerrar">✕</button>
+        </div>
+        <div class="feed-pop-scroll" id="feedPopScroll"></div>
+        <div class="feed-pop-foot" id="feedPopFoot"></div>
+      </div>
+    </div>
+  </dialog>
+
   <footer class="foot">
     <div class="foot-in">
       <div class="foot-grid">
@@ -430,6 +448,7 @@
   <script>window.SL_PLATFORM = 'instagram';</script>
   <script src="js/monitoring.js?v=plat"></script>
   <script src="js/monitoringFeed.js"></script>
+  <script src="js/monitoringFeedPopup.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="js/claimsMap.js"></script>
   <script src="js/footer.js"></script>

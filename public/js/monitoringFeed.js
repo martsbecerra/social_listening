@@ -7,7 +7,8 @@
 // Lo carga SOLO instagram.html, después de monitoring.js, y se apoya en lo
 // que ese archivo ya define: monitoringTable (la fuente de los posteos, ya
 // filtrados por la barra con postMatchesFilters), readFilterValues, postReach
-// (el alcance), buildSentimentSelect, buildBenchLine y los formateadores.
+// (el alcance), buildSentimentSelect y los formateadores. El pop-up de "Ver
+// más" está aparte, en monitoringFeedPopup.js.
 // x.html no lo carga: en X la solapa sigue siendo solo la tabla.
 // --------------------------------------------------------------------
 const feedContainerEl = document.getElementById('monitoringFeed');
@@ -229,11 +230,12 @@ function buildFeedFoot(post) {
   if (term) why.appendChild(feedNode('code', '', term));
   why.title = post.matched_reason || '';
 
-  // El clic lo atiende el contenedor (ver "Ver más / Ver menos").
+  // Abre el pop-up del posteo; el clic lo atiende el contenedor (ver
+  // "Acciones de la tarjeta").
   const more = feedNode('button', '', 'Ver más');
   more.type = 'button';
   more.dataset.more = '';
-  more.setAttribute('aria-expanded', 'false');
+  more.setAttribute('aria-haspopup', 'dialog');
 
   const open = feedNode('a', '', 'Abrir ↗');
   open.href = post.url;
@@ -251,70 +253,6 @@ function buildFeedCard(post, reach) {
   card.dataset.s = post.sentiment || SENTIMENT_UNSET;
   card.append(buildFeedHead(post), buildFeedMedia(post, reach), buildFeedBody(post), buildFeedMetrics(post, reach), buildFeedFoot(post));
   return card;
-}
-
-// -------------------------------------------------------------------------
-// Detalle de "Ver más": lo que la tabla muestra al desplegar una fila
-// (buildDetailPanel en monitoring.js) y la tarjeta cerrada no: la referencia
-// de la cuenta para likes y comentarios, el motivo completo, la fecha y hora
-// de publicación y el enlace al perfil. El texto completo del posteo ya está
-// en la tarjeta (.feed-cap, cortado a tres líneas hasta abrirla). Se arma
-// recién al abrir: son cientos de tarjetas y casi ninguna se abre.
-// -------------------------------------------------------------------------
-const FEED_REACH_NAMES = { alto: 'Alto', medio: 'Medio', bajo: 'Bajo' };
-
-function feedMoreRow(label, value) {
-  const row = feedNode('div');
-  row.append(feedNode('span', '', label), feedNode('b', '', value));
-  return row;
-}
-
-// Las dos filas de la maqueta para una métrica: la mediana de la cuenta y
-// cuánto dio este posteo contra ella. Sin referencia (likes ocultos, cuenta
-// con pocos posteos) va una sola línea con el motivo, el mismo texto que da
-// la tabla: lo arma buildBenchLine.
-function appendFeedMoreMetric(more, name, tableLabel, metric) {
-  if (!metric || metric.level === 'sin-referencia') {
-    const note = feedNode('div', 'stack');
-    note.appendChild(feedNode('span', '', buildBenchLine(tableLabel, metric).textContent));
-    more.appendChild(note);
-    return;
-  }
-  more.append(
-    feedMoreRow(`Mediana de ${name} de la cuenta`, formatBenchmarkNumber(metric.median)),
-    feedMoreRow('Este posteo vs. su mediana', `${formatBenchmarkRatio(metric.ratio)}×`)
-  );
-}
-
-function buildFeedMore(post) {
-  const more = feedNode('div', 'feed-more');
-  const benchmark = post.benchmark || {};
-  const reach = postReach(post);
-
-  // Qué métrica disparó la etiqueta de alcance del recuadro.
-  more.appendChild(feedMoreRow('Alcance', reach ? `${FEED_REACH_NAMES[reach.level]}, por ${reach.label}` : 'Sin referencia'));
-  appendFeedMoreMetric(more, 'likes', 'Likes', benchmark.likes);
-  appendFeedMoreMetric(more, 'comentarios', 'Comentarios', benchmark.comments);
-
-  // El motivo completo (el pie de la tarjeta lleva la versión corta). Es una
-  // oración: va debajo de su etiqueta, a lo ancho.
-  const reason = feedMoreRow('Detectado por', post.matched_reason || 'N/D');
-  reason.className = 'stack';
-  more.appendChild(reason);
-
-  const { date, time } = formatFullDateTime(post.posted_at);
-  more.appendChild(feedMoreRow('Publicado', time ? `${date} · ${time}` : date));
-
-  if (post.account && post.account !== 'N/D') {
-    const profile = feedNode('a', '', 'Ver perfil');
-    profile.href = `${PROFILE_BASE}${post.account}`;
-    profile.target = '_blank';
-    profile.rel = 'noopener';
-    const row = feedNode('div');
-    row.append(feedNode('span', '', 'Cuenta'), profile);
-    more.appendChild(row);
-  }
-  return more;
 }
 
 // -------------------------------------------------------------------------
@@ -345,6 +283,17 @@ function feedSorter(order, reachById) {
 }
 
 // -------------------------------------------------------------------------
+// Aviso de que cambió la lista de tarjetas: se redibujó entera o salió una.
+// El pop-up de "Ver más" (monitoringFeedPopup.js, que se carga después) se
+// anota acá para no quedar mostrando un posteo que ya no está.
+// -------------------------------------------------------------------------
+const feedListListeners = [];
+
+function notifyFeedList() {
+  for (const listener of feedListListeners) listener();
+}
+
+// -------------------------------------------------------------------------
 // Dibujo. Se rehace entero cada vez que cambian los datos, los filtros o el
 // orden (monitoring.js avisa por monitoringViewListeners, ver
 // scheduleFeedRender). Solo si el feed es la vista elegida: en la vista
@@ -361,7 +310,6 @@ function renderFeed() {
   clearTimeout(feedRenderTimer);
   feedRenderTimer = null;
   if (feedCurrentView !== 'feed' || !monitoringTable) return;
-  feedOpenIds.clear(); // las tarjetas se rehacen cerradas, como en la maqueta
   const query = JSON.stringify([readFilterValues(), feedOrderEl.value]);
   const listChanged = feedLastQuery !== null && query !== feedLastQuery;
   feedLastQuery = query;
@@ -390,6 +338,7 @@ function renderFeed() {
   }
   feedContainerEl.replaceChildren(fragment);
   if (listChanged) feedScrollToStart();
+  notifyFeedList();
 }
 
 // Los avisos de monitoring.js llegan de a uno por tecla del buscador. Rehacer
@@ -427,7 +376,6 @@ function setFeedView(view, { save = true } = {}) {
     renderFeed();
   } else {
     feedContainerEl.replaceChildren();
-    feedOpenIds.clear();
     feedLastQuery = null;
     // La tabla pudo armarse o cambiar mientras estaba oculta: Tabulator
     // necesita redibujarse al volver a verse para calcular bien los anchos.
@@ -478,9 +426,10 @@ feedContainerEl.addEventListener('change', (e) => {
 });
 
 feedContainerEl.addEventListener('click', (e) => {
-  const more = e.target.closest('.feed-foot [data-more]');
-  if (more) {
-    feedToggleRow(more.closest('.feed-card'));
+  // "Ver más" y la foto abren el pop-up del posteo (monitoringFeedPopup.js).
+  const opener = e.target.closest('.feed-foot [data-more], .feed-media');
+  if (opener) {
+    openFeedPop(opener.closest('.feed-card'));
     return;
   }
   const ignore = e.target.closest('.feed-head .ico.del');
@@ -497,21 +446,10 @@ feedContainerEl.addEventListener('click', (e) => {
 function removeFeedCard(id) {
   const card = feedCardById(id);
   if (!card) return;
-  // Si era el posteo con el que se abrió su fila, la fila sigue abierta con
-  // el que pasa a ocupar su lugar: la tarjeta siguiente. Si era la última de
-  // la lista no la reemplaza nadie, y la fila sigue abierta por la que tenía
-  // al lado; si estaba sola en su fila, esa fila desaparece y no queda nada
-  // abierto (la tarjeta anterior es de la fila de arriba, que estaba cerrada).
-  if (feedOpenIds.delete(card.dataset.id)) {
-    const row = feedRowCards(card);
-    const heir = card.nextElementSibling || row[row.length - 2];
-    if (heir) feedOpenIds.add(heir.dataset.id);
-  }
   card.remove();
-  // Si no quedó ninguna, el cartel de "no hay". Si quedan, las que seguían se
-  // corrieron un lugar y cambiaron de fila: se rearman las filas abiertas.
+  // Si no quedó ninguna, el cartel de "no hay" (renderFeed ya avisa el cambio).
   if (!feedContainerEl.querySelector('.feed-card')) renderFeed();
-  else feedSyncOpenRows();
+  else notifyFeedList();
 }
 
 // Hasta dónde tapa la barra de filtros, que queda pegada arriba al bajar.
@@ -538,80 +476,6 @@ function feedScrollToStart(el = feedContainerEl) {
   const limit = feedBarBottom() + 12;
   if (top < limit) window.scrollTo({ top: top + window.scrollY - limit });
 }
-
-// -------------------------------------------------------------------------
-// "Ver más" / "Ver menos". Como en la maqueta, se abren y se cierran juntas
-// todas las tarjetas de la misma fila visual: la grilla las estira al alto de
-// la más alta, y abrir una sola dejaría a las de al lado con un hueco.
-// -------------------------------------------------------------------------
-
-// Posteos con los que el usuario abrió una fila (data-id, que es texto). El
-// estado vive con las tarjetas dibujadas: un redibujo las rehace cerradas.
-// Sirve para rearmar las filas cuando las tarjetas cambian de lugar sin
-// redibujar (al ignorar una, o al cambiar el ancho de la ventana).
-const feedOpenIds = new Set();
-
-// Las tarjetas de la misma fila visual: las vecinas que quedaron a la misma
-// altura (misma tolerancia que la maqueta).
-function feedRowCards(card) {
-  const top = card.offsetTop;
-  const inRow = (other) => other && other.classList.contains('feed-card') && Math.abs(other.offsetTop - top) < 4;
-  const cards = [card];
-  for (let k = card.previousElementSibling; inRow(k); k = k.previousElementSibling) cards.unshift(k);
-  for (let k = card.nextElementSibling; inRow(k); k = k.nextElementSibling) cards.push(k);
-  return cards;
-}
-
-function feedSetCardOpen(card, open) {
-  if (card.classList.contains('open') === open) return;
-  if (open && !card.querySelector('.feed-more')) {
-    const row = feedRowOf(card);
-    if (row) card.querySelector('.feed-body').appendChild(buildFeedMore(row.getData()));
-  }
-  card.classList.toggle('open', open);
-  const button = card.querySelector('.feed-foot [data-more]');
-  button.textContent = open ? 'Ver menos' : 'Ver más';
-  button.setAttribute('aria-expanded', String(open));
-}
-
-function feedToggleRow(card) {
-  const open = !card.classList.contains('open');
-  const cards = feedRowCards(card); // se mide antes de cambiar nada
-  for (const other of cards) feedOpenIds.delete(other.dataset.id);
-  if (open) feedOpenIds.add(card.dataset.id);
-  for (const other of cards) feedSetCardOpen(other, open);
-  // Al cerrar desde abajo de un texto largo, la tarjeta quedaría arriba de la
-  // pantalla: se la trae de vuelta, debajo de la barra.
-  if (!open && card.getBoundingClientRect().top < feedBarBottom()) feedScrollToCard(card);
-}
-
-// Deja abiertas las filas visuales que tienen un posteo de feedOpenIds y
-// cerradas las demás. Primero mide todo y después cambia: abrir o cerrar no
-// mueve a ninguna tarjeta de fila, solo cambia los altos.
-function feedSyncOpenRows() {
-  const shouldBeOpen = new Set();
-  for (const id of feedOpenIds) {
-    const card = feedCardById(id);
-    if (!card) {
-      feedOpenIds.delete(id);
-      continue;
-    }
-    for (const other of feedRowCards(card)) shouldBeOpen.add(other);
-  }
-  for (const card of feedContainerEl.querySelectorAll('.feed-card.open')) {
-    if (!shouldBeOpen.has(card)) feedSetCardOpen(card, false);
-  }
-  for (const card of shouldBeOpen) feedSetCardOpen(card, true);
-}
-
-// Otro ancho de ventana puede cambiar la cantidad de columnas, y con eso
-// qué tarjetas comparten fila.
-let feedResizeTimer = null;
-window.addEventListener('resize', () => {
-  if (!feedOpenIds.size) return;
-  clearTimeout(feedResizeTimer);
-  feedResizeTimer = setTimeout(feedSyncOpenRows, FEED_RENDER_DELAY_MS);
-});
 
 // Tarjeta a la que lleva un destacado de "Se despegaron" cuando el feed es la
 // vista activa. Igual que en la tabla, no toca los filtros: si el posteo
