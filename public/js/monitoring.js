@@ -427,9 +427,13 @@ function formatBenchmarkNumber(n) {
 
 // Formateador armado una sola vez: toLocaleString con opciones crea uno
 // nuevo en cada llamada, y el feed formatea cientos de tarjetas de un saque.
-const BENCHMARK_RATIO_FORMAT = new Intl.NumberFormat('es-AR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const BENCHMARK_RATIO_OPTIONS = { minimumFractionDigits: 1, maximumFractionDigits: 1 };
+const BENCHMARK_RATIO_FORMAT = new Intl.NumberFormat('es-AR', BENCHMARK_RATIO_OPTIONS);
 
 function formatBenchmarkRatio(ratio) {
+  // Solo los números pasan por el formateador compartido. Con cualquier otra
+  // cosa hace lo mismo que antes de tenerlo: un null tira, no sale "0,0".
+  if (typeof ratio !== 'number') return ratio.toLocaleString('es-AR', BENCHMARK_RATIO_OPTIONS);
   return BENCHMARK_RATIO_FORMAT.format(ratio);
 }
 
