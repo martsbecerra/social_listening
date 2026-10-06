@@ -114,7 +114,9 @@ el 100 % de lo pedido.
   por cadencia.
 - No está documentado si el actor cobra los items de error (posteo borrado
   o privado); el README del proyecto los da por cobrados. El freno a los 2
-  intentos acota el gasto a 0,0046 por posteo borrado.
+  intentos acota el gasto a 0,0046 por posteo borrado. CONFIRMADO en la
+  corrida real del 2026-10-06: el item `not_found` se escribe en el dataset
+  y se cobra como un resultado (0,0023).
 - El pase frío (hoy 278 posteos vencidos) supera el tope: se reparte en 2
   o 3 ciclos seguidos; mientras tanto puede postergar lo tibio un ciclo.
   El tramo caliente va siempre primero.
