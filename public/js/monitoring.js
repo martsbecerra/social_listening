@@ -626,6 +626,46 @@ async function highlightGoToRow(id) {
 }
 
 // -------------------------------------------------------------------------
+// Alcance del posteo: UNA etiqueta (alto | medio | bajo) a partir de los dos
+// niveles que ya manda el backend en benchmark.likes y benchmark.comments
+// (classifyValue en src/accountStats.js, cortes 1,5x y 0,5x). Acá no se
+// recalcula nada, solo se combinan. Likes y comentarios pesan igual y vale
+// el mejor de los dos: alto si alguno da alto, bajo solo si los dos dan
+// bajo, medio en el resto ("normal" del backend se muestra como "medio").
+// Una métrica sin referencia (likes ocultos, muestra chica) no cuenta y
+// decide la otra; si ninguna tiene referencia devuelve null y el posteo no
+// lleva etiqueta de alcance.
+//   by / label: la métrica que disparó la etiqueta (empate: comentarios,
+//               igual que highlightOf en el backend).
+//   ratio:      la razón de esa métrica contra la mediana de la cuenta. Como
+//               las dos se cortan en los mismos valores, la de mejor nivel
+//               es siempre la de mayor razón: es la mayor de las dos, y por
+//               ella ordena "Mayor alcance".
+// -------------------------------------------------------------------------
+const REACH_RANK = { bajo: 0, normal: 1, alto: 2 };
+const REACH_LEVELS = ['bajo', 'medio', 'alto'];
+const REACH_METRICS = [
+  { by: 'comments', label: 'comentarios' },
+  { by: 'likes', label: 'likes' },
+];
+
+function postReach(post) {
+  const benchmark = (post && post.benchmark) || {};
+  let best = null;
+  for (const { by, label } of REACH_METRICS) {
+    const metric = benchmark[by];
+    const rank = metric ? REACH_RANK[metric.level] : undefined;
+    // "sin-referencia" (o cualquier nivel desconocido) no entra en la cuenta.
+    if (typeof rank !== 'number' || !Number.isFinite(metric.ratio)) continue;
+    if (!best || rank > best.rank || (rank === best.rank && metric.ratio > best.ratio)) {
+      best = { rank, by, label, ratio: metric.ratio };
+    }
+  }
+  if (!best) return null;
+  return { level: REACH_LEVELS[best.rank], by: best.by, label: best.label, ratio: best.ratio };
+}
+
+// -------------------------------------------------------------------------
 // Filtros (barra "Filtrar"). El orden se elige cliqueando el header de
 // cada columna — flechas asc/desc de Tabulator, no una fila "Ordenar".
 // -------------------------------------------------------------------------
@@ -660,39 +700,53 @@ function updateCounts() {
   mEl.textContent = monitoringTable.getDataCount();
 }
 
+// Valores actuales de la barra "Filtrar".
+function readFilterValues() {
+  return {
+    sentiment: fSentEl.value,
+    account: fAccValue,
+    desde: fDesdeEl.value, // "YYYY-MM-DD" del <input type="date"> o ""
+    hasta: fHastaEl.value,
+    q: normalizeSearch(qEl.value.trim()),
+  };
+}
+
+// La condición de la barra "Filtrar" sobre un posteo, separada de Tabulator:
+// la tabla y la vista Feed de Instagram filtran con esta misma función, así
+// las dos muestran siempre el mismo conjunto. "filters" es lo que devuelve
+// readFilterValues().
+function postMatchesFilters(data, filters) {
+  const { sentiment, account, desde, hasta, q } = filters;
+  // "sin_clasificar" no es un valor guardado: es la ausencia de valor.
+  if (sentiment === SENTIMENT_UNSET) {
+    if (data.sentiment) return false;
+  } else if (sentiment && data.sentiment !== sentiment) {
+    return false;
+  }
+  if (account && data.account !== account) return false;
+  if (desde || hasta) {
+    if (!data.posted_at) return false;
+    const posted = new Date(data.posted_at);
+    if (desde && posted < new Date(`${desde}T00:00:00`)) return false;
+    if (hasta && posted > new Date(`${hasta}T23:59:59.999`)) return false;
+  }
+  if (q) {
+    const haystack = normalizeSearch(`${data.title || ''} ${data.account || ''} ${data.caption || ''}`);
+    if (!haystack.includes(q)) return false;
+  }
+  return true;
+}
+
 function applyFilters() {
   if (!monitoringTable) return;
-  const fs = fSentEl.value;
-  const fa = fAccValue;
-  const fDesde = fDesdeEl.value; // "YYYY-MM-DD" del <input type="date"> o ""
-  const fHasta = fHastaEl.value;
-  const q = normalizeSearch(qEl.value.trim());
+  const filters = readFilterValues();
 
-  monitoringTable.setFilter((data) => {
-    // "sin_clasificar" no es un valor guardado: es la ausencia de valor.
-    if (fs === SENTIMENT_UNSET) {
-      if (data.sentiment) return false;
-    } else if (fs && data.sentiment !== fs) {
-      return false;
-    }
-    if (fa && data.account !== fa) return false;
-    if (fDesde || fHasta) {
-      if (!data.posted_at) return false;
-      const posted = new Date(data.posted_at);
-      if (fDesde && posted < new Date(`${fDesde}T00:00:00`)) return false;
-      if (fHasta && posted > new Date(`${fHasta}T23:59:59.999`)) return false;
-    }
-    if (q) {
-      const haystack = normalizeSearch(`${data.title || ''} ${data.account || ''} ${data.caption || ''}`);
-      if (!haystack.includes(q)) return false;
-    }
-    return true;
-  });
+  monitoringTable.setFilter((data) => postMatchesFilters(data, filters));
 
-  fSentEl.classList.toggle('on', !!fs);
-  fAccBtnEl.classList.toggle('on', !!fa);
-  fDesdeEl.classList.toggle('on', !!fDesde);
-  fHastaEl.classList.toggle('on', !!fHasta);
+  fSentEl.classList.toggle('on', !!filters.sentiment);
+  fAccBtnEl.classList.toggle('on', !!filters.account);
+  fDesdeEl.classList.toggle('on', !!filters.desde);
+  fHastaEl.classList.toggle('on', !!filters.hasta);
 
   updateCounts();
   updateMonitoringClearButtonState();
