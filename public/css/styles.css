@@ -1894,6 +1894,421 @@ pre.report a:hover {
 }
 
 /* ------------------------------------------------------------------ */
+/* Monitoreo en vivo, vista Feed (solo Instagram)                       */
+/* ------------------------------------------------------------------ */
+/* Calcado de design/monitoreo-feed.html, con los tokens de :root. Los
+   nombres de la maqueta (.card, .head, .badge, .foot...) ya existen acá con
+   otro uso, así que todo lo del feed lleva el prefijo feed-. */
+
+/* Interruptor Tabla / Feed: primer control de la barra de filtros. Pisa el
+   button global (ancho 100%, margen, degradé, sombra y el salto del hover),
+   igual que .f-clear. */
+.view-seg {
+  display: inline-flex;
+  flex: none;
+  padding: 3px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+.view-seg button {
+  width: auto;
+  margin: 0;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--clay-700);
+  font-size: 13px;
+  font-weight: 400;
+  box-shadow: none;
+}
+.view-seg button:hover:not(:disabled) {
+  transform: none;
+  box-shadow: none;
+  filter: none;
+}
+.view-seg button.on {
+  background: var(--jade-900);
+  color: #fff;
+}
+
+/* "Desde" / "Hasta" a la vista, al lado de cada fecha. Pisa el label global
+   (bloque, DM Mono en mayúsculas, margen abajo). */
+.f-date {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-family: "Instrument Sans", sans-serif;
+  font-size: 12.5px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--clay-500);
+}
+
+/* Final de la barra: buscador, contador y "Limpiar". Con el interruptor y el
+   orden ya no entra todo en un renglón; agrupados, cuando falta lugar bajan
+   los tres juntos al segundo (el buscador a lo ancho) en vez de quedar el
+   contador solo abajo. 555px: el buscador con su texto de ayuda entero más
+   el contador y "Limpiar"; así la barra queda igual de alta en las dos
+   vistas y no salta al cambiar. En pantallas angostas el grupo corta adentro
+   como antes. */
+.frow-end {
+  flex: 1 1 555px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+/* Grilla. Foto chica fija: es la variante "compact" de la maqueta, sin
+   selector de tamaño. El mínimo de la tarjeta es 240px y no los 230px de la
+   maqueta: .container-wide (1240px) es más ancho que la maqueta (1148px) y
+   con 230 entraban 5 columnas de 235px, con las cuentas cortadas y el
+   selector de sentimiento en una segunda línea. Con 240 quedan las 4
+   columnas que muestra la maqueta. */
+.feed {
+  --feed-img-h: 150px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 16px;
+}
+.feed-empty {
+  grid-column: 1 / -1;
+  padding: 40px;
+  text-align: center;
+  color: var(--clay-500);
+}
+
+/* Tarjeta. El borde de arriba es el sentimiento, con los mismos colores que
+   las tarjetas de "Se despegaron" (.hl) y que el selector de la tabla:
+   neutral es ámbar. Sin clasificar, gris. */
+.feed-card {
+  --s: #cfd6d2;
+  /* Son cientos de tarjetas sin paginar: el navegador no calcula ni pinta las
+     que están fuera de la pantalla hasta que se acercan (420px es el alto
+     estimado mientras tanto; una vez dibujada recuerda el real). */
+  content-visibility: auto;
+  contain-intrinsic-height: auto 420px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-top: 4px solid var(--s);
+  border-radius: 14px;
+  box-shadow: var(--shadow-sm);
+  font-size: 14px;
+  line-height: 1.45;
+  transition:
+    box-shadow 0.15s,
+    transform 0.15s;
+}
+.feed-card:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+.feed-card[data-s="positivo"] {
+  --s: var(--jade-400);
+}
+.feed-card[data-s="neutral"] {
+  --s: var(--amber-700);
+}
+.feed-card[data-s="negativo"] {
+  --s: var(--coral-500);
+}
+
+/* Tarjeta a la que lleva un destacado de "Se despegaron": un aro jade que
+   aparece y se va, como el parpadeo de la fila de la tabla
+   (.tabulator-row.flash). */
+@keyframes feedFlash {
+  0%,
+  100% {
+    box-shadow: var(--shadow-sm);
+  }
+  25%,
+  60% {
+    box-shadow:
+      0 0 0 3px var(--jade-300),
+      var(--shadow-md);
+  }
+}
+.feed-card.flash {
+  animation: feedFlash 1.1s ease;
+}
+
+/* Cabecera: inicial de la cuenta, @cuenta + seguidores, "hace X" y la X de
+   ignorar de la tabla (.ico.del) arriba a la derecha. */
+.feed-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+}
+.feed-av {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+}
+.feed-who {
+  flex: 1;
+  min-width: 0;
+}
+.feed-who b {
+  display: block;
+  font-size: 13.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.feed-who small {
+  display: block;
+  font-size: 12px;
+  color: var(--clay-500);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.feed-when {
+  flex: none;
+  font-family: "DM Mono", monospace;
+  font-size: 11.5px;
+  color: var(--clay-500);
+  white-space: nowrap;
+}
+.feed-head .ico {
+  flex: none;
+  margin: 0 -4px 0 -4px;
+}
+
+/* Recuadro de la imagen. Hoy siempre el de reemplazo: un degradé con el tono
+   de la cuenta (lo pone el JS; el fondo de acá es el respaldo) y el ícono
+   del tipo. Cuando el posteo traiga imagen, el <img> lo tapa y las etiquetas
+   quedan encima. */
+.feed-media {
+  position: relative;
+  display: grid;
+  place-items: center;
+  height: var(--feed-img-h);
+  overflow: hidden;
+  background: var(--jade-700);
+}
+.feed-media svg {
+  width: 46px;
+  height: 46px;
+  color: #fff;
+  opacity: 0.55;
+}
+.feed-media img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.feed-badge {
+  position: absolute;
+  top: 8px;
+  z-index: 1;
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: rgba(3, 42, 35, 0.72);
+  color: #fff;
+  font-family: "DM Mono", monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.feed-badge.type {
+  left: 8px;
+}
+.feed-badge.reach {
+  right: 8px;
+}
+.feed-badge.reach.alto {
+  background: var(--coral-500);
+}
+.feed-badge.reach.medio {
+  background: var(--amber-700);
+}
+.feed-badge.reach.bajo {
+  background: rgba(3, 42, 35, 0.55);
+}
+/* La imagen no cargó (las URLs de Instagram vencen). */
+.feed-media.broken {
+  background: repeating-linear-gradient(
+    45deg,
+    var(--clay-100),
+    var(--clay-100) 10px,
+    #f6f1ea 10px,
+    #f6f1ea 20px
+  );
+}
+.feed-media-msg {
+  font-size: 12px;
+  color: var(--clay-500);
+}
+
+/* Título y texto del posteo: tres líneas hasta "Ver más". */
+.feed-body {
+  flex: 1;
+  padding: 12px 12px 4px;
+}
+.feed-title {
+  margin: 0 0 6px;
+  font-family: "Bricolage Grotesque", sans-serif;
+  font-size: 15.5px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--jade-950);
+  overflow-wrap: anywhere;
+}
+.feed-cap {
+  margin: 0;
+  color: var(--clay-700);
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+/* Abierta: texto completo con sus saltos de línea, como .dt-cap. */
+.feed-card.open .feed-cap {
+  display: block;
+  -webkit-line-clamp: unset;
+  white-space: pre-line;
+}
+.feed-more {
+  display: none;
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--jade-50);
+  font-size: 12.5px;
+}
+.feed-card.open .feed-more {
+  display: block;
+}
+.feed-more div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 0;
+}
+.feed-more span {
+  color: var(--clay-500);
+}
+/* El valor no se achica (un "2,4×" nunca se parte en dos líneas); si es largo
+   ocupa hasta el 62% de la fila y sigue abajo, y la etiqueta se acomoda en
+   el resto. */
+.feed-more b {
+  flex: none;
+  max-width: 62%;
+  text-align: right;
+  overflow-wrap: break-word;
+}
+.feed-more a {
+  color: var(--jade-700);
+  text-underline-offset: 3px;
+}
+/* Una oración (el motivo completo de "Detectado por", o por qué una métrica
+   no tiene referencia) no entra en la columna de la derecha: la etiqueta va
+   arriba y el texto abajo, a lo ancho. */
+.feed-more .stack {
+  display: block;
+}
+.feed-more .stack b {
+  display: block;
+  max-width: none;
+  text-align: left;
+}
+
+/* Likes, comentarios y el selector de sentimiento de la tabla
+   (.sentiment-select), que acá va a la derecha en lugar de la pastilla fija
+   de la maqueta. Si no entra, baja a una segunda línea. */
+.feed-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--line);
+  font-family: "DM Mono", monospace;
+  font-size: 12.5px;
+}
+.feed-x {
+  font-size: 11px;
+  color: var(--clay-500);
+}
+.feed-x.up {
+  color: var(--coral-700);
+}
+.feed-metrics .sentiment-select {
+  margin-left: auto;
+  font-family: "Instrument Sans", sans-serif;
+}
+
+/* Pie: por qué se detectó, "Ver más" y el enlace al posteo. */
+.feed-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px 12px;
+  font-size: 12px;
+}
+.feed-why {
+  flex: 1;
+  min-width: 0;
+  color: var(--clay-500);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.feed-why code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--jade-50);
+  color: var(--jade-700);
+  font-family: "DM Mono", monospace;
+}
+.feed-foot button,
+.feed-foot a {
+  flex: none;
+  width: auto;
+  margin: 0;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--jade-700);
+  font-size: 12px;
+  font-weight: 400;
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+  box-shadow: none;
+}
+.feed-foot button:hover:not(:disabled) {
+  transform: none;
+  box-shadow: none;
+  filter: none;
+}
+.feed-foot a {
+  border-color: var(--jade-900);
+  background: var(--jade-900);
+  color: #fff;
+}
+
+/* ------------------------------------------------------------------ */
 /* Modales (confirmar borrado / ver todas las keywords)                 */
 /* ------------------------------------------------------------------ */
 .modal-overlay {

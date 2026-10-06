@@ -216,6 +216,14 @@
       <!-- Filtros -->
       <div class="filters">
         <div class="frow">
+          <!-- Vista de los resultados: la tabla de siempre o el feed de
+               tarjetas (public/js/monitoringFeed.js, solo en Instagram). Se
+               recuerda la última elegida. -->
+          <div class="view-seg" id="viewSeg" role="group" aria-label="Vista de los resultados">
+            <button type="button" data-view="tabla" class="on" aria-pressed="true">Tabla</button>
+            <button type="button" data-view="feed" aria-pressed="false">Feed</button>
+          </div>
+
           <span class="frow-lbl tag">Filtrar</span>
 
           <select id="fSent" aria-label="Filtrar por sentimiento">
@@ -224,6 +232,16 @@
             <option value="neutral">Neutral</option>
             <option value="negativo">Negativo</option>
             <option value="sin_clasificar">Sin clasificar</option>
+          </select>
+
+          <!-- Alcance del posteo contra lo habitual de su cuenta (postReach
+               en public/js/monitoring.js; es la etiqueta de la tarjeta del
+               feed). Filtra las dos vistas. Solo en Instagram. -->
+          <select id="fAlcance" aria-label="Filtrar por alcance">
+            <option value="">Alcance</option>
+            <option value="alto">Alto</option>
+            <option value="medio">Medio</option>
+            <option value="bajo">Bajo</option>
           </select>
 
           <!-- No es un <select> nativo a propósito: con ~70 opciones (todas
@@ -239,19 +257,35 @@
             <div class="acc-select-panel hidden" id="fAccPanel" role="listbox" aria-label="Cuenta"></div>
           </div>
 
-          <input type="date" id="fDesde" aria-label="Fecha desde" />
-          <input type="date" id="fHasta" aria-label="Fecha hasta" />
+          <label class="f-date">Desde <input type="date" id="fDesde" aria-label="Fecha desde" /></label>
+          <label class="f-date">Hasta <input type="date" id="fHasta" aria-label="Fecha hasta" /></label>
 
-          <input type="search" id="q" placeholder="Buscar título, cuenta o texto del posteo..." />
+          <!-- Orden del feed: solo se ve en la vista Feed (la tabla ordena
+               cliqueando el encabezado de cada columna). -->
+          <select id="fOrden" class="hidden" aria-label="Ordenar el feed">
+            <option value="recent">Más recientes</option>
+            <option value="reach">Mayor alcance</option>
+            <option value="likes">Más likes</option>
+          </select>
 
-          <span class="f-count">Mostrando <b id="n">0</b> de <b id="m">0</b> posteos</span>
-          <button class="f-clear" id="clear" type="button" disabled>Limpiar</button>
+          <!-- Buscador, contador y "Limpiar" van agrupados: si no entran en
+               el primer renglón de la barra, bajan los tres juntos. -->
+          <div class="frow-end">
+            <input type="search" id="q" placeholder="Buscar título, cuenta o texto del posteo..." />
+
+            <span class="f-count">Mostrando <b id="n">0</b> de <b id="m">0</b> posteos</span>
+            <button class="f-clear" id="clear" type="button" disabled>Limpiar</button>
+          </div>
         </div>
       </div>
 
       <div class="card tbl-wrap">
         <div id="monitoringTable"></div>
       </div>
+
+      <!-- Vista Feed: las mismas publicaciones y los mismos filtros que la
+           tabla, en tarjetas. La llena public/js/monitoringFeed.js. -->
+      <section class="feed hidden" id="monitoringFeed" aria-label="Publicaciones detectadas, en tarjetas"></section>
     </div>
   </section>
 
@@ -395,6 +429,7 @@
   <script src="https://unpkg.com/tabulator-tables@6.3.0/dist/js/tabulator.min.js"></script>
   <script>window.SL_PLATFORM = 'instagram';</script>
   <script src="js/monitoring.js?v=plat"></script>
+  <script src="js/monitoringFeed.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="js/claimsMap.js"></script>
   <script src="js/footer.js"></script>

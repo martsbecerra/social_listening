@@ -49,6 +49,9 @@ const highlightsSectionEl = document.getElementById('monitoringHighlightsSection
 const cardsEl = document.getElementById('cards');
 
 const fSentEl = document.getElementById('fSent');
+// Filtro "Alcance": solo está en instagram.html (la etiqueta sale del
+// benchmark, que X no tiene). En x.html esto es null y el filtro no existe.
+const fAlcanceEl = document.getElementById('fAlcance');
 const fAccBtnEl = document.getElementById('fAccBtn');
 const fAccPanelEl = document.getElementById('fAccPanel');
 const fDesdeEl = document.getElementById('fDesde');
@@ -333,6 +336,7 @@ async function confirmIgnore() {
       monitoringTable.deleteRow(id);
       updateCounts();
       renderHighlightCards(monitoringTable.getData());
+      notifyMonitoringViews({ ignoredId: id });
     }
   } catch (err) {
     console.error('Error ignorando el registro:', err);
@@ -364,6 +368,38 @@ async function updateSentiment(id, sentiment, selectEl) {
   }
 }
 
+// El selector de sentimiento (pastilla con color y marca de forma, ver
+// .sentiment-select en styles.css). Lo arman la celda de la tabla y la
+// tarjeta del feed, cada una con sus propios manejadores. "raw" es el valor
+// guardado: null o vacío es "sin clasificar".
+function buildSentimentSelect(raw) {
+  const sinClasificar = !raw;
+  const sentiment = sinClasificar ? SENTIMENT_UNSET : raw;
+
+  const select = document.createElement('select');
+  select.className = `sentiment-select sentiment-${sentiment}`;
+
+  // La opción "Sin clasificar" existe sólo mientras el posteo lo esté: es
+  // un estado del sistema, no algo que se elija a mano. Elegir cualquier
+  // otro valor lo saca de ahí y no se puede volver.
+  if (sinClasificar) {
+    const opt = document.createElement('option');
+    opt.value = SENTIMENT_UNSET;
+    opt.textContent = SENTIMENT_UNSET_LABEL;
+    opt.selected = true;
+    select.appendChild(opt);
+  }
+
+  SENTIMENT_OPTIONS.forEach((value) => {
+    const opt = document.createElement('option');
+    opt.value = value;
+    opt.textContent = SENTIMENT_LABELS[value];
+    if (value === sentiment) opt.selected = true;
+    select.appendChild(opt);
+  });
+  return select;
+}
+
 // Formatea un número con separador de miles es-AR, o "—" si no hay dato
 // (mismo símbolo que usa design/monitoreo.html en fmt/abbr).
 function formatCount(value) {
@@ -393,8 +429,16 @@ function formatBenchmarkNumber(n) {
   return n == null || !Number.isFinite(n) ? '—' : n.toLocaleString('es-AR');
 }
 
+// Formateador armado una sola vez: toLocaleString con opciones crea uno
+// nuevo en cada llamada, y el feed formatea cientos de tarjetas de un saque.
+const BENCHMARK_RATIO_OPTIONS = { minimumFractionDigits: 1, maximumFractionDigits: 1 };
+const BENCHMARK_RATIO_FORMAT = new Intl.NumberFormat('es-AR', BENCHMARK_RATIO_OPTIONS);
+
 function formatBenchmarkRatio(ratio) {
-  return ratio.toLocaleString('es-AR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  // Solo los números pasan por el formateador compartido. Con cualquier otra
+  // cosa hace lo mismo que antes de tenerlo: un null tira, no sale "0,0".
+  if (typeof ratio !== 'number') return ratio.toLocaleString('es-AR', BENCHMARK_RATIO_OPTIONS);
+  return BENCHMARK_RATIO_FORMAT.format(ratio);
 }
 
 // "sin-referencia" (guión, como lo manda el backend) -> "sinref" (la clase
@@ -450,13 +494,17 @@ function buildBenchLine(label, metric) {
 }
 
 // Fecha + hora completas (24hs, no "a. m./p. m."). "N/D" si no hay fecha.
+// Mismo motivo que BENCHMARK_RATIO_FORMAT: formateadores armados una vez.
+const FULL_DATE_FORMAT = new Intl.DateTimeFormat('es-AR');
+const FULL_TIME_FORMAT = new Intl.DateTimeFormat('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false });
+
 function formatFullDateTime(iso) {
   if (!iso) return { date: 'N/D', time: '' };
   const d = new Date(iso);
-  return {
-    date: d.toLocaleDateString('es-AR'),
-    time: d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false }),
-  };
+  // Una fecha inválida hace tirar a Intl.DateTimeFormat (toLocaleDateString
+  // devolvía el texto "Invalid Date"): se conserva ese resultado.
+  if (Number.isNaN(d.getTime())) return { date: 'Invalid Date', time: 'Invalid Date' };
+  return { date: FULL_DATE_FORMAT.format(d), time: FULL_TIME_FORMAT.format(d) };
 }
 
 // Panel desplegable — mismo marcado que .dt en design/monitoreo.html.
@@ -606,6 +654,9 @@ function renderHighlightCards(posts) {
 // paginación), acá hay que ubicar en qué página de Tabulator cae.
 async function highlightGoToRow(id) {
   if (!monitoringTable) return;
+  // Con el Feed como vista activa (solo Instagram) la tabla está oculta: el
+  // destacado lleva a la tarjeta de ese posteo.
+  if (notifyMonitoringViews({ goToId: id })) return;
   const rows = monitoringTable.getRows('active');
   const idx = rows.findIndex((r) => r.getData().id === id);
   if (idx === -1) return;
@@ -626,6 +677,46 @@ async function highlightGoToRow(id) {
 }
 
 // -------------------------------------------------------------------------
+// Alcance del posteo: UNA etiqueta (alto | medio | bajo) a partir de los dos
+// niveles que ya manda el backend en benchmark.likes y benchmark.comments
+// (classifyValue en src/accountStats.js, cortes 1,5x y 0,5x). Acá no se
+// recalcula nada, solo se combinan. Likes y comentarios pesan igual y vale
+// el mejor de los dos: alto si alguno da alto, bajo solo si los dos dan
+// bajo, medio en el resto ("normal" del backend se muestra como "medio").
+// Una métrica sin referencia (likes ocultos, muestra chica) no cuenta y
+// decide la otra; si ninguna tiene referencia devuelve null y el posteo no
+// lleva etiqueta de alcance.
+//   by / label: la métrica que disparó la etiqueta (empate: comentarios,
+//               igual que highlightOf en el backend).
+//   ratio:      la razón de esa métrica contra la mediana de la cuenta. Como
+//               las dos se cortan en los mismos valores, la de mejor nivel
+//               es siempre la de mayor razón: es la mayor de las dos, y por
+//               ella ordena "Mayor alcance".
+// -------------------------------------------------------------------------
+const REACH_RANK = { bajo: 0, normal: 1, alto: 2 };
+const REACH_LEVELS = ['bajo', 'medio', 'alto'];
+const REACH_METRICS = [
+  { by: 'comments', label: 'comentarios' },
+  { by: 'likes', label: 'likes' },
+];
+
+function postReach(post) {
+  const benchmark = (post && post.benchmark) || {};
+  let best = null;
+  for (const { by, label } of REACH_METRICS) {
+    const metric = benchmark[by];
+    const rank = metric ? REACH_RANK[metric.level] : undefined;
+    // "sin-referencia" (o cualquier nivel desconocido) no entra en la cuenta.
+    if (typeof rank !== 'number' || !Number.isFinite(metric.ratio)) continue;
+    if (!best || rank > best.rank || (rank === best.rank && metric.ratio > best.ratio)) {
+      best = { rank, by, label, ratio: metric.ratio };
+    }
+  }
+  if (!best) return null;
+  return { level: REACH_LEVELS[best.rank], by: best.by, label: best.label, ratio: best.ratio };
+}
+
+// -------------------------------------------------------------------------
 // Filtros (barra "Filtrar"). El orden se elige cliqueando el header de
 // cada columna — flechas asc/desc de Tabulator, no una fila "Ordenar".
 // -------------------------------------------------------------------------
@@ -643,6 +734,7 @@ let fAccValue = '';
 function isDefaultFilterState() {
   return (
     !fSentEl.value &&
+    !(fAlcanceEl && fAlcanceEl.value) &&
     !fAccValue &&
     !fDesdeEl.value &&
     !fHastaEl.value &&
@@ -660,42 +752,84 @@ function updateCounts() {
   mEl.textContent = monitoringTable.getDataCount();
 }
 
+// Vistas extra sobre los mismos posteos y los mismos filtros que la tabla.
+// Hoy hay una sola, el Feed de Instagram (public/js/monitoringFeed.js, que
+// x.html no carga): se anota acá y se le avisa de cada cambio. Sin ninguna
+// anotada no pasa nada. "change" dice qué pasó:
+//   (nada)         cambiaron los datos o los filtros: hay que redibujar.
+//   { ignoredId }  se ignoró ese posteo (ya salió de la tabla).
+//   { goToId }     hay que mostrar ese posteo (tarjetas de "Se despegaron").
+//                  La vista que esté activa devuelve true y se hace cargo;
+//                  si ninguna lo hace, lo muestra la tabla.
+const monitoringViewListeners = [];
+
+function notifyMonitoringViews(change) {
+  let handled = false;
+  for (const listener of monitoringViewListeners) {
+    if (listener(change) === true) handled = true;
+  }
+  return handled;
+}
+
+// Valores actuales de la barra "Filtrar".
+function readFilterValues() {
+  return {
+    sentiment: fSentEl.value,
+    reach: fAlcanceEl ? fAlcanceEl.value : '', // "" | alto | medio | bajo
+    account: fAccValue,
+    desde: fDesdeEl.value, // "YYYY-MM-DD" del <input type="date"> o ""
+    hasta: fHastaEl.value,
+    q: normalizeSearch(qEl.value.trim()),
+  };
+}
+
+// La condición de la barra "Filtrar" sobre un posteo, separada de Tabulator:
+// la tabla y la vista Feed de Instagram filtran con esta misma función, así
+// las dos muestran siempre el mismo conjunto. "filters" es lo que devuelve
+// readFilterValues().
+function postMatchesFilters(data, filters) {
+  const { sentiment, reach, account, desde, hasta, q } = filters;
+  // "sin_clasificar" no es un valor guardado: es la ausencia de valor.
+  if (sentiment === SENTIMENT_UNSET) {
+    if (data.sentiment) return false;
+  } else if (sentiment && data.sentiment !== sentiment) {
+    return false;
+  }
+  if (account && data.account !== account) return false;
+  // Alcance: la etiqueta de postReach. Un posteo sin etiqueta (ninguna de sus
+  // dos métricas tiene referencia) no entra en ninguno de los tres niveles.
+  if (reach) {
+    const postLevel = postReach(data);
+    if (!postLevel || postLevel.level !== reach) return false;
+  }
+  if (desde || hasta) {
+    if (!data.posted_at) return false;
+    const posted = new Date(data.posted_at);
+    if (desde && posted < new Date(`${desde}T00:00:00`)) return false;
+    if (hasta && posted > new Date(`${hasta}T23:59:59.999`)) return false;
+  }
+  if (q) {
+    const haystack = normalizeSearch(`${data.title || ''} ${data.account || ''} ${data.caption || ''}`);
+    if (!haystack.includes(q)) return false;
+  }
+  return true;
+}
+
 function applyFilters() {
   if (!monitoringTable) return;
-  const fs = fSentEl.value;
-  const fa = fAccValue;
-  const fDesde = fDesdeEl.value; // "YYYY-MM-DD" del <input type="date"> o ""
-  const fHasta = fHastaEl.value;
-  const q = normalizeSearch(qEl.value.trim());
+  const filters = readFilterValues();
 
-  monitoringTable.setFilter((data) => {
-    // "sin_clasificar" no es un valor guardado: es la ausencia de valor.
-    if (fs === SENTIMENT_UNSET) {
-      if (data.sentiment) return false;
-    } else if (fs && data.sentiment !== fs) {
-      return false;
-    }
-    if (fa && data.account !== fa) return false;
-    if (fDesde || fHasta) {
-      if (!data.posted_at) return false;
-      const posted = new Date(data.posted_at);
-      if (fDesde && posted < new Date(`${fDesde}T00:00:00`)) return false;
-      if (fHasta && posted > new Date(`${fHasta}T23:59:59.999`)) return false;
-    }
-    if (q) {
-      const haystack = normalizeSearch(`${data.title || ''} ${data.account || ''} ${data.caption || ''}`);
-      if (!haystack.includes(q)) return false;
-    }
-    return true;
-  });
+  monitoringTable.setFilter((data) => postMatchesFilters(data, filters));
 
-  fSentEl.classList.toggle('on', !!fs);
-  fAccBtnEl.classList.toggle('on', !!fa);
-  fDesdeEl.classList.toggle('on', !!fDesde);
-  fHastaEl.classList.toggle('on', !!fHasta);
+  fSentEl.classList.toggle('on', !!filters.sentiment);
+  if (fAlcanceEl) fAlcanceEl.classList.toggle('on', !!filters.reach);
+  fAccBtnEl.classList.toggle('on', !!filters.account);
+  fDesdeEl.classList.toggle('on', !!filters.desde);
+  fHastaEl.classList.toggle('on', !!filters.hasta);
 
   updateCounts();
   updateMonitoringClearButtonState();
+  notifyMonitoringViews();
 }
 
 // -------------------------------------------------------------------------
@@ -794,6 +928,7 @@ function ensureAccountFilterOptions(posts) {
 // de la tabla (no es un filtro de esta barra).
 function resetFilters() {
   fSentEl.value = '';
+  if (fAlcanceEl) fAlcanceEl.value = '';
   fAccValue = '';
   fAccBtnEl.textContent = 'Cuenta';
   fAccBtnEl.classList.remove('on');
@@ -884,31 +1019,7 @@ const MONITORING_COLUMNS = [
     headerHozAlign: 'left',
     formatter: (cell) => {
       const id = cell.getRow().getData().id;
-      const raw = cell.getValue();
-      const sinClasificar = !raw;
-      const sentiment = sinClasificar ? SENTIMENT_UNSET : raw;
-
-      const select = document.createElement('select');
-      select.className = `sentiment-select sentiment-${sentiment}`;
-
-      // La opción "Sin clasificar" existe sólo mientras el posteo lo esté: es
-      // un estado del sistema, no algo que se elija a mano. Elegir cualquier
-      // otro valor lo saca de ahí y no se puede volver.
-      if (sinClasificar) {
-        const opt = document.createElement('option');
-        opt.value = SENTIMENT_UNSET;
-        opt.textContent = SENTIMENT_UNSET_LABEL;
-        opt.selected = true;
-        select.appendChild(opt);
-      }
-
-      SENTIMENT_OPTIONS.forEach((value) => {
-        const opt = document.createElement('option');
-        opt.value = value;
-        opt.textContent = SENTIMENT_LABELS[value];
-        if (value === sentiment) opt.selected = true;
-        select.appendChild(opt);
-      });
+      const select = buildSentimentSelect(cell.getValue());
       select.addEventListener('click', (e) => e.stopPropagation());
       select.addEventListener('change', () => {
         if (select.value === SENTIMENT_UNSET) return;
@@ -1218,6 +1329,7 @@ ignoreModal.addEventListener('click', (e) => { if (e.target === ignoreModal) clo
 runNowBtn.addEventListener('click', runNow);
 
 fSentEl.addEventListener('change', applyFilters);
+if (fAlcanceEl) fAlcanceEl.addEventListener('change', applyFilters);
 fDesdeEl.addEventListener('change', applyFilters);
 fHastaEl.addEventListener('change', applyFilters);
 qEl.addEventListener('input', applyFilters);

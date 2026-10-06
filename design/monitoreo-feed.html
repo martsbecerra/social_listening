@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Monitoreo Feed</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=Instrument+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+:root{
+  --jade-950:#032a23;--jade-900:#06382e;--jade-700:#0b5947;--jade-500:#12805f;--jade-400:#2aa57c;--jade-300:#63c7a2;--jade-150:#c8e8da;--jade-100:#e3f2ea;--jade-50:#f1f9f5;
+  --clay-900:#2a211c;--clay-700:#5b4638;--clay-500:#8a6a52;--clay-200:#ded3c6;--clay-100:#f0e9df;
+  --coral-700:#8e3418;--coral-500:#c4522c;--coral-100:#fae7df;
+  --amber-700:#8a5a10;--amber-100:#fbf0d9;
+  --paper:#fcfdfb;--line:#e4ebe7;
+  --shadow-sm:0 1px 2px rgba(3,42,35,.06),0 1px 1px rgba(3,42,35,.04);
+  --shadow-md:0 6px 18px -6px rgba(3,42,35,.16),0 2px 4px rgba(3,42,35,.05);
+  --img-h:230px;
+}
+*{box-sizing:border-box}
+body{margin:0;background:#f4f7f5;color:var(--clay-900);font-family:"Instrument Sans",system-ui,sans-serif;font-size:14px;line-height:1.45}
+.topbar{background:var(--jade-950);color:#fff;padding:12px 24px;display:flex;align-items:center;gap:10px;font-size:14px}
+.topbar b{font-family:"Bricolage Grotesque";font-weight:700}
+.topbar .sep{opacity:.4}
+.tabs{background:#fff;border-bottom:1px solid var(--line);padding:0 24px;display:flex;gap:4px;overflow-x:auto}
+.tabs span{padding:12px 14px;color:var(--clay-500);font-weight:500;white-space:nowrap}
+.tabs .on{color:var(--jade-700);box-shadow:inset 0 -2px 0 var(--jade-500)}
+.wrap{max-width:1180px;margin:0 auto;padding:24px 16px 60px}
+.eyebrow{font-family:"DM Mono";font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--jade-500);margin:0}
+h1{font-family:"Bricolage Grotesque";font-weight:700;font-size:30px;margin:4px 0 14px;color:var(--jade-950)}
+.sub{color:var(--clay-500);margin:0 0 18px}
+.note{background:var(--amber-100);color:var(--amber-700);border-radius:10px;padding:8px 12px;font-size:12.5px;margin-bottom:16px}
+
+/* Barra de filtros */
+.toolbar{position:sticky;top:0;z-index:5;background:rgba(244,247,245,.94);backdrop-filter:blur(6px);padding:10px 0;display:flex;flex-wrap:wrap;gap:8px;align-items:center;border-bottom:1px solid var(--line);margin-bottom:18px}
+.seg{display:inline-flex;background:#fff;border:1px solid var(--line);border-radius:999px;padding:3px}
+.seg button{border:0;background:transparent;padding:6px 12px;border-radius:999px;font:inherit;font-size:13px;color:var(--clay-700);cursor:pointer}
+.seg button.on{background:var(--jade-900);color:#fff}
+.date{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--clay-500)}
+input[type=date]{font:inherit;font-size:13px;border:1px solid var(--line);background:#fff;border-radius:999px;padding:6px 10px;color:var(--clay-900)}
+select,input[type=search]{font:inherit;font-size:13px;border:1px solid var(--line);background:#fff;border-radius:999px;padding:7px 12px;color:var(--clay-900)}
+input[type=search]{flex:1;min-width:180px}
+.count{font-family:"DM Mono";font-size:12px;color:var(--clay-500);margin-left:auto}
+
+/* Grilla del feed */
+.feed{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px}
+.feed.compact{grid-template-columns:repeat(auto-fill,minmax(230px,1fr));--img-h:150px}
+.card{background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow-sm);overflow:hidden;display:flex;flex-direction:column;border-top:4px solid var(--s);transition:box-shadow .15s,transform .15s}
+.card:hover{box-shadow:var(--shadow-md);transform:translateY(-1px)}
+.card[data-s=positivo]{--s:var(--jade-400)}
+.card[data-s=neutral]{--s:var(--clay-200)}
+.card[data-s=negativo]{--s:var(--coral-500)}
+.card[data-s=sin_clasificar]{--s:#cfd6d2}
+.head{display:flex;align-items:center;gap:10px;padding:10px 12px}
+.av{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:600;font-size:13px;flex:none}
+.who{min-width:0;flex:1}
+.who b{display:block;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.who small{color:var(--clay-500);font-size:12px}
+.when{font-family:"DM Mono";font-size:11.5px;color:var(--clay-500);white-space:nowrap}
+.media{position:relative;height:var(--img-h);display:grid;place-items:center;overflow:hidden}
+.media svg.ph{width:46px;height:46px;opacity:.55;color:#fff}
+.media .scene{position:absolute;inset:0}
+.badge{position:absolute;top:8px;font-family:"DM Mono";font-size:10.5px;letter-spacing:.04em;padding:3px 7px;border-radius:6px;background:rgba(3,42,35,.72);color:#fff;text-transform:uppercase}
+.badge.type{left:8px}
+.badge.reach{right:8px}
+.badge.reach.alto{background:var(--coral-500)}
+.badge.reach.medio{background:var(--amber-700)}
+.badge.reach.bajo{background:rgba(3,42,35,.55)}
+.media.broken{background:repeating-linear-gradient(45deg,var(--clay-100),var(--clay-100) 10px,#f6f1ea 10px,#f6f1ea 20px)}
+.media.broken span{color:var(--clay-500);font-size:12px;position:relative}
+.body{padding:12px 12px 4px;flex:1}
+.title{font-family:"Bricolage Grotesque";font-weight:600;font-size:15.5px;line-height:1.25;margin:0 0 6px;color:var(--jade-950)}
+.cap{color:var(--clay-700);margin:0;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.card.open .cap{-webkit-line-clamp:unset}
+.more{display:none;margin-top:10px;background:var(--jade-50);border-radius:10px;padding:8px 10px;font-size:12.5px}
+.card.open .more{display:block}
+.more div{display:flex;justify-content:space-between;padding:2px 0}
+.more span{color:var(--clay-500)}
+.metrics{display:flex;gap:14px;align-items:center;padding:10px 12px;border-top:1px solid var(--line);font-family:"DM Mono";font-size:12.5px}
+.metrics .x{font-size:11px;color:var(--clay-500)}
+.metrics .x.up{color:var(--coral-700)}
+.pill{margin-left:auto;font-family:"Instrument Sans";font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:999px}
+.pill.positivo{background:var(--jade-100);color:var(--jade-700)}
+.pill.neutral{background:var(--clay-100);color:var(--clay-700)}
+.pill.negativo{background:var(--coral-100);color:var(--coral-700)}
+.pill.sin_clasificar{background:#eef1ef;color:var(--clay-500)}
+.foot{display:flex;gap:8px;align-items:center;padding:0 12px 12px;font-size:12px}
+.why{color:var(--clay-500);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}
+.why code{font-family:"DM Mono";background:var(--jade-50);color:var(--jade-700);padding:1px 5px;border-radius:4px}
+.foot button,.foot a{font:inherit;font-size:12px;border:1px solid var(--line);background:#fff;border-radius:999px;padding:4px 10px;color:var(--jade-700);cursor:pointer;text-decoration:none;white-space:nowrap}
+.foot a{background:var(--jade-900);border-color:var(--jade-900);color:#fff}
+.empty{grid-column:1/-1;text-align:center;color:var(--clay-500);padding:40px}
+@media (max-width:600px){.topbar{padding:12px 16px}.tabs{padding:0 8px}h1{font-size:24px}.count{width:100%;margin-left:0}}
+</style>
+</head>
+<body>
+<header class="topbar"><b>social listening</b><span class="sep">/</span>Instagram</header>
+<nav class="tabs"><span>Análisis de publicación</span><span class="on">Monitoreo en vivo</span><span>Mapa de reclamos</span></nav>
+
+<main class="wrap">
+  <p class="eyebrow">Monitoreo · prueba de diseño</p>
+  <h1>Monitoreo en vivo</h1>
+  <div class="note">Mockup con datos de ejemplo inventados. Las imágenes son ilustraciones de relleno: en la app real serían las miniaturas guardadas.</div>
+
+  <div class="toolbar">
+    <div class="seg" id="view"><button>Tabla</button><button class="on">Feed</button></div>
+    <label class="date">Desde <input type="date" id="fd" /></label>
+    <label class="date">Hasta <input type="date" id="fh" /></label>
+    <select id="fs"><option value="">Sentimiento</option><option value="positivo">Positivo</option><option value="neutral">Neutral</option><option value="negativo">Negativo</option><option value="sin_clasificar">Sin clasificar</option></select>
+    <select id="fr"><option value="">Alcance</option><option value="alto">Alto</option><option value="medio">Medio</option><option value="bajo">Bajo</option></select>
+    <select id="fo"><option value="recent">Más recientes</option><option value="reach">Mayor alcance</option><option value="likes">Más likes</option></select>
+    <input type="search" id="q" placeholder="Buscar título, cuenta o texto del posteo..." />
+    <span class="count" id="count"></span>
+  </div>
+
+  <section class="feed compact" id="feed"></section>
+</main>
+
+<script>
+const posts=[
+ {acc:"diariobarrial.caba",fol:184000,h:0.5,type:"Reel",title:"Vecinos reclaman por baches en Av. Directorio",cap:"Los vecinos de Parque Chacabuco denuncian que hace meses esperan el arreglo de la calzada. Mostramos el recorrido completo y lo que respondieron desde la comuna. #CABA #baches",likes:4820,com:612,med:900,s:"negativo",why:'búsqueda <code>gobierno de la ciudad</code>',hue:12},
+ {acc:"portenosaldia",fol:52000,h:1.2,type:"Imagen",title:"Inauguran nueva plaza en Villa Lugano",cap:"Se abrió al público el nuevo espacio verde con juegos inclusivos y estación saludable. La obra demandó seis meses.",likes:1310,com:88,med:1100,s:"positivo",why:'búsqueda <code>GCBA</code>',hue:150},
+ {acc:"elcronistaurbano",fol:96000,h:2.0,type:"Carrusel",title:"Cambios en el estacionamiento medido del microcentro",cap:"Desde el lunes rigen nuevas tarifas y horarios. Te explicamos en 6 placas qué cambia y dónde se puede estacionar sin pagar.",likes:740,com:203,med:820,s:"neutral",why:'búsqueda <code>gobierno porteño</code>',hue:205},
+ {acc:"mirada.critica.ok",fol:23000,h:3.4,type:"Reel",title:"Meme viral sobre el subte y la frecuencia de la línea E",cap:"Ya ni el cartel de 'próximo tren' se anima a dar una hora 😅 #blackri",likes:15200,com:2100,med:450,s:"negativo",why:'búsqueda <code>blackri</code>',hue:280},
+ {acc:"agenda.cultural.ba",fol:310000,h:28,type:"Imagen",title:"Noche de los Museos: récord de asistencia",cap:"Más de un millón de personas recorrieron los museos de la Ciudad durante la noche del sábado.",likes:9800,com:340,med:7600,s:"positivo",why:'búsqueda <code>macri</code>',hue:40,broken:true},
+ {acc:"vecinosdecaballito",fol:8700,h:31,type:"Imagen",title:"Consulta por la poda de árboles en Rojas",cap:"¿Alguien sabe si hay que pedir turno al 147 o pasan solos? Hay ramas que tocan los cables desde hace semanas.",likes:64,com:41,med:80,s:"sin_clasificar",why:'cuenta trackeada',hue:100},
+ {acc:"noticias.porteñas",fol:142000,h:52,type:"Reel",title:"Operativo de PDLC en Constitución",cap:"Imágenes del operativo de esta mañana en las inmediaciones de la estación. Hubo cortes parciales en Brasil y Lima.",likes:2100,com:530,med:2300,s:"neutral",why:'búsqueda <code>PDLC</code>',hue:220},
+ {acc:"ciclistas.ba",fol:31000,h:76,type:"Carrusel",title:"Nuevas ciclovías en Palermo: antes y después",cap:"Recorrimos los tramos nuevos. Lo bueno, lo que falta y dónde todavía es peligroso cruzar. Deslizá →",likes:3900,com:410,med:1200,s:"positivo",why:'búsqueda <code>jorgemacri</code>',hue:170}
+];
+const palette=["#12805f","#c4522c","#2f6f9e","#8a5a10","#6b4c8f","#a8324f","#4f7a3a","#3f6f6a"];
+const fmt=n=>n>=1e6?(n/1e6).toFixed(1).replace('.',',')+' M':n>=1e3?(n/1e3).toFixed(n>=1e4?0:1).replace('.',',')+' k':String(n);
+const ago=h=>h<1?Math.round(h*60)+' min':h<24?Math.round(h)+' h':Math.round(h/24)+(Math.round(h/24)===1?' día':' días');
+const NOW=Date.now();const dayOf=h=>{const d=new Date(NOW-h*3600e3);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')};
+const reach=p=>{const r=p.likes/p.med;return r>=2?'alto':r>=0.8?'medio':'bajo'};
+const icon={Reel:'<svg class="ph" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>',Imagen:'<svg class="ph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="2"/><path d="m21 17-5-5-9 8"/></svg>',Carrusel:'<svg class="ph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="6" y="4" width="13" height="16" rx="2.5"/><path d="M3 7v10"/><path d="M22 7v10"/></svg>'};
+const sLabel={positivo:"Positivo",neutral:"Neutral",negativo:"Negativo",sin_clasificar:"Sin clasificar"};
+
+function card(p,i){
+  const r=reach(p),x=(p.likes/p.med);
+  const media=p.broken
+    ?`<div class="media broken"><span>Imagen no disponible</span><span class="badge type">${p.type}</span><span class="badge reach ${r}">Alcance ${r}</span></div>`
+    :`<div class="media" style="background:linear-gradient(135deg,hsl(${p.hue} 45% 38%),hsl(${(p.hue+40)%360} 50% 58%))">${icon[p.type]}<span class="badge type">${p.type}</span><span class="badge reach ${r}">Alcance ${r}</span></div>`;
+  return `<article class="card" data-s="${p.s}">
+    <div class="head"><div class="av" style="background:${palette[i%palette.length]}">${p.acc[0].toUpperCase()}</div>
+      <div class="who"><b>@${p.acc}</b><small>${fmt(p.fol)} seguidores</small></div><span class="when">hace ${ago(p.h)}</span></div>
+    ${media}
+    <div class="body"><h3 class="title">${p.title}</h3><p class="cap">${p.cap}</p>
+      <div class="more"><div><span>Mediana de likes de la cuenta</span><b>${fmt(p.med)}</b></div><div><span>Este posteo vs. su mediana</span><b>${x.toFixed(1).replace('.',',')}×</b></div><div><span>Detectado por</span><b>${p.why.replace(/<[^>]+>/g,'')}</b></div></div></div>
+    <div class="metrics"><span>♥ ${fmt(p.likes)} <span class="x ${x>=2?'up':''}">${x.toFixed(1).replace('.',',')}×</span></span><span>💬 ${fmt(p.com)}</span><span class="pill ${p.s}">${sLabel[p.s]}</span></div>
+    <div class="foot"><span class="why">${p.why}</span><button type="button" data-more>Ver más</button><a href="#" onclick="return false">Abrir ↗</a></div>
+  </article>`;
+}
+function render(){
+  const d1=document.getElementById('fd').value,d2=document.getElementById('fh').value,s=fs.value,r=fr.value,q=document.getElementById('q').value.toLowerCase(),o=fo.value;
+  let list=posts.map((p,i)=>({p,i})).filter(({p})=>(!s||p.s===s)&&(!r||reach(p)===r)&&(!q||(p.title+p.acc+p.cap).toLowerCase().includes(q))&&(!d1||dayOf(p.h)>=d1)&&(!d2||dayOf(p.h)<=d2));
+  if(o==='reach')list.sort((a,b)=>b.p.likes/b.p.med-a.p.likes/a.p.med);
+  if(o==='likes')list.sort((a,b)=>b.p.likes-a.p.likes);
+  feed.innerHTML=list.length?list.map(({p,i})=>card(p,i)).join(''):'<div class="empty">No hay publicaciones con esos filtros.</div>';
+  count.textContent=list.length+' publicaciones';
+}
+const feed=document.getElementById('feed'),fs=document.getElementById('fs'),fr=document.getElementById('fr'),fo=document.getElementById('fo'),count=document.getElementById('count');
+[fs,fr,fo,document.getElementById('fd'),document.getElementById('fh')].forEach(el=>el.onchange=render);document.getElementById('q').oninput=render;
+feed.onclick=e=>{const b=e.target.closest('[data-more]');if(!b)return;const c=b.closest('.card');const open=!c.classList.contains('open');
+  /* abre o cierra todas las tarjetas de la misma fila visual */
+  const top=c.offsetTop;feed.querySelectorAll('.card').forEach(k=>{if(Math.abs(k.offsetTop-top)<4){k.classList.toggle('open',open);k.querySelector('[data-more]').textContent=open?'Ver menos':'Ver más'}})};
+document.querySelectorAll('.seg').forEach(seg=>seg.onclick=e=>{const b=e.target.closest('button');if(!b)return;seg.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));});
+render();
+</script>
+</body>
+</html>
