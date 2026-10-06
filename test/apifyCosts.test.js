@@ -489,20 +489,22 @@ describe('costo de Apify', { concurrency: false }, () => {
     // La detección de Instagram va solo por las búsquedas, y con
     // IG_ACTOR=apify no hay búsqueda: el ciclo no gasta nada en detectar (la
     // cuenta trackeada es guía, no se consulta). La única llamada sale del
-    // refresco de métricas de un posteo reciente de una cuenta cuyo
-    // benchmark ya está calculado.
+    // refresco de métricas (por URL, REFRESH_MODE default) de un posteo
+    // caliente detectado hace más de REFRESH_HOT_EVERY_HOURS, de una cuenta
+    // cuyo benchmark ya está calculado.
     const ahora = new Date().toISOString();
     db.saveDetectedPost({
       id: 'ref1', account: 'trackeada', url: 'https://www.instagram.com/p/ref1/', caption: 'obras', matchedReason: 'test',
       likes: 1, comments: 1, postedAt: ahora, title: 't', sentiment: 'neutral', postType: null, followers: null, plataforma: 'instagram',
     });
+    new DatabaseSync(DB_PATH).prepare('UPDATE detected_posts SET detected_at = ? WHERE id = ?').run(new Date(Date.now() - 13 * 60 * 60 * 1000).toISOString(), 'ref1');
     db.upsertAccountStats({ account: 'trackeada', plataforma: 'instagram', postType: null, nPosts: 12, medianLikes: 10, medianComments: 1, computedAt: ahora });
     const originalFetch = global.fetch;
     const originalLog = console.log;
     const lines = [];
     const callsBefore = allCalls().length;
     try {
-      global.fetch = async () => respond(200, '', []); // el perfil no devuelve nada
+      global.fetch = async () => respond(200, '', []); // el run de detalle no devuelve el posteo
       console.log = (...args) => lines.push(args.join(' '));
       const result = await scheduler.runCycle({ plataforma: 'instagram', trigger: 'cron' });
       assert.equal(result.newCount, 0);
@@ -511,10 +513,11 @@ describe('costo de Apify', { concurrency: false }, () => {
       console.log = originalLog;
     }
     const calls = allCalls().slice(callsBefore);
-    assert.equal(calls.length, 1, 'una sola llamada: el refresco de la cuenta del posteo reciente (sin búsqueda no hay detección; el benchmark ya está)');
+    assert.equal(calls.length, 1, 'una sola llamada: el refresco por URL del posteo caliente (sin búsqueda no hay detección; el benchmark ya está)');
     assert.equal(calls[0].phase, 'refresco');
     assert.equal(calls[0].actor, OFICIAL);
-    assert.equal(calls[0].query_type, 'user');
+    assert.equal(calls[0].query_type, 'post', 'la URL /p/ del posteo, no el perfil');
+    assert.equal(calls[0].target, 'https://www.instagram.com/p/ref1/');
     assert.ok(calls[0].run_id > 0);
     assert.equal(calls[0].items, 0);
     const run = db.getMonitoringRun(calls[0].run_id);

@@ -74,6 +74,11 @@ instagram.scrapeAccount = async (account, { lookback } = {}) => {
 };
 instagram.scrapeHashtag = async () => [];
 instagram.scrapeSearch = async (term) => searchPosts[term] || [];
+// El ciclo completo corre también el refresco de métricas (por URL, el
+// default): acá no hay posteos vencidos (los seeds son de 70 días, el nuevo
+// se detecta en el mismo ciclo), pero el stub garantiza que nada llegue a la
+// red si eso cambiara.
+instagram.fetchPostDetails = async () => [];
 instagram.fetchAccountFollowers = async (account) => {
   calls.followers.push(String(account).toLowerCase());
   return 1234;
