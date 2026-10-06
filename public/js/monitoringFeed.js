@@ -494,9 +494,13 @@ function removeFeedCard(id) {
   const card = feedCardById(id);
   if (!card) return;
   // Si era el posteo con el que se abrió su fila, la fila sigue abierta con
-  // el que pasa a ocupar su lugar.
+  // el que pasa a ocupar su lugar: la tarjeta siguiente. Si era la última de
+  // la lista no la reemplaza nadie, y la fila sigue abierta por la que tenía
+  // al lado; si estaba sola en su fila, esa fila desaparece y no queda nada
+  // abierto (la tarjeta anterior es de la fila de arriba, que estaba cerrada).
   if (feedOpenIds.delete(card.dataset.id)) {
-    const heir = card.nextElementSibling || card.previousElementSibling;
+    const row = feedRowCards(card);
+    const heir = card.nextElementSibling || row[row.length - 2];
     if (heir) feedOpenIds.add(heir.dataset.id);
   }
   card.remove();
