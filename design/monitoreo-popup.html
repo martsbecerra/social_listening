@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Monitoreo Feed – Pop-up</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=Instrument+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+:root{
+  --jade-950:#032a23;--jade-900:#06382e;--jade-700:#0b5947;--jade-500:#12805f;--jade-400:#2aa57c;--jade-300:#63c7a2;--jade-150:#c8e8da;--jade-100:#e3f2ea;--jade-50:#f1f9f5;
+  --clay-900:#2a211c;--clay-700:#5b4638;--clay-500:#8a6a52;--clay-200:#ded3c6;--clay-100:#f0e9df;
+  --coral-700:#8e3418;--coral-500:#c4522c;--coral-100:#fae7df;
+  --amber-700:#8a5a10;--amber-400:#e0b24f;--amber-100:#fbf0d9;
+  --paper:#fcfdfb;--line:#e4ebe7;
+  --shadow-sm:0 1px 2px rgba(3,42,35,.06),0 1px 1px rgba(3,42,35,.04);
+  --shadow-md:0 6px 18px -6px rgba(3,42,35,.16),0 2px 4px rgba(3,42,35,.05);
+  --img-h:150px;
+}
+*{box-sizing:border-box}
+body{margin:0;background:#f4f7f5;color:var(--clay-900);font-family:"Instrument Sans",system-ui,sans-serif;font-size:14px;line-height:1.45}
+body.lock{overflow:hidden}
+button{font:inherit;color:inherit}
+.topbar{background:var(--jade-950);color:#fff;padding:12px 24px;display:flex;align-items:center;gap:10px;font-size:14px}
+.topbar b{font-family:"Bricolage Grotesque";font-weight:700}
+.topbar .sep{opacity:.4}
+.tabs{background:#fff;border-bottom:1px solid var(--line);padding:0 24px;display:flex;gap:4px;overflow-x:auto}
+.tabs span{padding:12px 14px;color:var(--clay-500);font-weight:500;white-space:nowrap}
+.tabs .on{color:var(--jade-700);box-shadow:inset 0 -2px 0 var(--jade-500)}
+.wrap{max-width:1180px;margin:0 auto;padding:24px 16px 60px}
+.eyebrow{font-family:"DM Mono";font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--jade-500);margin:0}
+h1{font-family:"Bricolage Grotesque";font-weight:700;font-size:30px;margin:4px 0 14px;color:var(--jade-950)}
+.note{background:var(--amber-100);color:var(--amber-700);border-radius:10px;padding:8px 12px;font-size:12.5px;margin-bottom:16px}
+
+/* Barra de filtros */
+.toolbar{position:sticky;top:0;z-index:5;background:rgba(244,247,245,.94);backdrop-filter:blur(6px);padding:10px 0;display:flex;flex-wrap:wrap;gap:8px;align-items:center;border-bottom:1px solid var(--line);margin-bottom:18px}
+.seg{display:inline-flex;background:#fff;border:1px solid var(--line);border-radius:999px;padding:3px}
+.seg button{border:0;background:transparent;padding:6px 12px;border-radius:999px;font-size:13px;color:var(--clay-700);cursor:pointer}
+.seg button.on{background:var(--jade-900);color:#fff}
+.date{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--clay-500)}
+input[type=date]{font:inherit;font-size:13px;border:1px solid var(--line);background:#fff;border-radius:999px;padding:6px 10px;color:var(--clay-900)}
+select,input[type=search]{font:inherit;font-size:13px;border:1px solid var(--line);background:#fff;border-radius:999px;padding:7px 12px;color:var(--clay-900)}
+input[type=search]{flex:1;min-width:180px}
+.count{font-family:"DM Mono";font-size:12px;color:var(--clay-500);margin-left:auto}
+
+/* Grilla del feed */
+.feed{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px}
+.card{background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow-sm);overflow:hidden;display:flex;flex-direction:column;border-top:4px solid var(--s);transition:box-shadow .15s,transform .15s}
+.card:hover{box-shadow:var(--shadow-md);transform:translateY(-1px)}
+[data-s=positivo]{--s:var(--jade-400)}
+[data-s=neutral]{--s:var(--amber-400)}
+[data-s=negativo]{--s:var(--coral-500)}
+[data-s=sin_clasificar]{--s:#cfd6d2}
+.head{display:flex;align-items:center;gap:10px;padding:10px 12px}
+.av{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:600;font-size:13px;flex:none}
+.who{min-width:0;flex:1}
+.who b{display:block;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.who small{color:var(--clay-500);font-size:12px}
+.when{font-family:"DM Mono";font-size:11.5px;color:var(--clay-500);white-space:nowrap}
+.media{position:relative;height:var(--img-h);display:grid;place-items:center;overflow:hidden;cursor:pointer}
+.media svg.ph{width:46px;height:46px;opacity:.55;color:#fff}
+.badge{position:absolute;top:8px;font-family:"DM Mono";font-size:10.5px;letter-spacing:.04em;padding:3px 7px;border-radius:6px;background:rgba(3,42,35,.72);color:#fff;text-transform:uppercase}
+.badge.type{left:8px}
+.badge.reach{right:8px}
+.badge.reach.alto{background:var(--coral-500)}
+.badge.reach.medio{background:var(--amber-700)}
+.badge.reach.bajo{background:rgba(3,42,35,.55)}
+.media.broken{background:repeating-linear-gradient(45deg,var(--clay-100),var(--clay-100) 10px,#f6f1ea 10px,#f6f1ea 20px)}
+.media.broken span.msg{color:var(--clay-500);font-size:12px;position:relative}
+.body{padding:12px 12px 4px;flex:1}
+.title{font-family:"Bricolage Grotesque";font-weight:600;font-size:15.5px;line-height:1.25;margin:0 0 6px;color:var(--jade-950)}
+.cap{color:var(--clay-700);margin:0;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-line}
+.metrics{display:flex;gap:14px;align-items:center;padding:10px 12px;border-top:1px solid var(--line);font-family:"DM Mono";font-size:12.5px;flex-wrap:wrap}
+.metrics .x{font-size:11px;color:var(--clay-500)}
+.metrics .x.up{color:var(--coral-700)}
+.pill{margin-left:auto;font-family:"Instrument Sans";font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:999px}
+.pill.positivo{background:var(--jade-100);color:var(--jade-700)}
+.pill.neutral{background:var(--amber-100);color:var(--amber-700)}
+.pill.negativo{background:var(--coral-100);color:var(--coral-700)}
+.pill.sin_clasificar{background:#eef1ef;color:var(--clay-500)}
+.foot{display:flex;gap:8px;align-items:center;padding:0 12px 12px;font-size:12px}
+.why{color:var(--clay-500);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}
+.why code{font-family:"DM Mono";background:var(--jade-50);color:var(--jade-700);padding:1px 5px;border-radius:4px}
+.foot button,.foot a{font:inherit;font-size:12px;border:1px solid var(--line);background:#fff;border-radius:999px;padding:4px 10px;color:var(--jade-700);cursor:pointer;text-decoration:none;white-space:nowrap}
+.foot a{background:var(--jade-900);border-color:var(--jade-900);color:#fff}
+.empty{grid-column:1/-1;text-align:center;color:var(--clay-500);padding:40px}
+
+/* ============ POP-UP ============ */
+.modal{position:fixed;inset:0;z-index:50;display:grid;place-items:center;padding:24px;background:rgba(3,42,35,.66);backdrop-filter:blur(3px)}
+.modal[hidden]{display:none}
+.dialog{position:relative;width:min(1100px,100%);height:min(720px,calc(100vh - 48px));display:grid;grid-template-columns:minmax(0,1fr) 440px;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 30px 80px -20px rgba(0,0,0,.55);border-top:4px solid var(--s)}
+.m-photo{position:relative;background:#0b1512;display:grid;place-items:center;overflow:hidden;min-width:0}
+.m-img{position:relative;overflow:hidden;flex:none}
+.m-img .sky{position:absolute;inset:0}
+.m-img svg.sil{position:absolute;left:0;right:0;bottom:0;width:100%;height:42%}
+.m-img svg.big{position:absolute;left:50%;top:50%;width:72px;height:72px;transform:translate(-50%,-50%);color:#fff;opacity:.8;filter:drop-shadow(0 3px 10px rgba(0,0,0,.35))}
+.m-photo .badge{top:12px}
+.m-photo .tagnote{position:absolute;left:12px;bottom:12px;font-family:"DM Mono";font-size:11px;background:rgba(0,0,0,.55);color:#fff;border-radius:6px;padding:4px 8px}
+.m-photo.broken{background:repeating-linear-gradient(45deg,var(--clay-100),var(--clay-100) 12px,#f6f1ea 12px,#f6f1ea 24px)}
+.m-photo.broken .msg{color:var(--clay-500);text-align:center;font-size:13px}
+.m-photo.broken .msg b{display:block;font-size:15px;color:var(--clay-700);margin-bottom:2px}
+.m-side{display:flex;flex-direction:column;min-height:0;min-width:0}
+.m-head{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line)}
+.m-head .av{width:38px;height:38px;font-size:14px}
+.m-head .who b{font-size:14px}
+.m-head .when{margin-right:2px}
+.iconbtn{width:34px;height:34px;border-radius:50%;border:1px solid var(--line);background:#fff;display:grid;place-items:center;cursor:pointer;font-size:18px;line-height:1;color:var(--clay-700);flex:none}
+.iconbtn:hover{background:var(--jade-50)}
+.m-head .step{display:none}
+.m-scroll{flex:1;min-height:0;overflow:auto;padding:16px 16px 20px}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.chip{font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:999px}
+.chip.reach.alto{background:var(--coral-500);color:#fff}
+.chip.reach.medio{background:var(--amber-700);color:#fff}
+.chip.reach.bajo{background:#dfe6e2;color:var(--clay-700)}
+.chip.type{background:var(--jade-50);color:var(--jade-700);font-family:"DM Mono";font-weight:500;text-transform:uppercase;letter-spacing:.04em;font-size:10.5px;padding:4px 8px}
+.m-title{font-family:"Bricolage Grotesque";font-weight:700;font-size:21px;line-height:1.2;margin:0 0 10px;color:var(--jade-950)}
+.m-cap{margin:0 0 16px;color:var(--clay-700);white-space:pre-line;overflow-wrap:anywhere}
+.mt{background:var(--jade-50);border-radius:12px;padding:6px 10px;margin-bottom:14px}
+.mt-row{display:grid;grid-template-columns:1fr auto auto;gap:4px 12px;align-items:baseline;padding:8px 0}
+.mt-row+.mt-row{border-top:1px solid var(--jade-150)}
+.mt-row .k{color:var(--clay-700);font-weight:500}
+.mt-row .v{font-family:"DM Mono";font-weight:500;font-size:14px;text-align:right}
+.mt-row .x{font-family:"DM Mono";font-size:12px;color:var(--clay-500);min-width:46px;text-align:right}
+.mt-row .x.up{color:var(--coral-700);font-weight:500}
+.mt-row .sub{grid-column:1/-1;font-size:12px;color:var(--clay-500);margin-top:-2px}
+.mt-row.hit .k::after{content:"dispara el alcance";margin-left:8px;font-size:10.5px;font-family:"DM Mono";text-transform:uppercase;letter-spacing:.04em;color:var(--coral-700);background:var(--coral-100);border-radius:5px;padding:1px 6px}
+.dl{margin:0;display:grid;grid-template-columns:104px 1fr;gap:8px 12px;font-size:13px}
+.dl dt{color:var(--clay-500)}
+.dl dd{margin:0;color:var(--clay-900);overflow-wrap:anywhere}
+.dl dd a{color:var(--jade-700)}
+.m-foot{border-top:1px solid var(--line);box-shadow:0 -10px 14px -12px rgba(3,42,35,.22);position:relative;padding:12px 14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#fff}
+.m-foot .sp{flex:1}
+.sel{font:inherit;font-size:13px;font-weight:600;border-radius:999px;padding:7px 12px;border:1px solid var(--line);cursor:pointer}
+.sel[data-s=positivo]{background:var(--jade-100);color:var(--jade-700);border-color:var(--jade-300)}
+.sel[data-s=neutral]{background:var(--amber-100);color:var(--amber-700);border-color:var(--amber-400)}
+.sel[data-s=negativo]{background:var(--coral-100);color:var(--coral-700);border-color:#e9a68d}
+.sel[data-s=sin_clasificar]{background:#eef1ef;color:var(--clay-500)}
+.btn{font:inherit;font-size:13px;font-weight:500;border-radius:999px;padding:7px 14px;border:1px solid var(--line);background:#fff;color:var(--clay-700);cursor:pointer;text-decoration:none;white-space:nowrap}
+.btn:hover{background:var(--jade-50)}
+.btn.primary{background:var(--jade-900);border-color:var(--jade-900);color:#fff}
+.btn.primary:hover{background:var(--jade-700)}
+.btn.danger{color:var(--coral-700)}
+.btn.danger:hover{background:var(--coral-100)}
+.btn.dangersolid{background:var(--coral-500);border-color:var(--coral-500);color:#fff}
+.confirm{display:flex;gap:8px;align-items:center;flex-wrap:wrap;width:100%}
+.confirm p{margin:0;flex:1;min-width:180px;font-size:13px;color:var(--clay-700)}
+.nav{position:absolute;top:50%;transform:translateY(-50%);width:44px;height:44px;border-radius:50%;border:0;background:rgba(255,255,255,.95);box-shadow:var(--shadow-md);font-size:24px;cursor:pointer;color:var(--jade-900);z-index:2}
+.nav:hover{background:#fff}
+.nav.prev{left:max(8px,calc(50% - 600px))}
+.nav.next{right:max(8px,calc(50% - 600px))}
+.nav[disabled]{opacity:.35;cursor:default}
+.pos{font-family:"DM Mono";font-size:11.5px;color:var(--clay-500);white-space:nowrap}
+
+@media (max-width:1240px){.nav{display:none}.m-head .step{display:grid}}
+@media (max-width:860px){
+  .modal{padding:0}
+  .dialog{width:100%;height:100dvh;border-radius:0;grid-template-columns:1fr;grid-template-rows:38vh minmax(0,1fr)}
+  .m-title{font-size:19px}
+  .dl{grid-template-columns:92px 1fr}
+  .m-foot .sp{display:none}
+  .m-foot .btn.primary{flex:1 0 100%;text-align:center}
+}
+@media (max-width:600px){.topbar{padding:12px 16px}.tabs{padding:0 8px}h1{font-size:24px}.count{width:100%;margin-left:0}}
+</style>
+</head>
+<body>
+<header class="topbar"><b>social listening</b><span class="sep">/</span>Instagram</header>
+<nav class="tabs"><span>Análisis de publicación</span><span class="on">Monitoreo en vivo</span><span>Mapa de reclamos</span></nav>
+
+<main class="wrap">
+  <p class="eyebrow">Monitoreo · prueba de diseño</p>
+  <h1>Monitoreo en vivo</h1>
+  <div class="note"><b>Maqueta del pop-up</b> con datos inventados. Tocá "Ver más" o la foto de cualquier tarjeta. Con <b>← →</b> pasás de un posteo a otro y con <b>Esc</b> cerrás. Los posteos 1, 4 y 7 son reels (foto vertical), el 3 y el 8 carruseles, el 6 es horizontal, el 5 tiene la imagen caída y el 9 tiene un texto larguísimo.</div>
+
+  <div class="toolbar">
+    <div class="seg" id="view"><button>Tabla</button><button class="on">Feed</button></div>
+    <label class="date">Desde <input type="date" id="fd" /></label>
+    <label class="date">Hasta <input type="date" id="fh" /></label>
+    <select id="fs"><option value="">Sentimiento</option><option value="positivo">Positivo</option><option value="neutral">Neutral</option><option value="negativo">Negativo</option><option value="sin_clasificar">Sin clasificar</option></select>
+    <select id="fr"><option value="">Alcance</option><option value="alto">Alto</option><option value="medio">Medio</option><option value="bajo">Bajo</option></select>
+    <select id="fo"><option value="recent">Más recientes</option><option value="reach">Mayor alcance</option><option value="likes">Más likes</option></select>
+    <input type="search" id="q" placeholder="Buscar título, cuenta o texto del posteo..." />
+    <span class="count" id="count"></span>
+  </div>
+
+  <section class="feed" id="feed"></section>
+</main>
+
+<!-- POP-UP -->
+<div class="modal" id="modal" hidden>
+  <button class="nav prev" id="mprev" aria-label="Posteo anterior">‹</button>
+  <div class="dialog" id="dialog" role="dialog" aria-modal="true" aria-labelledby="m-title">
+    <div class="m-photo" id="mphoto"></div>
+    <aside class="m-side">
+      <header class="m-head">
+        <div class="av" id="mav"></div>
+        <div class="who"><b id="mwho"></b><small id="mfol"></small></div>
+        <span class="pos" id="mpos"></span>
+        <button class="iconbtn step" id="mprev2" aria-label="Posteo anterior">‹</button>
+        <button class="iconbtn step" id="mnext2" aria-label="Posteo siguiente">›</button>
+        <button class="iconbtn" id="mclose" aria-label="Cerrar">✕</button>
+      </header>
+      <div class="m-scroll" id="mscroll"></div>
+      <footer class="m-foot" id="mfoot"></footer>
+    </aside>
+  </div>
+  <button class="nav next" id="mnext" aria-label="Posteo siguiente">›</button>
+</div>
+
+<script>
+const LONG=`Hace tres semanas que venimos reclamando por la luminaria de la plaza y la respuesta siempre es la misma: "ya se derivó". Esta noche, otra vez a oscuras. Ayer una vecina se cayó en el cantero porque no se ve nada, y los chicos ya no salen a jugar después de las 18.
+
+Hicimos el reclamo por el 147 (gestión 2214-88), por la app BA Colaborativa, fuimos personalmente a la sede comunal y juntamos 140 firmas entre los vecinos de la manzana. Nos dijeron que "está en el plan de obras del año que viene". ¿Año que viene?
+
+Pedimos algo simple:
+1) Que repongan las 6 luminarias que están apagadas.
+2) Que poden las ramas que tapan el alumbrado.
+3) Que alguien responda con una fecha concreta.
+
+ACTUALIZACIÓN: pasó una cuadrilla, midió, sacó fotos y se fue sin cambiar nada. Dijeron que "falta autorización". Pedimos hablar con alguien que pueda autorizar y nos pasaron otro número de teléfono que da ocupado.
+
+Si te pasa lo mismo en tu barrio, contanos en los comentarios y etiquetá al GCBA para que lo vean. Entre todos hacemos más ruido. 💡
+
+#Palermo #CABA #Vecinos #Luminarias #BuenosAires #147 #Reclamo #SeguridadVial #Barrio #Plaza #SinLuz`;
+
+const posts=[
+ {acc:"diariobarrial.caba",fol:184000,h:0.5,type:"Reel",ratio:9/16,title:"Vecinos reclaman por baches en Av. Directorio",cap:"Los vecinos de Parque Chacabuco denuncian que hace meses esperan el arreglo de la calzada. Mostramos el recorrido completo y lo que respondieron desde la comuna. #CABA #baches",likes:4820,med:900,com:612,cmed:60,s:"negativo",why:"búsqueda",term:"gobierno de la ciudad",hue:12},
+ {acc:"portenosaldia",fol:52000,h:1.2,type:"Imagen",ratio:4/5,title:"Inauguran nueva plaza en Villa Lugano",cap:"Se abrió al público el nuevo espacio verde con juegos inclusivos y estación saludable. La obra demandó seis meses.",likes:1310,med:1100,com:88,cmed:80,s:"positivo",why:"búsqueda",term:"GCBA",hue:150},
+ {acc:"elcronistaurbano",fol:96000,h:2.0,type:"Carrusel",ratio:1,title:"Cambios en el estacionamiento medido del microcentro",cap:"Desde el lunes rigen nuevas tarifas y horarios. Te explicamos en 6 placas qué cambia y dónde se puede estacionar sin pagar.",likes:740,med:820,com:203,cmed:60,s:"neutral",why:"búsqueda",term:"gobierno porteño",hue:205},
+ {acc:"mirada.critica.ok",fol:23000,h:3.4,type:"Reel",ratio:9/16,title:"Meme viral sobre el subte y la frecuencia de la línea E",cap:"Ya ni el cartel de 'próximo tren' se anima a dar una hora 😅 #blackri",likes:15200,med:450,com:2100,cmed:90,s:"negativo",why:"búsqueda",term:"blackri",hue:280},
+ {acc:"agenda.cultural.ba",fol:310000,h:28,type:"Imagen",ratio:1,title:"Noche de los Museos: récord de asistencia",cap:"Más de un millón de personas recorrieron los museos de la Ciudad durante la noche del sábado.",likes:9800,med:7600,com:340,cmed:300,s:"positivo",why:"búsqueda",term:"macri",hue:40,broken:true},
+ {acc:"vecinosdecaballito",fol:8700,h:31,type:"Imagen",ratio:1.91,title:"Consulta por la poda de árboles en Rojas",cap:"¿Alguien sabe si hay que pedir turno al 147 o pasan solos? Hay ramas que tocan los cables desde hace semanas.",likes:30,med:80,com:11,cmed:30,s:"sin_clasificar",why:"cuenta",term:"",hue:100},
+ {acc:"noticias.porteñas",fol:142000,h:52,type:"Reel",ratio:9/16,title:"Operativo de PDLC en Constitución",cap:"Imágenes del operativo de esta mañana en las inmediaciones de la estación. Hubo cortes parciales en Brasil y Lima.",likes:2100,med:2300,com:530,cmed:400,s:"neutral",why:"búsqueda",term:"PDLC",hue:220},
+ {acc:"ciclistas.ba",fol:31000,h:76,type:"Carrusel",ratio:1,title:"Nuevas ciclovías en Palermo: antes y después",cap:"Recorrimos los tramos nuevos. Lo bueno, lo que falta y dónde todavía es peligroso cruzar. Deslizá →",likes:3900,med:1200,com:410,cmed:110,s:"positivo",why:"búsqueda",term:"jorgemacri",hue:170},
+ {acc:"vecinas.de.palermo",fol:12400,h:5.5,type:"Imagen",ratio:4/5,title:"Cuatro semanas sin luz en la plaza: ¿hasta cuándo?",cap:LONG,likes:1500,med:1200,com:960,cmed:150,s:"negativo",why:"búsqueda",term:"gobierno de la ciudad",hue:250}
+].map((p,i)=>({...p,id:i}));
+
+const palette=["#12805f","#c4522c","#2f6f9e","#8a5a10","#6b4c8f","#a8324f","#4f7a3a","#3f6f6a"];
+const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt=n=>n>=1e6?(n/1e6).toFixed(1).replace('.',',')+' M':n>=1e3?(n/1e3).toFixed(n>=1e4?0:1).replace('.',',')+' k':String(n);
+const rx=x=>(x>=100?Math.round(x):x.toFixed(1)).toString().replace('.',',')+'×';
+const ago=h=>h<1?Math.round(h*60)+' min':h<24?Math.round(h)+' h':Math.round(h/24)+(Math.round(h/24)===1?' día':' días');
+const NOW=Date.now();
+const dayOf=h=>{const d=new Date(NOW-h*3600e3);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')};
+const fullDate=h=>new Date(NOW-h*3600e3).toLocaleString('es-AR',{day:'numeric',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:false});
+
+/* Alcance: mejor de likes y comentarios (alto desde 1,5×, bajo bajo 0,5×; "bajo" solo si ambos lo son) */
+const lvl=r=>r>=1.5?'alto':r<0.5?'bajo':'medio';
+function reachOf(p){
+  const L=p.likes/p.med,C=p.com/p.cmed,ll=lvl(L),cl=lvl(C);
+  const by=C>=L?'com':'likes'; // empate: gana comentarios
+  let level='medio';
+  if(ll==='alto'||cl==='alto')level='alto';else if(ll==='bajo'&&cl==='bajo')level='bajo';
+  return {level,by,L,C};
+}
+const icon={Reel:'<svg class="ph" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>',Imagen:'<svg class="ph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="2"/><path d="m21 17-5-5-9 8"/></svg>',Carrusel:'<svg class="ph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="6" y="4" width="13" height="16" rx="2.5"/><path d="M3 7v10"/><path d="M22 7v10"/></svg>'};
+const sLabel={positivo:"Positivo",neutral:"Neutral",negativo:"Negativo",sin_clasificar:"Sin clasificar"};
+const grad=h=>`radial-gradient(120% 80% at 20% 15%,hsl(${h} 75% 72%/.85),transparent 55%),radial-gradient(90% 70% at 85% 85%,hsl(${(h+50)%360} 60% 40%/.9),transparent 60%),linear-gradient(160deg,hsl(${h} 40% 28%),hsl(${(h+35)%360} 50% 52%))`;
+const whyShort=p=>p.why==='búsqueda'?`búsqueda <code>${esc(p.term)}</code>`:'cuenta trackeada';
+const whyFull=p=>p.why==='búsqueda'?`Coincidencia con la búsqueda “${esc(p.term)}”`:'Cuenta trackeada';
+const sil=h=>`<svg class="sil" viewBox="0 0 100 40" preserveAspectRatio="none"><path fill="hsl(${h} 45% 14% / .45)" d="M0 40V26h6v-8h7v10h5V14h8v14h6V20h7v8h6V10h9v18h6V22h8v8h7V16h9v24z"/></svg>`;
+
+let listIds=[],cur=-1,lastFocus=null,confirming=false;
+
+function cardHTML(p){
+  const r=reachOf(p);
+  const media=p.broken
+    ?`<div class="media broken" data-open><span class="msg">Imagen no disponible</span><span class="badge type">${p.type}</span><span class="badge reach ${r.level}">Alcance ${r.level}</span></div>`
+    :`<div class="media" data-open style="background:${grad(p.hue)}">${icon[p.type]}<span class="badge type">${p.type}</span><span class="badge reach ${r.level}">Alcance ${r.level}</span></div>`;
+  return `<article class="card" data-s="${p.s}" data-id="${p.id}">
+    <div class="head"><div class="av" style="background:${palette[p.id%palette.length]}">${esc(p.acc[0].toUpperCase())}</div>
+      <div class="who"><b>@${esc(p.acc)}</b><small>${fmt(p.fol)} seguidores</small></div><span class="when">hace ${ago(p.h)}</span></div>
+    ${media}
+    <div class="body"><h3 class="title">${esc(p.title)}</h3><p class="cap">${esc(p.cap)}</p></div>
+    <div class="metrics"><span>♥ ${fmt(p.likes)}${r.by==='likes'?` <span class="x ${r.L>=1.5?'up':''}">${rx(r.L)}</span>`:''}</span><span>💬 ${fmt(p.com)}${r.by==='com'?` <span class="x ${r.C>=1.5?'up':''}">${rx(r.C)}</span>`:''}</span><span class="pill ${p.s}">${sLabel[p.s]}</span></div>
+    <div class="foot"><span class="why">${whyShort(p)}</span><button type="button" data-open>Ver más</button><a href="#" onclick="return false">Abrir ↗</a></div>
+  </article>`;
+}
+
+function render(){
+  const d1=$('fd').value,d2=$('fh').value,s=$('fs').value,r=$('fr').value,q=$('q').value.toLowerCase(),o=$('fo').value;
+  let list=posts.filter(p=>!p.hidden&&(!s||p.s===s)&&(!r||reachOf(p).level===r)&&(!q||(p.title+p.acc+p.cap).toLowerCase().includes(q))&&(!d1||dayOf(p.h)>=d1)&&(!d2||dayOf(p.h)<=d2));
+  const score=p=>{const x=reachOf(p);return Math.max(x.L,x.C)};
+  if(o==='reach')list.sort((a,b)=>score(b)-score(a));
+  if(o==='likes')list.sort((a,b)=>b.likes-a.likes);
+  listIds=list.map(p=>p.id);
+  $('feed').innerHTML=list.length?list.map(cardHTML).join(''):'<div class="empty">No hay publicaciones con esos filtros.</div>';
+  $('count').textContent=list.length+' publicaciones';
+}
+
+/* ---------- pop-up ---------- */
+function fillModal(){
+  const p=posts[listIds[cur]],r=reachOf(p);
+  $('dialog').dataset.s=p.s;
+  $('mav').style.background=palette[p.id%palette.length];$('mav').textContent=p.acc[0].toUpperCase();
+  $('mwho').textContent='@'+p.acc;$('mfol').textContent=fmt(p.fol)+' seguidores';
+  $('mpos').textContent=(cur+1)+' / '+listIds.length;
+  const first=cur===0,last=cur===listIds.length-1;
+  ['mprev','mprev2'].forEach(i=>$(i).disabled=first);['mnext','mnext2'].forEach(i=>$(i).disabled=last);
+
+  const ph=$('mphoto');
+  if(p.broken){
+    ph.className='m-photo broken';
+    ph.innerHTML=`<div class="msg"><b>Imagen no disponible</b>El link de Instagram venció y no hay copia guardada.</div>`;
+  }else{
+    ph.className='m-photo';
+    const note=p.type==='Carrusel'?'<span class="tagnote">Primera imagen del carrusel</span>':p.type==='Reel'?'<span class="tagnote">Portada del reel</span>':'';
+    ph.innerHTML=`<div class="m-img" id="mimg" data-ratio="${p.ratio}" style="background:${grad(p.hue)}">${sil(p.hue)}${p.type==='Reel'?'<svg class="big" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>':''}</div><span class="badge type" style="left:12px">${p.type}</span>${note}`;
+  }
+  const hitL=r.by==='likes',hitC=r.by==='com';
+  $('mscroll').innerHTML=`
+    <div class="chips"><span class="chip reach ${r.level}">Alcance ${r.level}${r.level==='alto'?' · por '+(hitC?'comentarios':'likes'):''}</span><span class="chip type">${p.type}</span></div>
+    <h2 class="m-title" id="m-title">${esc(p.title)}</h2>
+    <p class="m-cap">${esc(p.cap)}</p>
+    <div class="mt">
+      <div class="mt-row ${r.level==='alto'&&hitL?'hit':''}"><span class="k">♥ Likes</span><span class="v">${fmt(p.likes)}</span><span class="x ${r.L>=1.5?'up':''}">${rx(r.L)}</span><span class="sub">Mediana de la cuenta: ${p.med.toLocaleString('es-AR')}</span></div>
+      <div class="mt-row ${r.level==='alto'&&hitC?'hit':''}"><span class="k">💬 Comentarios</span><span class="v">${fmt(p.com)}</span><span class="x ${r.C>=1.5?'up':''}">${rx(r.C)}</span><span class="sub">Mediana de la cuenta: ${p.cmed.toLocaleString('es-AR')}</span></div>
+    </div>
+    <dl class="dl">
+      <dt>Publicado</dt><dd>${fullDate(p.h)}</dd>
+      <dt>Detectado por</dt><dd>${whyFull(p)}</dd>
+      <dt>Cuenta</dt><dd><a href="#" onclick="return false">Ver perfil ↗</a></dd>
+    </dl>`;
+  $('mscroll').scrollTop=0;
+  confirming=false;fillFoot(p);
+  requestAnimationFrame(fit);
+}
+function fillFoot(p){
+  $('mfoot').innerHTML=confirming
+   ?`<div class="confirm"><p><b>¿Ignorar este posteo?</b> Dejará de aparecer en el monitoreo.</p><button class="btn" id="cNo">Cancelar</button><button class="btn dangersolid" id="cYes">Sí, ignorar</button></div>`
+   :`<select class="sel" id="msent" data-s="${p.s}" aria-label="Sentimiento">${Object.entries(sLabel).map(([k,v])=>`<option value="${k}" ${k===p.s?'selected':''}>${v}</option>`).join('')}</select>
+     <button class="btn danger" id="mign">Ignorar</button><span class="sp"></span>
+     <a class="btn primary" href="#" onclick="return false">Abrir en Instagram ↗</a>`;
+}
+function fit(){
+  const box=$('mimg');if(!box)return;const pane=$('mphoto');
+  const W=pane.clientWidth,H=pane.clientHeight,r=+box.dataset.ratio;
+  const w=Math.min(W,H*r);box.style.width=w+'px';box.style.height=(w/r)+'px';
+}
+function openModal(id){
+  cur=listIds.indexOf(id);if(cur<0)return;
+  lastFocus=document.activeElement;
+  $('modal').hidden=false;document.body.classList.add('lock');
+  fillModal();$('mclose').focus();
+}
+function closeModal(){
+  $('modal').hidden=true;document.body.classList.remove('lock');
+  if(lastFocus&&lastFocus.focus)lastFocus.focus();
+}
+function go(d){const n=cur+d;if(n<0||n>=listIds.length)return;cur=n;fillModal();}
+
+/* eventos */
+$('feed').addEventListener('click',e=>{
+  const t=e.target.closest('[data-open]');if(!t)return;
+  openModal(+t.closest('.card').dataset.id);
+});
+$('mclose').onclick=closeModal;
+$('modal').addEventListener('mousedown',e=>{if(e.target===$('modal'))closeModal()});
+$('mprev').onclick=$('mprev2').onclick=()=>go(-1);
+$('mnext').onclick=$('mnext2').onclick=()=>go(1);
+$('mfoot').addEventListener('click',e=>{
+  const p=posts[listIds[cur]];
+  if(e.target.id==='mign'){confirming=true;fillFoot(p)}
+  if(e.target.id==='cNo'){confirming=false;fillFoot(p)}
+  if(e.target.id==='cYes'){
+    p.hidden=true;const was=cur;render();
+    if(!listIds.length){closeModal();return}
+    cur=Math.min(was,listIds.length-1);fillModal();
+  }
+});
+$('mfoot').addEventListener('change',e=>{
+  if(e.target.id!=='msent')return;
+  const p=posts[listIds[cur]];p.s=e.target.value;
+  e.target.dataset.s=p.s;$('dialog').dataset.s=p.s;
+  const el=$('feed').querySelector(`[data-id="${p.id}"]`);
+  if(el)el.outerHTML=cardHTML(p); // la tarjeta se queda hasta volver a filtrar
+});
+document.addEventListener('keydown',e=>{
+  if($('modal').hidden)return;
+  if(e.key==='Escape'){confirming?(confirming=false,fillFoot(posts[listIds[cur]])):closeModal();return}
+  if(/^(SELECT|INPUT)$/.test(e.target.tagName))return;
+  if(e.key==='ArrowRight')go(1);
+  if(e.key==='ArrowLeft')go(-1);
+});
+window.addEventListener('resize',fit);
+[$('fs'),$('fr'),$('fo'),$('fd'),$('fh')].forEach(el=>el.onchange=render);$('q').oninput=render;
+document.querySelectorAll('.seg').forEach(seg=>seg.onclick=e=>{const b=e.target.closest('button');if(!b)return;seg.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));});
+render();
+</script>
+</body>
+</html>
