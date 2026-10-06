@@ -140,4 +140,4 @@ métricas son aditivas y pueden quedar.
 - [x] Un valor ausente, null o negativo nunca pisa un likes o comentarios guardado
 - [x] Un posteo sin respuesta en 2 intentos seguidos deja de pedirse y queda registrado
 - [x] `npm run gastos` muestra el refresco por URL con el actor oficial
-- [ ] Corrida real chica autorizada por el dueño (pendiente)
+- [x] Corrida real chica autorizada por el dueño (2026-10-06, US$ 0,0115: 5 de 5 publicaciones actualizadas, costo real igual al estimado)

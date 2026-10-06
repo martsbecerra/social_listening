@@ -33,4 +33,4 @@
 - [x] 5.1 `.env.example` (`REFRESH_MODE`, `REFRESH_MAX_POSTS`, `REFRESH_MISSES_TO_STOP`; `MAX_ACCOUNTS_PER_REFRESH` y `BENCHMARK_POST_LIMIT` solo en perfil)
 - [x] 5.2 `CLAUDE.md`, `README.md`
 - [x] 5.3 Estimación de costo por ciclo con la base real (README, "Refresco de métricas por URL")
-- [ ] 5.4 Corrida real chica (pendiente de autorización del dueño)
+- [x] 5.4 Corrida real chica autorizada (2026-10-06, US$ 0,0115), desde el worktree contra una copia de la base con `REFRESH_MAX_POSTS=5`: un run de 24,6 s con las 5 publicaciones tibias más atrasadas; 5 de 5 respondieron y cruzaron por id (los items vuelven en otro orden), 5 con cambios (métricas de 6 días atrás), un salto detectado (9.716 → 30.131 likes), 363 diferidas y marcas de pase sin avanzar; fila en `apify_calls` con fase `refresco`, `query_type` `post`, actor oficial, usd 0,0115; costo real leído del run: 0,0115 (5 eventos `result` a 0,0023, "each result written to the dataset"). No cubrió likes ocultos (-1) ni items de error: ninguna de las 5 los trajo; esos dos caminos siguen verificados solo con stubs
