@@ -118,13 +118,29 @@ function nullIfMissingSentinel(value) {
 }
 
 /**
+ * Link de la imagen del posteo, para la copia local (src/postImages.js,
+ * openspec/changes/monitoreo-fotos). displayUrl es la foto si el posteo es
+ * una imagen, la portada si es un reel y la primera imagen si es un
+ * carrusel; de respaldo, la primera de `images` (las piezas de un carrusel).
+ * Nunca videoUrl: no se bajan videos. null si la respuesta no trae imagen
+ * (y entonces el posteo queda sin foto: no se pide nada más).
+ */
+function pickImageUrl(raw) {
+  const isLink = (value) => typeof value === 'string' && /^https?:[/][/]/i.test(value.trim());
+  if (isLink(raw.displayUrl)) return raw.displayUrl.trim();
+  const first = Array.isArray(raw.images) ? raw.images.find(isLink) : null;
+  return first ? first.trim() : null;
+}
+
+/**
  * Dado un item crudo del actor (resultsType: 'posts'), lo deja en el formato
  * predecible que espera el orquestador (ver platforms/index.js). Mismo estilo
  * defensivo ("pick" con varias alternativas) que normalizePost() en
  * src/apify.js.
  *
  * Este actor no trae seguidores a nivel de posteo: `followers` queda null y
- * el benchmark los consulta aparte (fetchAccountFollowers).
+ * el benchmark los consulta aparte (fetchAccountFollowers). `imageUrl` es
+ * el link (que vence) de la imagen del posteo; ver pickImageUrl.
  */
 function normalizePost(raw, { account, sourceType, sourceQuery = null }) {
   const pick = (...values) => values.find((v) => v !== undefined && v !== null && v !== '');
@@ -144,6 +160,7 @@ function normalizePost(raw, { account, sourceType, sourceQuery = null }) {
     postedAt: pick(raw.timestamp, null),
     postType: derivePostType(raw),
     followers: null,
+    imageUrl: pickImageUrl(raw),
     sourceType,
     sourceQuery,
   };
@@ -257,6 +274,7 @@ module.exports = {
   scrapeHashtag,
   normalizePost,
   derivePostType,
+  pickImageUrl,
   fetchAccountFollowers,
   fetchPostDetails,
 };

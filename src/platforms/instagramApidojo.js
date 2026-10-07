@@ -166,6 +166,23 @@ function derivePostType(raw) {
 }
 
 /**
+ * Link de la imagen del posteo, para la copia local (src/postImages.js,
+ * openspec/changes/monitoreo-fotos). `image.url` viene en todos los posteos
+ * (verificado en las fixtures): es la foto, la portada de un reel o la
+ * primera pieza de un carrusel. De respaldo, la primera pieza del carrusel
+ * si es una imagen (carouselMedia[].type: 1 imagen, 2 video). Nunca
+ * `video.url`: no se bajan videos. null si no vino imagen.
+ */
+function pickImageUrl(raw) {
+  const isLink = (value) => typeof value === 'string' && /^https?:[/][/]/i.test(value.trim());
+  const image = raw.image && typeof raw.image === 'object' ? raw.image.url : null;
+  if (isLink(image)) return image.trim();
+  const first = Array.isArray(raw.carouselMedia) ? raw.carouselMedia[0] : null;
+  if (first && typeof first === 'object' && Number(first.type) === 1 && isLink(first.url)) return first.url.trim();
+  return null;
+}
+
+/**
  * Deja un item crudo del actor en la forma que espera el orquestador (ver
  * platforms/index.js): la misma que produce el proveedor oficial, más
  * `followers` (del autor, si vino). Devuelve null para lo que no es un
@@ -201,6 +218,7 @@ function normalizePost(raw, { account = null, sourceType, sourceQuery = null } =
     postedAt: toIso(pick(raw.createdAt, raw.timestamp)),
     postType: derivePostType(raw),
     followers: followersAreOwners ? countOrNull(owner.followerCount) : null,
+    imageUrl: pickImageUrl(raw),
     sourceType,
     sourceQuery,
   };
@@ -320,6 +338,7 @@ module.exports = {
   normalizePost,
   normalizeItems,
   derivePostType,
+  pickImageUrl,
   fetchAccountFollowers,
   // Expuestas para tests.
   parseLookbackMs,

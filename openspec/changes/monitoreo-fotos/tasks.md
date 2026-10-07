@@ -21,7 +21,7 @@ Un commit por paso en la rama `monitoreo_fotos`, por tandas aprobadas por el due
 
 ## Phase 4: adapters
 
-- [ ] 4.1 `imageUrl` en el posteo normalizado de `instagramApify.js` (`displayUrl`) y de `instagramApidojo.js` (`image.url`); contrato en `platforms/index.js` (REQ-FOTO-05)
+- [x] 4.1 `imageUrl` en el posteo normalizado de `instagramApify.js` (`displayUrl`) y de `instagramApidojo.js` (`image.url`); contrato en `platforms/index.js` (REQ-FOTO-05)
 
 ## Phase 5: enganche
 
