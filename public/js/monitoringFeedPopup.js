@@ -334,6 +334,16 @@ feedPopEl.addEventListener('keydown', (e) => {
 // Acciones del pie: las mismas de la tarjeta y de la fila de la tabla, con
 // las mismas funciones.
 // -------------------------------------------------------------------------
+// Con qué se tocó por última vez el selector de sentimiento: el mouse (o el
+// dedo) o el teclado. Lo usa el final del "change".
+let feedPopSelectByPointer = false;
+feedPopFootEl.addEventListener('pointerdown', (e) => {
+  if (e.target.closest('select.sentiment-select')) feedPopSelectByPointer = true;
+});
+feedPopFootEl.addEventListener('keydown', (e) => {
+  if (e.target.closest('select.sentiment-select')) feedPopSelectByPointer = false;
+});
+
 feedPopFootEl.addEventListener('change', (e) => {
   const select = e.target.closest('select.sentiment-select');
   const card = feedPopCard();
@@ -346,6 +356,14 @@ feedPopFootEl.addEventListener('change', (e) => {
   // filtrar, igual que al corregirlo desde la tarjeta.
   const row = feedRowOf(card);
   if (row) card.replaceWith(buildFeedCard(row.getData(), postReach(row.getData())));
+  // Elegido con el mouse, el foco quedaría en el selector, y ahí las flechas
+  // cambian el valor y lo guardan: al apretar → para pasar de posteo se
+  // corregía otra vez el sentimiento. El foco pasa a la ✕. Si se lo está
+  // manejando con el teclado, se queda donde está.
+  if (feedPopSelectByPointer) {
+    feedPopSelectByPointer = false;
+    feedPopCloseEl.focus();
+  }
 });
 
 // Vuelve del pedido de confirmación al pie normal, con el foco en "Ignorar"
