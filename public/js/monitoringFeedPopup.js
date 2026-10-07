@@ -36,6 +36,9 @@ let feedPopId = null;
 let feedPopOpenerId = null;
 // El pie está pidiendo confirmar "ignorar".
 let feedPopConfirming = false;
+// Dónde cayó el último clic dentro del pop-up. null: todavía ninguno desde
+// que se abrió (ver "Doble clic").
+let feedPopLastClicked = null;
 
 // -------------------------------------------------------------------------
 // Lado de la foto.
@@ -410,6 +413,7 @@ function openFeedPop(card) {
   if (!showFeedPopCard(card)) return;
   if (!feedPopEl.open) {
     feedPopOpenerId = feedPopId;
+    feedPopLastClicked = null;
     // El diálogo vuelve inactiva la página de atrás pero no frena su scroll:
     // se bloquea acá (html.feed-pop-lock). Al bloquearlo desaparece la barra
     // de scroll y la página se ensancha: ese ancho, medido antes y después,
@@ -486,6 +490,27 @@ feedPopEl.addEventListener('cancel', (e) => {
 feedPopEl.addEventListener('close', () => {
   if (!feedPopEl.open) afterFeedPopClose();
 });
+
+// -------------------------------------------------------------------------
+// Doble clic. Si el pop-up se abre con un doble clic, el segundo cae sobre lo
+// que quedó debajo del puntero: el fondo oscuro (lo cerraría en el acto), una
+// flecha (pasaría de posteo) o "Abrir en Instagram". Se descarta todo clic
+// repetido (detail > 1: sigue de corrido a otro) que llegue antes del primer
+// clic propio del pop-up. Se atiende en la fase de captura, antes que
+// cualquier otro manejador de clic de acá adentro.
+// -------------------------------------------------------------------------
+feedPopEl.addEventListener(
+  'click',
+  (e) => {
+    if (e.detail > 1 && feedPopLastClicked === null) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      return; // no cuenta como clic propio: un tercero seguido también se descarta
+    }
+    feedPopLastClicked = e.target;
+  },
+  true
+);
 
 // Clic en el fondo oscuro, que es el <dialog> mismo (la ventana es su hijo).
 // Solo si el botón también se apretó ahí: arrastrar para seleccionar texto y
