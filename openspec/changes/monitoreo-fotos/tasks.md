@@ -31,7 +31,7 @@ Un commit por paso en la rama `monitoreo_fotos`, por tandas aprobadas por el due
 
 ## Phase 6: servidor
 
-- [ ] 6.1 `server.js`: ruta de la imagen detrás del login y campos en el listado (REQ-FOTO-06)
+- [x] 6.1 `server.js`: ruta de la imagen detrás del login y campos en el listado (REQ-FOTO-06)
 
 ## Phase 7: frontend
 
