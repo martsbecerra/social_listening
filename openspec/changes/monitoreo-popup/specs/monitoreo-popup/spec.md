@@ -8,7 +8,13 @@ Pop-up "Ver más" del feed del Monitoreo de Instagram. Solo frontend; el backend
 
 ### Requirement: REQ-POP-01 — Abrir y cerrar
 
-"Ver más" y un clic en la foto de una tarjeta MUST abrir el pop-up de ese posteo. El pop-up MUST cerrarse con la ✕, con Esc y con un clic en el fondo oscuro. Mientras está abierto, la página de atrás MUST NOT desplazarse ni recibir foco. Al abrir, el foco MUST ir al botón de cerrar; al cerrar, MUST volver al "Ver más" de la tarjeta del último posteo visto. Si se navegó a otro posteo que el de partida, esa tarjeta MUST quedar a la vista y marcarse un instante. Hasta 860 px de ancho el pop-up MUST ocupar la pantalla completa, sin que la ✕ ni el pie queden fuera de lo que se ve.
+"Ver más" y un clic en la foto de una tarjeta MUST abrir el pop-up de ese posteo. El pop-up MUST cerrarse con la ✕, con Esc y con un clic en el fondo oscuro. Mientras está abierto, la página de atrás MUST NOT desplazarse ni recibir foco. Al abrir, el foco MUST ir al botón de cerrar; al cerrar, MUST volver al "Ver más" de la tarjeta del último posteo visto. Si se navegó a otro posteo que el de partida, esa tarjeta MUST quedar a la vista y marcarse un instante. Si la lista cambió mientras estaba abierto y la tarjeta no quedó entera a la vista, también MUST traerse a la vista; sin navegar y con la lista igual, la página MUST NOT moverse. Hasta 860 px de ancho el pop-up MUST ocupar la pantalla completa, sin que la ✕ ni el pie queden fuera de lo que se ve. El segundo clic de un doble clic MUST NOT actuar sobre algo que no estaba bajo el puntero en el primero (el pop-up recién abierto, el pie recién rehecho).
+
+#### Scenario: Doble clic en la foto
+
+- GIVEN una tarjeta de la primera columna
+- WHEN se hace doble clic en su foto
+- THEN el pop-up queda abierto en ese posteo
 
 #### Scenario: Abrir desde la foto
 
@@ -56,13 +62,19 @@ El pop-up MUST permitir pasar al posteo anterior y al siguiente de las tarjetas 
 
 ### Requirement: REQ-POP-05 — Sentimiento
 
-El selector de sentimiento del pop-up MUST usar las mismas funciones que la tabla y las tarjetas. La tarjeta de atrás MUST actualizarse y MUST NOT salir de la lista hasta que se vuelva a filtrar.
+El selector de sentimiento del pop-up MUST usar las mismas funciones que la tabla y las tarjetas. La tarjeta de atrás MUST actualizarse y MUST NOT salir de la lista hasta que se vuelva a filtrar. Después de elegir un valor con el mouse, el foco MUST salir del selector (pasa al botón de cerrar); manejado con el teclado, el foco MUST quedarse en el selector.
+
+#### Scenario: Flecha después de corregir con el mouse
+
+- GIVEN el pop-up abierto en un posteo
+- WHEN se elige "Positivo" con el mouse y se aprieta →
+- THEN el pop-up pasa al posteo siguiente y el anterior queda guardado como "Positivo"
 
 ---
 
 ### Requirement: REQ-POP-06 — Ignorar
 
-"Ignorar" MUST pedir confirmación dentro del pop-up. Esc con la confirmación abierta MUST cancelarla sin cerrar el pop-up. Al confirmar, el pop-up MUST pasar al posteo siguiente, o al anterior si era el último, y MUST cerrarse si no queda ninguno. Si el pedido falla, el pie MUST volver a su estado normal con el aviso "No se pudo ignorar".
+"Ignorar" MUST pedir confirmación dentro del pop-up. Esc con la confirmación abierta MUST cancelarla sin cerrar el pop-up. Una vez confirmado, con el pedido en camino, Esc MUST cerrar el pop-up y MUST NOT volver a armar el pie. Al confirmar, el pop-up MUST pasar al posteo siguiente, o al anterior si era el último, y MUST cerrarse si no queda ninguno. Si el pedido falla, el pie MUST volver a su estado normal con el aviso "No se pudo ignorar".
 
 #### Scenario: Falla el pedido
 

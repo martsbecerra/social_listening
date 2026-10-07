@@ -34,6 +34,23 @@ prefijo `feedPop` / `FEED_POP_`.
   y el pie; si lo que tenía el foco desapareció o quedó deshabilitado (la
   flecha en un extremo, "Ignorar"), pasa a la ✕. Sin foco adentro, ← → y Esc
   dejarían de llegar.
+- **El foco no se queda en el selector de sentimiento.** En un selector con
+  foco las flechas cambian el valor y lo guardan, así que → después de
+  corregir con el mouse volvía a corregir. El pop-up anota si el selector
+  se tocó con el mouse o con el teclado: con el mouse, al cambiar el valor
+  el foco pasa a la ✕; con el teclado se queda.
+- **Doble clic.** El segundo clic puede caer sobre algo que no estaba ahí en
+  el primero: el pop-up recién abierto (el fondo lo cerraba en el acto) o el
+  pie recién rehecho ("Abrir en Instagram" queda donde estaban "Cancelar" y
+  "Sí, ignorar"). En la fase de captura se descarta todo clic repetido
+  (`detail > 1`) que no caiga en el mismo elemento que el anterior; apretar
+  varias veces seguidas la misma flecha sigue andando.
+- **Confirmar baja la marca de "pidiendo confirmación".** Con el pedido de
+  ignorar en camino no queda nada que cancelar: Esc cierra.
+- **Al cerrar, la tarjeta a la vista.** Si se navegó o la lista cambió con
+  el pop-up abierto, la tarjeta del posteo en el que se cerró se trae debajo
+  de la barra de filtros cuando no quedó entera a la vista. Sin navegar y
+  con la lista igual, la página no se toca.
 - **Un solo pop-up, que se rellena.** El esqueleto está en `instagram.html`
   y se llena al abrir y al navegar. Nada se arma por adelantado: son
   cientos de tarjetas y casi ninguna se abre.
@@ -90,3 +107,8 @@ ignorar con éxito, con el pedido fallando, en el último posteo y con una
 sola tarjeta en la lista; la rama con imagen, con imágenes de ejemplo
 (vertical, horizontal y una que no carga). `public/js/monitoring.js` y
 `public/x.html` quedaron sin diferencias contra `main`.
+
+La revisión independiente no encontró nada grave. Sus seis hallazgos y los
+dos de la revisión propia se reprodujeron en la página de prueba; los cinco
+primeros se arreglaron, cada uno en su commit y probado con clics y teclas
+reales, y el resto quedó anotado en `tasks.md`.
