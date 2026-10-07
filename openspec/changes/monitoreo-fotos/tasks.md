@@ -8,9 +8,9 @@ Un commit por paso en la rama `monitoreo_fotos`, por tandas aprobadas por el due
 
 ## Phase 2: módulo de imágenes
 
-- [ ] 2.1 Dependencia `sharp` en `package.json` y `package-lock.json`
-- [ ] 2.2 `src/postImages.js`: descarga segura, dos copias JPEG de una sola descarga, escritura a temporal y renombre; nunca tira (REQ-FOTO-01, REQ-FOTO-02, REQ-FOTO-03)
-- [ ] 2.3 `test/postImages.test.js`, con `fetch` simulado e imágenes generadas
+- [x] 2.1 Dependencia `sharp` en `package.json` y `package-lock.json`
+- [x] 2.2 `src/postImages.js`: descarga segura, dos copias JPEG de una sola descarga, escritura a temporal y renombre; nunca tira (REQ-FOTO-01, REQ-FOTO-02, REQ-FOTO-03)
+- [x] 2.3 `test/postImages.test.js`, con `fetch` simulado e imágenes generadas
 
 ## Phase 3: base
 
