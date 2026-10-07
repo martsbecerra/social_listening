@@ -14,10 +14,10 @@ Un commit por paso en la rama `monitoreo_fotos`, por tandas aprobadas por el due
 
 ## Phase 3: base
 
-- [ ] 3.1 `src/db.js`: columnas `image_source_url`, `image_status`, `image_saved_at`, `image_width`, `image_height`, con guarda (REQ-FOTO-04)
-- [ ] 3.2 Funciones para anotar el resultado y leer el estado
-- [ ] 3.3 `test/postImagesMigration.test.js`: base vieja en un archivo temporal, segunda carga sin cambios, funciones nuevas
-- [ ] 3.4 Migración probada a mano sobre una copia de la base real, fuera del repo; el código de `main` sigue funcionando contra la copia migrada
+- [x] 3.1 `src/db.js`: columnas `image_source_url`, `image_status`, `image_saved_at`, `image_width`, `image_height`, con guarda (REQ-FOTO-04)
+- [x] 3.2 Funciones para anotar el resultado y leer el estado
+- [x] 3.3 `test/postImagesMigration.test.js`: base vieja en un archivo temporal, segunda carga sin cambios, funciones nuevas
+- [x] 3.4 Migración probada a mano sobre una copia de la base real, fuera del repo; el código de `main` sigue funcionando contra la copia migrada
 
 ## Phase 4: adapters
 
