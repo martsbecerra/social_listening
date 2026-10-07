@@ -34,6 +34,9 @@ let feedPopId = null;
 // Posteo con el que se abrió. Si al cerrar es otro (se navegó), su tarjeta
 // se trae a la vista.
 let feedPopOpenerId = null;
+// La lista de tarjetas cambió con el pop-up abierto (se ignoró un posteo,
+// llegaron datos nuevos): las tarjetas pudieron cambiar de lugar.
+let feedPopListChanged = false;
 // El pie está pidiendo confirmar "ignorar".
 let feedPopConfirming = false;
 // Elemento en el que cayó el último clic dentro del pop-up. null: todavía
@@ -418,6 +421,7 @@ function openFeedPop(card) {
   if (!showFeedPopCard(card)) return;
   if (!feedPopEl.open) {
     feedPopOpenerId = feedPopId;
+    feedPopListChanged = false;
     feedPopLastClicked = null;
     // El diálogo vuelve inactiva la página de atrás pero no frena su scroll:
     // se bloquea acá (html.feed-pop-lock). Al bloquearlo desaparece la barra
@@ -433,10 +437,12 @@ function openFeedPop(card) {
   feedPopCloseEl.focus();
 }
 
-// Se cerró en otro posteo que el de partida: su tarjeta queda a la vista
-// (debajo de la barra de filtros, si hubo que mover la página) y se marca un
-// instante, como al llegar desde "Se despegaron", para no perder el lugar.
-function revealFeedPopCard(card) {
+// La tarjeta del posteo en el que se cerró puede no estar donde se la dejó:
+// se navegó a otro posteo, o la lista cambió y las tarjetas se corrieron. Si
+// no quedó entera a la vista se la trae debajo de la barra de filtros; si ya
+// se ve, la página no se mueve. "flash": además se marca un instante, como
+// al llegar desde "Se despegaron" (cuando es otro posteo que el de partida).
+function revealFeedPopCard(card, flash) {
   const { top, bottom } = card.getBoundingClientRect();
   if (top < feedBarBottom() || bottom > window.innerHeight) {
     feedScrollToCard(card);
@@ -446,6 +452,7 @@ function revealFeedPopCard(card) {
       if (card.isConnected) feedScrollToCard(card);
     }, 80);
   }
+  if (!flash) return;
   card.classList.remove('flash');
   void card.offsetWidth; // reinicia la animación si ya había corrido
   card.classList.add('flash');
@@ -458,13 +465,17 @@ function afterFeedPopClose() {
   document.documentElement.classList.remove('feed-pop-lock');
   const card = feedPopCard();
   const moved = feedPopId !== feedPopOpenerId;
+  const listChanged = feedPopListChanged;
   feedPopId = null;
   feedPopOpenerId = null;
+  feedPopListChanged = false;
   feedPopConfirming = false;
   if (!card) return;
   const more = card.querySelector('.feed-foot [data-more]');
   if (more) more.focus({ preventScroll: true });
-  if (moved) revealFeedPopCard(card);
+  // Sin navegar y con la lista igual, la tarjeta está donde se la dejó y la
+  // página no se toca.
+  if (moved || listChanged) revealFeedPopCard(card, moved);
 }
 
 // El único camino para cerrar: la ✕, Esc, un clic afuera y el propio código.
@@ -535,6 +546,7 @@ feedPopEl.addEventListener('click', (e) => {
 // La lista de tarjetas cambió (ver feedListListeners en monitoringFeed.js).
 feedListListeners.push((change) => {
   if (feedPopId === null) return;
+  feedPopListChanged = true;
   if (change && change.removing) {
     // Está por salir una tarjeta (se ignoró su posteo) y todavía ocupa su
     // lugar. Si es la del posteo abierto, el pop-up pasa al siguiente, o al
