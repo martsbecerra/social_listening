@@ -33,15 +33,15 @@ prefijo `feedPop` / `FEED_POP_`.
 - **Datos de Instagram, nunca como HTML.** Igual que en el feed: todo entra
   por `textContent`.
 - **Imagen: un solo punto.** `feedPopImageUrl(post)` devuelve hoy siempre
-  null y el lado izquierdo muestra el recuadro rayado con el tipo. La rama
-  con imagen ya está armada (imagen entera, sin recortar, y el mismo
-  recuadro si no carga).
+  null y el lado izquierdo muestra el recuadro rayado con "Sin foto" y el
+  tipo. La rama con imagen ya está armada (imagen entera, sin recortar, y el
+  mismo recuadro con "Imagen no disponible" si no carga).
 
 ## Decisiones del dueño
 
 - "Ver más" y el clic en la foto abren el pop-up; la fila desplegada se saca.
-- Mientras no existan las fotos, el lado izquierdo dice solo "Imagen no
-  disponible" (sin la segunda línea de la maqueta, que hoy no sería cierta).
+- Sin foto, el lado izquierdo dice "Sin foto". "Imagen no disponible" queda
+  solo para una imagen que falló.
 - Al cerrar, el foco vuelve a la tarjeta del último posteo visto, que queda
   a la vista (la maqueta volvía a la tarjeta de partida).
 - Si falla "ignorar", el pie vuelve a su estado normal con el aviso "No se

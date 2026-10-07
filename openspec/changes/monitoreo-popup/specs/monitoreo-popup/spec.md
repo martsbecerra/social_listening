@@ -38,7 +38,7 @@ El pop-up MUST mostrar: la cuenta y sus seguidores; el alcance con la métrica q
 
 ### Requirement: REQ-POP-03 — Lado de la foto
 
-Sin imagen, el lado izquierdo MUST mostrar un recuadro rayado con "Imagen no disponible" y la etiqueta del tipo. `feedPopImageUrl(post)` MUST ser el único punto donde se decide la imagen. Con imagen, MUST verse entera, sin recortar; si no carga, MUST quedar el mismo recuadro.
+Sin imagen, el lado izquierdo MUST mostrar un recuadro rayado con "Sin foto" y la etiqueta del tipo. `feedPopImageUrl(post)` MUST ser el único punto donde se decide la imagen. Con imagen, MUST verse entera, sin recortar; si no carga, MUST quedar el mismo recuadro con "Imagen no disponible".
 
 ---
 

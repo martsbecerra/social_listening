@@ -16,9 +16,9 @@ Por tandas en la rama `monitoreo_popup`, cada una con `npm test` (los dos actore
 
 ## Phase 2: navegación y acciones
 
-- [ ] 2.1 Anterior y siguiente: flechas en pantalla, ← → y contador (REQ-POP-04)
-- [ ] 2.2 Sentimiento dentro del pop-up (REQ-POP-05)
-- [ ] 2.3 Ignorar con la confirmación adentro (REQ-POP-06)
+- [x] 2.1 Anterior y siguiente: flechas en pantalla, ← → y contador (REQ-POP-04)
+- [x] 2.2 Sentimiento dentro del pop-up (REQ-POP-05)
+- [x] 2.3 Ignorar con la confirmación adentro (REQ-POP-06)
 
 ## Phase 3: documentación y repaso
 
@@ -28,3 +28,4 @@ Por tandas en la rama `monitoreo_popup`, cada una con `npm test` (los dos actore
 ## Pendiente fuera de este cambio
 
 - Imagen del posteo (cambio siguiente: fotos). Punto único: `feedPopImageUrl`.
+- Barra superior en celular: en una pantalla de 375 px, el botón de usuario queda 35 px afuera del ancho. Ya pasaba en `main` y la barra es compartida por todas las páginas: no se toca en este cambio. Por eso el fondo del pop-up se mide con la pantalla que se ve y no en porcentaje.

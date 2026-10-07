@@ -2336,6 +2336,46 @@ html.feed-pop-lock body {
   --s: var(--coral-500);
 }
 
+/* Flechas de anterior y siguiente, a los costados de la ventana. Pisan el
+   button global igual que .feed-pop-icon; el transform se repite en hover y
+   al apretar porque el global lo cambia y la flecha saltaría. */
+.feed-pop-nav {
+  position: absolute;
+  top: 50%;
+  z-index: 2;
+  width: 44px;
+  height: 44px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.95);
+  color: var(--jade-900);
+  font-size: 24px;
+  font-weight: 400;
+  line-height: 1;
+  box-shadow: var(--shadow-md);
+  transform: translateY(-50%);
+}
+.feed-pop-nav:hover:not(:disabled),
+.feed-pop-nav:active:not(:disabled) {
+  background: #fff;
+  transform: translateY(-50%);
+  box-shadow: var(--shadow-md);
+  filter: none;
+}
+.feed-pop-nav.prev {
+  left: max(8px, calc(50% - 600px));
+}
+.feed-pop-nav.next {
+  right: max(8px, calc(50% - 600px));
+}
+.feed-pop-nav:disabled,
+.feed-pop-icon:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
 /* Lado de la foto. La imagen se ve entera, sin recortar, sobre fondo oscuro. */
 .feed-pop-photo {
   position: relative;
@@ -2367,8 +2407,9 @@ html.feed-pop-lock body {
   font-family: "DM Mono", monospace;
   font-size: 11px;
 }
-/* Sin imagen (todavía no se guardan) o la imagen no cargó. */
-.feed-pop-photo.broken {
+/* Recuadro vacío: "Sin foto" (el posteo no tiene imagen; hoy, todos) o
+   "Imagen no disponible" (la tiene y no cargó). */
+.feed-pop-photo.empty {
   background: repeating-linear-gradient(
     45deg,
     var(--clay-100),
@@ -2431,6 +2472,19 @@ html.feed-pop-lock body {
   transform: none;
   box-shadow: none;
   filter: none;
+}
+/* Anterior y siguiente en la cabecera: solo cuando las flechas de los
+   costados no entran (ver el @media de 1240px). */
+.feed-pop-icon.step {
+  display: none;
+}
+/* "3 / 195". */
+.feed-pop-pos {
+  flex: none;
+  font-family: "DM Mono", monospace;
+  font-size: 11.5px;
+  color: var(--clay-500);
+  white-space: nowrap;
 }
 .feed-pop-scroll {
   flex: 1;
@@ -2620,6 +2674,57 @@ html.feed-pop-lock body {
 .feed-pop-btn.primary:hover:not(:disabled) {
   border-color: var(--jade-700);
   background: var(--jade-700);
+}
+.feed-pop-btn.danger {
+  color: var(--coral-700);
+}
+.feed-pop-btn.danger:hover:not(:disabled) {
+  background: var(--coral-100);
+}
+.feed-pop-btn.dangersolid {
+  border-color: var(--coral-500);
+  background: var(--coral-500);
+  color: #fff;
+}
+.feed-pop-btn.dangersolid:hover:not(:disabled) {
+  border-color: var(--coral-700);
+  background: var(--coral-700);
+}
+/* El selector de sentimiento de la tabla, a la altura de los botones. */
+.feed-pop-foot .sentiment-select {
+  padding-top: 7px;
+  padding-bottom: 7px;
+  font-size: 13px;
+}
+/* "No se pudo ignorar". */
+.feed-pop-error {
+  font-size: 12.5px;
+  color: var(--coral-700);
+}
+/* El pie cuando pide confirmar "ignorar". */
+.feed-pop-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+.feed-pop-confirm p {
+  flex: 1;
+  min-width: 180px;
+  margin: 0;
+  font-size: 13px;
+  color: var(--clay-700);
+}
+
+/* Sin lugar para las flechas de los costados: pasan a la cabecera. */
+@media (max-width: 1240px) {
+  .feed-pop-nav {
+    display: none;
+  }
+  .feed-pop-icon.step {
+    display: grid;
+  }
 }
 
 /* Celular y ventanas angostas: pantalla completa, con la foto arriba. La

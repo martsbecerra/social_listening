@@ -1,8 +1,9 @@
 // --------------------------------------------------------------------
 // Pop-up "Ver más" del feed del Monitoreo de Instagram: el posteo completo,
 // con la foto a la izquierda y el texto, las métricas y las acciones a la
-// derecha. Calcado de design/monitoreo-popup.html (estilos en
-// public/css/styles.css, clases feed-pop-*).
+// derecha, y el paso al posteo anterior y al siguiente. Calcado de
+// design/monitoreo-popup.html (estilos en public/css/styles.css, clases
+// feed-pop-*).
 //
 // Lo carga SOLO instagram.html, después de monitoringFeed.js, y se apoya en
 // lo que ese archivo y monitoring.js ya definen: las tarjetas del feed, la
@@ -18,20 +19,30 @@ const feedPopPhotoEl = document.getElementById('feedPopPhoto');
 const feedPopAvatarEl = document.getElementById('feedPopAvatar');
 const feedPopWhoEl = document.getElementById('feedPopWho');
 const feedPopFollowersEl = document.getElementById('feedPopFollowers');
+const feedPopPosEl = document.getElementById('feedPopPos');
 const feedPopCloseEl = document.getElementById('feedPopClose');
 const feedPopScrollEl = document.getElementById('feedPopScroll');
 const feedPopFootEl = document.getElementById('feedPopFoot');
+// Anterior y siguiente: las flechas grandes a los costados de la ventana y,
+// cuando no entran (ventana angosta, celular), las chicas de la cabecera.
+const feedPopPrevEls = [document.getElementById('feedPopPrev'), document.getElementById('feedPopPrevSmall')];
+const feedPopNextEls = [document.getElementById('feedPopNext'), document.getElementById('feedPopNextSmall')];
 
 // Posteo que se está mostrando: el data-id de su tarjeta (siempre texto).
 // null: el pop-up está cerrado.
 let feedPopId = null;
+// Posteo con el que se abrió. Si al cerrar es otro (se navegó), su tarjeta
+// se trae a la vista.
+let feedPopOpenerId = null;
+// El pie está pidiendo confirmar "ignorar".
+let feedPopConfirming = false;
 
 // -------------------------------------------------------------------------
 // Lado de la foto.
 // -------------------------------------------------------------------------
 
 // Imagen grande del posteo. Hoy el backend no guarda ni manda fotos, así que
-// esto da siempre null y se ve el recuadro "Imagen no disponible". Cuando el
+// esto da siempre null y se ve el recuadro "Sin foto". Cuando el
 // posteo traiga el dato alcanza con devolverlo acá (image_full_url es un
 // nombre provisorio): el resto ya está armado.
 function feedPopImageUrl(post) {
@@ -46,14 +57,16 @@ function fillFeedPopPhoto(post) {
   // Un posteo sin tipo detectado no lleva etiqueta, como en la tarjeta.
   const badge = () => (typeLabel ? [feedNode('span', 'feed-badge type', typeLabel)] : []);
 
-  const showMissing = () => {
-    feedPopPhotoEl.className = 'feed-pop-photo broken';
-    feedPopPhotoEl.replaceChildren(feedNode('p', 'feed-pop-photo-msg', 'Imagen no disponible'), ...badge());
+  // Recuadro rayado con un texto: "Sin foto" si el posteo no tiene imagen,
+  // "Imagen no disponible" si la tiene y no cargó.
+  const showEmpty = (text) => {
+    feedPopPhotoEl.className = 'feed-pop-photo empty';
+    feedPopPhotoEl.replaceChildren(feedNode('p', 'feed-pop-photo-msg', text), ...badge());
   };
 
   const imageUrl = feedPopImageUrl(post);
   if (!imageUrl) {
-    showMissing();
+    showEmpty('Sin foto');
     return;
   }
 
@@ -63,7 +76,7 @@ function fillFeedPopPhoto(post) {
   img.addEventListener('error', () => {
     // Si mientras cargaba se pasó a otro posteo, esta imagen ya no está en
     // pantalla y no hay nada que avisar.
-    if (img.isConnected) showMissing();
+    if (img.isConnected) showEmpty('Imagen no disponible');
   });
   img.src = imageUrl;
 
@@ -161,12 +174,52 @@ function buildFeedPopDetails(post) {
   return list;
 }
 
-function fillFeedPopFoot(post) {
+// Pie: el selector de sentimiento de la tabla, "Ignorar" y el enlace al
+// posteo. Los cambios y los clics los atiende el pie entero (ver "Acciones
+// del pie"). "error": un aviso al lado de "Ignorar" (el pedido falló).
+function fillFeedPopFoot(post, error = '') {
+  feedPopConfirming = false;
+
+  const sentiment = buildSentimentSelect(post.sentiment);
+  sentiment.setAttribute('aria-label', 'Sentimiento');
+
+  const ignore = feedNode('button', 'feed-pop-btn danger', 'Ignorar');
+  ignore.type = 'button';
+  ignore.dataset.act = 'ignore';
+
   const open = feedNode('a', 'feed-pop-btn primary', 'Abrir en Instagram ↗');
   open.href = post.url;
   open.target = '_blank';
   open.rel = 'noopener';
-  feedPopFootEl.replaceChildren(open);
+
+  feedPopFootEl.replaceChildren(sentiment, ignore, open);
+  if (error) {
+    const notice = feedNode('span', 'feed-pop-error', error);
+    notice.setAttribute('role', 'alert');
+    ignore.after(notice);
+  }
+}
+
+// El pie pasa a pedir la confirmación, adentro del pop-up (en la tabla y en
+// las tarjetas es un cartel aparte). El foco va a "Cancelar".
+function showFeedPopConfirm() {
+  feedPopConfirming = true;
+
+  const question = feedNode('p');
+  question.append(feedNode('b', '', '¿Ignorar este posteo?'), ' Dejará de aparecer en el monitoreo.');
+
+  const cancel = feedNode('button', 'feed-pop-btn', 'Cancelar');
+  cancel.type = 'button';
+  cancel.dataset.act = 'cancel';
+
+  const confirm = feedNode('button', 'feed-pop-btn dangersolid', 'Sí, ignorar');
+  confirm.type = 'button';
+  confirm.dataset.act = 'confirm';
+
+  const wrap = feedNode('div', 'feed-pop-confirm');
+  wrap.append(question, cancel, confirm);
+  feedPopFootEl.replaceChildren(wrap);
+  cancel.focus();
 }
 
 function fillFeedPop(post) {
@@ -199,8 +252,43 @@ function fillFeedPop(post) {
 }
 
 // -------------------------------------------------------------------------
-// Abrir y cerrar.
+// Anterior y siguiente. La lista es la de las tarjetas en pantalla, en su
+// orden (con los filtros y el orden elegidos): no hay una segunda lista que
+// mantener al día.
 // -------------------------------------------------------------------------
+function feedPopCard() {
+  return feedPopId === null ? null : feedCardById(feedPopId);
+}
+
+// El posteo que se está mostrando, tal como está ahora en la tabla.
+function feedPopPost() {
+  const card = feedPopCard();
+  const row = card ? feedRowOf(card) : null;
+  return row ? row.getData() : null;
+}
+
+// La tarjeta de antes (-1) o de después (1) de la que se está mostrando.
+function feedPopNeighbor(step) {
+  const card = feedPopCard();
+  const other = card && (step < 0 ? card.previousElementSibling : card.nextElementSibling);
+  return other && other.classList.contains('feed-card') ? other : null;
+}
+
+// Contador "3 / 195" y flechas. En los extremos, la flecha que no lleva a
+// ningún lado queda deshabilitada.
+function updateFeedPopPosition() {
+  const card = feedPopCard();
+  if (!card) return;
+  const cards = feedContainerEl.querySelectorAll('.feed-card');
+  feedPopPosEl.textContent = `${Array.prototype.indexOf.call(cards, card) + 1} / ${cards.length}`;
+  const focused = document.activeElement;
+  const noPrev = !feedPopNeighbor(-1);
+  const noNext = !feedPopNeighbor(1);
+  for (const button of feedPopPrevEls) button.disabled = noPrev;
+  for (const button of feedPopNextEls) button.disabled = noNext;
+  // Un botón deshabilitado no puede quedarse con el foco: pasa a la ✕.
+  if (focused && focused.disabled && feedPopEl.contains(focused)) feedPopCloseEl.focus();
+}
 
 // Muestra el posteo de una tarjeta. Los datos salen de su fila de Tabulator,
 // igual que al dibujar la tarjeta. Devuelve false si la fila ya no está.
@@ -209,13 +297,101 @@ function showFeedPopCard(card) {
   if (!row) return false;
   feedPopId = card.dataset.id;
   fillFeedPop(row.getData());
+  updateFeedPopPosition();
+  // El contenido y el pie se rehicieron: si el foco estaba en algo que ya no
+  // existe ("Ignorar", un enlace), pasa a la ✕. Sin foco adentro, ← → y Esc
+  // dejarían de llegar.
+  if (feedPopEl.open && !feedPopEl.contains(document.activeElement)) feedPopCloseEl.focus();
   return true;
 }
+
+function stepFeedPop(step) {
+  const other = feedPopNeighbor(step);
+  if (other) showFeedPopCard(other);
+}
+
+for (const button of feedPopPrevEls) button.addEventListener('click', () => stepFeedPop(-1));
+for (const button of feedPopNextEls) button.addEventListener('click', () => stepFeedPop(1));
+
+// Teclado. Esc se atiende acá, en la tecla, y no se deja al navegador: así
+// cancela el pedido de confirmación sin cerrar el pop-up, pase lo que pase.
+// ← y → no actúan con el foco en el selector de sentimiento: ahí las flechas
+// cambian el valor.
+feedPopEl.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    escapeFeedPop();
+    return;
+  }
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+  if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+  if (e.target.closest('select, input, textarea')) return;
+  e.preventDefault();
+  stepFeedPop(e.key === 'ArrowLeft' ? -1 : 1);
+});
+
+// -------------------------------------------------------------------------
+// Acciones del pie: las mismas de la tarjeta y de la fila de la tabla, con
+// las mismas funciones.
+// -------------------------------------------------------------------------
+feedPopFootEl.addEventListener('change', (e) => {
+  const select = e.target.closest('select.sentiment-select');
+  const card = feedPopCard();
+  if (!select || !card || select.value === SENTIMENT_UNSET) return;
+  // PATCH, color de la pastilla, dato de la tabla y "Se despegaron".
+  feedSetSentiment(card, select.value, select);
+  feedPopBoxEl.dataset.s = select.value; // borde de arriba de la ventana
+  // La tarjeta de atrás se rehace con el dato nuevo. No sale de la lista
+  // aunque haya un filtro de sentimiento puesto: eso pasa recién al volver a
+  // filtrar, igual que al corregirlo desde la tarjeta.
+  const row = feedRowOf(card);
+  if (row) card.replaceWith(buildFeedCard(row.getData(), postReach(row.getData())));
+});
+
+// Vuelve del pedido de confirmación al pie normal, con el foco en "Ignorar"
+// (de donde se vino). "error": aviso para mostrar al lado.
+function cancelFeedPopConfirm(error = '') {
+  const post = feedPopPost();
+  if (!post) return;
+  fillFeedPopFoot(post, error);
+  feedPopFootEl.querySelector('[data-act="ignore"]').focus();
+}
+
+async function confirmFeedPopIgnore() {
+  const card = feedPopCard();
+  if (!card) return;
+  const id = feedPopId;
+  const row = feedRowOf(card);
+  // Un solo pedido, aunque se apriete dos veces.
+  for (const button of feedPopFootEl.querySelectorAll('button')) button.disabled = true;
+  // confirmIgnore (monitoring.js) ignora el posteo anotado en
+  // pendingIgnoreId, que es lo que deja el cartel de la tabla al abrirse. Acá
+  // la confirmación ya se dio en el pie: se anota directo, sin ese cartel.
+  pendingIgnoreId = row ? row.getData().id : id;
+  await confirmIgnore();
+  // Si salió bien, confirmIgnore sacó la fila y avisó al feed, que sacó la
+  // tarjeta: el pop-up ya pasó a otro posteo o se cerró (ver
+  // feedListListeners, más abajo). Si sigue en el mismo, el pedido falló.
+  if (feedPopEl.open && feedPopId === id) cancelFeedPopConfirm('No se pudo ignorar');
+}
+
+feedPopFootEl.addEventListener('click', (e) => {
+  const button = e.target.closest('button[data-act]');
+  if (!button) return;
+  if (button.dataset.act === 'ignore') showFeedPopConfirm();
+  else if (button.dataset.act === 'cancel') cancelFeedPopConfirm();
+  else if (button.dataset.act === 'confirm') confirmFeedPopIgnore();
+});
+
+// -------------------------------------------------------------------------
+// Abrir y cerrar.
+// -------------------------------------------------------------------------
 
 // Lo llama el feed: "Ver más" y el clic en la foto de una tarjeta.
 function openFeedPop(card) {
   if (!showFeedPopCard(card)) return;
   if (!feedPopEl.open) {
+    feedPopOpenerId = feedPopId;
     // El diálogo vuelve inactiva la página de atrás pero no frena su scroll:
     // se bloquea acá (html.feed-pop-lock). Al bloquearlo desaparece la barra
     // de scroll y la página se ensancha: ese ancho, medido antes y después,
@@ -230,15 +406,38 @@ function openFeedPop(card) {
   feedPopCloseEl.focus();
 }
 
+// Se cerró en otro posteo que el de partida: su tarjeta queda a la vista
+// (debajo de la barra de filtros, si hubo que mover la página) y se marca un
+// instante, como al llegar desde "Se despegaron", para no perder el lugar.
+function revealFeedPopCard(card) {
+  const { top, bottom } = card.getBoundingClientRect();
+  if (top < feedBarBottom() || bottom > window.innerHeight) {
+    feedScrollToCard(card);
+    // Al llegar se dibujan las tarjetas de alrededor con su alto real y la
+    // posición puede correrse unos píxeles: se acomoda una vez más.
+    setTimeout(() => {
+      if (card.isConnected) feedScrollToCard(card);
+    }, 80);
+  }
+  card.classList.remove('flash');
+  void card.offsetWidth; // reinicia la animación si ya había corrido
+  card.classList.add('flash');
+}
+
 // Deja todo como antes de abrir: la página vuelve a desplazarse y el foco va
-// al "Ver más" de la tarjeta del posteo que se estaba viendo. Se puede llamar
-// de más: si ya se hizo, no cambia nada.
+// al "Ver más" de la tarjeta del último posteo visto. Se puede llamar de más:
+// si ya se hizo, no cambia nada.
 function afterFeedPopClose() {
   document.documentElement.classList.remove('feed-pop-lock');
-  const card = feedPopId === null ? null : feedCardById(feedPopId);
+  const card = feedPopCard();
+  const moved = feedPopId !== feedPopOpenerId;
   feedPopId = null;
-  const more = card && card.querySelector('.feed-foot [data-more]');
+  feedPopOpenerId = null;
+  feedPopConfirming = false;
+  if (!card) return;
+  const more = card.querySelector('.feed-foot [data-more]');
   if (more) more.focus({ preventScroll: true });
+  if (moved) revealFeedPopCard(card);
 }
 
 // El único camino para cerrar: la ✕, Esc, un clic afuera y el propio código.
@@ -250,11 +449,18 @@ function closeFeedPop() {
 
 feedPopCloseEl.addEventListener('click', closeFeedPop);
 
-// Esc. Sin esto lo cierra el navegador por su cuenta y el orden de arriba
-// quedaría para el evento "close", que llega recién en el próximo cuadro.
+// Esc: con el pedido de confirmación de "ignorar" abierto lo cancela; si no,
+// cierra.
+function escapeFeedPop() {
+  if (feedPopConfirming) cancelFeedPopConfirm();
+  else closeFeedPop();
+}
+
+// El navegador pide cerrar por su cuenta (Esc con el foco fuera de la
+// ventana, el botón "atrás" del celular): mismo criterio.
 feedPopEl.addEventListener('cancel', (e) => {
   e.preventDefault();
-  closeFeedPop();
+  escapeFeedPop();
 });
 
 // Respaldo, por si el navegador lo cierra igual sin pasar por closeFeedPop.
@@ -275,7 +481,22 @@ feedPopEl.addEventListener('click', (e) => {
 });
 
 // La lista de tarjetas cambió (ver feedListListeners en monitoringFeed.js).
-// Si el posteo que se está mostrando ya no está, no queda nada que mostrar.
-feedListListeners.push(() => {
-  if (feedPopId !== null && !feedCardById(feedPopId)) closeFeedPop();
+feedListListeners.push((change) => {
+  if (feedPopId === null) return;
+  if (change && change.removing) {
+    // Está por salir una tarjeta (se ignoró su posteo) y todavía ocupa su
+    // lugar. Si es la del posteo abierto, el pop-up pasa al siguiente, o al
+    // anterior si era el último; si no queda ninguno, se cierra.
+    if (change.removing.dataset.id !== feedPopId) return;
+    const other = feedPopNeighbor(1) || feedPopNeighbor(-1);
+    if (!other || !showFeedPopCard(other)) {
+      feedPopId = null;
+      closeFeedPop();
+    }
+    return;
+  }
+  // Se redibujó la lista o ya salió una tarjeta: si el posteo abierto no
+  // está, no queda nada que mostrar; si está, puede haber cambiado de lugar.
+  if (!feedPopCard()) closeFeedPop();
+  else updateFeedPopPosition();
 });

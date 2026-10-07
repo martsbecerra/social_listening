@@ -283,14 +283,17 @@ function feedSorter(order, reachById) {
 }
 
 // -------------------------------------------------------------------------
-// Aviso de que cambió la lista de tarjetas: se redibujó entera o salió una.
-// El pop-up de "Ver más" (monitoringFeedPopup.js, que se carga después) se
-// anota acá para no quedar mostrando un posteo que ya no está.
+// Aviso de que cambia la lista de tarjetas. El pop-up de "Ver más"
+// (monitoringFeedPopup.js, que se carga después) se anota acá para no quedar
+// mostrando un posteo que ya no está. "change" dice qué pasó:
+//   (nada)         la lista ya cambió: se redibujó entera o salió una tarjeta.
+//   { removing }   esa tarjeta está por salir (se ignoró su posteo) y todavía
+//                  ocupa su lugar.
 // -------------------------------------------------------------------------
 const feedListListeners = [];
 
-function notifyFeedList() {
-  for (const listener of feedListListeners) listener();
+function notifyFeedList(change) {
+  for (const listener of feedListListeners) listener(change);
 }
 
 // -------------------------------------------------------------------------
@@ -411,18 +414,24 @@ function feedRowOf(card) {
   return (monitoringTable && monitoringTable.getRow(card.dataset.id)) || null;
 }
 
+// Corrige el sentimiento del posteo de una tarjeta. "select" es el selector
+// que se tocó: el de la tarjeta o el del pop-up (monitoringFeedPopup.js).
+function feedSetSentiment(card, sentiment, select) {
+  const row = feedRowOf(card);
+  // PATCH y color de la pastilla, igual que en la tabla.
+  updateSentiment(row ? row.getData().id : card.dataset.id, sentiment, select);
+  card.dataset.s = sentiment; // borde de arriba de la tarjeta
+  // También el dato de la tabla: de ahí se vuelve a dibujar el feed y es lo
+  // que leen los filtros y "Se despegaron".
+  if (row) row.update({ sentiment });
+  if (monitoringTable) renderHighlightCards(monitoringTable.getData());
+}
+
 feedContainerEl.addEventListener('change', (e) => {
   const select = e.target.closest('select.sentiment-select');
   const card = select && select.closest('.feed-card');
   if (!card || select.value === SENTIMENT_UNSET) return;
-  const row = feedRowOf(card);
-  // PATCH y color de la pastilla, igual que en la tabla.
-  updateSentiment(row ? row.getData().id : card.dataset.id, select.value, select);
-  card.dataset.s = select.value; // borde de arriba de la tarjeta
-  // También el dato de la tabla: de ahí se vuelve a dibujar el feed y es lo
-  // que leen los filtros y "Se despegaron".
-  if (row) row.update({ sentiment: select.value });
-  if (monitoringTable) renderHighlightCards(monitoringTable.getData());
+  feedSetSentiment(card, select.value, select);
 });
 
 feedContainerEl.addEventListener('click', (e) => {
@@ -446,6 +455,9 @@ feedContainerEl.addEventListener('click', (e) => {
 function removeFeedCard(id) {
   const card = feedCardById(id);
   if (!card) return;
+  // Antes de sacarla, mientras todavía ocupa su lugar: si el pop-up está
+  // mostrando ese posteo, pasa al de la tarjeta de al lado.
+  notifyFeedList({ removing: card });
   card.remove();
   // Si no quedó ninguna, el cartel de "no hay" (renderFeed ya avisa el cambio).
   if (!feedContainerEl.querySelector('.feed-card')) renderFeed();

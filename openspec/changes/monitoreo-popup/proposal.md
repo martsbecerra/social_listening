@@ -21,8 +21,8 @@ maqueta no resuelve se decidió con el dueño y quedó en `design.md`.
 - Navegación por la lista filtrada: flechas en pantalla, ← → y contador
 - Sentimiento e ignorar dentro del pop-up, con las funciones que ya usan la
   tabla y las tarjetas; la confirmación de ignorar va adentro
-- Lado de la foto: recuadro "Imagen no disponible" con el tipo, y un único
-  punto donde enchufar la imagen cuando exista
+- Lado de la foto: recuadro "Sin foto" con el tipo, y un único punto donde
+  enchufar la imagen cuando exista
 - Sacar el código y los estilos de la fila desplegada
 
 ### Out of Scope
