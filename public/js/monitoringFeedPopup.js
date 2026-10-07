@@ -385,6 +385,11 @@ async function confirmFeedPopIgnore() {
   const row = feedRowOf(card);
   // Un solo pedido, aunque se apriete dos veces.
   for (const button of feedPopFootEl.querySelectorAll('button')) button.disabled = true;
+  // La pregunta ya se contestó y el pedido sale: no queda nada que cancelar.
+  // Sin esto, Esc con el pedido en camino volvía a armar el pie con
+  // "Ignorar" como si se hubiera cancelado, y el posteo se ignoraba igual.
+  // Desde acá Esc cierra el pop-up, como siempre.
+  feedPopConfirming = false;
   // confirmIgnore (monitoring.js) ignora el posteo anotado en
   // pendingIgnoreId, que es lo que deja el cartel de la tabla al abrirse. Acá
   // la confirmación ya se dio en el pie: se anota directo, sin ese cartel.
