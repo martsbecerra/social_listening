@@ -17,6 +17,23 @@ prefijo `feedPop` / `FEED_POP_`.
   el fondo se distingue de un clic adentro. Lo único que no trae es el
   bloqueo del scroll de la página: se agrega con una clase en `<html>`,
   compensando el ancho de la barra de scroll para que el fondo no salte.
+- **El fondo se mide con la pantalla que se ve.** Ancho y alto en unidades
+  de viewport, no en porcentaje: en celular, si algo de la página es más
+  ancho que la pantalla, el navegador agranda el área de los elementos fijos
+  y un 100 % dejaba la ✕ afuera (pasa hoy con la barra superior a 375 px).
+- **Cerrar ordena todo en el momento.** `closeFeedPop` es el único camino
+  (la ✕, Esc, clic afuera, el propio código) y deja la página y el foco como
+  estaban sin esperar al evento `close` del `<dialog>`, que el navegador
+  dispara recién en el cuadro siguiente; ese evento queda de respaldo.
+- **Esc se atiende en la tecla.** Con el pedido de confirmación de "ignorar"
+  abierto lo cancela; si no, cierra. No se deja al aviso `cancel` del
+  navegador, que solo se puede frenar si hubo un clic real justo antes;
+  `cancel` queda para cuando el pedido de cerrar no viene de una tecla
+  dentro de la ventana (el botón "atrás" del celular).
+- **El foco nunca queda afuera.** Al pasar de posteo se rehacen el contenido
+  y el pie; si lo que tenía el foco desapareció o quedó deshabilitado (la
+  flecha en un extremo, "Ignorar"), pasa a la ✕. Sin foco adentro, ← → y Esc
+  dejarían de llegar.
 - **Un solo pop-up, que se rellena.** El esqueleto está en `instagram.html`
   y se llena al abrir y al navegar. Nada se arma por adelantado: son
   cientos de tarjetas y casi ninguna se abre.
@@ -25,11 +42,20 @@ prefijo `feedPop` / `FEED_POP_`.
   se quedó con un sentimiento recién corregido. No hay una segunda lista
   que mantener al día.
 - **El feed avisa cuando cambia la lista.** `feedListListeners` en
-  `monitoringFeed.js`, con el mismo esquema que `monitoringViewListeners`:
-  el pop-up se anota y, si el posteo que muestra ya no está, se cierra.
-- **`monitoring.js` no se toca.** Sentimiento: `updateSentiment` y la fila
-  de Tabulator, igual que la tarjeta. Ignorar: `confirmIgnore`, que saca la
-  fila y avisa al feed.
+  `monitoringFeed.js`, con el mismo esquema que `monitoringViewListeners`.
+  Sin argumento: la lista ya cambió (redibujo, o salió una tarjeta); si el
+  posteo abierto no está, el pop-up se cierra, y si está se actualiza el
+  contador. `{ removing }`: esa tarjeta está por salir y todavía ocupa su
+  lugar; si es la del posteo abierto, el pop-up pasa a la de al lado (la
+  siguiente, o la anterior si era la última) y se cierra si no hay ninguna.
+- **`monitoring.js` no se toca.** Sentimiento: `feedSetSentiment` (en
+  `monitoringFeed.js`, la misma función que usa la tarjeta), que llama a
+  `updateSentiment` y actualiza la fila de Tabulator; después la tarjeta de
+  atrás se rehace con el dato nuevo. Ignorar: `confirmIgnore` tal como
+  está; lee el posteo de `pendingIgnoreId`, que es lo que anota el cartel
+  de la tabla al abrirse, así que el pop-up lo anota directo (su
+  confirmación va en el pie) y espera. Si después sigue en el mismo posteo,
+  el pedido falló.
 - **Datos de Instagram, nunca como HTML.** Igual que en el feed: todo entra
   por `textContent`.
 - **Imagen: un solo punto.** `feedPopImageUrl(post)` devuelve hoy siempre
@@ -42,16 +68,25 @@ prefijo `feedPop` / `FEED_POP_`.
 - "Ver más" y el clic en la foto abren el pop-up; la fila desplegada se saca.
 - Sin foto, el lado izquierdo dice "Sin foto". "Imagen no disponible" queda
   solo para una imagen que falló.
-- Al cerrar, el foco vuelve a la tarjeta del último posteo visto, que queda
-  a la vista (la maqueta volvía a la tarjeta de partida).
+- Al cerrar, el foco vuelve a la tarjeta del último posteo visto (la
+  maqueta volvía a la tarjeta de partida). Si se navegó, esa tarjeta se trae
+  a la vista y parpadea una vez, como al llegar desde "Se despegaron".
 - Si falla "ignorar", el pie vuelve a su estado normal con el aviso "No se
   pudo ignorar".
 - Con un sentimiento recién corregido, la tarjeta de atrás se actualiza pero
   no sale hasta volver a filtrar, como hoy.
 - "Se despegaron" sigue llevando a la tarjeta, sin abrir el pop-up.
+- La barra superior que se pasa del ancho en celular y el aviso cuando falla
+  el guardado del sentimiento quedan pendientes fuera de este cambio (ver
+  `tasks.md`).
 
 ## Verificación
 
-La suite (`npm test`) no cubre el frontend. Cada tanda se prueba en el
+La suite (`npm test`) no cubre el frontend. Cada tanda se probó en el
 navegador contra el servidor de prueba fuera del repo (otro puerto, copia de
-la base, sin scheduler ni Apify).
+la base, sin scheduler ni Apify), con 473 posteos reales: a 1366 px, a
+1100 px y en tamaño celular (375 px, emulado); ← → y Esc con teclas reales;
+ignorar con éxito, con el pedido fallando, en el último posteo y con una
+sola tarjeta en la lista; la rama con imagen, con imágenes de ejemplo
+(vertical, horizontal y una que no carga). `public/js/monitoring.js` y
+`public/x.html` quedaron sin diferencias contra `main`.

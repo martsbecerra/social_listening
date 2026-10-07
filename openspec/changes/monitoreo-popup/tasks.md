@@ -20,12 +20,14 @@ Por tandas en la rama `monitoreo_popup`, cada una con `npm test` (los dos actore
 - [x] 2.2 Sentimiento dentro del pop-up (REQ-POP-05)
 - [x] 2.3 Ignorar con la confirmación adentro (REQ-POP-06)
 
-## Phase 3: documentación y repaso
+## Phase 3: documentación y revisión
 
-- [ ] 3.1 Frase de "Ver más" corregida en `CLAUDE.md` y `README.md`, sin agregar texto
-- [ ] 3.2 Repaso completo en la página de prueba; `x.html` y la tabla sin cambios (REQ-POP-08)
+- [x] 3.1 Documentos del cambio al día y sección del feed en `CLAUDE.md` y `README.md`
+- [x] 3.2 `npm test` con los dos actores y repaso del diff contra `main`; `x.html` y `monitoring.js` sin diferencias (REQ-POP-08)
+- [x] 3.3 Revisión independiente (un agente de solo lectura, sin abrir la base). Los hallazgos esperan la decisión del dueño: no se arregla nada sin su visto bueno
 
 ## Pendiente fuera de este cambio
 
 - Imagen del posteo (cambio siguiente: fotos). Punto único: `feedPopImageUrl`.
+- Aviso si falla el guardado del sentimiento: la pantalla queda con el valor no guardado y solo se anota en la consola. Ya pasaba en `main` con la tabla (hallazgo 7 de la revisión de `monitoreo-feed`) y vale igual para las tarjetas y para el pop-up, porque los tres usan `updateSentiment`.
 - Barra superior en celular: en una pantalla de 375 px, el botón de usuario queda 35 px afuera del ancho. Ya pasaba en `main` y la barra es compartida por todas las páginas: no se toca en este cambio. Por eso el fondo del pop-up se mide con la pantalla que se ve y no en porcentaje.

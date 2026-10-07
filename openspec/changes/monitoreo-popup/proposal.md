@@ -31,6 +31,8 @@ maqueta no resuelve se decidió con el dueño y quedó en `design.md`.
 - La imagen del posteo (cambio siguiente: fotos)
 - La tabla y X
 - `public/js/monitoring.js`: no se toca
+- La barra superior que se pasa del ancho en celular y el aviso cuando falla
+  el guardado del sentimiento: pendientes anotados en `tasks.md`
 
 ## Capabilities
 
@@ -60,6 +62,7 @@ del feed. El feed le avisa cuando cambia la lista de tarjetas. Detalle en
 | `public/instagram.html` | Modified | Esqueleto del pop-up y carga del script |
 | `public/css/styles.css` | Modified | Sección del pop-up (`feed-pop-*`); salen los estilos de la fila desplegada |
 | `design/monitoreo-popup.html` | New | Maqueta aprobada |
+| `README.md`, `CLAUDE.md` | Modified | La sección del feed, al día |
 | `public/js/monitoring.js`, `public/x.html` | Unchanged | |
 | `src/`, `server.js`, `data/`, `test/` | Unchanged | Sin backend; la suite no cubre el frontend |
 
@@ -79,10 +82,11 @@ configuración.
 
 ## Success Criteria
 
-- [ ] "Ver más" y la foto abren el pop-up; cierra con ✕, Esc y clic afuera
-- [ ] Foco al abrir y al cerrar; sin scroll de fondo; pantalla completa en celular
-- [ ] Navegación con flechas y ← →, con contador
-- [ ] Sentimiento e ignorar con las funciones de la tabla
-- [ ] Sin foto: recuadro con el tipo; un único punto para la imagen
-- [ ] La tabla y `x.html` no cambian; `monitoring.js` no se toca
-- [ ] Suite verde con `IG_ACTOR=apidojo` y con `IG_ACTOR=apify`
+- [x] "Ver más" y la foto abren el pop-up; cierra con ✕, Esc y clic afuera
+- [x] Foco al abrir y al cerrar; sin scroll de fondo; pantalla completa en celular
+- [x] Navegación con flechas y ← →, con contador
+- [x] Sentimiento e ignorar con las funciones de la tabla
+- [x] Sin foto: recuadro con el tipo; un único punto para la imagen
+- [x] La tabla y `x.html` no cambian; `monitoring.js` no se toca
+- [x] Suite verde con `IG_ACTOR=apidojo` y con `IG_ACTOR=apify`
+- [ ] Imagen del posteo (cambio siguiente, fuera de este)

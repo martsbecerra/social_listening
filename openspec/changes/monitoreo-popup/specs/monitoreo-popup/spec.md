@@ -8,7 +8,7 @@ Pop-up "Ver más" del feed del Monitoreo de Instagram. Solo frontend; el backend
 
 ### Requirement: REQ-POP-01 — Abrir y cerrar
 
-"Ver más" y un clic en la foto de una tarjeta MUST abrir el pop-up de ese posteo. El pop-up MUST cerrarse con la ✕, con Esc y con un clic en el fondo oscuro. Mientras está abierto, la página de atrás MUST NOT desplazarse ni recibir foco. Al abrir, el foco MUST ir al botón de cerrar; al cerrar, MUST volver al "Ver más" de la tarjeta del último posteo visto, que MUST quedar a la vista. Hasta 860 px de ancho el pop-up MUST ocupar la pantalla completa.
+"Ver más" y un clic en la foto de una tarjeta MUST abrir el pop-up de ese posteo. El pop-up MUST cerrarse con la ✕, con Esc y con un clic en el fondo oscuro. Mientras está abierto, la página de atrás MUST NOT desplazarse ni recibir foco. Al abrir, el foco MUST ir al botón de cerrar; al cerrar, MUST volver al "Ver más" de la tarjeta del último posteo visto. Si se navegó a otro posteo que el de partida, esa tarjeta MUST quedar a la vista y marcarse un instante. Hasta 860 px de ancho el pop-up MUST ocupar la pantalla completa, sin que la ✕ ni el pie queden fuera de lo que se ve.
 
 #### Scenario: Abrir desde la foto
 
@@ -44,7 +44,13 @@ Sin imagen, el lado izquierdo MUST mostrar un recuadro rayado con "Sin foto" y l
 
 ### Requirement: REQ-POP-04 — Navegación
 
-El pop-up MUST permitir pasar al posteo anterior y al siguiente de las tarjetas en pantalla, en su orden, con las flechas en pantalla y con ← →, y MUST mostrar la posición ("3 / 195"). En los extremos la flecha que no corresponde MUST quedar deshabilitada. ← → MUST NOT actuar mientras el foco está en el selector de sentimiento.
+El pop-up MUST permitir pasar al posteo anterior y al siguiente de las tarjetas en pantalla, en su orden, con las flechas en pantalla y con ← →, y MUST mostrar la posición ("3 / 195"). Las flechas van a los costados de la ventana y, hasta 1240 px de ancho, en la cabecera. En los extremos la flecha que no corresponde MUST quedar deshabilitada. ← → MUST NOT actuar mientras el foco está en el selector de sentimiento. Si al pasar de posteo desaparece o se deshabilita el control que tenía el foco, el foco MUST pasar al botón de cerrar.
+
+#### Scenario: Flechas con el foco en "Ignorar"
+
+- GIVEN el pop-up abierto y el foco en "Ignorar"
+- WHEN se aprieta → tres veces
+- THEN el pop-up avanza tres posteos y el foco queda dentro de la ventana
 
 ---
 
@@ -57,6 +63,12 @@ El selector de sentimiento del pop-up MUST usar las mismas funciones que la tabl
 ### Requirement: REQ-POP-06 — Ignorar
 
 "Ignorar" MUST pedir confirmación dentro del pop-up. Esc con la confirmación abierta MUST cancelarla sin cerrar el pop-up. Al confirmar, el pop-up MUST pasar al posteo siguiente, o al anterior si era el último, y MUST cerrarse si no queda ninguno. Si el pedido falla, el pie MUST volver a su estado normal con el aviso "No se pudo ignorar".
+
+#### Scenario: Falla el pedido
+
+- GIVEN el pop-up en un posteo y el servidor que rechaza el pedido de ignorar
+- WHEN se confirma "Sí, ignorar"
+- THEN el pop-up sigue en ese posteo, la tarjeta sigue en la lista y el pie muestra "No se pudo ignorar"
 
 ---
 

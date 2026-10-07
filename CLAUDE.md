@@ -306,12 +306,17 @@ manda el backend en `benchmark.likes` y `benchmark.comments` (vale el
 mejor de los dos; "normal" se muestra "medio"; sin ninguna métrica con
 referencia no hay etiqueta) y no recalcula nada. Todo dato del posteo entra
 por `textContent`, nunca como HTML. Son cientos de tarjetas sin paginar: el
-redibujo es completo (deja las tarjetas cerradas), con espera de 150 ms y
-`content-visibility: auto`; el detalle de "Ver más" se arma recién al
-abrir. La imagen todavía no existe en los datos: la tarjeta muestra el
-recuadro de reemplazo y el único punto a enchufar es `feedImageUrl`.
-Maqueta aprobada en `design/monitoreo-feed.html`; SDD en
-`openspec/changes/monitoreo-feed/`. La suite no cubre el frontend: se
+redibujo es completo, con espera de 150 ms y `content-visibility: auto`.
+"Ver más" y el clic en la foto abren un pop-up con el posteo completo:
+`public/js/monitoringFeedPopup.js` (también solo `instagram.html`, después
+del feed; prefijo `feedPop`), un `<dialog>` que se rellena con la fila de
+Tabulator, recorre las tarjetas en pantalla (← →) y usa `updateSentiment` y
+`confirmIgnore` tal como están; el feed le avisa los cambios de la lista con
+`feedListListeners`. La imagen todavía no existe en los datos: los únicos
+puntos a enchufar son `feedImageUrl` (tarjeta) y `feedPopImageUrl` (pop-up).
+Maquetas aprobadas en `design/monitoreo-feed.html` y
+`design/monitoreo-popup.html`; SDD en `openspec/changes/monitoreo-feed/` y
+`openspec/changes/monitoreo-popup/`. La suite no cubre el frontend: se
 prueba en el navegador con un servidor de prueba aparte (otro puerto, copia
 de la base, sin scheduler ni Apify).
 
