@@ -83,8 +83,10 @@ const MAX_NETWORK_FAILURES = 5;
 // se borró): no es un error nuestro ni de la red.
 const EXPIRED_STATUSES = new Set([403, 404, 410]);
 
-// Limitador PROPIO de las descargas de imágenes (ver el encabezado).
-const imageLimiter = createLimiter(MAX_CONCURRENT, 'imagenes');
+// Limitador PROPIO de las descargas de imágenes (ver el encabezado). Callado:
+// son cientos de descargas cortas por ciclo y un renglón por cada una
+// taparía el resto del log. Lo que falla se loguea acá abajo, foto por foto.
+const imageLimiter = createLimiter(MAX_CONCURRENT, 'imagenes', { quiet: true });
 
 /** ¿Se bajan fotos? No con POST_IMAGES=0, ni si sharp no cargó. */
 function isEnabled() {
@@ -319,7 +321,9 @@ async function savePostImage({ plataforma, id, url } = {}, deps = {}) {
  * el mismo orden que los posteos.
  *
  * @param {{ plataforma: string, id: string, url: string }[]} posts
- * @param {object} [deps] los de savePostImage
+ * @param {object} [deps] los de savePostImage, más onResult(result, index):
+ *   se llama por cada posteo apenas tiene resultado (para el progreso del
+ *   ciclo). Si tira, se ignora.
  * @returns {Promise<object[]>} un resultado de savePostImage por posteo; los
  *   que no se llegaron a intentar por el corte salen `skipped` con
  *   reason 'corte-por-red'.
@@ -359,6 +363,13 @@ async function savePostImages(posts, deps = {}) {
       imageLimiter.run(async () => {
         const result = cut ? { ok: false, skipped: true, reason: 'corte-por-red' } : await savePostImage(post, deps);
         note(index, result);
+        if (typeof deps.onResult === 'function') {
+          try {
+            deps.onResult(result, index);
+          } catch (err) {
+            // El aviso es de cortesía: no puede romper la tanda.
+          }
+        }
         return result;
       }, `${post && post.plataforma}:${post && post.id}`)
     )

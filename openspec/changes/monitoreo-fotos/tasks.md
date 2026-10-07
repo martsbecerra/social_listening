@@ -25,9 +25,9 @@ Un commit por paso en la rama `monitoreo_fotos`, por tandas aprobadas por el due
 
 ## Phase 5: enganche
 
-- [ ] 5.1 `src/monitor.js`: bajar la foto al guardar un posteo nuevo (REQ-FOTO-05)
-- [ ] 5.2 `src/metricsRefresh.js`: bajarla en el refresco por URL si el posteo no tiene copia (REQ-FOTO-05)
-- [ ] 5.3 `src/scheduler.js`: el aviso de ciclo trabado lista también las descargas
+- [x] 5.1 `src/monitor.js`: bajar la foto al guardar un posteo nuevo (REQ-FOTO-05)
+- [x] 5.2 `src/metricsRefresh.js`: bajarla en el refresco por URL si el posteo no tiene copia (REQ-FOTO-05)
+- [x] 5.3 `src/scheduler.js`: el aviso de ciclo trabado lista también las descargas
 
 ## Phase 6: servidor
 

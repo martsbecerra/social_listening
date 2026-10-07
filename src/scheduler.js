@@ -26,6 +26,8 @@ const { refreshPostMetrics, refreshLimiter } = require('./metricsRefresh');
 const { runWithContext } = require('./usageContext');
 const { formatCycleCostLine, reconcileRealCosts } = require('./apifyCost');
 const { apifyLimiter } = require('./apify');
+const { imageLimiter } = require('./postImages');
+const postImageSync = require('./postImageSync');
 const progress = require('./monitoringProgress');
 
 // Corridas a las 8, 12, 16 y 20 (hora local del server): sin las de 0 y 4,
@@ -229,7 +231,7 @@ function startHeartbeat() {
     console.warn(
       `[heartbeat] ${formatDurationMs(idleMs)} sin que termine ninguna llamada. Fase: ${faseTexto}. ` +
         `Activos — apify: [${formatActiveTargets(apifyLimiter)}], benchmark: [${formatActiveTargets(benchmarkLimiter)}], ` +
-        `refresco: [${formatActiveTargets(refreshLimiter)}].`
+        `refresco: [${formatActiveTargets(refreshLimiter)}], fotos: [${formatActiveTargets(imageLimiter)}].`
     );
   }, HEARTBEAT_CHECK_MS);
 }
@@ -253,6 +255,7 @@ async function runCycleUnlocked(plataformas, trigger = 'manual') {
   }
 
   progress.startCycle();
+  postImageSync.takeCycleSummary(); // la cuenta de fotos arranca en cero
   const heartbeat = startHeartbeat();
   let newCount = 0;
   let cycleError = null;
@@ -271,6 +274,11 @@ async function runCycleUnlocked(plataformas, trigger = 'manual') {
         cycleError ? `: ${cycleError.message}` : ''
       })`
     );
+    // Fotos de los posteos: una sola línea por ciclo (si alguna respuesta
+    // trajo link de imagen). El detalle de cada fallo ya lo escribió
+    // src/postImages.js.
+    const fotos = postImageSync.formatCycleSummary(postImageSync.takeCycleSummary());
+    if (fotos) console.log(fotos);
     if (runId != null) {
       try {
         console.log(formatCycleCostLine(db.finishMonitoringRun(runId, { newPosts: newCount })));
