@@ -96,6 +96,7 @@ social_listening_app/
 │       ├── temasEditor.js    # Temas emergentes editables (antes de copiar/WhatsApp).
 │       ├── monitoring.js     # Monitoreo en vivo (parametrizado por data-platform).
 │       ├── monitoringFeed.js # Vista Feed del Monitoreo (tarjetas). Solo Instagram.
+│       ├── monitoringFeedPopup.js # Pop-up "Ver más" del feed. Solo Instagram.
 │       └── claimsMap.js      # Mapa de reclamos (Leaflet, filtrado por plataforma).
 ├── scripts/
 │   ├── import-reclamos.js       # Importador genérico de Excel/CSV (solo CLI).
@@ -953,16 +954,25 @@ vista elegida en ese navegador.
   dos razones) o más likes. La tabla sigue ordenando por encabezado.
 - **Acciones**: corregir el sentimiento e ignorar, con los mismos endpoints
   y el mismo cartel de confirmación que la fila de la tabla.
-- **"Ver más"** abre a la vez todas las tarjetas de esa fila visual, con el
-  texto completo y lo que muestra la tabla desplegada (mediana de la cuenta
-  y razón para likes y comentarios, motivo completo de detección, fecha y
-  hora, perfil). Cambiar un filtro, el orden o la vista las cierra.
-- **Imagen**: por ahora siempre el recuadro de reemplazo con el ícono del
-  tipo; la base no guarda fotos. Queda listo para mostrarla cuando el posteo
-  traiga el dato (`feedImageUrl` en `public/js/monitoringFeed.js`).
-- Código en `public/js/monitoringFeed.js` (lo carga solo `instagram.html`);
-  maqueta en `design/monitoreo-feed.html`; SDD en
-  `openspec/changes/monitoreo-feed/`.
+- **"Ver más"** y el clic en la foto abren un pop-up con el posteo
+  completo: la foto a la izquierda y, a la derecha, el texto entero, likes y
+  comentarios con su razón y la mediana de la cuenta, el alcance con la
+  métrica que lo disparó, la fecha y hora, el motivo completo de detección y
+  el perfil. Se pasa al posteo anterior y al siguiente de la lista filtrada
+  con las flechas o con ← →, y se cierra con la ✕, con Esc o con un clic
+  afuera. Desde ahí también se corrige el sentimiento y se ignora (la
+  confirmación va adentro; al ignorar pasa al posteo siguiente). En celular
+  ocupa la pantalla completa.
+- **Imagen**: por ahora la tarjeta muestra el recuadro de reemplazo con el
+  ícono del tipo y el pop-up dice "Sin foto"; la base no guarda fotos. Queda
+  listo para mostrarla cuando el posteo traiga el dato (`feedImageUrl` en
+  `public/js/monitoringFeed.js` y `feedPopImageUrl` en
+  `public/js/monitoringFeedPopup.js`).
+- Código en `public/js/monitoringFeed.js` y
+  `public/js/monitoringFeedPopup.js` (los carga solo `instagram.html`);
+  maquetas en `design/monitoreo-feed.html` y `design/monitoreo-popup.html`;
+  SDD en `openspec/changes/monitoreo-feed/` y
+  `openspec/changes/monitoreo-popup/`.
 
 ### Benchmark y refresco de métricas en paralelo
 
