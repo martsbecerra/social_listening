@@ -36,8 +36,8 @@ let feedPopId = null;
 let feedPopOpenerId = null;
 // El pie está pidiendo confirmar "ignorar".
 let feedPopConfirming = false;
-// Dónde cayó el último clic dentro del pop-up. null: todavía ninguno desde
-// que se abrió (ver "Doble clic").
+// Elemento en el que cayó el último clic dentro del pop-up. null: todavía
+// ninguno desde que se abrió (ver "Doble clic").
 let feedPopLastClicked = null;
 
 // -------------------------------------------------------------------------
@@ -492,17 +492,21 @@ feedPopEl.addEventListener('close', () => {
 });
 
 // -------------------------------------------------------------------------
-// Doble clic. Si el pop-up se abre con un doble clic, el segundo cae sobre lo
-// que quedó debajo del puntero: el fondo oscuro (lo cerraría en el acto), una
-// flecha (pasaría de posteo) o "Abrir en Instagram". Se descarta todo clic
-// repetido (detail > 1: sigue de corrido a otro) que llegue antes del primer
-// clic propio del pop-up. Se atiende en la fase de captura, antes que
+// Doble clic. El segundo clic puede caer sobre algo que no estaba ahí en el
+// primero:
+//   - el pop-up recién abierto con un doble clic en la tarjeta: el fondo
+//     oscuro (lo cerraría en el acto), una flecha o "Abrir en Instagram";
+//   - el pie recién rehecho: "Abrir en Instagram" queda donde estaban
+//     "Cancelar" y "Sí, ignorar", y abriría una pestaña.
+// Se descarta todo clic repetido (detail > 1: sigue de corrido a otro) que no
+// caiga en el mismo elemento que el anterior. Apretar varias veces seguidas
+// la misma flecha sigue andando. Se atiende en la fase de captura, antes que
 // cualquier otro manejador de clic de acá adentro.
 // -------------------------------------------------------------------------
 feedPopEl.addEventListener(
   'click',
   (e) => {
-    if (e.detail > 1 && feedPopLastClicked === null) {
+    if (e.detail > 1 && e.target !== feedPopLastClicked) {
       e.preventDefault();
       e.stopImmediatePropagation();
       return; // no cuenta como clic propio: un tercero seguido también se descarta
