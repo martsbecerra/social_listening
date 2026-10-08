@@ -157,6 +157,10 @@ function buildFeedMedia(post, reach) {
     img.alt = '';
     img.loading = 'lazy'; // son cientos de tarjetas sin paginar
     img.decoding = 'async';
+    // La foto abre el pop-up con un clic. Una imagen se puede arrastrar: si
+    // el mouse se movía un poco entre apretar y soltar, el navegador
+    // empezaba a arrastrarla y el clic no llegaba.
+    img.draggable = false;
     // La copia guardada no se pudo mostrar (falta el archivo, se cortó la
     // red): se avisa en vez de dejar el ícono de imagen rota.
     img.addEventListener('error', () => showUnavailable(img));
