@@ -295,12 +295,53 @@ describe('postImages: reglas de la descarga', () => {
     assert.deepEqual([result.ok, result.status, result.reason, result.network], [false, 'error', 'fallo-de-red', true]);
   });
 
-  test('bytes que no son una imagen, y respuesta vacía', async () => {
-    const rota = await postImages.savePostImage({ plataforma: 'instagram', id: 'rota', url: link() }, { fetchFn: fetchSimulado(() => respuesta(Buffer.from('esto no es una imagen'))) });
+  test('bytes que no son una imagen, imagen rota y respuesta vacía', async () => {
+    const basura = await postImages.savePostImage({ plataforma: 'instagram', id: 'basura', url: link() }, { fetchFn: fetchSimulado(() => respuesta(Buffer.from('esto no es una imagen'))) });
+    assert.deepEqual([basura.status, basura.reason, basura.network], ['error', 'formato-no-permitido', false]);
+    // Empieza como un JPEG y después no tiene nada que sirva.
+    const cortada = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from('y hasta acá llegó')]);
+    const rota = await postImages.savePostImage({ plataforma: 'instagram', id: 'rota', url: link() }, { fetchFn: fetchSimulado(() => respuesta(cortada)) });
     assert.deepEqual([rota.status, rota.reason, rota.network], ['error', 'imagen-ilegible', false]);
     const vacia = await postImages.savePostImage({ plataforma: 'instagram', id: 'vacia', url: link() }, { fetchFn: fetchSimulado(() => respuesta(Buffer.alloc(0))) });
     assert.deepEqual([vacia.status, vacia.reason], ['error', 'respuesta-vacia']);
     assert.deepEqual(archivos(), []);
+  });
+
+  test('solo JPEG, PNG y WebP: lo demás se rechaza aunque el servidor diga que es un JPEG', async () => {
+    const base = () => sharp({ create: { width: 120, height: 90, channels: 3, background: { r: 200, g: 60, b: 40 } } });
+    const otros = {
+      svg: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="120" height="90"><rect width="120" height="90" fill="red"/></svg>'),
+      'svg con declaración xml': Buffer.from('<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg" width="120" height="90"/>'),
+      gif: await base().gif().toBuffer(),
+      tiff: await base().tiff().toBuffer(),
+      avif: await base().avif().toBuffer(),
+    };
+    for (const [nombre, bytes] of Object.entries(otros)) {
+      // sharp sabría leerlo: por eso el control va antes.
+      assert.ok((await sharp(bytes).metadata()).width > 0, `${nombre}: sharp lo lee`);
+      const result = await postImages.savePostImage({ plataforma: 'instagram', id: 'otro', url: link() }, { fetchFn: fetchSimulado(() => respuesta(bytes, { type: 'image/jpeg' })) });
+      assert.deepEqual([result.ok, result.status, result.reason, result.network], [false, 'error', 'formato-no-permitido', false], nombre);
+    }
+    assert.deepEqual(archivos(), []);
+    assert.ok(logs.some((l) => l.includes('formato-no-permitido')));
+
+    // Los tres permitidos entran aunque el content-type sea otro image/*.
+    for (const formato of ['jpeg', 'png', 'webp']) {
+      const bytes = await base()[formato]().toBuffer();
+      const result = await postImages.savePostImage({ plataforma: 'instagram', id: `ok-${formato}`, url: link() }, { fetchFn: fetchSimulado(() => respuesta(bytes, { type: 'image/gif' })) });
+      assert.equal(result.ok, true, formato);
+    }
+  });
+
+  test('tope de tamaño de la imagen: más de 12 megapíxeles no se decodifica', async () => {
+    assert.equal(postImages.MAX_INPUT_PIXELS, 12e6);
+    // 4100 × 3000 = 12,3 megapíxeles, en un PNG que pesa muy poco.
+    const enorme = await makeImage(4100, 3000, { format: 'png' });
+    assert.ok(enorme.length < 200 * 1024, `pesa ${enorme.length} bytes: el tope de bytes no la frena`);
+    const result = await postImages.savePostImage({ plataforma: 'instagram', id: 'enorme', url: link() }, { fetchFn: fetchSimulado(() => respuesta(enorme, { type: 'image/png' })) });
+    assert.deepEqual([result.ok, result.status, result.reason, result.network], [false, 'error', 'imagen-demasiado-grande', false]);
+    assert.deepEqual(archivos(), []);
+    assert.ok(logs.some((l) => l.includes('imagen-demasiado-grande')));
   });
 
   test('el link firmado nunca va a los logs; el host sí', async () => {

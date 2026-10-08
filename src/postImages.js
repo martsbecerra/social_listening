@@ -16,7 +16,8 @@
 // Reglas de la descarga:
 //   - solo https, solo hosts de la lista de la plataforma (IMAGE_HOSTS), sin
 //     usuario, contraseña ni puerto en el link, y sin seguir redirecciones;
-//   - la respuesta tiene que ser image/*;
+//   - la respuesta tiene que ser image/* y el archivo, un JPEG, un PNG o un
+//     WebP (por sus primeros bytes), de hasta MAX_INPUT_PIXELS;
 //   - tope de tamaño (MAX_BYTES) y de tiempo (TIMEOUT_MS) por imagen;
 //   - pocas a la vez, con limitador PROPIO (imageLimiter; nunca el
 //     apifyLimiter ni los de benchmark/refresco: ver concurrencyLimiter.js);
@@ -80,7 +81,11 @@ const FULL_QUALITY = 80;
 
 const MAX_BYTES = 15 * 1024 * 1024;
 const TIMEOUT_MS = 15000;
-const MAX_INPUT_PIXELS = 50e6; // una imagen de más de 50 megapíxeles no es una foto de Instagram
+// Tope de tamaño de la imagen, en píxeles. Instagram no sirve nada de más de
+// 1440 × 1800 (2,6 megapíxeles); 12 dejan margen de sobra. El tope de bytes
+// no alcanza: un PNG de 7000 × 7000 pesa 200 KB y decodificarlo ocupa más de
+// 200 MB de memoria, y pueden ser tres a la vez.
+const MAX_INPUT_PIXELS = 12e6;
 const MAX_CONCURRENT = 3;
 const MAX_CONSECUTIVE_FAILURES = 5;
 // Tope de una tanda entera. De sobra para una tanda normal (150 fotos del
@@ -221,13 +226,46 @@ async function download(url, { fetchFn, timeoutMs, maxBytes }) {
   }
 }
 
+// Formatos que se aceptan: los tres que sirve Instagram. Se reconocen por
+// los primeros bytes del archivo, no por el content-type (eso lo dice el
+// servidor) ni por lo que sharp sepa leer: sharp también abre SVG, GIF, TIFF
+// o AVIF, y nada de eso tiene por qué llegarle.
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+const ALLOWED_FORMATS = ['jpeg', 'png', 'webp'];
+
+/** 'jpeg' | 'png' | 'webp' según los primeros bytes, o null. */
+function sniffFormat(buffer) {
+  if (!Buffer.isBuffer(buffer)) return null;
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return 'jpeg';
+  if (buffer.length >= 8 && buffer.subarray(0, 8).equals(PNG_SIGNATURE)) return 'png';
+  if (buffer.length >= 12 && buffer.toString('latin1', 0, 4) === 'RIFF' && buffer.toString('latin1', 8, 12) === 'WEBP') return 'webp';
+  return null;
+}
+
+/** Error con el motivo del rechazo, para anotarlo tal cual. */
+function rejected(reason) {
+  const err = new Error(reason);
+  err.reason = reason;
+  return err;
+}
+
 /**
  * De los bytes de la imagen, las dos copias JPEG y las medidas de la
- * original (ya con su orientación aplicada). Tira si sharp no la puede leer.
+ * original (ya con su orientación aplicada). Tira si no es JPEG, PNG ni
+ * WebP ('formato-no-permitido'), si tiene más de MAX_INPUT_PIXELS
+ * ('imagen-demasiado-grande') o si sharp no la puede leer.
  */
 async function buildCopies(buffer) {
+  const format = sniffFormat(buffer);
+  if (!format) throw rejected('formato-no-permitido');
+  // metadata() lee solo el encabezado: el formato y las medidas se miran
+  // antes de decodificar nada.
+  const meta = await sharp(buffer, { limitInputPixels: false }).metadata();
+  if (meta.format !== format || !ALLOWED_FORMATS.includes(meta.format)) throw rejected('formato-no-permitido');
+  if (!(meta.width > 0) || !(meta.height > 0)) throw rejected('imagen-ilegible');
+  if (meta.width * meta.height > MAX_INPUT_PIXELS) throw rejected('imagen-demasiado-grande');
+
   const options = { limitInputPixels: MAX_INPUT_PIXELS };
-  const meta = await sharp(buffer, options).metadata();
   const oriented = meta.autoOrient || meta;
   // rotate() sin argumentos aplica la orientación EXIF (una foto de celular
   // puede venir "acostada"); flatten() pone fondo blanco donde había
@@ -312,8 +350,10 @@ async function savePostImage(post, deps = {}) {
     try {
       copies = await buildCopies(downloaded.buffer);
     } catch (err) {
-      logFailure(plataforma, id, 'imagen-ilegible', host);
-      return { ...failure('error', 'imagen-ilegible'), sourceUrl };
+      // El formato o el tamaño no se aceptan, o sharp no la pudo leer.
+      const reason = (err && err.reason) || 'imagen-ilegible';
+      logFailure(plataforma, id, reason, host);
+      return { ...failure('error', reason), sourceUrl };
     }
 
     await writeCopies(paths, copies);
@@ -439,6 +479,8 @@ module.exports = {
   FULL_LONG_SIDE,
   MAX_BYTES,
   TIMEOUT_MS,
+  MAX_INPUT_PIXELS,
+  ALLOWED_FORMATS,
   MAX_CONSECUTIVE_FAILURES,
   BATCH_TIMEOUT_MS,
 };
