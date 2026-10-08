@@ -454,6 +454,49 @@ describe('fotos en el ciclo: progreso, resumen y logs', { concurrency: false }, 
     assert.match(resumen, /sin intentar \(se cortó la tanda\)/);
   });
 
+  test('la base se anota foto por foto, no al terminar la tanda', async () => {
+    const codes = Array.from({ length: 9 }, (_, i) => `UNA${i}`);
+    searchResults = codes.map((code) => resultado(code));
+    detailsResponder = async (urls) => urls.map((url) => detalle(url.split('/p/')[1].replace('/', '')));
+    // Con cada descarga que arranca, cuántas fotos ya están anotadas en la base.
+    const anotadas = [];
+    imageResponder = () => {
+      anotadas.push(codes.filter((code) => estado(code).status === 'ok').length);
+      return new Response(IMAGEN, { status: 200, headers: { 'content-type': 'image/jpeg' } });
+    };
+    await detectar();
+    assert.equal(anotadas.length, 9);
+    assert.equal(anotadas[0], 0);
+    // De a tres a la vez: cuando arranca la última, las primeras ya quedaron
+    // marcadas. Si el proceso se cortara ahí, no habría que bajarlas de nuevo.
+    assert.ok(anotadas[8] >= 5, `anotadas al arrancar la última: ${anotadas[8]}`);
+    assert.ok(codes.every((code) => estado(code).status === 'ok'));
+  });
+
+  test('si la base no puede anotar, la tanda se corta a los cinco seguidos y el ciclo termina', async () => {
+    const codes = Array.from({ length: 30 }, (_, i) => `BD${i}`);
+    searchResults = codes.map((code) => resultado(code));
+    detailsResponder = async (urls) => urls.map((url) => detalle(url.split('/p/')[1].replace('/', '')));
+    const original = db.markPostImageSaved;
+    db.markPostImageSaved = () => {
+      throw new Error('database is locked');
+    };
+    let result;
+    try {
+      result = await detectar();
+    } finally {
+      db.markPostImageSaved = original;
+    }
+    assert.equal(result.porPlataforma.instagram.newCount, 30, 'los posteos quedaron guardados');
+    assert.ok(fetchCalls.length >= postImages.MAX_CONSECUTIVE_FAILURES && fetchCalls.length <= 12, `descargas: ${fetchCalls.length}`);
+    assert.ok(codes.every((code) => estado(code).savedAt === null), 'ninguna quedó marcada');
+    assert.ok(logs.some((l) => l.includes('no se pudo anotar')));
+    assert.equal(logs.filter((l) => l.includes('se corta la tanda')).length, 1);
+    const stats = postImageSync.takeCycleSummary();
+    assert.equal(stats.failed, fetchCalls.length);
+    assert.equal(stats.skipped, 30 - fetchCalls.length);
+  });
+
   test('la línea de resumen: null si ninguna respuesta trajo link', () => {
     assert.equal(postImageSync.formatCycleSummary({ candidates: 0, alreadySaved: 0, saved: 0, expired: 0, failed: 0, skipped: 0 }), null);
     assert.equal(postImageSync.formatCycleSummary(null), null);

@@ -36,12 +36,15 @@ function emptyStats() {
 // ciclos no corren a la vez: el scheduler lo garantiza.
 let cycleStats = emptyStats();
 
-/** Anota en la base cómo salió una foto y lo suma a la cuenta. Nunca tira. */
+/**
+ * Anota en la base cómo salió una foto y lo suma a la cuenta. Nunca tira.
+ * @returns {boolean} false si la base no pudo anotarlo.
+ */
 function record(plataforma, item, result, stats) {
   try {
     if (!result || result.skipped) {
       stats.skipped += 1;
-      return;
+      return true;
     }
     if (result.ok) {
       db.markPostImageSaved(item.id, plataforma, {
@@ -51,15 +54,17 @@ function record(plataforma, item, result, stats) {
         savedAt: result.savedAt,
       });
       stats.saved += 1;
-      return;
+      return true;
     }
     const status = result.status === 'vencido' ? 'vencido' : 'error';
     db.markPostImageFailed(item.id, plataforma, { sourceUrl: result.sourceUrl || item.url, status });
     if (status === 'vencido') stats.expired += 1;
     else stats.failed += 1;
+    return true;
   } catch (err) {
     stats.failed += 1;
     console.error(`[imagenes] (${plataforma}) ${item.id}: no se pudo anotar el resultado de la foto en la base:`, err && err.message);
+    return false;
   }
 }
 
@@ -106,11 +111,24 @@ async function syncPostImages(plataforma, items, deps = {}) {
     if (pending.length > 0) {
       // Una fase más del progreso de "Actualizar ahora" (sin trabajo, no se anuncia).
       progress.startPhase(PHASE_LABEL, pending.length);
+      // Cada foto se anota en la base apenas termina, no al final de la
+      // tanda: si el proceso se corta en el medio, lo ya bajado queda
+      // marcado y no se vuelve a bajar. Si la base no pudo anotar, se avisa
+      // con false: para la tanda es un fallo más, y cinco seguidos la cortan.
+      const recorded = new Array(pending.length).fill(false);
       const results = await postImages.savePostImages(pending, {
         ...deps,
-        onResult: (result) => progress.tick(1, { ok: Boolean(result && result.ok) }),
+        onResult: (result, index) => {
+          recorded[index] = true;
+          const noted = record(plataforma, pending[index], result, stats);
+          progress.tick(1, { ok: Boolean(result && result.ok && noted) });
+          return noted;
+        },
       });
-      pending.forEach((item, index) => record(plataforma, item, results[index], stats));
+      // Por las dudas: un resultado que no pasó por el aviso se anota acá.
+      results.forEach((result, index) => {
+        if (!recorded[index]) record(plataforma, pending[index], result, stats);
+      });
     }
   } catch (err) {
     console.error(`[imagenes] (${plataforma}) falló la tanda de fotos (el ciclo sigue):`, err && err.message);
