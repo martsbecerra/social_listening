@@ -393,6 +393,9 @@ describe('fotos en el ciclo: progreso, resumen y logs', { concurrency: false }, 
     assert.equal(vistas.length, 3);
     assert.ok(vistas.every((p) => p && p.phase === 'Guardando fotos' && p.total === 3));
     assert.deepEqual([alFinal.phase, alFinal.done, alFinal.total], ['Guardando fotos', 3, 3]);
+    // La detección ya había terminado (100 %): las fotos no hacen bajar la barra.
+    assert.deepEqual(vistas.map((p) => p.percent), [100, 100, 100]);
+    assert.equal(alFinal.percent, 100);
     assert.ok(logs.some((l) => l === '[fase] arranca Guardando fotos (total 3)'));
   });
 

@@ -139,8 +139,10 @@ async function syncPostImages(plataforma, items, deps = {}) {
     }
 
     if (pending.length > 0) {
-      // Una fase más del progreso de "Actualizar ahora" (sin trabajo, no se anuncia).
-      progress.startPhase(phaseLabel, pending.length);
+      // Una fase más del progreso de "Actualizar ahora" (sin trabajo, no se
+      // anuncia), con su contador y sin mover el porcentaje global: ver
+      // src/monitoringProgress.js.
+      progress.startPhase(phaseLabel, pending.length, { countsInPercent: false });
       // Cada foto se anota en la base apenas termina, no al final de la
       // tanda: si el proceso se corta en el medio, lo ya bajado queda
       // marcado y no se vuelve a bajar. Si la base no pudo anotar, se avisa
@@ -151,7 +153,10 @@ async function syncPostImages(plataforma, items, deps = {}) {
         onResult: (result, index) => {
           recorded[index] = true;
           const noted = record(plataforma, pending[index], result, stats);
-          progress.tick(1, { ok: Boolean(result && result.ok && noted) });
+          // Bien: guardada y anotada. Las que quedan pendientes no cuentan
+          // ni como bien ni como error en el cierre de la fase.
+          const left = noted && result && !result.ok && Boolean(result.skipped || result.retry);
+          progress.tick(1, { ok: left ? null : Boolean(result && result.ok && noted) });
           return noted;
         },
       });

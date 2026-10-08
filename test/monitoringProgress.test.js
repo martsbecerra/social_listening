@@ -62,6 +62,49 @@ describe('monitoringProgress', () => {
     assert.deepEqual(progress.getProgress(), { phase: 'Refrescando métricas', done: 6, total: 6, percent: 100 });
   });
 
+  test('una fase que no cuenta en el porcentaje (las fotos): se muestra con su contador y el % no se mueve', () => {
+    progress.startCycle();
+    progress.startPhase('Refrescando métricas', 4);
+    progress.tick(4);
+    assert.deepEqual(progress.getProgress(), { phase: 'Refrescando métricas', done: 4, total: 4, percent: 100 });
+
+    // Antes: 4 hechos sobre 4 + 150 conocidos, la barra volvía al 3 %.
+    progress.startPhase('Guardando fotos', 150, { countsInPercent: false });
+    assert.deepEqual(progress.getProgress(), { phase: 'Guardando fotos', done: 0, total: 150, percent: 100 });
+    progress.tick(60);
+    assert.deepEqual(progress.getProgress(), { phase: 'Guardando fotos', done: 60, total: 150, percent: 100 });
+
+    // Una fase común que arranca después sigue con la cuenta de siempre,
+    // sin el trabajo de las fotos.
+    progress.startPhase('Calculando benchmark de cuentas', 4);
+    assert.deepEqual(progress.getProgress(), { phase: 'Calculando benchmark de cuentas', done: 0, total: 4, percent: 50 });
+  });
+
+  test('al principio del ciclo, una fase que no cuenta deja el % en 0', () => {
+    progress.startCycle();
+    progress.startPhase('Guardando fotos pendientes', 10, { countsInPercent: false });
+    progress.tick(10);
+    assert.deepEqual(progress.getProgress(), { phase: 'Guardando fotos pendientes', done: 10, total: 10, percent: 0 });
+  });
+
+  test('tick con ok: null avanza el contador sin contarlo como bien ni como error', () => {
+    const lineas = [];
+    const original = console.log;
+    console.log = (...args) => lineas.push(args.join(' '));
+    try {
+      progress.startCycle();
+      progress.startPhase('Guardando fotos', 5, { countsInPercent: false });
+      progress.tick(2);
+      progress.tick(1, { ok: false });
+      progress.tick(2, { ok: null });
+      assert.deepEqual(progress.getProgress(), { phase: 'Guardando fotos', done: 5, total: 5, percent: 0 });
+      progress.endCycle();
+    } finally {
+      console.log = original;
+    }
+    assert.ok(lineas.some((l) => /termina Guardando fotos \(\d+ms, 2 ok, 1 error, 5\/5\)/.test(l)), lineas.join(' | '));
+  });
+
   test('endCycle limpia todo: vuelve a null aunque haya habido una fase en curso', () => {
     progress.startCycle();
     progress.startPhase('Clasificando relevancia', 3);
