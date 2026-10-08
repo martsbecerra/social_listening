@@ -514,6 +514,25 @@ describe('postImages: la tanda', () => {
     assert.equal((await postImages.savePostImage(null)).ok, false);
   });
 
+  test('tope de tiempo de la tanda: pasado el tope no arranca ninguna más, y las que estaban en vuelo terminan', async () => {
+    const original = await makeImage(300, 300);
+    const fetchFn = fetchSimulado(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      return respuesta(original);
+    });
+    const results = await postImages.savePostImages(posts(40), { fetchFn, maxBatchMs: 150 });
+    assert.equal(results.length, 40);
+    const intentados = results.filter((r) => !r.skipped);
+    const salteados = results.filter((r) => r.skipped);
+    // Un servidor lento pero que anda: nada falla, así que no hay corte por fallos.
+    assert.ok(intentados.length >= 3 && intentados.every((r) => r.ok), `intentados: ${intentados.length}`);
+    assert.ok(salteados.length >= 20 && salteados.every((r) => r.reason === 'tope-de-tiempo'), `salteados: ${salteados.length}`);
+    assert.equal(fetchFn.calls.length, intentados.length);
+    assert.equal(archivos().length, intentados.length * 2, 'las que arrancaron quedaron guardadas enteras');
+    assert.equal(logs.filter((l) => l.includes('tope de')).length, 1, 'un solo aviso');
+    assert.equal(postImages.BATCH_TIMEOUT_MS, 120000);
+  });
+
   test('una descarga que sale bien corta la racha de fallos', async () => {
     const original = await makeImage(300, 300);
     // Falla, falla, anda; así nueve veces: nunca hay cinco fallos seguidos.

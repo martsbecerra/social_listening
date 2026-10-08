@@ -22,7 +22,11 @@
 //     apifyLimiter ni los de benchmark/refresco: ver concurrencyLimiter.js);
 //   - la tanda se corta tras MAX_CONSECUTIVE_FAILURES fotos seguidas con
 //     fallo, del tipo que sea (la red no llega, el servidor responde mal, no
-//     se puede escribir): insistir solo demora el ciclo y llena el log.
+//     se puede escribir): insistir solo demora el ciclo y llena el log;
+//   - cada tanda tiene además un tope de tiempo (BATCH_TIMEOUT_MS): con un
+//     servidor lento pero vivo nada corta, y 150 fotos a 15 s cada una, de a
+//     tres, eran más de 12 minutos de ciclo. Pasado el tope no arranca
+//     ninguna descarga más; las que están en vuelo terminan.
 //
 // NUNCA tira: todo fallo vuelve como resultado, para que una foto que no se
 // pudo bajar no frene un ciclo de monitoreo. Un fallo tampoco toca las
@@ -79,6 +83,10 @@ const TIMEOUT_MS = 15000;
 const MAX_INPUT_PIXELS = 50e6; // una imagen de más de 50 megapíxeles no es una foto de Instagram
 const MAX_CONCURRENT = 3;
 const MAX_CONSECUTIVE_FAILURES = 5;
+// Tope de una tanda entera. De sobra para una tanda normal (150 fotos del
+// refresco bajan en menos de un minuto) y corto para que un servidor lento
+// no estire el ciclo: lo que no entra queda para después.
+const BATCH_TIMEOUT_MS = 120000;
 
 // El servidor de imágenes dijo que ese link ya no sirve (venció, o el posteo
 // se borró): no es un error nuestro ni de la red.
@@ -318,22 +326,28 @@ async function savePostImage(post, deps = {}) {
 }
 
 /**
- * Lo mismo para una tanda: pocas a la vez (imageLimiter) y con corte si las
- * fotos vienen fallando una atrás de otra. NUNCA tira. Los resultados salen
- * en el mismo orden que los posteos.
+ * Lo mismo para una tanda: pocas a la vez (imageLimiter), con corte si las
+ * fotos vienen fallando una atrás de otra y con un tope de tiempo para la
+ * tanda entera. NUNCA tira. Los resultados salen en el mismo orden que los
+ * posteos.
  *
  * @param {{ plataforma: string, id: string, url: string }[]} posts
  * @param {object} [deps] los de savePostImage, más onResult(result, index):
  *   se llama por cada posteo apenas tiene resultado (para anotarlo y para el
  *   progreso del ciclo). Si devuelve false, tira o rechaza, ese posteo
  *   cuenta como fallo para el corte: no se pudo anotar lo que pasó.
+ *   maxBatchMs: tope de la tanda (por defecto BATCH_TIMEOUT_MS).
  * @returns {Promise<object[]>} un resultado de savePostImage por posteo; los
- *   que no se llegaron a intentar por el corte salen `skipped` con
- *   reason 'corte-por-fallos'.
+ *   que no se llegaron a intentar salen `skipped` con reason
+ *   'corte-por-fallos' o 'tope-de-tiempo'.
  */
 async function savePostImages(posts, deps = {}) {
   const list = Array.isArray(posts) ? posts : [];
   let cut = false;
+  // Tope de tiempo de la tanda: pasado ese momento no arranca ninguna más.
+  const maxBatchMs = Number(deps.maxBatchMs) > 0 ? Number(deps.maxBatchMs) : BATCH_TIMEOUT_MS;
+  const deadline = Date.now() + maxBatchMs;
+  let outOfTime = false;
 
   // Corte: MAX_CONSECUTIVE_FAILURES fotos seguidas que fallan, por lo que
   // sea: la red no llega, el servidor de imágenes responde mal, no se puede
@@ -373,6 +387,15 @@ async function savePostImages(posts, deps = {}) {
         let result;
         if (cut) {
           result = { ok: false, skipped: true, reason: 'corte-por-fallos' };
+        } else if (Date.now() >= deadline) {
+          if (!outOfTime) {
+            outOfTime = true;
+            console.error(
+              `[imagenes] la tanda de imágenes llegó a su tope de ${Math.round(maxBatchMs / 1000)} s: no arranca ninguna descarga más. ` +
+                'Lo que falta se intenta en el próximo ciclo que traiga el link.'
+            );
+          }
+          result = { ok: false, skipped: true, reason: 'tope-de-tiempo' };
         } else {
           try {
             result = await savePostImage(post, deps);
@@ -417,4 +440,5 @@ module.exports = {
   MAX_BYTES,
   TIMEOUT_MS,
   MAX_CONSECUTIVE_FAILURES,
+  BATCH_TIMEOUT_MS,
 };

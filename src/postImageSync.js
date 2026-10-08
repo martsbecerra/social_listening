@@ -75,7 +75,7 @@ function record(plataforma, item, result, stats) {
  *   expired: number, failed: number, skipped: number}>} candidates: posteos
  *   con link; alreadySaved: ya tenían sus copias; saved / expired / failed:
  *   cómo salieron los intentos; skipped: no se llegaron a intentar (se cortó
- *   la tanda por fallos seguidos).
+ *   la tanda, por fallos seguidos o por su tope de tiempo).
  */
 async function syncPostImages(plataforma, items, deps = {}) {
   const stats = emptyStats();
@@ -135,7 +135,7 @@ function formatCycleSummary(stats) {
   const parts = [`${stats.saved} guardada(s)`, `${stats.alreadySaved} ya estaban`];
   if (stats.expired > 0) parts.push(`${stats.expired} con el link vencido`);
   if (stats.failed > 0) parts.push(`${stats.failed} con error`);
-  if (stats.skipped > 0) parts.push(`${stats.skipped} sin intentar (se cortó la tanda por fallos seguidos)`);
+  if (stats.skipped > 0) parts.push(`${stats.skipped} sin intentar (se cortó la tanda)`);
   return `[imagenes] fotos del ciclo: ${parts.join(', ')}.`;
 }
 

@@ -451,7 +451,7 @@ describe('fotos en el ciclo: progreso, resumen y logs', { concurrency: false }, 
     const sinIntentar = codes.filter((code) => estado(code).status === null).length;
     assert.equal(sinIntentar, 12 - fetchCalls.length, 'lo que no se intentó no queda marcado como error');
     const resumen = postImageSync.formatCycleSummary(postImageSync.takeCycleSummary());
-    assert.match(resumen, /sin intentar \(se cortó la tanda por fallos seguidos\)/);
+    assert.match(resumen, /sin intentar \(se cortó la tanda\)/);
   });
 
   test('la línea de resumen: null si ninguna respuesta trajo link', () => {
