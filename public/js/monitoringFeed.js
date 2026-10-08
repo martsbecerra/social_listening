@@ -105,12 +105,22 @@ function feedHash(text) {
   return hash;
 }
 
-// Imagen del posteo. Hoy el backend no guarda ni manda fotos, así que esto da
-// siempre null y la tarjeta muestra el recuadro de reemplazo. Cuando el
-// posteo traiga el dato alcanza con devolverlo acá: el resto ya está armado
-// (carga diferida y aviso si la imagen no carga).
+// Foto del posteo. El listado manda `image` (src/postImageRoutes.js):
+// thumbUrl y fullUrl, las direcciones de las dos copias guardadas en el
+// servidor (null si no hay), y status, cómo salió el último intento de
+// bajarla. El frontend lee ese dato solo acá y en feedPopImageUrl (pop-up):
+// la tarjeta usa la miniatura y el pop-up la imagen grande.
 function feedImageUrl(post) {
-  return post.image_url || null;
+  return (post.image && post.image.thumbUrl) || null;
+}
+
+// Se intentó bajar la foto y no quedó ninguna copia (el link de Instagram
+// venció o la descarga falló): la tarjeta y el pop-up avisan "Imagen no
+// disponible". Si nunca se intentó (posteo viejo, respuesta sin link de
+// imagen) no hay aviso: es un posteo sin foto.
+function feedImageFailed(post) {
+  const image = post.image;
+  return Boolean(image && !image.thumbUrl && (image.status === 'vencido' || image.status === 'error'));
 }
 
 // La misma X de la fila de la tabla (columna de ignorar en monitoring.js).
@@ -131,21 +141,29 @@ function buildFeedMedia(post, reach) {
   // Constante propia, no un dato del posteo: se puede insertar como HTML.
   media.insertAdjacentHTML('beforeend', FEED_TYPE_ICONS[post.post_type] || FEED_TYPE_ICONS.imagen);
 
+  // Recuadro rayado con el aviso, en lugar del color y el ícono del tipo.
+  const showUnavailable = (img) => {
+    media.classList.add('broken');
+    media.style.background = '';
+    media.querySelector('svg')?.remove();
+    const msg = feedNode('span', 'feed-media-msg', 'Imagen no disponible');
+    if (img) img.replaceWith(msg);
+    else media.appendChild(msg);
+  };
+
   const imageUrl = feedImageUrl(post);
   if (imageUrl) {
     const img = document.createElement('img');
     img.alt = '';
     img.loading = 'lazy'; // son cientos de tarjetas sin paginar
     img.decoding = 'async';
-    img.addEventListener('error', () => {
-      // Las URLs de Instagram vencen: se avisa en vez de dejar el ícono roto.
-      media.classList.add('broken');
-      media.style.background = '';
-      media.querySelector('svg')?.remove();
-      img.replaceWith(feedNode('span', 'feed-media-msg', 'Imagen no disponible'));
-    });
+    // La copia guardada no se pudo mostrar (falta el archivo, se cortó la
+    // red): se avisa en vez de dejar el ícono de imagen rota.
+    img.addEventListener('error', () => showUnavailable(img));
     img.src = imageUrl;
     media.appendChild(img);
+  } else if (feedImageFailed(post)) {
+    showUnavailable(null);
   }
 
   const typeLabel = FEED_TYPE_LABELS[post.post_type];

@@ -47,12 +47,11 @@ let feedPopLastClicked = null;
 // Lado de la foto.
 // -------------------------------------------------------------------------
 
-// Imagen grande del posteo. Hoy el backend no guarda ni manda fotos, así que
-// esto da siempre null y se ve el recuadro "Sin foto". Cuando el
-// posteo traiga el dato alcanza con devolverlo acá (image_full_url es un
-// nombre provisorio): el resto ya está armado.
+// Imagen grande del posteo: la copia de 900 px que el listado manda en
+// `image.fullUrl` (ver feedImageUrl en monitoringFeed.js). Sin copia
+// guardada da null.
 function feedPopImageUrl(post) {
-  return post.image_full_url || null;
+  return (post.image && post.image.fullUrl) || null;
 }
 
 // Qué es la imagen cuando no es el posteo entero.
@@ -63,8 +62,8 @@ function fillFeedPopPhoto(post) {
   // Un posteo sin tipo detectado no lleva etiqueta, como en la tarjeta.
   const badge = () => (typeLabel ? [feedNode('span', 'feed-badge type', typeLabel)] : []);
 
-  // Recuadro rayado con un texto: "Sin foto" si el posteo no tiene imagen,
-  // "Imagen no disponible" si la tiene y no cargó.
+  // Recuadro rayado con un texto: "Sin foto" si nunca se intentó bajar la
+  // imagen, "Imagen no disponible" si la descarga falló o la copia no cargó.
   const showEmpty = (text) => {
     feedPopPhotoEl.className = 'feed-pop-photo empty';
     feedPopPhotoEl.replaceChildren(feedNode('p', 'feed-pop-photo-msg', text), ...badge());
@@ -72,7 +71,7 @@ function fillFeedPopPhoto(post) {
 
   const imageUrl = feedPopImageUrl(post);
   if (!imageUrl) {
-    showEmpty('Sin foto');
+    showEmpty(feedImageFailed(post) ? 'Imagen no disponible' : 'Sin foto');
     return;
   }
 
