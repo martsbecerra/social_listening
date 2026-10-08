@@ -975,8 +975,9 @@ vista elegida en ese navegador.
   posteo no tiene foto, la tarjeta queda con el recuadro de color y el ícono
   del tipo, y el pop-up dice "Sin foto". Si la descarga falló o la copia no
   carga, los dos dicen "Imagen no disponible". El frontend lee el dato en
-  dos puntos: `feedImageUrl` en `public/js/monitoringFeed.js` y
-  `feedPopImageUrl` en `public/js/monitoringFeedPopup.js`.
+  tres puntos: `feedImageUrl` y `feedImageFailed` en
+  `public/js/monitoringFeed.js`, y `feedPopImageUrl` en
+  `public/js/monitoringFeedPopup.js`.
 - Código en `public/js/monitoringFeed.js` y
   `public/js/monitoringFeedPopup.js` (los carga solo `instagram.html`);
   maquetas en `design/monitoreo-feed.html` y `design/monitoreo-popup.html`;

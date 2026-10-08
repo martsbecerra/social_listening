@@ -108,16 +108,18 @@ function feedHash(text) {
 // Foto del posteo. El listado manda `image` (src/postImageRoutes.js):
 // thumbUrl y fullUrl, las direcciones de las dos copias guardadas en el
 // servidor (null si no hay), y status, cómo salió el último intento de
-// bajarla. El frontend lee ese dato solo acá y en feedPopImageUrl (pop-up):
-// la tarjeta usa la miniatura y el pop-up la imagen grande.
+// bajarla. El frontend lee ese dato en tres puntos: acá, en feedImageFailed
+// (abajo) y en feedPopImageUrl (pop-up). La tarjeta usa la miniatura y el
+// pop-up la imagen grande.
 function feedImageUrl(post) {
   return (post.image && post.image.thumbUrl) || null;
 }
 
 // Se intentó bajar la foto y no quedó ninguna copia (el link de Instagram
-// venció o la descarga falló): la tarjeta y el pop-up avisan "Imagen no
+// venció o la imagen no se aceptó): la tarjeta y el pop-up avisan "Imagen no
 // disponible". Si nunca se intentó (posteo viejo, respuesta sin link de
-// imagen) no hay aviso: es un posteo sin foto.
+// imagen) o quedó pendiente de reintentar (status "pendiente") no hay
+// aviso: es un posteo que todavía no tiene foto.
 function feedImageFailed(post) {
   const image = post.image;
   return Boolean(image && !image.thumbUrl && (image.status === 'vencido' || image.status === 'error'));

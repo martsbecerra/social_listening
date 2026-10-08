@@ -2090,10 +2090,11 @@ pre.report a:hover {
   margin: 0 -4px 0 -4px;
 }
 
-/* Recuadro de la imagen. Hoy siempre el de reemplazo: un degradé con el tono
+/* Recuadro de la imagen. De fondo, el de reemplazo: un degradé con el tono
    de la cuenta (lo pone el JS; el fondo de acá es el respaldo) y el ícono
-   del tipo. Cuando el posteo traiga imagen, el <img> lo tapa y las etiquetas
-   quedan encima. Un clic abre el pop-up del posteo, igual que "Ver más". */
+   del tipo. Si el posteo tiene foto guardada, el <img> de la miniatura lo
+   tapa y las etiquetas quedan encima. Un clic abre el pop-up del posteo,
+   igual que "Ver más". */
 .feed-media {
   position: relative;
   display: grid;
@@ -2144,7 +2145,8 @@ pre.report a:hover {
 .feed-badge.reach.bajo {
   background: rgba(3, 42, 35, 0.55);
 }
-/* La imagen no cargó (las URLs de Instagram vencen). */
+/* "Imagen no disponible": la descarga de la foto falló, o la copia guardada
+   no cargó. */
 .feed-media.broken {
   background: repeating-linear-gradient(
     45deg,
@@ -2407,8 +2409,9 @@ html.feed-pop-lock body {
   font-family: "DM Mono", monospace;
   font-size: 11px;
 }
-/* Recuadro vacío: "Sin foto" (el posteo no tiene imagen; hoy, todos) o
-   "Imagen no disponible" (la tiene y no cargó). */
+/* Recuadro vacío: "Sin foto" (nunca se intentó bajar la imagen, o quedó
+   pendiente) o "Imagen no disponible" (la descarga falló, o la copia guardada
+   no cargó). */
 .feed-pop-photo.empty {
   background: repeating-linear-gradient(
     45deg,
