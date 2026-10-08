@@ -315,6 +315,12 @@ function mergeSkipAccounts(...sources) {
 // su ciclo y su fase (src/usageContext.js). Solo medición: la lógica de
 // cada fase no cambia.
 async function runCyclePhases(plataformas, runId, trigger) {
+  // Fotos que quedaron pendientes en ciclos anteriores (la tanda se cortó o
+  // la descarga falló por algo pasajero): se reintentan con el link ya
+  // guardado, sin pedirle nada a Apify. Va primero: lo que falle en ESTE
+  // ciclo se reintenta recién en el siguiente. Nunca tira.
+  await postImageSync.retryPendingPostImages({ plataformas });
+
   const { checked, newPosts, scrapedAccounts, porPlataforma } = await runWithContext(
     { runId, phase: 'monitoreo' },
     () => runMonitoringCycle({ plataformas, trigger })

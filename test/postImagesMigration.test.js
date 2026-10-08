@@ -173,6 +173,48 @@ describe('funciones de la foto del posteo', { concurrency: false }, () => {
     assert.ok(Date.parse(image.savedAt) >= antes - 1000);
   });
 
+  test('dejar la foto pendiente de reintentar, y listar las pendientes', () => {
+    const raw = new DatabaseSync(process.env.MONITORING_DB_PATH);
+    for (const n of [3, 4, 5, 6]) assert.equal(db.saveDetectedPost(post(`ig${n}`, 'instagram', `https://www.instagram.com/p/IG${n}/`)), true);
+    assert.deepEqual(db.listPostsWithPendingImage('instagram'), []);
+
+    const linkDe = (id) => `${LINK}&de=${id}`;
+    for (const id of ['ig3', 'ig4', 'ig5', 'ig6']) assert.equal(db.markPostImagePending(id, 'instagram', { sourceUrl: linkDe(id) }), true);
+    assert.deepEqual({ ...db.getPostImage('ig3', 'instagram') }, { sourceUrl: linkDe('ig3'), status: 'pendiente', savedAt: null, width: null, height: null });
+    assert.equal(db.markPostImagePending('ig3', 'x', { sourceUrl: LINK }), false, 'id de otra plataforma');
+    assert.equal(db.markPostImagePending('no-existe', 'instagram', { sourceUrl: LINK }), false);
+
+    // Primero el que recibió su link hace menos: el último refresco o, si
+    // nunca se refrescó, la detección.
+    raw.prepare('UPDATE detected_posts SET detected_at = ?, metrics_updated_at = NULL WHERE id = ?').run('2026-10-05T10:00:00.000Z', 'ig3');
+    raw.prepare('UPDATE detected_posts SET detected_at = ?, metrics_updated_at = ? WHERE id = ?').run('2026-09-01T10:00:00.000Z', '2026-10-07T10:00:00.000Z', 'ig4');
+    raw.prepare('UPDATE detected_posts SET detected_at = ?, metrics_updated_at = NULL WHERE id = ?').run('2026-10-06T10:00:00.000Z', 'ig5');
+    raw.prepare('UPDATE detected_posts SET detected_at = ?, metrics_updated_at = NULL WHERE id = ?').run('2026-10-01T10:00:00.000Z', 'ig6');
+    assert.deepEqual(db.listPostsWithPendingImage('instagram').map((r) => ({ ...r })), [
+      { id: 'ig4', url: linkDe('ig4') },
+      { id: 'ig5', url: linkDe('ig5') },
+      { id: 'ig3', url: linkDe('ig3') },
+      { id: 'ig6', url: linkDe('ig6') },
+    ]);
+    assert.deepEqual(db.listPostsWithPendingImage('instagram', 2).map((r) => r.id), ['ig4', 'ig5'], 'con tope');
+    assert.deepEqual(db.listPostsWithPendingImage('x'), [], 'por plataforma');
+
+    // Un ignorado no se reintenta; uno que ya se guardó o falló, tampoco.
+    assert.equal(db.ignorePost('ig5', 'instagram'), true);
+    db.markPostImageSaved('ig4', 'instagram', { sourceUrl: linkDe('ig4'), width: 10, height: 10 });
+    db.markPostImageFailed('ig6', 'instagram', { sourceUrl: linkDe('ig6'), status: 'vencido' });
+    assert.deepEqual(db.listPostsWithPendingImage('instagram').map((r) => r.id), ['ig3']);
+
+    // Con copias guardadas: queda pendiente sin perder la marca de "hay foto".
+    const antes = db.getPostImage('ig2', 'instagram');
+    assert.equal(db.markPostImagePending('ig2', 'instagram', { sourceUrl: linkDe('ig2') }), true);
+    const despues = db.getPostImage('ig2', 'instagram');
+    assert.deepEqual([despues.status, despues.savedAt, despues.width], ['pendiente', antes.savedAt, antes.width]);
+    assert.throws(() => db.markPostImagePending('ig3', undefined, { sourceUrl: LINK }), /falta plataforma/);
+    assert.throws(() => db.listPostsWithPendingImage(), /falta plataforma/);
+    raw.close();
+  });
+
   test('no toca nada más del posteo, y el listado trae las columnas', () => {
     const { posts } = db.listDetectedPosts({ page: 1, pageSize: 50, plataforma: 'instagram' });
     const ig1 = posts.find((p) => p.id === 'ig1');

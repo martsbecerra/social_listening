@@ -156,8 +156,12 @@ function checkImageUrl(plataforma, rawUrl) {
   return { ok: true, url };
 }
 
-function failure(status, reason, { network = false } = {}) {
-  return { ok: false, status, reason, network };
+// network: el fallo fue de la red, no del link. retry: el fallo es pasajero
+// (la red, el tope de tiempo, un error del servidor de imágenes, la
+// escritura en disco) y con el mismo link puede andar más tarde; si no, el
+// problema es de ese link o de esa imagen y reintentar da lo mismo.
+function failure(status, reason, { network = false, retry = network } = {}) {
+  return { ok: false, status, reason, network, retry };
 }
 
 /**
@@ -208,7 +212,8 @@ async function download(url, { fetchFn, timeoutMs, maxBytes }) {
     const status = Number(response.status);
     if (status >= 300 && status < 400) return failure('error', 'redireccion');
     if (EXPIRED_STATUSES.has(status)) return failure('vencido', `http-${status}`);
-    if (status !== 200) return failure('error', `http-${status}`);
+    // 5xx, 429 y 408 son del servidor o del momento: se puede reintentar.
+    if (status !== 200) return failure('error', `http-${status}`, { retry: status >= 500 || status === 429 || status === 408 });
     const type = String(response.headers.get('content-type') || '').trim().toLowerCase();
     if (!type.startsWith('image/')) return failure('error', 'no-es-imagen');
     const buffer = await readBodyCapped(response, maxBytes);
@@ -315,11 +320,12 @@ function logFailure(plataforma, id, reason, host) {
  *   Para los tests; por defecto fetch global, data/media y los topes de arriba.
  * @returns {Promise<
  *   { ok: true, status: 'ok', sourceUrl: string, width: number, height: number, savedAt: string } |
- *   { ok: false, status: 'vencido'|'error', reason: string, network: boolean, sourceUrl: string|null } |
+ *   { ok: false, status: 'vencido'|'error', reason: string, network: boolean, retry: boolean, sourceUrl: string|null } |
  *   { ok: false, skipped: true, reason: string }
  * >} `status` es lo que va a detected_posts.image_status. `skipped`: no se
  *   intentó (apagado, o se cortó la tanda) y no hay nada que anotar.
- *   `network`: el fallo fue de la red, no del link.
+ *   `network`: el fallo fue de la red, no del link. `retry`: el fallo es
+ *   pasajero y vale la pena reintentar más tarde con el mismo link.
  */
 async function savePostImage(post, deps = {}) {
   const { plataforma, id, url } = post && typeof post === 'object' ? post : {};
@@ -361,7 +367,7 @@ async function savePostImage(post, deps = {}) {
   } catch (err) {
     // No poder escribir en disco, o cualquier cosa no prevista.
     console.error(`[imagenes] (${String(plataforma)}) ${String(id)}: no se guardó la imagen (error inesperado):`, err && err.message);
-    return { ...failure('error', 'error-inesperado'), sourceUrl };
+    return { ...failure('error', 'error-inesperado', { retry: true }), sourceUrl };
   }
 }
 
@@ -377,6 +383,8 @@ async function savePostImage(post, deps = {}) {
  *   progreso del ciclo). Si devuelve false, tira o rechaza, ese posteo
  *   cuenta como fallo para el corte: no se pudo anotar lo que pasó.
  *   maxBatchMs: tope de la tanda (por defecto BATCH_TIMEOUT_MS).
+ *   cutOnExpired: false para que un link vencido no cuente para el corte
+ *   (el reintento de fotos pendientes, donde es la respuesta esperable).
  * @returns {Promise<object[]>} un resultado de savePostImage por posteo; los
  *   que no se llegaron a intentar salen `skipped` con reason
  *   'corte-por-fallos' o 'tope-de-tiempo'.
@@ -416,7 +424,7 @@ async function savePostImages(posts, deps = {}) {
       cut = true;
       console.error(
         `[imagenes] ${MAX_CONSECUTIVE_FAILURES} fotos seguidas con fallo: se corta la tanda de imágenes. ` +
-          'Lo que falta se intenta en el próximo ciclo que traiga el link.'
+          'Lo que falta queda para el próximo ciclo.'
       );
     }
   };
@@ -432,7 +440,7 @@ async function savePostImages(posts, deps = {}) {
             outOfTime = true;
             console.error(
               `[imagenes] la tanda de imágenes llegó a su tope de ${Math.round(maxBatchMs / 1000)} s: no arranca ninguna descarga más. ` +
-                'Lo que falta se intenta en el próximo ciclo que traiga el link.'
+                'Lo que falta queda para el próximo ciclo.'
             );
           }
           result = { ok: false, skipped: true, reason: 'tope-de-tiempo' };
@@ -440,7 +448,7 @@ async function savePostImages(posts, deps = {}) {
           try {
             result = await savePostImage(post, deps);
           } catch (err) {
-            result = { ...failure('error', 'error-inesperado'), sourceUrl: null };
+            result = { ...failure('error', 'error-inesperado', { retry: true }), sourceUrl: null };
           }
         }
         // Quien llama anota acá el resultado (la base, el progreso). Si no
@@ -453,13 +461,16 @@ async function savePostImages(posts, deps = {}) {
             noted = false;
           }
         }
-        note(index, result.skipped ? 'salteado' : result.ok && noted ? 'bien' : 'fallo');
+        // Un link vencido es un fallo más, salvo que quien llama avise que
+        // acá es lo esperable (cutOnExpired: false).
+        const expectedExpiry = !result.ok && result.status === 'vencido' && deps.cutOnExpired === false;
+        note(index, result.skipped ? 'salteado' : noted && (result.ok || expectedExpiry) ? 'bien' : 'fallo');
         return result;
       }, `${String(post && post.plataforma)}:${String(post && post.id)}`)
     )
   );
   return settled.map((entry) =>
-    entry.status === 'fulfilled' ? entry.value : { ...failure('error', 'error-inesperado'), sourceUrl: null }
+    entry.status === 'fulfilled' ? entry.value : { ...failure('error', 'error-inesperado', { retry: true }), sourceUrl: null }
   );
 }
 

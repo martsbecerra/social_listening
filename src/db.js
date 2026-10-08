@@ -134,8 +134,9 @@ if (!existingColumns.includes('refresh_stopped_at')) {
 }
 // Foto del posteo (src/postImages.js, openspec/changes/monitoreo-fotos). Las
 // copias van a disco (data/media/); acá queda el link original del último
-// intento, cómo salió (ok | vencido | error; NULL si nunca vino imagen),
-// cuándo se guardaron las copias y las medidas de la original.
+// intento, cómo salió (ok | vencido | error | pendiente de reintentar; NULL
+// si nunca vino imagen), cuándo se guardaron las copias y las medidas de la
+// original.
 // image_saved_at es lo único que dice si hay foto: un intento fallido cambia
 // el estado y el link, nunca esa marca. Todas anulables y sin tocar las
 // filas guardadas: el código anterior sigue funcionando contra la base
@@ -1685,6 +1686,15 @@ const markPostImageFailedStmt = db.prepare(`
   WHERE id = @id AND plataforma = @plataforma
 `);
 const POST_IMAGE_FAILED_STATUSES = ['vencido', 'error'];
+// Fotos que quedaron para reintentar: hay link guardado y la descarga no se
+// llegó a hacer o falló por algo pasajero (src/postImageSync.js).
+const listPostsWithPendingImageStmt = db.prepare(`
+  SELECT id, image_source_url AS url
+  FROM detected_posts
+  WHERE plataforma = ? AND image_status = 'pendiente' AND image_source_url IS NOT NULL AND ignored = 0
+  ORDER BY COALESCE(metrics_updated_at, detected_at) DESC, id
+  LIMIT ?
+`);
 
 /** Medida en píxeles: entero mayor que cero, o NULL. */
 function pixelsOrNull(value) {
@@ -1694,7 +1704,7 @@ function pixelsOrNull(value) {
 /**
  * Cómo está la foto de un posteo. `savedAt` distinto de null = hay copias
  * guardadas; `status` es cómo salió el último intento (null = nunca hubo).
- * @returns {{sourceUrl: string|null, status: 'ok'|'vencido'|'error'|null,
+ * @returns {{sourceUrl: string|null, status: 'ok'|'vencido'|'error'|'pendiente'|null,
  *   savedAt: string|null, width: number|null, height: number|null}|null}
  *   null si ese id no está guardado en esa plataforma.
  */
@@ -1735,6 +1745,32 @@ function markPostImageFailed(id, plataforma, { sourceUrl, status } = {}) {
   }
   const result = markPostImageFailedStmt.run({ id, plataforma, sourceUrl: sourceUrl || null, status });
   return result.changes > 0;
+}
+
+/**
+ * Deja la foto de un posteo para reintentar en el próximo ciclo: guarda el
+ * link y el estado 'pendiente'. Es para cuando la descarga no se llegó a
+ * hacer o falló por algo pasajero (ver src/postImageSync.js). No toca
+ * image_saved_at ni las medidas.
+ * @returns {boolean} false si ese id no está guardado en esa plataforma.
+ */
+function markPostImagePending(id, plataforma, { sourceUrl } = {}) {
+  requirePlataforma(plataforma, 'markPostImagePending');
+  const result = markPostImageFailedStmt.run({ id, plataforma, sourceUrl: sourceUrl || null, status: 'pendiente' });
+  return result.changes > 0;
+}
+
+/**
+ * Posteos con la foto pendiente de reintentar y el link guardado. Primero
+ * los que recibieron el link hace menos (el último refresco o, si nunca se
+ * refrescó, la detección): son los links con más vida por delante. Los
+ * ignorados no entran.
+ * @returns {{ id: string, url: string }[]}
+ */
+function listPostsWithPendingImage(plataforma, limit = 150) {
+  requirePlataforma(plataforma, 'listPostsWithPendingImage');
+  const max = Number.isInteger(limit) && limit > 0 ? limit : 150;
+  return listPostsWithPendingImageStmt.all(plataforma, max);
 }
 
 function insertMagicLink({ tokenHash, email, expiresAt }) {
@@ -1804,6 +1840,8 @@ module.exports = {
   getPostImage,
   markPostImageSaved,
   markPostImageFailed,
+  markPostImagePending,
+  listPostsWithPendingImage,
   upsertReclamo,
   listReclamosFiltered,
   contarReclamosPorCategoria,

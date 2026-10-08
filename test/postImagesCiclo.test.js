@@ -200,31 +200,40 @@ describe('fotos en la detección: posteos nuevos', { concurrency: false }, () =>
   });
 
   test('una foto que falla no frena el ciclo: los posteos se guardan igual y queda anotado cómo salió', async () => {
-    searchResults = [resultado('CAIDA'), resultado('VENCIDA'), resultado('SINRED'), resultado('BIEN')];
+    searchResults = [resultado('CAIDA'), resultado('VENCIDA'), resultado('SINRED'), resultado('NOIMG'), resultado('BIEN')];
     detailsResponder = async (urls) => urls.map((url) => detalle(url.split('/p/')[1].replace('/', '')));
     imageResponder = (href) => {
       if (href.includes('CAIDA')) return new Response('error', { status: 500, headers: { 'content-type': 'text/plain' } });
       if (href.includes('VENCIDA')) return new Response('expired', { status: 403, headers: { 'content-type': 'text/plain' } });
       if (href.includes('SINRED')) throw new TypeError('fetch failed');
+      if (href.includes('NOIMG')) return new Response('<html></html>', { status: 200, headers: { 'content-type': 'text/html' } });
       return new Response(IMAGEN, { status: 200, headers: { 'content-type': 'image/jpeg' } });
     };
 
     const result = await detectar();
-    assert.equal(result.porPlataforma.instagram.newCount, 4, 'los cuatro posteos quedaron guardados');
-    assert.equal(db.listDetectedPosts({ page: 1, pageSize: 50, plataforma: 'instagram' }).total, 4);
+    assert.equal(result.porPlataforma.instagram.newCount, 5, 'los cinco posteos quedaron guardados');
+    assert.equal(db.listDetectedPosts({ page: 1, pageSize: 50, plataforma: 'instagram' }).total, 5);
 
-    assert.deepEqual([estado('CAIDA').status, estado('CAIDA').savedAt], ['error', null]);
+    // Lo pasajero (el servidor de imágenes con un error suyo, la red) queda
+    // pendiente para el ciclo siguiente; lo que es del link o de la imagen, no.
+    assert.deepEqual([estado('CAIDA').status, estado('CAIDA').savedAt], ['pendiente', null]);
+    assert.deepEqual([estado('SINRED').status, estado('SINRED').savedAt], ['pendiente', null]);
     assert.deepEqual([estado('VENCIDA').status, estado('VENCIDA').savedAt], ['vencido', null]);
-    assert.deepEqual([estado('SINRED').status, estado('SINRED').savedAt], ['error', null]);
+    assert.deepEqual([estado('NOIMG').status, estado('NOIMG').savedAt], ['error', null]);
     assert.equal(estado('BIEN').status, 'ok');
-    assert.equal(estado('CAIDA').sourceUrl, linkDetalle('CAIDA'), 'el link del intento queda guardado');
+    for (const code of ['CAIDA', 'SINRED', 'VENCIDA', 'NOIMG']) assert.equal(estado(code).sourceUrl, linkDetalle(code), 'el link del intento queda guardado');
     assert.deepEqual(archivos(), ['BIEN_full.jpg', 'BIEN_thumb.jpg']);
+    assert.equal(
+      postImageSync.formatCycleSummary(postImageSync.takeCycleSummary()),
+      '[imagenes] fotos del ciclo: 1 guardada(s), 0 ya estaban, 1 con el link vencido, 1 con error, 2 pendiente(s) para el próximo ciclo.'
+    );
   });
 
   test('un posteo ya conocido no baja nada en la detección, tenga o no su foto', async () => {
     searchResults = [resultado('CONOCIDO')];
     detailsResponder = async (urls) => urls.map((url) => detalle(url.split('/p/')[1].replace('/', '')));
-    imageResponder = () => new Response('error', { status: 500, headers: { 'content-type': 'text/plain' } });
+    // Una respuesta que no es imagen: con ese link no hay nada que reintentar.
+    imageResponder = () => new Response('<html></html>', { status: 200, headers: { 'content-type': 'text/html' } });
     await detectar();
     assert.equal(estado('CONOCIDO').status, 'error');
     assert.equal(fetchCalls.length, 1);
@@ -362,9 +371,9 @@ describe('fotos en el ciclo: progreso, resumen y logs', { concurrency: false }, 
   beforeEach(reset);
 
   test('una plataforma sin fotos no hace nada; posteos que no están guardados se ignoran', async () => {
-    assert.deepEqual(await postImageSync.syncPostImages('x', [{ id: 'x1', url: linkDetalle('x1') }]), { candidates: 0, alreadySaved: 0, saved: 0, expired: 0, failed: 0, skipped: 0 });
-    assert.deepEqual(await postImageSync.syncPostImages('instagram', [{ id: 'no-guardado', url: linkDetalle('a') }, null, { id: 'sin-link' }]), { candidates: 0, alreadySaved: 0, saved: 0, expired: 0, failed: 0, skipped: 0 });
-    assert.deepEqual(await postImageSync.syncPostImages('instagram', null), { candidates: 0, alreadySaved: 0, saved: 0, expired: 0, failed: 0, skipped: 0 });
+    assert.deepEqual(await postImageSync.syncPostImages('x', [{ id: 'x1', url: linkDetalle('x1') }]), { candidates: 0, alreadySaved: 0, saved: 0, expired: 0, failed: 0, pending: 0 });
+    assert.deepEqual(await postImageSync.syncPostImages('instagram', [{ id: 'no-guardado', url: linkDetalle('a') }, null, { id: 'sin-link' }]), { candidates: 0, alreadySaved: 0, saved: 0, expired: 0, failed: 0, pending: 0 });
+    assert.deepEqual(await postImageSync.syncPostImages('instagram', null), { candidates: 0, alreadySaved: 0, saved: 0, expired: 0, failed: 0, pending: 0 });
     assert.equal(fetchCalls.length, 0);
   });
 
@@ -438,7 +447,7 @@ describe('fotos en el ciclo: progreso, resumen y logs', { concurrency: false }, 
     );
   });
 
-  test('si la red no llega al servidor de imágenes, la tanda se corta y el ciclo termina', async () => {
+  test('si la red no llega al servidor de imágenes, la tanda se corta, el ciclo termina y todo queda pendiente con su link', async () => {
     const codes = Array.from({ length: 12 }, (_, i) => `RED${i}`);
     searchResults = codes.map((code) => resultado(code));
     detailsResponder = async (urls) => urls.map((url) => detalle(url.split('/p/')[1].replace('/', '')));
@@ -448,10 +457,10 @@ describe('fotos en el ciclo: progreso, resumen y logs', { concurrency: false }, 
     const result = await detectar();
     assert.equal(result.porPlataforma.instagram.newCount, 12, 'los doce posteos quedaron guardados');
     assert.ok(fetchCalls.length >= postImages.MAX_CONSECUTIVE_FAILURES && fetchCalls.length <= postImages.MAX_CONSECUTIVE_FAILURES + 2, `intentos: ${fetchCalls.length}`);
-    const sinIntentar = codes.filter((code) => estado(code).status === null).length;
-    assert.equal(sinIntentar, 12 - fetchCalls.length, 'lo que no se intentó no queda marcado como error');
+    // Las que se intentaron y las que no: todas quedan para el ciclo siguiente.
+    for (const code of codes) assert.deepEqual([estado(code).status, estado(code).sourceUrl, estado(code).savedAt], ['pendiente', linkDetalle(code), null]);
     const resumen = postImageSync.formatCycleSummary(postImageSync.takeCycleSummary());
-    assert.match(resumen, /sin intentar \(se cortó la tanda\)/);
+    assert.equal(resumen, '[imagenes] fotos del ciclo: 0 guardada(s), 0 ya estaban, 12 pendiente(s) para el próximo ciclo.');
   });
 
   test('la base se anota foto por foto, no al terminar la tanda', async () => {
@@ -494,15 +503,133 @@ describe('fotos en el ciclo: progreso, resumen y logs', { concurrency: false }, 
     assert.equal(logs.filter((l) => l.includes('se corta la tanda')).length, 1);
     const stats = postImageSync.takeCycleSummary();
     assert.equal(stats.failed, fetchCalls.length);
-    assert.equal(stats.skipped, 30 - fetchCalls.length);
+    assert.equal(stats.pending, 30 - fetchCalls.length);
   });
 
   test('la línea de resumen: null si ninguna respuesta trajo link', () => {
-    assert.equal(postImageSync.formatCycleSummary({ candidates: 0, alreadySaved: 0, saved: 0, expired: 0, failed: 0, skipped: 0 }), null);
+    assert.equal(postImageSync.formatCycleSummary({ candidates: 0, alreadySaved: 0, saved: 0, expired: 0, failed: 0, pending: 0 }), null);
     assert.equal(postImageSync.formatCycleSummary(null), null);
     assert.equal(
-      postImageSync.formatCycleSummary({ candidates: 150, alreadySaved: 150, saved: 0, expired: 0, failed: 0, skipped: 0 }),
+      postImageSync.formatCycleSummary({ candidates: 150, alreadySaved: 150, saved: 0, expired: 0, failed: 0, pending: 0 }),
       '[imagenes] fotos del ciclo: 0 guardada(s), 150 ya estaban.'
     );
+  });
+});
+
+// --------------------------------------------------------------------------
+describe('fotos pendientes: se reintentan al empezar el ciclo siguiente, sin pedirle nada al adapter', { concurrency: false }, () => {
+  beforeEach(reset);
+
+  const bien = () => new Response(IMAGEN, { status: 200, headers: { 'content-type': 'image/jpeg' } });
+  const reintentar = () => postImageSync.retryPendingPostImages({ plataformas: ['instagram'] });
+  /** Posteo guardado hace poco (no le toca refresco) con la foto pendiente. */
+  function pendiente(code) {
+    sembrar(code);
+    raw.prepare('UPDATE detected_posts SET detected_at = ? WHERE id = ?').run(agoIso(HOUR_MS), code);
+    assert.equal(db.markPostImagePending(code, 'instagram', { sourceUrl: linkDetalle(code) }), true);
+  }
+
+  test('la tanda cortada de un ciclo se completa al empezar el siguiente, con los links ya guardados', async () => {
+    const codes = Array.from({ length: 12 }, (_, i) => `SIG${i}`);
+    searchResults = codes.map((code) => resultado(code));
+    detailsResponder = async (urls) => urls.map((url) => detalle(url.split('/p/')[1].replace('/', '')));
+    imageResponder = () => {
+      throw new TypeError('fetch failed');
+    };
+    await scheduler.runCycle({ plataforma: 'instagram' });
+    assert.ok(codes.every((code) => estado(code).status === 'pendiente'));
+    assert.deepEqual(archivos(), []);
+
+    // Ciclo siguiente: la red volvió y la búsqueda no trae nada nuevo.
+    searchResults = [];
+    imageResponder = bien;
+    adapterCalls.fetchPostDetails = [];
+    fetchCalls.length = 0;
+    logs.length = 0;
+    await scheduler.runCycle({ plataforma: 'instagram' });
+
+    assert.ok(codes.every((code) => estado(code).status === 'ok' && estado(code).savedAt));
+    assert.equal(archivos().length, 24);
+    assert.deepEqual([...fetchCalls].sort(), codes.map(linkDetalle).sort(), 'una descarga por pendiente, con el link guardado');
+    assert.equal(adapterCalls.fetchPostDetails.length, 0, 'ningún pedido de detalle ni de refresco para conseguir el link');
+
+    // Va primero: lo que falle en este ciclo se reintenta recién en el próximo.
+    const fases = logs.filter((l) => l.startsWith('[fase] arranca'));
+    assert.equal(fases[0], '[fase] arranca Guardando fotos pendientes (total 12)');
+    assert.ok(logs.includes('[imagenes] fotos del ciclo: 12 guardada(s), 0 ya estaban.'));
+  });
+
+  test('un link vencido o una imagen rechazada no se reintentan con el mismo link', async () => {
+    sembrar('VENC');
+    sembrar('RECH');
+    db.markPostImageFailed('VENC', 'instagram', { sourceUrl: linkDetalle('VENC'), status: 'vencido' });
+    db.markPostImageFailed('RECH', 'instagram', { sourceUrl: linkDetalle('RECH'), status: 'error' });
+    assert.deepEqual(await reintentar(), { candidates: 0, alreadySaved: 0, saved: 0, expired: 0, failed: 0, pending: 0 });
+    assert.equal(fetchCalls.length, 0);
+    assert.equal(postImageSync.formatCycleSummary(postImageSync.takeCycleSummary()), null);
+  });
+
+  test('en el reintento los links vencidos no cortan la tanda: quedan "vencido" y dejan de reintentarse', async () => {
+    const codes = Array.from({ length: 9 }, (_, i) => `VIEJO${i}`);
+    for (const code of codes) pendiente(code);
+    imageResponder = () => new Response('URL signature expired', { status: 403, headers: { 'content-type': 'text/plain' } });
+    const stats = await reintentar();
+    assert.equal(fetchCalls.length, 9, 'se le pregunta por todos');
+    assert.deepEqual([stats.expired, stats.pending], [9, 0]);
+    assert.ok(codes.every((code) => estado(code).status === 'vencido'));
+    assert.ok(!logs.some((l) => l.includes('se corta la tanda')));
+
+    fetchCalls.length = 0;
+    await reintentar();
+    assert.equal(fetchCalls.length, 0);
+  });
+
+  test('si la red sigue sin llegar, la tanda se corta a los cinco y todo sigue pendiente', async () => {
+    const codes = Array.from({ length: 12 }, (_, i) => `SINRED${i}`);
+    for (const code of codes) pendiente(code);
+    imageResponder = () => {
+      throw new TypeError('fetch failed');
+    };
+    const stats = await reintentar();
+    assert.ok(fetchCalls.length >= postImages.MAX_CONSECUTIVE_FAILURES && fetchCalls.length <= postImages.MAX_CONSECUTIVE_FAILURES + 2, `intentos: ${fetchCalls.length}`);
+    assert.deepEqual([stats.saved, stats.pending], [0, 12]);
+    assert.ok(codes.every((code) => estado(code).status === 'pendiente' && estado(code).sourceUrl === linkDetalle(code)));
+    assert.equal(logs.filter((l) => l.includes('se corta la tanda')).length, 1);
+  });
+
+  test('ignorado, fotos apagadas y otra plataforma: no se reintenta nada', async () => {
+    pendiente('IGN');
+    db.ignorePost('IGN', 'instagram');
+    pendiente('APAG');
+
+    process.env.POST_IMAGES = '0';
+    await reintentar();
+    assert.equal(fetchCalls.length, 0);
+    assert.equal(estado('APAG').status, 'pendiente', 'apagado no toca nada');
+
+    delete process.env.POST_IMAGES;
+    await postImageSync.retryPendingPostImages({ plataformas: ['x'] });
+    assert.equal(fetchCalls.length, 0, 'el ciclo de otra plataforma no reintenta las de Instagram');
+
+    await reintentar();
+    assert.deepEqual(fetchCalls, [linkDetalle('APAG')], 'el ignorado no se baja');
+    assert.equal(estado('APAG').status, 'ok');
+    assert.equal(estado('IGN').status, 'pendiente');
+  });
+
+  test('una pendiente cuyas copias ya están en disco vuelve a quedar al día sin bajar nada', async () => {
+    sembrar('ESTABA');
+    detailsResponder = async () => [detalle('ESTABA')];
+    await refrescar();
+    const guardada = estado('ESTABA');
+    assert.equal(guardada.status, 'ok');
+    db.markPostImagePending('ESTABA', 'instagram', { sourceUrl: `${linkDetalle('ESTABA')}&otro=link` });
+    fetchCalls.length = 0;
+
+    const stats = await reintentar();
+    assert.equal(fetchCalls.length, 0);
+    assert.equal(stats.alreadySaved, 1);
+    assert.deepEqual([estado('ESTABA').status, estado('ESTABA').savedAt], ['ok', guardada.savedAt]);
+    assert.deepEqual(db.listPostsWithPendingImage('instagram'), []);
   });
 });
