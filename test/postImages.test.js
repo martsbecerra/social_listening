@@ -423,6 +423,40 @@ describe('postImages: la tanda', () => {
     assert.ok(logs.some((l) => l.includes('se corta la tanda')));
   });
 
+  test('una descarga colgada no frena el corte: las que siguen fallan y la tanda se corta igual', async () => {
+    // La red se cae a mitad de tanda: la primera queda colgada hasta su tope
+    // de tiempo y todas las que siguen fallan al instante.
+    const fetchFn = fetchSimulado((url, init) => {
+      if (fetchFn.calls.length === 1) {
+        return new Promise((resolve, reject) => init.signal.addEventListener('abort', () => reject(new Error('This operation was aborted'))));
+      }
+      throw new TypeError('fetch failed');
+    });
+    const results = await postImages.savePostImages(posts(40), { fetchFn, timeoutMs: 300 });
+    assert.equal(results.length, 40);
+    const intentados = results.filter((r) => !r.skipped);
+    // La colgada, cinco fallos y a lo sumo las que ya estaban en vuelo.
+    assert.ok(intentados.length >= postImages.MAX_NETWORK_FAILURES + 1 && intentados.length <= postImages.MAX_NETWORK_FAILURES + 3, `intentados: ${intentados.length}`);
+    assert.equal(fetchFn.calls.length, intentados.length);
+    assert.equal(results[0].reason, 'tiempo-agotado', 'la colgada termina por su tope de tiempo');
+    assert.ok(results.slice(10).every((r) => r.skipped && r.reason === 'corte-por-red'));
+  });
+
+  test('cuatro fallos, una que anda y tarda, cuatro fallos: no hay cinco seguidos y no corta', async () => {
+    const original = await makeImage(300, 300);
+    const fetchFn = fetchSimulado(async () => {
+      if (fetchFn.calls.length === 5) {
+        await new Promise((resolve) => setTimeout(resolve, 80));
+        return respuesta(original);
+      }
+      throw new TypeError('fetch failed');
+    });
+    const results = await postImages.savePostImages(posts(9), { fetchFn });
+    assert.equal(fetchFn.calls.length, 9);
+    assert.ok(results.every((r) => !r.skipped));
+    assert.equal(results[4].ok, true);
+  });
+
   test('un link vencido no es un fallo de red: no corta', async () => {
     const fetchFn = fetchSimulado(() => respuesta('x', { status: 404, type: 'text/plain' }));
     const results = await postImages.savePostImages(posts(9), { fetchFn });

@@ -336,25 +336,25 @@ async function savePostImages(posts, deps = {}) {
   // varias descargas a la vez, un fallo de red (que vuelve al instante) le
   // gana a una descarga que anda (que tarda), y contarlos por orden de
   // llegada cortaría una tanda que en realidad está funcionando. Cada
-  // resultado se anota en su lugar y la racha se cuenta de corrido, hasta
-  // donde ya terminaron todos.
-  const outcomes = new Array(list.length); // 'red' | 'otro' | 'salteado'
-  let counted = 0;
-  let consecutiveNetworkFailures = 0;
+  // resultado se anota en su lugar y, con cada fallo de red, se cuenta la
+  // racha de fallos pegados a él en la lista entre los que ya terminaron.
+  // No se espera a que terminen los anteriores: si la red se cae a mitad de
+  // tanda, una descarga queda colgada hasta su tope de tiempo mientras las
+  // que siguen fallan al instante, y esperar a la colgada dejaba intentar la
+  // lista entera.
+  const outcomes = new Array(list.length); // sin terminar: undefined; 'red' | 'otro' | 'salteado'
   const note = (index, result) => {
     outcomes[index] = result.skipped ? 'salteado' : result.network ? 'red' : 'otro';
-    while (counted < list.length && outcomes[counted] !== undefined) {
-      const outcome = outcomes[counted];
-      counted += 1;
-      if (outcome === 'salteado') continue;
-      consecutiveNetworkFailures = outcome === 'red' ? consecutiveNetworkFailures + 1 : 0;
-      if (consecutiveNetworkFailures >= MAX_NETWORK_FAILURES && !cut) {
-        cut = true;
-        console.error(
-          `[imagenes] ${MAX_NETWORK_FAILURES} fallos de red seguidos: se corta la tanda de imágenes. ` +
-            'Lo que falta se intenta en el próximo ciclo que traiga el link.'
-        );
-      }
+    if (outcomes[index] !== 'red' || cut) return;
+    let run = 1;
+    for (let i = index - 1; i >= 0 && outcomes[i] === 'red'; i -= 1) run += 1;
+    for (let i = index + 1; i < list.length && outcomes[i] === 'red'; i += 1) run += 1;
+    if (run >= MAX_NETWORK_FAILURES) {
+      cut = true;
+      console.error(
+        `[imagenes] ${MAX_NETWORK_FAILURES} fallos de red seguidos: se corta la tanda de imágenes. ` +
+          'Lo que falta se intenta en el próximo ciclo que traiga el link.'
+      );
     }
   };
 
