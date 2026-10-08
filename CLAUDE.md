@@ -142,6 +142,10 @@ fijas ni barra simulada. Cuentas, hashtags, búsquedas y keywords se lanzan
 juntas (`Promise.allSettled`) y se muestran como una sola fase combinada
 ("Detectando posteos nuevos"); una fase sin trabajo para esa plataforma
 (ej. benchmark en X) nunca se anuncia, sin casos especiales por plataforma.
+Las fases de fotos son la excepción al porcentaje: se anuncian con su
+contador pero `startPhase(..., { countsInPercent: false })` las deja fuera
+del total global (si no, la barra volvía de 100 % a la mitad al final del
+ciclo); `tick(n, { ok: null })` avanza sin contar como bien ni como error.
 
 `refreshStaleAccountStats` y `refreshPostMetrics` también lanzan sus
 cuentas (el refresco por URL, sus lotes de URLs) con `Promise.allSettled`,
@@ -335,29 +339,48 @@ videos. SDD en `openspec/changes/monitoreo-fotos/`.
   detalle al guardar un posteo NUEVO (`monitor.js`) y el refresco por URL
   (`metricsRefresh.js`), que completa los ya guardados. Sin link en la
   respuesta, el posteo queda sin foto; un posteo conocido que reaparece en
-  la detección no baja nada.
+  la detección no baja nada. Con `REFRESH_MODE=perfil` el refresco NO baja
+  fotos (solo posteos nuevos y reintentos).
 - `src/postImages.js` baja y arma las copias con `sharp`; no conoce la base
   y NUNCA tira. Reglas: `https`, hosts de `IMAGE_HOSTS` por plataforma (sin
-  lista no baja: no hay default), sin redirecciones, `image/*`, 15 MB, 15 s,
-  `imageLimiter` propio (3 a la vez; nunca el `apifyLimiter`), corte de la
-  tanda a los 5 fallos de red seguidos contados en el orden de la lista. Las
-  copias van a un temporal y se renombran con las dos listas: un fallo no
-  pisa lo guardado. En los logs va el host, nunca el link firmado.
+  lista no baja: no hay default), sin redirecciones, `image/*`, solo JPEG,
+  PNG o WebP reconocidos por sus primeros bytes ANTES de pasárselos a
+  `sharp` (que también abre SVG, GIF, TIFF, AVIF), hasta
+  `MAX_INPUT_PIXELS` (12 MP), 15 MB, 15 s, `imageLimiter` propio (3 a la
+  vez; nunca el `apifyLimiter`). Las copias van a un temporal y se renombran
+  con las dos listas: un fallo no pisa lo guardado. En los logs va el host,
+  nunca el link firmado.
+- La tanda (`savePostImages`) se corta a las 5 fotos SEGUIDAS con fallo,
+  del tipo que sea (red, servidor, disco, o que quien llama no pudo anotar:
+  `onResult` devuelve false), contadas en el orden de la lista entre las que
+  ya terminaron (no espera a una descarga colgada), y tiene un tope de 2
+  minutos (`BATCH_TIMEOUT_MS`). Los resultados llevan `retry`: fallo
+  pasajero (red, tope de tiempo, 5xx/429/408, disco) o propio del link o de
+  la imagen.
 - `src/postImageSync.js` es el enganche con el ciclo: baja solo lo que falta
-  (marca en la base Y archivos en disco), anota con
-  `db.markPostImageSaved` / `markPostImageFailed` (por id y plataforma),
-  anuncia la fase "Guardando fotos" y junta el resumen que imprime el
-  scheduler, una línea por ciclo. Una foto no frena un ciclo.
+  (marca en la base Y archivos en disco), anota CADA foto apenas termina
+  (`db.markPostImageSaved` / `markPostImageFailed` / `markPostImagePending`,
+  por id y plataforma), anuncia la fase "Guardando fotos" y junta el resumen
+  que imprime el scheduler, una línea por ciclo. Una foto no frena un ciclo.
+- **Pendientes.** Lo que no se llegó a intentar (corte, tope de tiempo) o
+  falló con `retry` queda `pendiente` con su link. Al EMPEZAR cada ciclo,
+  antes de la detección, `retryPendingPostImages` (lo llama el scheduler)
+  las reintenta con el link guardado, sin Apify: hasta 150, las más
+  recientes primero, y ahí un link vencido no cuenta para el corte
+  (`cutOnExpired: false`). `vencido` y `error` no se reintentan con el mismo
+  link: esperan el próximo refresco.
 - Columnas de `detected_posts`: `image_source_url`, `image_status` (`ok` |
-  `vencido` | `error` | null), `image_saved_at` (lo ÚNICO que decide si hay
-  foto; un fallo no lo toca), `image_width`, `image_height` (guardadas, sin
-  uso en el frontend).
+  `vencido` | `error` | `pendiente` | null), `image_saved_at` (lo ÚNICO que
+  decide si hay foto; un fallo no lo toca), `image_width`, `image_height`
+  (guardadas, sin uso en el frontend). Para el frontend `pendiente` es un
+  posteo todavía sin foto, no una foto fallida.
 - `src/postImageRoutes.js`: `GET /api/monitoring/posts/:id/image?plataforma=&size=thumb|full`
   (detrás del login; el archivo se arma con datos de la base, nunca con texto
   del pedido) y `withImage`, que pone `image: { thumbUrl, fullUrl, status,
   width, height }` en el listado y saca las columnas crudas: el link
   original no va al navegador. `image: null` en una plataforma sin fotos.
-- `POST_IMAGES=0` apaga las descargas; lo guardado se sigue sirviendo. Si
+- `POST_IMAGES=0` apaga las descargas y los reintentos, y no anota nada;
+  lo guardado se sigue sirviendo. Si
   `sharp` no carga, la app arranca igual, sin fotos.
 - Tests (`test/postImages*.test.js`): `fetch` simulado, imágenes generadas
   con `sharp` y `MONITORING_MEDIA_DIR` (solo para tests) en una carpeta

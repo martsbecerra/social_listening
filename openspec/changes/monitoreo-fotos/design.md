@@ -24,10 +24,11 @@ copias. El servidor sirve los archivos detrás del login.
   chica. Siempre JPEG, respetando la orientación de la foto.
 - **Reglas de la descarga.** Solo `https`; solo hosts terminados en
   `.cdninstagram.com` o `.fbcdn.net`; sin usuario, contraseña ni puerto en
-  el link; sin seguir redirecciones; solo `image/*`; tope de 15 MB y de 15
-  segundos por imagen; tres a la vez con limitador propio; la tanda se corta
-  tras cinco fallos de red seguidos. En los logs va el host, nunca el link
-  firmado.
+  el link; sin seguir redirecciones; solo `image/*` y solo JPEG, PNG o WebP
+  de hasta 12 megapíxeles; tope de 15 MB y de 15 segundos por imagen; tres a
+  la vez con limitador propio; la tanda se corta tras cinco fotos seguidas
+  con fallo y tiene un tope de 2 minutos (ver "Arreglos tras la revisión
+  independiente"). En los logs va el host, nunca el link firmado.
 - **Sin default de plataforma.** La lista de hosts permitidos va por
   plataforma; una plataforma sin lista no baja nada.
 - **El módulo nunca tira.** Cualquier fallo vuelve como resultado
@@ -35,7 +36,8 @@ copias. El servidor sirve los archivos detrás del login.
   Un fallo no toca los archivos que ya estaban.
 - **Columnas en `detected_posts`**, todas anulables:
   - `image_source_url`: el link original del último intento.
-  - `image_status`: `ok`, `vencido` o `error`; vacío si nunca vino imagen.
+  - `image_status`: `ok`, `vencido`, `error` o `pendiente` (queda para
+    reintentar); vacío si nunca vino imagen.
   - `image_saved_at`: cuándo se guardaron las copias. Es lo único que decide
     si hay foto; un intento fallido cambia el estado y no toca esto.
   - `image_width`, `image_height`: medidas de la original (ver "Lo que
@@ -63,8 +65,8 @@ copias. El servidor sirve los archivos detrás del login.
   que la búsqueda vuelve a traer no baja nada: lo completa el refresco por
   URL. El refresco saltea las cuentas que el benchmark acaba de recalcular
   en ese ciclo, así que sus fotos llegan en un ciclo posterior.
-- **El corte por red se cuenta en el orden de la lista**, no en el orden en
-  que terminan las descargas: un éxito lento no tapa cinco fallos rápidos.
+- **El corte de la tanda se cuenta en el orden de la lista**, no en el orden
+  en que terminan las descargas: un éxito lento no tapa cinco fallos rápidos.
 - **Logs callados.** El limitador de las fotos no escribe un renglón por
   descarga (`quiet` en `createLimiter`). Queda una línea de resumen por
   ciclo (`[imagenes] fotos del ciclo: ...`, solo si hubo posteos con link) y
@@ -80,13 +82,62 @@ copias. El servidor sirve los archivos detrás del login.
   bajar, cambia la dirección.
 - **Resguardos de la miniatura y de la entrada.** La miniatura tiene además
   un alto máximo de 720 px (un reel da 360 × 640; solo entra en juego con
-  una imagen altísima, que queda más angosta). Una imagen de más de 50
-  megapíxeles se rechaza.
+  una imagen altísima, que queda más angosta). Una imagen de más de 12
+  megapíxeles se rechaza (eran 50 hasta la revisión).
 - **Sin `sharp`, la app arranca igual**: avisa en el log y no baja fotos.
 - **`MONITORING_MEDIA_DIR`**, solo para los tests: la carpeta de las copias.
 - **`image_width` e `image_height` quedaron sin uso en el frontend.** El
   lado de la foto del pop-up tiene tamaño fijo y la imagen se acomoda
   adentro: no hace falta reservar el lugar.
+
+## Arreglos tras la revisión independiente
+
+Tres revisores de solo lectura (descarga y ruta; ciclo y base; frontend)
+miraron la rama antes del PR. El dueño eligió qué arreglar; cada arreglo
+tiene su commit y su test. Lo que quedó sin arreglar está en `tasks.md`.
+
+- **El corte también actúa con una descarga colgada.** La racha se contaba
+  solo sobre el tramo inicial de la lista ya terminado: con la primera
+  descarga colgada y el resto fallando al instante, se intentaba la lista
+  entera. Ahora, con cada fallo, se cuenta la racha de fallos pegados a él en
+  la lista entre los que ya terminaron.
+- **Cualquier fallo corta, no solo los de red.** Cinco fotos seguidas con
+  fallo (red, servidor, disco, o que no se pudo anotar en la base) cortan la
+  tanda. Excepción: en el reintento de pendientes, un link vencido es la
+  respuesta esperable y no cuenta.
+- **Tope de 2 minutos por tanda.** Con un servidor lento pero vivo nada
+  cortaba: 150 fotos podían sumar más de 12 minutos de ciclo.
+- **Solo JPEG, PNG y WebP, y de hasta 12 megapíxeles.** El formato se
+  reconoce por los primeros bytes antes de pasárselo a `sharp`, que también
+  abre SVG, GIF, TIFF y AVIF. El tamaño en píxeles se mira en el encabezado,
+  sin decodificar.
+- **La base se anota foto por foto.** Antes, al terminar la tanda: si el
+  proceso moría en el medio, lo bajado quedaba sin marca.
+- **Estado `pendiente` y reintento al ciclo siguiente.** Una foto que no se
+  llegó a intentar, o que falló por algo pasajero, guarda su link y se
+  reintenta al empezar el ciclo siguiente, sin Apify. Antes esperaba el
+  próximo turno de refresco del posteo (hasta 7 días) y lo no intentado ni
+  guardaba el link. No hay columna nueva ni contador de intentos: lo acotan
+  el corte de la tanda (cinco intentos por ciclo si todo falla) y el
+  vencimiento del link (el servidor responde 403 y la foto pasa a
+  `vencido`). `vencido` y `error` no se reintentan con el mismo link.
+- **Las fases de fotos no mueven el porcentaje global.** Se anuncian con su
+  contador; el porcentaje queda donde lo dejó la fase anterior, en vez de
+  volver de 100 % a cerca de la mitad al final del ciclo.
+- **Frontend.** La foto de la tarjeta no se arrastra (un clic con un leve
+  movimiento abre el pop-up) y la del pop-up tiene texto alternativo.
+- **Test de la ruta.** El de "nada fuera de la carpeta" usaba ids que no
+  estaban en la base y no podía fallar. Ahora usa posteos guardados con ids
+  hostiles, cebos en cada destino posible y un control de que, sin la
+  validación, el cebo sale.
+- **Login.** El control de sesión se salteaba con `/API/` en mayúsculas (ya
+  estaba así en `main`). Se arregló aparte, en la rama
+  `fix_login_mayusculas`: la ruta de la foto depende de ese arreglo para
+  cumplir REQ-FOTO-06.
+
+Un detalle del resumen del ciclo: si una foto pendiente se reintenta al
+empezar y, en el mismo ciclo, al posteo le toca refresco, ese posteo se
+cuenta dos veces en la línea `[imagenes] fotos del ciclo`.
 
 ## Decisiones del dueño
 
@@ -102,7 +153,11 @@ copias. El servidor sirve los archivos detrás del login.
 - Sin intento de descarga: recuadro de color en la tarjeta y "Sin foto" en
   el pop-up. Descarga fallida o copia que no carga: "Imagen no disponible"
   en la tarjeta y en el pop-up.
-- `public/css/styles.css` no se toca en este cambio sin aviso previo.
+- `public/css/styles.css` no se toca en este cambio sin aviso previo. Tras
+  la revisión: solo sus comentarios. El recorte de la tarjeta (150 px de
+  alto) queda como está.
+- De la revisión independiente: qué se arregla y qué queda pendiente (ver
+  "Arreglos tras la revisión independiente" y `tasks.md`).
 
 ## Verificación
 

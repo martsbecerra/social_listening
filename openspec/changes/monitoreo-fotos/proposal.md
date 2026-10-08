@@ -83,7 +83,7 @@ Ocho pasos, un commit por paso (ver `tasks.md`):
 | Risk | Likelihood | Mitigation |
 |------|------------|------------|
 | Bajar algo que no es una imagen de Instagram | Low | Solo `https`, solo hosts de Instagram / Facebook, sin redirecciones, solo `image/*`, tope de tamaño y de tiempo |
-| Una descarga trabada frena el ciclo | Med | Tiempo máximo por imagen, pocas a la vez con limitador propio, corte de la tanda tras varios fallos de red seguidos; el módulo nunca tira |
+| Una descarga trabada frena el ciclo | Med | Tiempo máximo por imagen, pocas a la vez con limitador propio, corte de la tanda tras cinco fotos seguidas con fallo y tope de 2 minutos por tanda; el módulo nunca tira; lo que no sale queda pendiente para el ciclo siguiente |
 | Pisar una copia buena con una descarga fallida | Low | Se escribe a un temporal y se renombra recién con las dos copias listas; un fallo no toca archivos ni la marca de "hay foto" |
 | Migrar la base real antes de tiempo | Med | Columnas aditivas con guarda; se prueba sobre una copia fuera del repo; backup antes; la base real se migra cuando el dueño relanza la app |
 | La carpeta de fotos crece | Med | Unos 125 KB por posteo; sin borrado automático en este cambio, queda anotado |
@@ -113,7 +113,8 @@ borrar sin efecto en el resto de la app.
 - [x] Las imágenes solo se ven con sesión iniciada
 - [x] El feed y el pop-up muestran la foto cuando existe (probado en el
   navegador con el servidor de prueba y fotos generadas)
-- [x] Suite verde con `IG_ACTOR=apidojo` y con `IG_ACTOR=apify` (295 de 295)
+- [x] Suite verde con `IG_ACTOR=apidojo` y con `IG_ACTOR=apify` (314 de 314,
+  ya con los arreglos de la revisión independiente)
 
 Todo se verificó con red simulada e imágenes generadas. Falta lo que solo
 se puede ver con datos reales: el primer ciclo con la app relanzada (ver

@@ -895,7 +895,10 @@ arrancar como `IG_ACTOR`) cada publicación vencida se pide por su URL
 búsqueda — en un run por ciclo, en lotes de hasta 100 URLs (el endpoint
 sincrónico de Apify corta a los 300 s; el detalle de 17 URLs tardó 19 s)
 lanzados con `refreshLimiter`. `REFRESH_MODE=perfil` deja el camino anterior
-exactamente como estaba: el rollback es un cambio de `.env`.
+exactamente como estaba: el rollback es un cambio de `.env`. Una diferencia a
+tener en cuenta: en modo perfil el refresco **no baja fotos**, así que los
+posteos ya guardados que no tienen foto no la reciben (ver "Fotos de los
+posteos").
 
 - **Decidido por publicación**, con los mismos tramos y cadencias de
   siempre (`db.listPostsDueForRefresh`). La cadencia se mide desde la última
@@ -1000,28 +1003,47 @@ copias propias en JPEG**, hechas de esa única descarga.
   detalle que ya se pide) y en el refresco de métricas por URL, si el posteo
   todavía no tiene copia y la respuesta trae link. Así los posteos ya
   guardados se completan solos en los ciclos siguientes, a medida que les
-  toca el refresco. Con la copia guardada no se vuelve a bajar.
+  toca el refresco. Con la copia guardada no se vuelve a bajar. Con
+  `REFRESH_MODE=perfil` (el refresco anterior, por cuenta) los posteos ya
+  guardados **no** se completan: en ese modo solo se bajan las fotos de los
+  posteos nuevos y los reintentos de pendientes.
+- **Lo que no sale queda pendiente.** Si una foto no se llegó a intentar (la
+  tanda se cortó o llegó a su tope de tiempo) o falló por algo pasajero (la
+  red, un error del servidor de imágenes, la escritura en disco), queda con
+  su link guardado y el estado `pendiente`, y **se reintenta al empezar el
+  ciclo siguiente**, antes de la detección, sin pedirle nada a Apify (hasta
+  150 por ciclo, las más recientes primero). No espera al próximo refresco
+  del posteo, que en el tramo frío es a los 7 días. Un link vencido o una
+  imagen rechazada no se reintentan con el mismo link: esperan a que un
+  refresco traiga uno nuevo.
 - **Cero gasto nuevo en Apify.** No se hace ningún pedido que no se hiciera
   antes. Si una respuesta no trae imagen, el posteo queda sin foto. Los
   posteos de más de 60 días ya no se refrescan (`REFRESH_COLD_MAX_DAYS`): los
   que ya tenían esa edad cuando llegó este cambio quedan sin foto.
 - **Reglas de la descarga.** Solo `https`; solo servidores de imágenes de
   Instagram y Facebook (hosts terminados en `.cdninstagram.com` o
-  `.fbcdn.net`); sin seguir redirecciones; solo respuestas `image/*`; tope
-  de 15 MB y de 15 segundos por imagen; tres a la vez, con un limitador
-  propio (`imageLimiter`, nunca el de Apify). Tras cinco fallos de red
-  seguidos se corta la tanda: lo que quedó sin bajar se intenta de nuevo en
-  el próximo refresco de ese posteo.
-- **Una foto nunca frena un ciclo.** El módulo no tira: todo fallo queda
-  anotado como `vencido` (el servidor respondió 403, 404 o 410) o `error`
-  (el resto), y el ciclo sigue. Un intento fallido no pisa ni borra una copia
-  que ya estaba: las copias se escriben a un archivo temporal y se renombran
-  recién cuando las dos están completas.
+  `.fbcdn.net`); sin seguir redirecciones; solo respuestas `image/*` y solo
+  archivos JPEG, PNG o WebP (reconocidos por sus primeros bytes, no por lo
+  que diga el servidor), de hasta 12 megapíxeles; tope de 15 MB y de 15
+  segundos por imagen; tres a la vez, con un limitador propio
+  (`imageLimiter`, nunca el de Apify).
+- **Cuándo se corta una tanda.** Tras cinco fotos seguidas con fallo, del
+  tipo que sea (la red, el servidor de imágenes, la carpeta que no se puede
+  escribir, la base que no puede anotar), y en cualquier caso a los 2
+  minutos: ahí no arranca ninguna descarga más y las que están en vuelo
+  terminan. Lo que no se intentó queda pendiente.
+- **Una foto nunca frena un ciclo.** El módulo no tira: cada foto queda
+  anotada apenas termina, como `ok`, `vencido` (el servidor respondió 403,
+  404 o 410), `error` (no es una imagen, formato o tamaño no permitidos) o
+  `pendiente`, y el ciclo sigue. Un intento fallido no pisa ni borra una
+  copia que ya estaba: las copias se escriben a un archivo temporal y se
+  renombran recién cuando las dos están completas.
 - **En la base.** `detected_posts` suma `image_source_url` (el link del
-  último intento), `image_status` (`ok`, `vencido`, `error`, o vacío si
-  nunca hubo intento), `image_saved_at` (cuándo se guardaron las copias: es
-  lo único que decide si hay foto), `image_width` e `image_height` (medidas
-  de la original). La migración es aditiva y corre sola al arrancar.
+  último intento), `image_status` (`ok`, `vencido`, `error`, `pendiente`, o
+  vacío si nunca hubo intento), `image_saved_at` (cuándo se guardaron las
+  copias: es lo único que decide si hay foto), `image_width` e
+  `image_height` (medidas de la original). La migración es aditiva y corre
+  sola al arrancar.
 - **Detrás del login.** `data/media/` no está dentro de `public/`. Las fotos
   salen por
   `GET /api/monitoring/posts/:id/image?plataforma=instagram&size=thumb|full`,
@@ -1030,16 +1052,20 @@ copias propias en JPEG**, hechas de esa única descarga.
   pedido. El listado de posteos manda `image` (`thumbUrl`, `fullUrl`,
   `status`, `width`, `height`); el link original de Instagram no sale del
   servidor.
-- **En pantalla.** Con copia: la foto. Sin intento: la tarjeta con el
-  recuadro de color y el pop-up con "Sin foto". Con la descarga fallida, o
-  si la copia no carga: "Imagen no disponible".
+- **En pantalla.** Con copia: la foto. Sin intento, o con la foto
+  pendiente: la tarjeta con el recuadro de color y el pop-up con "Sin foto".
+  Con el link vencido o la imagen rechazada, o si la copia no carga: "Imagen
+  no disponible".
 - **Apagarlo.** `POST_IMAGES=0` en `.env` apaga las descargas sin tocar
   código; lo ya guardado se sigue viendo. Si `sharp` no carga, la app
   arranca igual y lo avisa en el log: no baja fotos y el resto funciona.
 - **Logs.** Una línea por ciclo (`[imagenes] fotos del ciclo: 12
-  guardada(s), 140 ya estaban.`) y un renglón por cada foto que falla, con
-  el motivo y el host (nunca el link completo). Mientras se bajan,
-  "Actualizar ahora" muestra la fase "Guardando fotos".
+  guardada(s), 140 ya estaban, 3 pendiente(s) para el próximo ciclo.`) y un
+  renglón por cada foto que falla, con el motivo y el host (nunca el link
+  completo). Mientras se bajan, "Actualizar ahora" muestra la fase
+  "Guardando fotos" (o "Guardando fotos pendientes", al principio) con su
+  contador; esas fases no mueven el porcentaje global, que queda donde lo
+  dejó la fase anterior.
 - **Backup.** `data/monitoring.db` se respalda como siempre. `data/media/`
   se copia aparte, como cualquier carpeta, aun con la app corriendo (cada
   archivo se escribe una vez y no cambia más). Si se restaura la base sin la
