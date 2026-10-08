@@ -20,8 +20,9 @@
 //   - tope de tamaño (MAX_BYTES) y de tiempo (TIMEOUT_MS) por imagen;
 //   - pocas a la vez, con limitador PROPIO (imageLimiter; nunca el
 //     apifyLimiter ni los de benchmark/refresco: ver concurrencyLimiter.js);
-//   - la tanda se corta tras MAX_NETWORK_FAILURES fallos de red seguidos
-//     (la red no llega al servidor de imágenes: insistir solo demora el ciclo).
+//   - la tanda se corta tras MAX_CONSECUTIVE_FAILURES fotos seguidas con
+//     fallo, del tipo que sea (la red no llega, el servidor responde mal, no
+//     se puede escribir): insistir solo demora el ciclo y llena el log.
 //
 // NUNCA tira: todo fallo vuelve como resultado, para que una foto que no se
 // pudo bajar no frene un ciclo de monitoreo. Un fallo tampoco toca las
@@ -77,7 +78,7 @@ const MAX_BYTES = 15 * 1024 * 1024;
 const TIMEOUT_MS = 15000;
 const MAX_INPUT_PIXELS = 50e6; // una imagen de más de 50 megapíxeles no es una foto de Instagram
 const MAX_CONCURRENT = 3;
-const MAX_NETWORK_FAILURES = 5;
+const MAX_CONSECUTIVE_FAILURES = 5;
 
 // El servidor de imágenes dijo que ese link ya no sirve (venció, o el posteo
 // se borró): no es un error nuestro ni de la red.
@@ -257,7 +258,7 @@ async function writeCopies(paths, { thumb, full }) {
 }
 
 function logFailure(plataforma, id, reason, host) {
-  console.error(`[imagenes] (${plataforma}) ${id}: no se guardó la imagen (${reason}${host ? `, host ${host}` : ''}).`);
+  console.error(`[imagenes] (${String(plataforma)}) ${String(id)}: no se guardó la imagen (${reason}${host ? `, host ${host}` : ''}).`);
 }
 
 /**
@@ -274,7 +275,8 @@ function logFailure(plataforma, id, reason, host) {
  *   intentó (apagado, o se cortó la tanda) y no hay nada que anotar.
  *   `network`: el fallo fue de la red, no del link.
  */
-async function savePostImage({ plataforma, id, url } = {}, deps = {}) {
+async function savePostImage(post, deps = {}) {
+  const { plataforma, id, url } = post && typeof post === 'object' ? post : {};
   const sourceUrl = typeof url === 'string' && url ? url : null;
   try {
     if (!isEnabled()) return { ok: false, skipped: true, reason: sharp ? 'apagado' : 'sin-sharp' };
@@ -310,49 +312,56 @@ async function savePostImage({ plataforma, id, url } = {}, deps = {}) {
     return { ok: true, status: 'ok', sourceUrl, width: copies.width, height: copies.height, savedAt: new Date().toISOString() };
   } catch (err) {
     // No poder escribir en disco, o cualquier cosa no prevista.
-    console.error(`[imagenes] (${plataforma}) ${id}: no se guardó la imagen (error inesperado):`, err && err.message);
+    console.error(`[imagenes] (${String(plataforma)}) ${String(id)}: no se guardó la imagen (error inesperado):`, err && err.message);
     return { ...failure('error', 'error-inesperado'), sourceUrl };
   }
 }
 
 /**
- * Lo mismo para una tanda: pocas a la vez (imageLimiter) y con corte si la
- * red no llega al servidor de imágenes. NUNCA tira. Los resultados salen en
- * el mismo orden que los posteos.
+ * Lo mismo para una tanda: pocas a la vez (imageLimiter) y con corte si las
+ * fotos vienen fallando una atrás de otra. NUNCA tira. Los resultados salen
+ * en el mismo orden que los posteos.
  *
  * @param {{ plataforma: string, id: string, url: string }[]} posts
  * @param {object} [deps] los de savePostImage, más onResult(result, index):
- *   se llama por cada posteo apenas tiene resultado (para el progreso del
- *   ciclo). Si tira, se ignora.
+ *   se llama por cada posteo apenas tiene resultado (para anotarlo y para el
+ *   progreso del ciclo). Si devuelve false, tira o rechaza, ese posteo
+ *   cuenta como fallo para el corte: no se pudo anotar lo que pasó.
  * @returns {Promise<object[]>} un resultado de savePostImage por posteo; los
  *   que no se llegaron a intentar por el corte salen `skipped` con
- *   reason 'corte-por-red'.
+ *   reason 'corte-por-fallos'.
  */
 async function savePostImages(posts, deps = {}) {
   const list = Array.isArray(posts) ? posts : [];
   let cut = false;
 
-  // "Seguidos" es en el orden de la lista, no en el que van terminando: con
+  // Corte: MAX_CONSECUTIVE_FAILURES fotos seguidas que fallan, por lo que
+  // sea: la red no llega, el servidor de imágenes responde mal, no se puede
+  // escribir en la carpeta de fotos o no se puede anotar en la base. Si
+  // vienen todas mal, insistir con el resto solo demora el ciclo y llena el
+  // log. Una que sale bien corta la racha.
+  //
+  // "Seguidas" es en el orden de la lista, no en el que van terminando: con
   // varias descargas a la vez, un fallo de red (que vuelve al instante) le
   // gana a una descarga que anda (que tarda), y contarlos por orden de
   // llegada cortaría una tanda que en realidad está funcionando. Cada
-  // resultado se anota en su lugar y, con cada fallo de red, se cuenta la
-  // racha de fallos pegados a él en la lista entre los que ya terminaron.
-  // No se espera a que terminen los anteriores: si la red se cae a mitad de
-  // tanda, una descarga queda colgada hasta su tope de tiempo mientras las
-  // que siguen fallan al instante, y esperar a la colgada dejaba intentar la
+  // resultado se anota en su lugar y, con cada fallo, se cuenta la racha de
+  // fallos pegados a él en la lista entre los que ya terminaron. No se
+  // espera a que terminen los anteriores: si la red se cae a mitad de tanda,
+  // una descarga queda colgada hasta su tope de tiempo mientras las que
+  // siguen fallan al instante, y esperar a la colgada dejaba intentar la
   // lista entera.
-  const outcomes = new Array(list.length); // sin terminar: undefined; 'red' | 'otro' | 'salteado'
-  const note = (index, result) => {
-    outcomes[index] = result.skipped ? 'salteado' : result.network ? 'red' : 'otro';
-    if (outcomes[index] !== 'red' || cut) return;
+  const outcomes = new Array(list.length); // sin terminar: undefined; 'bien' | 'fallo' | 'salteado'
+  const note = (index, outcome) => {
+    outcomes[index] = outcome;
+    if (outcome !== 'fallo' || cut) return;
     let run = 1;
-    for (let i = index - 1; i >= 0 && outcomes[i] === 'red'; i -= 1) run += 1;
-    for (let i = index + 1; i < list.length && outcomes[i] === 'red'; i += 1) run += 1;
-    if (run >= MAX_NETWORK_FAILURES) {
+    for (let i = index - 1; i >= 0 && outcomes[i] === 'fallo'; i -= 1) run += 1;
+    for (let i = index + 1; i < list.length && outcomes[i] === 'fallo'; i += 1) run += 1;
+    if (run >= MAX_CONSECUTIVE_FAILURES) {
       cut = true;
       console.error(
-        `[imagenes] ${MAX_NETWORK_FAILURES} fallos de red seguidos: se corta la tanda de imágenes. ` +
+        `[imagenes] ${MAX_CONSECUTIVE_FAILURES} fotos seguidas con fallo: se corta la tanda de imágenes. ` +
           'Lo que falta se intenta en el próximo ciclo que traiga el link.'
       );
     }
@@ -361,17 +370,29 @@ async function savePostImages(posts, deps = {}) {
   const settled = await Promise.allSettled(
     list.map((post, index) =>
       imageLimiter.run(async () => {
-        const result = cut ? { ok: false, skipped: true, reason: 'corte-por-red' } : await savePostImage(post, deps);
-        note(index, result);
-        if (typeof deps.onResult === 'function') {
+        let result;
+        if (cut) {
+          result = { ok: false, skipped: true, reason: 'corte-por-fallos' };
+        } else {
           try {
-            deps.onResult(result, index);
+            result = await savePostImage(post, deps);
           } catch (err) {
-            // El aviso es de cortesía: no puede romper la tanda.
+            result = { ...failure('error', 'error-inesperado'), sourceUrl: null };
           }
         }
+        // Quien llama anota acá el resultado (la base, el progreso). Si no
+        // pudo, para el corte es un fallo más aunque la foto haya bajado.
+        let noted = true;
+        if (typeof deps.onResult === 'function') {
+          try {
+            noted = (await deps.onResult(result, index)) !== false;
+          } catch (err) {
+            noted = false;
+          }
+        }
+        note(index, result.skipped ? 'salteado' : result.ok && noted ? 'bien' : 'fallo');
         return result;
-      }, `${post && post.plataforma}:${post && post.id}`)
+      }, `${String(post && post.plataforma)}:${String(post && post.id)}`)
     )
   );
   return settled.map((entry) =>
@@ -395,5 +416,5 @@ module.exports = {
   FULL_LONG_SIDE,
   MAX_BYTES,
   TIMEOUT_MS,
-  MAX_NETWORK_FAILURES,
+  MAX_CONSECUTIVE_FAILURES,
 };

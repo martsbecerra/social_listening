@@ -417,9 +417,9 @@ describe('postImages: la tanda', () => {
     const salteados = results.filter((r) => r.skipped);
     assert.ok(intentados.every((r) => r.network && r.status === 'error'));
     // Corta al quinto; a lo sumo terminan los que ya estaban en vuelo.
-    assert.ok(intentados.length >= postImages.MAX_NETWORK_FAILURES && intentados.length <= postImages.MAX_NETWORK_FAILURES + 2, `intentados: ${intentados.length}`);
+    assert.ok(intentados.length >= postImages.MAX_CONSECUTIVE_FAILURES && intentados.length <= postImages.MAX_CONSECUTIVE_FAILURES + 2, `intentados: ${intentados.length}`);
     assert.equal(fetchFn.calls.length, intentados.length);
-    assert.ok(salteados.length >= 5 && salteados.every((r) => r.reason === 'corte-por-red'));
+    assert.ok(salteados.length >= 5 && salteados.every((r) => r.reason === 'corte-por-fallos'));
     assert.ok(logs.some((l) => l.includes('se corta la tanda')));
   });
 
@@ -436,10 +436,10 @@ describe('postImages: la tanda', () => {
     assert.equal(results.length, 40);
     const intentados = results.filter((r) => !r.skipped);
     // La colgada, cinco fallos y a lo sumo las que ya estaban en vuelo.
-    assert.ok(intentados.length >= postImages.MAX_NETWORK_FAILURES + 1 && intentados.length <= postImages.MAX_NETWORK_FAILURES + 3, `intentados: ${intentados.length}`);
+    assert.ok(intentados.length >= postImages.MAX_CONSECUTIVE_FAILURES + 1 && intentados.length <= postImages.MAX_CONSECUTIVE_FAILURES + 3, `intentados: ${intentados.length}`);
     assert.equal(fetchFn.calls.length, intentados.length);
     assert.equal(results[0].reason, 'tiempo-agotado', 'la colgada termina por su tope de tiempo');
-    assert.ok(results.slice(10).every((r) => r.skipped && r.reason === 'corte-por-red'));
+    assert.ok(results.slice(10).every((r) => r.skipped && r.reason === 'corte-por-fallos'));
   });
 
   test('cuatro fallos, una que anda y tarda, cuatro fallos: no hay cinco seguidos y no corta', async () => {
@@ -457,11 +457,61 @@ describe('postImages: la tanda', () => {
     assert.equal(results[4].ok, true);
   });
 
-  test('un link vencido no es un fallo de red: no corta', async () => {
-    const fetchFn = fetchSimulado(() => respuesta('x', { status: 404, type: 'text/plain' }));
-    const results = await postImages.savePostImages(posts(9), { fetchFn });
-    assert.equal(fetchFn.calls.length, 9);
-    assert.ok(results.every((r) => r.status === 'vencido' && !r.skipped));
+  test('los fallos que no son de red también cortan: link vencido, respuesta que no es imagen, carpeta que no se puede escribir', async () => {
+    const original = await makeImage(300, 300);
+    // Una carpeta de fotos imposible: su lugar lo ocupa un archivo.
+    const bloqueo = path.join(MEDIA, 'bloqueo');
+    fs.writeFileSync(bloqueo, 'no soy una carpeta');
+    const casos = [
+      { nombre: 'vencido', deps: { fetchFn: fetchSimulado(() => respuesta('x', { status: 404, type: 'text/plain' })) }, reason: 'http-404' },
+      { nombre: 'no es imagen', deps: { fetchFn: fetchSimulado(() => respuesta('<html></html>', { type: 'text/html' })) }, reason: 'no-es-imagen' },
+      { nombre: 'servidor caído', deps: { fetchFn: fetchSimulado(() => respuesta('x', { status: 503, type: 'text/plain' })) }, reason: 'http-503' },
+      { nombre: 'disco', deps: { fetchFn: fetchSimulado(() => respuesta(original)), mediaDir: bloqueo }, reason: 'error-inesperado' },
+    ];
+    for (const caso of casos) {
+      logs.length = 0;
+      const results = await postImages.savePostImages(posts(30), caso.deps);
+      const intentados = results.filter((r) => !r.skipped);
+      assert.ok(intentados.every((r) => !r.ok && r.reason === caso.reason), caso.nombre);
+      // Cinco seguidas y las que ya estaban en vuelo (no terminan en orden): muy lejos de las 30.
+      assert.ok(intentados.length >= postImages.MAX_CONSECUTIVE_FAILURES && intentados.length <= 12, `${caso.nombre}: ${intentados.length} intentados`);
+      assert.equal(caso.deps.fetchFn.calls.length, intentados.length, caso.nombre);
+      assert.ok(results.filter((r) => r.skipped).every((r) => r.reason === 'corte-por-fallos'), caso.nombre);
+      assert.equal(logs.filter((l) => l.includes('se corta la tanda')).length, 1, caso.nombre);
+    }
+    fs.rmSync(bloqueo, { force: true });
+  });
+
+  test('si quien llama no pudo anotar el resultado, cuenta como fallo y también corta', async () => {
+    const original = await makeImage(300, 300);
+    const avisos = {
+      'devuelve false': () => false,
+      'tira': () => {
+        throw new Error('la base no responde');
+      },
+      'rechaza': async () => {
+        throw new Error('la base no responde');
+      },
+    };
+    for (const [nombre, onResult] of Object.entries(avisos)) {
+      fs.rmSync(IG_DIR, { recursive: true, force: true });
+      const fetchFn = fetchSimulado(() => respuesta(original));
+      const results = await postImages.savePostImages(posts(30), { fetchFn, onResult });
+      const intentados = results.filter((r) => !r.skipped);
+      assert.ok(intentados.every((r) => r.ok), `${nombre}: las fotos bajaron`);
+      assert.ok(intentados.length >= postImages.MAX_CONSECUTIVE_FAILURES && intentados.length <= 12, `${nombre}: ${intentados.length} intentados`);
+    }
+    // Un aviso que anda (o que no devuelve nada) no cuenta como fallo.
+    const todas = await postImages.savePostImages(posts(8), { fetchFn: fetchSimulado(() => respuesta(original)), onResult: () => undefined });
+    assert.ok(todas.every((r) => r.ok));
+  });
+
+  test('nunca tira: posteos que no son posteos dentro de la lista', async () => {
+    const original = await makeImage(300, 300);
+    const lista = [null, undefined, 'texto', { plataforma: 'instagram', id: Symbol('raro'), url: link() }, { plataforma: 'instagram', id: 'bueno', url: link() }];
+    const results = await postImages.savePostImages(lista, { fetchFn: fetchSimulado(() => respuesta(original)) });
+    assert.deepEqual(results.map((r) => r.ok), [false, false, false, false, true]);
+    assert.equal((await postImages.savePostImage(null)).ok, false);
   });
 
   test('una descarga que sale bien corta la racha de fallos', async () => {

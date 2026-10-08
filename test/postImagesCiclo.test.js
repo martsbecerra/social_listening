@@ -447,11 +447,11 @@ describe('fotos en el ciclo: progreso, resumen y logs', { concurrency: false }, 
     };
     const result = await detectar();
     assert.equal(result.porPlataforma.instagram.newCount, 12, 'los doce posteos quedaron guardados');
-    assert.ok(fetchCalls.length >= postImages.MAX_NETWORK_FAILURES && fetchCalls.length <= postImages.MAX_NETWORK_FAILURES + 2, `intentos: ${fetchCalls.length}`);
+    assert.ok(fetchCalls.length >= postImages.MAX_CONSECUTIVE_FAILURES && fetchCalls.length <= postImages.MAX_CONSECUTIVE_FAILURES + 2, `intentos: ${fetchCalls.length}`);
     const sinIntentar = codes.filter((code) => estado(code).status === null).length;
     assert.equal(sinIntentar, 12 - fetchCalls.length, 'lo que no se intentó no queda marcado como error');
     const resumen = postImageSync.formatCycleSummary(postImageSync.takeCycleSummary());
-    assert.match(resumen, /sin intentar \(se cortó la tanda por fallos de red\)/);
+    assert.match(resumen, /sin intentar \(se cortó la tanda por fallos seguidos\)/);
   });
 
   test('la línea de resumen: null si ninguna respuesta trajo link', () => {
