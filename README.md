@@ -62,6 +62,9 @@ social_listening_app/
 │   ├── accountStats.js       # Benchmark por cuenta (solo redes con esa capability).
 │   ├── metricsRefresh.js     # Refresco de métricas de posteos ya guardados: por URL con el actor oficial (REFRESH_MODE=url) o por perfil.
 │   ├── refreshMode.js        # Interruptor REFRESH_MODE (url | perfil), validado al arrancar.
+│   ├── postImages.js         # Fotos de los posteos: descarga segura y las dos copias JPEG (sharp). No toca la base.
+│   ├── postImageSync.js      # Fotos dentro del ciclo: baja las que faltan y anota el resultado en la base.
+│   ├── postImageRoutes.js    # Ruta de la imagen (detrás del login) y el campo image del listado de posteos.
 │   ├── classifier.js         # Relevancia + título + sentimiento + motivo de cada posteo (una llamada, mismo modelo que el análisis), para todas las redes.
 │   ├── mailer.js             # Envío de emails (alertas + magic link).
 │   ├── auth/                 # Allowlist, magic link, sesión, rate limit, gate.
@@ -80,6 +83,7 @@ social_listening_app/
 │   └── allowed-emails.example.txt  # Plantilla de emails que pueden entrar.
 ├── data/
 │   ├── monitoring.db         # Base SQLite (se crea sola, no se versiona).
+│   ├── media/                # Fotos de los posteos: dos JPEG por posteo (se crea sola, no se versiona).
 │   └── geo/                  # Cache en disco de comunas.geojson y barrios.geojson (GCBA).
 ├── public/
 │   ├── index.html            # Login (pide un magic link por email).
@@ -659,6 +663,9 @@ Parada en la carpeta del proyecto:
 npm install
 ```
 
+Entre las dependencias está `sharp`, la librería que achica las fotos de los
+posteos: baja un binario ya compilado para Windows, sin instalar nada más.
+
 ### 3. Configurar las claves
 
 Copiá `.env.example` a `.env` y completá tus claves:
@@ -963,16 +970,87 @@ vista elegida en ese navegador.
   afuera. Desde ahí también se corrige el sentimiento y se ignora (la
   confirmación va adentro; al ignorar pasa al posteo siguiente). En celular
   ocupa la pantalla completa.
-- **Imagen**: por ahora la tarjeta muestra el recuadro de reemplazo con el
-  ícono del tipo y el pop-up dice "Sin foto"; la base no guarda fotos. Queda
-  listo para mostrarla cuando el posteo traiga el dato (`feedImageUrl` en
-  `public/js/monitoringFeed.js` y `feedPopImageUrl` en
-  `public/js/monitoringFeedPopup.js`).
+- **Imagen**: la tarjeta muestra la miniatura de la foto guardada y el
+  pop-up la imagen grande (ver "Fotos de los posteos", acá abajo). Si el
+  posteo no tiene foto, la tarjeta queda con el recuadro de color y el ícono
+  del tipo, y el pop-up dice "Sin foto". Si la descarga falló o la copia no
+  carga, los dos dicen "Imagen no disponible". El frontend lee el dato en
+  dos puntos: `feedImageUrl` en `public/js/monitoringFeed.js` y
+  `feedPopImageUrl` en `public/js/monitoringFeedPopup.js`.
 - Código en `public/js/monitoringFeed.js` y
   `public/js/monitoringFeedPopup.js` (los carga solo `instagram.html`);
   maquetas en `design/monitoreo-feed.html` y `design/monitoreo-popup.html`;
   SDD en `openspec/changes/monitoreo-feed/` y
   `openspec/changes/monitoreo-popup/`.
+
+### Fotos de los posteos (octubre 2026)
+
+Las tarjetas del Feed y el pop-up "Ver más" muestran la foto de cada posteo
+de Instagram. Los links de imagen de Instagram vencen a los pocos días, así
+que la app no guarda solo el link: baja la imagen una vez y deja **dos
+copias propias en JPEG**, hechas de esa única descarga.
+
+- **Qué se guarda.** Una miniatura de 360 px de ancho para la tarjeta y una
+  imagen de 900 px de lado largo para el pop-up, en
+  `data/media/instagram/<id>_thumb.jpg` y `<id>_full.jpg` (hasta unos 125 KB
+  por posteo entre las dos). De un reel se guarda la portada y de un
+  carrusel la primera imagen; nunca videos. Una imagen chica no se agranda.
+- **Cuándo se baja.** Al guardar un posteo nuevo (el link viene en el
+  detalle que ya se pide) y en el refresco de métricas por URL, si el posteo
+  todavía no tiene copia y la respuesta trae link. Así los posteos ya
+  guardados se completan solos en los ciclos siguientes, a medida que les
+  toca el refresco. Con la copia guardada no se vuelve a bajar.
+- **Cero gasto nuevo en Apify.** No se hace ningún pedido que no se hiciera
+  antes. Si una respuesta no trae imagen, el posteo queda sin foto. Los
+  posteos de más de 60 días ya no se refrescan (`REFRESH_COLD_MAX_DAYS`): los
+  que ya tenían esa edad cuando llegó este cambio quedan sin foto.
+- **Reglas de la descarga.** Solo `https`; solo servidores de imágenes de
+  Instagram y Facebook (hosts terminados en `.cdninstagram.com` o
+  `.fbcdn.net`); sin seguir redirecciones; solo respuestas `image/*`; tope
+  de 15 MB y de 15 segundos por imagen; tres a la vez, con un limitador
+  propio (`imageLimiter`, nunca el de Apify). Tras cinco fallos de red
+  seguidos se corta la tanda: lo que quedó sin bajar se intenta de nuevo en
+  el próximo refresco de ese posteo.
+- **Una foto nunca frena un ciclo.** El módulo no tira: todo fallo queda
+  anotado como `vencido` (el servidor respondió 403, 404 o 410) o `error`
+  (el resto), y el ciclo sigue. Un intento fallido no pisa ni borra una copia
+  que ya estaba: las copias se escriben a un archivo temporal y se renombran
+  recién cuando las dos están completas.
+- **En la base.** `detected_posts` suma `image_source_url` (el link del
+  último intento), `image_status` (`ok`, `vencido`, `error`, o vacío si
+  nunca hubo intento), `image_saved_at` (cuándo se guardaron las copias: es
+  lo único que decide si hay foto), `image_width` e `image_height` (medidas
+  de la original). La migración es aditiva y corre sola al arrancar.
+- **Detrás del login.** `data/media/` no está dentro de `public/`. Las fotos
+  salen por
+  `GET /api/monitoring/posts/:id/image?plataforma=instagram&size=thumb|full`,
+  que exige sesión como el resto de `/api/`. El archivo se arma con el id
+  guardado en la base y un tamaño de lista cerrada, nunca con texto del
+  pedido. El listado de posteos manda `image` (`thumbUrl`, `fullUrl`,
+  `status`, `width`, `height`); el link original de Instagram no sale del
+  servidor.
+- **En pantalla.** Con copia: la foto. Sin intento: la tarjeta con el
+  recuadro de color y el pop-up con "Sin foto". Con la descarga fallida, o
+  si la copia no carga: "Imagen no disponible".
+- **Apagarlo.** `POST_IMAGES=0` en `.env` apaga las descargas sin tocar
+  código; lo ya guardado se sigue viendo. Si `sharp` no carga, la app
+  arranca igual y lo avisa en el log: no baja fotos y el resto funciona.
+- **Logs.** Una línea por ciclo (`[imagenes] fotos del ciclo: 12
+  guardada(s), 140 ya estaban.`) y un renglón por cada foto que falla, con
+  el motivo y el host (nunca el link completo). Mientras se bajan,
+  "Actualizar ahora" muestra la fase "Guardando fotos".
+- **Backup.** `data/monitoring.db` se respalda como siempre. `data/media/`
+  se copia aparte, como cualquier carpeta, aun con la app corriendo (cada
+  archivo se escribe una vez y no cambia más). Si se restaura la base sin la
+  carpeta no se rompe nada: las fotos que faltan muestran "Imagen no
+  disponible" y el refresco por URL las vuelve a bajar mientras el posteo
+  tenga menos de 60 días. La carpeta se puede borrar entera sin afectar el
+  resto de la app. No hay borrado automático de fotos viejas.
+- Código en `src/postImages.js` (descarga y copias), `src/postImageSync.js`
+  (enganche con el ciclo y la base) y `src/postImageRoutes.js` (ruta y
+  listado); tests en `test/postImages*.test.js` (red simulada e imágenes
+  generadas: ni Apify ni descargas reales); SDD en
+  `openspec/changes/monitoreo-fotos/`.
 
 ### Benchmark y refresco de métricas en paralelo
 

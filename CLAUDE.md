@@ -312,13 +312,56 @@ redibujo es completo, con espera de 150 ms y `content-visibility: auto`.
 del feed; prefijo `feedPop`), un `<dialog>` que se rellena con la fila de
 Tabulator, recorre las tarjetas en pantalla (← →) y usa `updateSentiment` y
 `confirmIgnore` tal como están; el feed le avisa los cambios de la lista con
-`feedListListeners`. La imagen todavía no existe en los datos: los únicos
-puntos a enchufar son `feedImageUrl` (tarjeta) y `feedPopImageUrl` (pop-up).
+`feedListListeners`. La foto llega en `image` del listado (ver "Fotos de los
+posteos") y el frontend la lee solo en `feedImageUrl` (tarjeta, miniatura),
+`feedPopImageUrl` (pop-up, imagen grande) y `feedImageFailed`: sin intento
+de descarga, recuadro de color en la tarjeta y "Sin foto" en el pop-up;
+descarga fallida o copia que no carga, "Imagen no disponible" en los dos.
 Maquetas aprobadas en `design/monitoreo-feed.html` y
 `design/monitoreo-popup.html`; SDD en `openspec/changes/monitoreo-feed/` y
 `openspec/changes/monitoreo-popup/`. La suite no cubre el frontend: se
 prueba en el navegador con un servidor de prueba aparte (otro puerto, copia
 de la base, sin scheduler ni Apify).
+
+## Fotos de los posteos (solo Instagram)
+
+Por posteo se guardan dos JPEG hechos de UNA descarga:
+`data/media/<plataforma>/<id>_thumb.jpg` (360 px de ancho) y `<id>_full.jpg`
+(900 px de lado largo). Reel = portada, carrusel = primera imagen, nunca
+videos. SDD en `openspec/changes/monitoreo-fotos/`.
+
+- **Cero pedidos nuevos a Apify.** El link (`imageUrl` del posteo
+  normalizado de los dos adapters) sale de respuestas que ya se piden: el
+  detalle al guardar un posteo NUEVO (`monitor.js`) y el refresco por URL
+  (`metricsRefresh.js`), que completa los ya guardados. Sin link en la
+  respuesta, el posteo queda sin foto; un posteo conocido que reaparece en
+  la detección no baja nada.
+- `src/postImages.js` baja y arma las copias con `sharp`; no conoce la base
+  y NUNCA tira. Reglas: `https`, hosts de `IMAGE_HOSTS` por plataforma (sin
+  lista no baja: no hay default), sin redirecciones, `image/*`, 15 MB, 15 s,
+  `imageLimiter` propio (3 a la vez; nunca el `apifyLimiter`), corte de la
+  tanda a los 5 fallos de red seguidos contados en el orden de la lista. Las
+  copias van a un temporal y se renombran con las dos listas: un fallo no
+  pisa lo guardado. En los logs va el host, nunca el link firmado.
+- `src/postImageSync.js` es el enganche con el ciclo: baja solo lo que falta
+  (marca en la base Y archivos en disco), anota con
+  `db.markPostImageSaved` / `markPostImageFailed` (por id y plataforma),
+  anuncia la fase "Guardando fotos" y junta el resumen que imprime el
+  scheduler, una línea por ciclo. Una foto no frena un ciclo.
+- Columnas de `detected_posts`: `image_source_url`, `image_status` (`ok` |
+  `vencido` | `error` | null), `image_saved_at` (lo ÚNICO que decide si hay
+  foto; un fallo no lo toca), `image_width`, `image_height` (guardadas, sin
+  uso en el frontend).
+- `src/postImageRoutes.js`: `GET /api/monitoring/posts/:id/image?plataforma=&size=thumb|full`
+  (detrás del login; el archivo se arma con datos de la base, nunca con texto
+  del pedido) y `withImage`, que pone `image: { thumbUrl, fullUrl, status,
+  width, height }` en el listado y saca las columnas crudas: el link
+  original no va al navegador. `image: null` en una plataforma sin fotos.
+- `POST_IMAGES=0` apaga las descargas; lo guardado se sigue sirviendo. Si
+  `sharp` no carga, la app arranca igual, sin fotos.
+- Tests (`test/postImages*.test.js`): `fetch` simulado, imágenes generadas
+  con `sharp` y `MONITORING_MEDIA_DIR` (solo para tests) en una carpeta
+  temporal, fijado antes de los `require`. Ninguno toca `data/media`.
 
 ## Separación por plataforma
 

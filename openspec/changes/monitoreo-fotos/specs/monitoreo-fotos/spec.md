@@ -58,6 +58,19 @@ El módulo MUST NOT tirar: todo fallo vuelve como resultado. `vencido` si el ser
 - WHEN un intento nuevo falla
 - THEN los dos archivos quedan como estaban
 
+#### Scenario: Interruptor apagado
+
+- GIVEN `POST_IMAGES=0`
+- WHEN corre un ciclo con posteos nuevos que traen link de imagen
+- THEN no se hace ningún pedido de red, no se escribe ningún archivo, no cambia ninguna columna `image_*` y el ciclo termina como siempre
+- AND las fotos ya guardadas se siguen sirviendo
+
+#### Scenario: La red no llega al servidor de imágenes
+
+- GIVEN una tanda en la que cinco descargas seguidas, en el orden de la lista, fallan por la red
+- WHEN se procesa la tanda
+- THEN las que siguen no se intentan ni se anotan como fallidas, y quedan para el próximo refresco de cada posteo
+
 ---
 
 ### Requirement: REQ-FOTO-04 — Base
@@ -74,16 +87,52 @@ El módulo MUST NOT tirar: todo fallo vuelve como resultado. `vencido` si el ser
 
 ### Requirement: REQ-FOTO-05 — Cuándo se baja
 
-La foto MUST bajarse al guardar un posteo nuevo y en el refresco por URL cuando el posteo no tiene copia y la respuesta trae link. Con copia guardada MUST NOT volver a bajarse. Si la respuesta no trae imagen MUST NOT hacerse ningún pedido extra. MUST NOT hacerse ningún pedido a Apify que no se hiciera antes. Una descarga fallida MUST NOT frenar el ciclo.
+La foto MUST bajarse al guardar un posteo nuevo y en el refresco por URL cuando el posteo no tiene copia y la respuesta trae link. Con copia guardada (marca en la base y archivos en disco) MUST NOT volver a bajarse. Un posteo ya guardado que vuelve a aparecer en la detección MUST NOT bajar nada: lo completa el refresco. Si la respuesta no trae imagen MUST NOT hacerse ningún pedido extra. MUST NOT hacerse ningún pedido a Apify que no se hiciera antes. Una descarga fallida MUST NOT frenar el ciclo. Los logs MUST llevar una línea de resumen por ciclo y un renglón por cada foto que falla, y MUST NOT llevar un renglón por cada foto que sale bien.
+
+#### Scenario: Posteo guardado antes del cambio
+
+- GIVEN un posteo guardado sin foto, de menos de 60 días
+- WHEN le toca el refresco por URL y la respuesta trae link de imagen
+- THEN se guardan sus dos copias y la base queda con `image_status` `ok` e `image_saved_at`
+
+#### Scenario: La base dice que hay copia y los archivos no están
+
+- GIVEN un posteo con `image_saved_at` y sin sus archivos en disco
+- WHEN le toca el refresco por URL y la respuesta trae link
+- THEN la foto se vuelve a bajar
 
 ---
 
 ### Requirement: REQ-FOTO-06 — Detrás del login
 
-Las imágenes MUST servirse solo con sesión iniciada, por id y plataforma, con un tamaño de lista cerrada. El archivo MUST armarse con datos de la base, nunca con texto del pedido. El link original de Instagram MUST NOT mandarse al navegador.
+Las imágenes MUST servirse solo con sesión iniciada, por id y plataforma, con un tamaño de lista cerrada (`thumb` | `full`). El archivo MUST armarse con datos de la base, nunca con texto del pedido. El listado de posteos MUST mandar `image` con `thumbUrl`, `fullUrl`, `status`, `width` y `height` (las direcciones en null si no hay copia; `image` en null en una plataforma sin fotos). El link original de Instagram MUST NOT mandarse al navegador.
+
+#### Scenario: Sin sesión
+
+- GIVEN un pedido de la imagen de un posteo sin sesión iniciada
+- WHEN llega al servidor
+- THEN responde 401 y no manda el archivo
+
+#### Scenario: Desde otra plataforma, o sin copia
+
+- GIVEN un posteo de Instagram con foto
+- WHEN se pide su imagen con `plataforma=x`, o se pide la de un posteo sin copia guardada
+- THEN responde 404
 
 ---
 
 ### Requirement: REQ-FOTO-07 — Feed y pop-up
 
-La tarjeta MUST mostrar la miniatura con carga diferida y el pop-up la imagen grande, cuando existen. Sin foto, la tarjeta MUST mostrar el recuadro de reemplazo y el pop-up "Sin foto". "Imagen no disponible" queda para una imagen que falló.
+La tarjeta MUST mostrar la miniatura (`image.thumbUrl`) con carga diferida y el pop-up la imagen grande (`image.fullUrl`), cuando existen. Si nunca se intentó bajar la foto, la tarjeta MUST mostrar el recuadro de color con el ícono del tipo y el pop-up "Sin foto". Si la descarga falló (`image.status` `vencido` o `error`, sin copia) o la copia no carga, la tarjeta y el pop-up MUST mostrar "Imagen no disponible". El frontend MUST leer el dato solo en `feedImageUrl`, `feedPopImageUrl` y `feedImageFailed`.
+
+#### Scenario: Descarga fallida
+
+- GIVEN un posteo con `image.status` `error` y las direcciones en null
+- WHEN se dibuja su tarjeta y se abre su pop-up
+- THEN los dos dicen "Imagen no disponible" y no se hace ningún pedido de imagen
+
+#### Scenario: La copia no carga
+
+- GIVEN un posteo con direcciones de imagen cuyo archivo ya no está
+- WHEN se dibuja su tarjeta
+- THEN en lugar del ícono de imagen rota dice "Imagen no disponible"

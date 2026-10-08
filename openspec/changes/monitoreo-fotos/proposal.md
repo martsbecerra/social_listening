@@ -65,14 +65,18 @@ Ocho pasos, un commit por paso (ver `tasks.md`):
 | Area | Impact | Description |
 |------|--------|-------------|
 | `src/postImages.js` | New | Descarga segura y las dos copias |
+| `src/postImageSync.js` | New | Enganche con el ciclo y la base: baja lo que falta y anota el resultado |
+| `src/postImageRoutes.js` | New | Ruta de la imagen y forma del listado |
 | `package.json`, `package-lock.json` | Modified | Dependencia nueva: `sharp` |
 | `src/db.js` | Modified | Cinco columnas `image_*` y sus funciones |
 | `src/platforms/instagramApify.js`, `instagramApidojo.js`, `index.js` | Modified | `imageUrl` en el posteo normalizado |
-| `src/monitor.js`, `src/metricsRefresh.js`, `src/scheduler.js` | Modified | Bajar la foto en la detección y en el refresco |
-| `server.js` | Modified | Ruta de la imagen y campos en el listado |
+| `src/monitor.js`, `src/metricsRefresh.js`, `src/scheduler.js` | Modified | Bajar la foto en la detección y en el refresco; resumen por ciclo |
+| `src/concurrencyLimiter.js` | Modified | Opción `quiet` para el limitador de las fotos |
+| `server.js` | Modified | Monta la ruta de la imagen y arma `image` en el listado |
 | `public/js/monitoringFeed.js`, `monitoringFeedPopup.js` | Modified | Mostrar la foto |
 | `data/media/` | New | Las copias (no se versiona: `data/` ya está ignorada) |
 | `test/` | New | Todo con mocks: ni Apify ni descargas reales |
+| `.env.example`, `README.md`, `CLAUDE.md` | Modified | `POST_IMAGES` y la documentación |
 
 ## Risks
 
@@ -99,13 +103,18 @@ borrar sin efecto en el resto de la app.
 
 ## Success Criteria
 
-- [ ] Dos copias JPEG por posteo, de una sola descarga: miniatura de 360 px
+- [x] Dos copias JPEG por posteo, de una sola descarga: miniatura de 360 px
   de ancho e imagen de 900 px de lado largo
-- [ ] Ningún pedido nuevo a Apify
-- [ ] Una descarga fallida no pisa una copia ni frena el ciclo
-- [ ] Solo se baja de hosts de Instagram / Facebook, solo imágenes, con tope
+- [x] Ningún pedido nuevo a Apify
+- [x] Una descarga fallida no pisa una copia ni frena el ciclo
+- [x] Solo se baja de hosts de Instagram / Facebook, solo imágenes, con tope
   de tamaño y de tiempo
-- [ ] Migración aditiva, probada sobre una copia de la base
-- [ ] Las imágenes solo se ven con sesión iniciada
-- [ ] El feed y el pop-up muestran la foto cuando existe
-- [ ] Suite verde con `IG_ACTOR=apidojo` y con `IG_ACTOR=apify`
+- [x] Migración aditiva, probada sobre una copia de la base
+- [x] Las imágenes solo se ven con sesión iniciada
+- [x] El feed y el pop-up muestran la foto cuando existe (probado en el
+  navegador con el servidor de prueba y fotos generadas)
+- [x] Suite verde con `IG_ACTOR=apidojo` y con `IG_ACTOR=apify` (295 de 295)
+
+Todo se verificó con red simulada e imágenes generadas. Falta lo que solo
+se puede ver con datos reales: el primer ciclo con la app relanzada (ver
+"Antes de la base real" en `tasks.md`).
