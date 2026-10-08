@@ -166,15 +166,69 @@ describe('ruta de la foto de un posteo', { concurrency: false }, () => {
   });
 
   test('el archivo sale de la base, no del pedido: nada fuera de la carpeta de fotos', async () => {
-    for (const id of ['../secreto', '..%2Fsecreto', '..\\secreto', 'CONFOTO_thumb.jpg', 'instagram/CONFOTO', '%2e%2e/%2e%2e/secreto']) {
+    // Posteos GUARDADOS y con la foto anotada, cuyo id intenta salir de la
+    // carpeta o nombrar otro archivo. Con el id en la base, el pedido pasa
+    // los controles anteriores y llega a armar el camino del archivo: ahí lo
+    // tiene que frenar que ese id no sirve como nombre.
+    // En cada lugar donde uno de esos ids podría terminar apuntando hay un
+    // archivo cebo: si la defensa se cae, sale en la respuesta.
+    const CEBO = 'CEBO: esto no deberia servirse';
+    const hostiles = ['../cebo', '..\\cebo', '../../cebo', 'sub/cebo', 'cebo.x', 'cebo x', 'CONFOTO_thumb.jpg'];
+    hostiles.forEach((id, i) => {
+      guardar(id, 'instagram', `https://www.instagram.com/p/HOSTIL${i}/`);
+      assert.equal(db.markPostImageSaved(id, 'instagram', { sourceUrl: LINK, width: 100, height: 100, savedAt: '2026-10-07T12:00:00.000Z' }), true);
+      assert.ok(db.getPostImage(id, 'instagram').savedAt, `${id}: está guardado y con foto anotada`);
+    });
+    const cebos = [
+      path.join(tmp, 'cebo_thumb.jpg'),
+      path.join(MEDIA, 'cebo_thumb.jpg'),
+      path.join(IG_DIR, 'cebo_thumb.jpg'),
+      path.join(IG_DIR, 'sub', 'cebo_thumb.jpg'),
+      path.join(IG_DIR, 'cebo.x_thumb.jpg'),
+      path.join(IG_DIR, 'cebo x_thumb.jpg'),
+      path.join(IG_DIR, 'CONFOTO_thumb.jpg_thumb.jpg'),
+    ];
+    for (const file of cebos) {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, CEBO);
+    }
+
+    for (const id of hostiles) {
+      const res = await pedir(ruta(id, { plataforma: 'instagram', size: 'thumb' }));
+      const texto = await res.text();
+      assert.equal(res.status, 404, `${id} -> ${res.status}`);
+      assert.ok(!texto.includes('CEBO'), id);
+    }
+
+    // Control del propio test: con la defensa apagada (un camino armado sin
+    // validar el id), esos mismos pedidos SÍ entregan el cebo. Si esto
+    // dejara de pasar, lo de arriba ya no estaría probando nada.
+    const original = postImages.imagePaths;
+    postImages.imagePaths = (plataforma, id) => {
+      const dir = path.join(MEDIA, plataforma);
+      return { dir, thumb: path.join(dir, `${id}_thumb.jpg`), full: path.join(dir, `${id}_full.jpg`) };
+    };
+    try {
+      for (const id of ['../cebo', 'cebo.x', 'CONFOTO_thumb.jpg']) {
+        const res = await pedir(ruta(id, { plataforma: 'instagram', size: 'thumb' }));
+        assert.equal(res.status, 200, `sin la defensa, ${id} entrega el cebo`);
+        assert.equal(await res.text(), CEBO);
+      }
+    } finally {
+      postImages.imagePaths = original;
+    }
+
+    // Ids que no están en la base, escritos de varias formas: tampoco.
+    for (const id of ['../secreto', '..%2Fsecreto', '..\\secreto', 'instagram/CONFOTO', '%2e%2e/%2e%2e/secreto']) {
       const res = await fetch(`${base}/api/monitoring/posts/${id}/image?plataforma=instagram&size=thumb`, { redirect: 'manual', headers: { Cookie: COOKIE } });
       assert.ok([400, 404].includes(res.status), `${id} -> ${res.status}`);
-      const texto = await res.text();
-      assert.ok(!texto.includes('no deberia servirse'), id);
+      assert.ok(!(await res.text()).includes('no deberia servirse'), id);
     }
     // Y la carpeta de fotos no se sirve como estático.
     const directo = await pedir('/media/instagram/CONFOTO_thumb.jpg');
     assert.equal(directo.status, 404);
+
+    for (const file of cebos) fs.rmSync(file, { force: true });
   });
 
   test('POST_IMAGES=0 apaga las descargas, no las fotos: lo ya guardado se sigue sirviendo', async () => {
