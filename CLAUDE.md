@@ -215,7 +215,8 @@ del perfil). SDD en `openspec/changes/refresco-url/`.
   `median` ignora los null. El destacado de "Se despegaron" lo calcula el
   backend (`benchmark.top`, `accountStats.highlightOf`) entre las métricas
   con referencia: un posteo con likes ocultos se destaca igual por sus
-  comentarios. Test: `test/likesNull.test.js`.
+  comentarios (ver "Alcance: la regla del colchón"). Test:
+  `test/likesNull.test.js`.
 - Seguidores: por URL no llegan (el actor oficial no los trae por posteo);
   los sigue trayendo el benchmark (`BENCHMARK_RECALC_DAYS`) y la validación
   de cuentas. Nada más dependía del refresco para eso.
@@ -228,6 +229,47 @@ del perfil). SDD en `openspec/changes/refresco-url/`.
   `test/refreshPorUrlLotes.test.js`, `test/metricasConservadas.test.js`; los
   del camino perfil (`refreshTramos`, `parallelRefresh`) fijan
   `REFRESH_MODE=perfil`.
+
+## Alcance: la regla del colchón (`src/reachRule.js`)
+
+Desde octubre 2026 el nivel de likes y de comentarios de un posteo contra
+la mediana de su cuenta (`accountStats.classifyValue`) sale de
+`src/reachRule.js`, un módulo sin dependencias (no carga la base). SDD en
+`openspec/changes/alcance-colchon/`.
+
+- `ratio` = (valor + colchón) / (mediana de la cuenta + colchón). **No es
+  valor / mediana**: nada que lo muestre puede decir "N veces lo habitual".
+  `alto`: ratio >= `REACH_HIGH_RATIO` (1.5) Y valor >= piso. `normal` (en
+  pantalla "medio"): ratio >= `REACH_MID_RATIO` (1.1). `bajo`: el resto, y
+  quiere decir "no se despega de lo normal de su cuenta", no "le fue mal"
+  (es la mayoría de los posteos).
+- Likes: `REACH_LIKES_CUSHION` 2000 y `REACH_LIKES_FLOOR` 1000.
+  Comentarios: `REACH_COMMENTS_CUSHION` 300 y `REACH_COMMENTS_FLOOR` 150.
+  Los seis números salen del `.env` con esos valores por defecto y se leen
+  una vez, al cargar `accountStats.js` (`REACH_RULE`). Colchones y pisos:
+  enteros sin separador de miles (`2.000` se rechaza: se leería como 2);
+  los cortes aceptan coma decimal y el de medio tiene que ser menor que el
+  de alto. Un valor mal escrito tira con `userMessage` y `server.js` lo
+  valida al arrancar, como `IG_ACTOR` y `REFRESH_MODE`; una línea del
+  arranque muestra los números en uso.
+- Cada métrica del `benchmark` lleva `ratio`, `cushion` y `floor` además de
+  `value` y `median`, para que la pantalla diga con qué se calculó.
+  `benchmark.top` (`highlightOf`) es la métrica que decide: la de mejor
+  nivel y, a igual nivel, la de mayor razón (empate: comentarios), con su
+  `level`. "Se despegaron" muestra los `top.level === 'alto'`: el frontend
+  no conoce ningún corte. No alcanza con mirar la razón: una métrica puede
+  pasar el corte de alto sin llegar a su piso.
+- El alcance se calcula al armar el listado (`server.js`), no se guarda:
+  cambiar un número del `.env` vale desde el próximo arranque, sin
+  recalcular nada. Las medianas (`account_stats`) no cambian.
+- En pantalla (`public/js/monitoring.js`): `formatBenchmarkRatio` muestra
+  dos decimales CORTADOS, no redondeados (un 1,096 diría "1,10" al lado de
+  "Alcance bajo"); `benchmarkRatioBasis` arma el "229 contra una mediana de
+  21 en la cuenta, con colchón de 2.000" que acompaña a la razón.
+- Tests: `test/reachRule.test.js` (puro: colchón, piso, mediana 0, bordes
+  1,09 / 1,10 / 1,50 y lectura del `.env`), `test/accountStats.test.js` y
+  `test/likesNull.test.js`, que borran las `REACH_*` del entorno antes de
+  los `require` para correr con los valores por defecto.
 
 ## Diagnóstico del ciclo (siempre activo, sin flag de DEBUG)
 
@@ -309,7 +351,9 @@ hay que tratarlo así. `monitoring.js` avisa los cambios con
 tarjeta y del filtro "Alcance" es `postReach`: combina los niveles que ya
 manda el backend en `benchmark.likes` y `benchmark.comments` (vale el
 mejor de los dos; "normal" se muestra "medio"; sin ninguna métrica con
-referencia no hay etiqueta) y no recalcula nada. Todo dato del posteo entra
+referencia no hay etiqueta) y no recalcula nada ni conoce ningún corte (ver
+"Alcance: la regla del colchón"). El orden "Mayor alcance" va primero por
+la etiqueta y, dentro de cada una, por la razón. Todo dato del posteo entra
 por `textContent`, nunca como HTML. Son cientos de tarjetas sin paginar: el
 redibujo es completo, con espera de 150 ms y `content-visibility: auto`.
 Toda la tarjeta abre un pop-up con el posteo completo: un clic en cualquier
