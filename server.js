@@ -51,6 +51,7 @@ const monitoringProgress = require('./src/monitoringProgress');
 const { startKeepAwake, stopKeepAwake } = require('./src/keepAwake');
 const { processPendingReclamosInBackground } = require('./src/geoWorker');
 const accountStats = require('./src/accountStats');
+const postImageRoutes = require('./src/postImageRoutes');
 const { CATEGORIAS_RECLAMO, ESTADOS_RECLAMO, isValidEstado } = require('./src/categoriaReclamo');
 const { subcategoriasDe } = require('./src/categoriasConfig');
 const { parseReclamosFilters, isValidReclamosPlataforma } = require('./src/reclamosQuery');
@@ -470,8 +471,11 @@ app.get('/api/monitoring/posts', (req, res) => {
   const { capabilities } = getPlatform(plataforma);
   const hasBenchmark = Boolean(capabilities && capabilities.benchmark);
   const statsMap = hasBenchmark ? accountStats.buildAccountStatsMap() : null;
+  // Cada posteo sale con `image` (direcciones de la miniatura y de la imagen
+  // grande, si hay copias guardadas) y sin las columnas crudas image_*: el
+  // link original de Instagram no va al navegador (src/postImageRoutes.js).
   const postsWithBenchmark = posts.map((post) => ({
-    ...post,
+    ...postImageRoutes.withImage(post, plataforma),
     benchmark: hasBenchmark
       ? accountStats.classifyPostAgainstBenchmark({
           account: post.account,
@@ -486,6 +490,11 @@ app.get('/api/monitoring/posts', (req, res) => {
 
   res.json({ posts: postsWithBenchmark, total, page, pageSize });
 });
+
+// Foto de un posteo (miniatura o imagen grande), detrás del login como todo
+// /api/ y con la plataforma ya validada por el middleware de arriba:
+// GET /api/monitoring/posts/:id/image?plataforma=instagram&size=thumb|full
+postImageRoutes.register(app);
 
 app.get('/api/monitoring/config', (req, res) => {
   res.json(monitor.loadConfig(monitoringPlataforma(req)));

@@ -132,6 +132,26 @@ if (!existingColumns.includes('refresh_misses')) {
 if (!existingColumns.includes('refresh_stopped_at')) {
   db.exec('ALTER TABLE detected_posts ADD COLUMN refresh_stopped_at TEXT');
 }
+// Foto del posteo (src/postImages.js, openspec/changes/monitoreo-fotos). Las
+// copias van a disco (data/media/); acá queda el link original del último
+// intento, cómo salió (ok | vencido | error | pendiente de reintentar; NULL
+// si nunca vino imagen), cuándo se guardaron las copias y las medidas de la
+// original.
+// image_saved_at es lo único que dice si hay foto: un intento fallido cambia
+// el estado y el link, nunca esa marca. Todas anulables y sin tocar las
+// filas guardadas: el código anterior sigue funcionando contra la base
+// migrada.
+for (const [column, type] of [
+  ['image_source_url', 'TEXT'],
+  ['image_status', 'TEXT'],
+  ['image_saved_at', 'TEXT'],
+  ['image_width', 'INTEGER'],
+  ['image_height', 'INTEGER'],
+]) {
+  if (!existingColumns.includes(column)) {
+    db.exec(`ALTER TABLE detected_posts ADD COLUMN ${column} ${type}`);
+  }
+}
 // Limpieza de datos: Apify devuelve -1 en likesCount cuando el autor ocultó
 // el contador de "me gusta" (centinela documentado del actor, no un error de
 // parseo) — se guardaba tal cual, como si fuera un valor real. Un posteo sin
@@ -1638,6 +1658,121 @@ function applyMetricsRefresh(id, { likes, comments, retweets, views } = {}) {
   };
 }
 
+// --------------------------------------------------------------------------
+// Foto del posteo (ver las columnas image_* más arriba). Por id Y plataforma,
+// como las acciones de la tabla, y sin default de plataforma.
+// --------------------------------------------------------------------------
+const getPostImageStmt = db.prepare(`
+  SELECT image_source_url AS sourceUrl, image_status AS status, image_saved_at AS savedAt,
+         image_width AS width, image_height AS height
+  FROM detected_posts
+  WHERE id = ? AND plataforma = ?
+`);
+const markPostImageSavedStmt = db.prepare(`
+  UPDATE detected_posts
+  SET image_source_url = @sourceUrl,
+      image_status = 'ok',
+      image_saved_at = @savedAt,
+      image_width = @width,
+      image_height = @height
+  WHERE id = @id AND plataforma = @plataforma
+`);
+// A propósito NO toca image_saved_at ni las medidas: si había copias
+// guardadas, siguen ahí y se siguen mostrando.
+const markPostImageFailedStmt = db.prepare(`
+  UPDATE detected_posts
+  SET image_source_url = @sourceUrl,
+      image_status = @status
+  WHERE id = @id AND plataforma = @plataforma
+`);
+const POST_IMAGE_FAILED_STATUSES = ['vencido', 'error'];
+// Fotos que quedaron para reintentar: hay link guardado y la descarga no se
+// llegó a hacer o falló por algo pasajero (src/postImageSync.js).
+const listPostsWithPendingImageStmt = db.prepare(`
+  SELECT id, image_source_url AS url
+  FROM detected_posts
+  WHERE plataforma = ? AND image_status = 'pendiente' AND image_source_url IS NOT NULL AND ignored = 0
+  ORDER BY COALESCE(metrics_updated_at, detected_at) DESC, id
+  LIMIT ?
+`);
+
+/** Medida en píxeles: entero mayor que cero, o NULL. */
+function pixelsOrNull(value) {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.round(value) : null;
+}
+
+/**
+ * Cómo está la foto de un posteo. `savedAt` distinto de null = hay copias
+ * guardadas; `status` es cómo salió el último intento (null = nunca hubo).
+ * @returns {{sourceUrl: string|null, status: 'ok'|'vencido'|'error'|'pendiente'|null,
+ *   savedAt: string|null, width: number|null, height: number|null}|null}
+ *   null si ese id no está guardado en esa plataforma.
+ */
+function getPostImage(id, plataforma) {
+  requirePlataforma(plataforma, 'getPostImage');
+  return getPostImageStmt.get(id, plataforma) || null;
+}
+
+/**
+ * Anota que se guardaron las dos copias de la foto (postImages.savePostImage
+ * devolvió ok).
+ * @returns {boolean} false si ese id no está guardado en esa plataforma.
+ */
+function markPostImageSaved(id, plataforma, { sourceUrl, width, height, savedAt = new Date().toISOString() } = {}) {
+  requirePlataforma(plataforma, 'markPostImageSaved');
+  const result = markPostImageSavedStmt.run({
+    id,
+    plataforma,
+    sourceUrl: sourceUrl || null,
+    savedAt,
+    width: pixelsOrNull(width),
+    height: pixelsOrNull(height),
+  });
+  return result.changes > 0;
+}
+
+/**
+ * Anota un intento fallido: el link que se probó y por qué no anduvo
+ * ('vencido' | 'error'). No toca image_saved_at ni las medidas.
+ * @returns {boolean} false si ese id no está guardado en esa plataforma.
+ * @throws {Error} si el estado no es uno de los dos: es un error de
+ *   programación, no un dato.
+ */
+function markPostImageFailed(id, plataforma, { sourceUrl, status } = {}) {
+  requirePlataforma(plataforma, 'markPostImageFailed');
+  if (!POST_IMAGE_FAILED_STATUSES.includes(status)) {
+    throw new Error(`markPostImageFailed: estado inválido "${status}" (${POST_IMAGE_FAILED_STATUSES.join(' | ')}).`);
+  }
+  const result = markPostImageFailedStmt.run({ id, plataforma, sourceUrl: sourceUrl || null, status });
+  return result.changes > 0;
+}
+
+/**
+ * Deja la foto de un posteo para reintentar en el próximo ciclo: guarda el
+ * link y el estado 'pendiente'. Es para cuando la descarga no se llegó a
+ * hacer o falló por algo pasajero (ver src/postImageSync.js). No toca
+ * image_saved_at ni las medidas.
+ * @returns {boolean} false si ese id no está guardado en esa plataforma.
+ */
+function markPostImagePending(id, plataforma, { sourceUrl } = {}) {
+  requirePlataforma(plataforma, 'markPostImagePending');
+  const result = markPostImageFailedStmt.run({ id, plataforma, sourceUrl: sourceUrl || null, status: 'pendiente' });
+  return result.changes > 0;
+}
+
+/**
+ * Posteos con la foto pendiente de reintentar y el link guardado. Primero
+ * los que recibieron el link hace menos (el último refresco o, si nunca se
+ * refrescó, la detección): son los links con más vida por delante. Los
+ * ignorados no entran.
+ * @returns {{ id: string, url: string }[]}
+ */
+function listPostsWithPendingImage(plataforma, limit = 150) {
+  requirePlataforma(plataforma, 'listPostsWithPendingImage');
+  const max = Number.isInteger(limit) && limit > 0 ? limit : 150;
+  return listPostsWithPendingImageStmt.all(plataforma, max);
+}
+
 function insertMagicLink({ tokenHash, email, expiresAt }) {
   insertMagicLinkStmt.run({ tokenHash, email, expiresAt });
 }
@@ -1702,6 +1837,11 @@ module.exports = {
   listPostsDueForRefresh,
   registerRefreshMiss,
   applyMetricsRefresh,
+  getPostImage,
+  markPostImageSaved,
+  markPostImageFailed,
+  markPostImagePending,
+  listPostsWithPendingImage,
   upsertReclamo,
   listReclamosFiltered,
   contarReclamosPorCategoria,

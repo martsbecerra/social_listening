@@ -28,6 +28,12 @@
  * @param {number} max cuántas tareas pueden estar en vuelo a la vez (mínimo 1;
  *   un valor inválido cae a 1, nunca a "sin límite").
  * @param {string} [label] prefijo de los logs de este limitador (ej. "apify", "benchmark").
+ * @param {{ quiet?: boolean }} [options] quiet: no escribe un renglón cada
+ *   vez que una tarea espera, toma o suelta su cupo. Para tandas de cientos
+ *   de tareas cortas (las fotos de los posteos), donde ese detalle tapa el
+ *   resto del log. Los limitadores de las llamadas a Apify lo dejan en false:
+ *   ahí ese rastro es el que permite diagnosticar un ciclo trabado.
+ *   activeTargets() funciona igual en los dos casos.
  * @returns {{
  *   run: (fn: () => Promise<any>, target?: string) => Promise<any>,
  *   inFlight: () => number, pending: () => number, limit: number,
@@ -37,8 +43,9 @@
  *   su error); `target` es solo para los logs y activeTargets(), no afecta
  *   el orden ni el resultado.
  */
-function createLimiter(max, label = 'limiter') {
+function createLimiter(max, label = 'limiter', { quiet = false } = {}) {
   const limit = Math.max(1, Math.floor(Number(max) || 1));
+  const log = quiet ? () => {} : (message) => console.log(message);
   let inFlight = 0;
   const queue = [];
   // taskId -> { target, startedAt }: solo las que YA adquirieron su cupo
@@ -51,7 +58,7 @@ function createLimiter(max, label = 'limiter') {
     inFlight += 1;
     const { fn, resolve, reject, target, taskId } = queue.shift();
     active.set(taskId, { target, startedAt: Date.now() });
-    console.log(`[limiter:${label}] cupo adquirido${target ? ` (${target})` : ''}: activos ${inFlight}/${limit}, cola ${queue.length}`);
+    log(`[limiter:${label}] cupo adquirido${target ? ` (${target})` : ''}: activos ${inFlight}/${limit}, cola ${queue.length}`);
     // release() SUELTA el cupo (inFlight, active, next()) ANTES de resolver
     // o rechazar la promesa que le devolvimos a quien llamó: así, apenas su
     // `await run(fn)` resuelve, inFlight()/activeTargets() ya reflejan el
@@ -61,7 +68,7 @@ function createLimiter(max, label = 'limiter') {
     const release = () => {
       active.delete(taskId);
       inFlight -= 1;
-      console.log(`[limiter:${label}] cupo liberado${target ? ` (${target})` : ''}: activos ${inFlight}/${limit}, cola ${queue.length}`);
+      log(`[limiter:${label}] cupo liberado${target ? ` (${target})` : ''}: activos ${inFlight}/${limit}, cola ${queue.length}`);
       next();
     };
     Promise.resolve()
@@ -83,7 +90,7 @@ function createLimiter(max, label = 'limiter') {
       return new Promise((resolve, reject) => {
         const taskId = nextTaskId++;
         if (inFlight >= limit) {
-          console.log(`[limiter:${label}] esperando cupo${target ? ` (${target})` : ''}: cola=${queue.length + 1} activos=${inFlight}/${limit}`);
+          log(`[limiter:${label}] esperando cupo${target ? ` (${target})` : ''}: cola=${queue.length + 1} activos=${inFlight}/${limit}`);
         }
         queue.push({ fn, resolve, reject, target, taskId });
         next();

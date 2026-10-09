@@ -16,6 +16,13 @@
 // completar nada), pero eso es real, no un defecto: es exactamente cuánto se
 // sabe en ese instante.
 //
+// Las fotos son la excepción (startPhase con countsInPercent: false): su
+// fase se anuncia con su nombre y su contador, pero su trabajo no entra en
+// el porcentaje global. Bajar fotos es un agregado que no llama a Apify y
+// que arranca cuando el resto ya terminó: sumarlo hacía volver la barra de
+// 100 % a cerca de la mitad justo al final del ciclo. Mientras dura esa
+// fase, el porcentaje queda donde lo dejó la anterior.
+//
 // Fases con total 0 no se anuncian (getProgress no las muestra): así una
 // plataforma sin esa capability (X sin benchmark/refresco, o un ciclo sin
 // búsquedas por palabra clave) simplemente no genera esa fase, sin que haga
@@ -49,24 +56,35 @@ function recompute() {
   current.percent = current.totalWork > 0 ? Math.min(100, Math.round((current.totalDone / current.totalWork) * 100)) : 0;
 }
 
-/** Arranca (o reemplaza) la fase visible. Con total <= 0 no hace nada: esa fase no existió para este ciclo. */
-function startPhase(label, total) {
+/**
+ * Arranca (o reemplaza) la fase visible. Con total <= 0 no hace nada: esa
+ * fase no existió para este ciclo. Con countsInPercent: false la fase se
+ * muestra con su contador pero no mueve el porcentaje global (las fotos).
+ */
+function startPhase(label, total, { countsInPercent = true } = {}) {
   if (!current || !Number.isFinite(total) || total <= 0) return;
   if (current.phase) logPhaseEnd(current.phase);
-  current.phase = { label, done: 0, total: Math.floor(total), ok: 0, error: 0, startedAt: Date.now() };
-  current.totalWork += current.phase.total;
+  current.phase = { label, done: 0, total: Math.floor(total), ok: 0, error: 0, startedAt: Date.now(), countsInPercent: countsInPercent !== false };
+  if (current.phase.countsInPercent) current.totalWork += current.phase.total;
   console.log(`[fase] arranca ${label} (total ${current.phase.total})`);
   recompute();
 }
 
-/** Avanza la fase visible en n (default 1); {ok:false} cuenta ese paso como error. Sin fase activa, no hace nada (llamada de más, inofensiva). */
+/**
+ * Avanza la fase visible en n (default 1); {ok:false} cuenta ese paso como
+ * error y {ok:null} no lo cuenta ni como bien ni como error (un paso que
+ * queda para después). Sin fase activa, no hace nada (llamada de más,
+ * inofensiva).
+ */
 function tick(n = 1, { ok = true } = {}) {
   if (!current || !current.phase) return;
   const step = Math.min(n, current.phase.total - current.phase.done);
   if (step <= 0) return;
   current.phase.done += step;
-  current.totalDone += step;
-  if (ok) current.phase.ok += step;
+  if (current.phase.countsInPercent) current.totalDone += step;
+  if (ok === null) {
+    // ni bien ni error
+  } else if (ok) current.phase.ok += step;
   else current.phase.error += step;
   lastActivityAt = Date.now();
   recompute();

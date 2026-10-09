@@ -75,6 +75,7 @@ const { BENCHMARK_POST_LIMIT } = require('./accountStats');
 const { pickMetrics, rememberFollowers, postCodeOf } = require('./monitor');
 const { checkAndLogJump } = require('./viralJumpDetector');
 const { resolveRefreshMode } = require('./refreshMode');
+const { syncPostImages } = require('./postImageSync');
 
 // Se resuelve al cargar (como IG_ACTOR); server.js lo valida antes con un
 // mensaje claro.
@@ -397,6 +398,8 @@ async function refreshByUrlFor(plataforma, skipSet) {
   let postsStopped = 0;
   let quotaExceeded = false;
   let quotaLoggedOnce = false;
+  // Link de imagen de cada posteo que respondió (ver el final de la función).
+  const imageItems = [];
 
   // Los lotes se lanzan juntos (Promise.allSettled) a través de
   // refreshLimiter; un flag compartido corta los lotes todavía no lanzados
@@ -468,6 +471,7 @@ async function refreshByUrlFor(plataforma, skipSet) {
           if (!result) continue; // ignorado entre medio
           postsAnswered += 1;
           if (result.changed) rowsUpdated += 1;
+          if (detail.imageUrl) imageItems.push({ id: post.id, url: detail.imageUrl });
 
           if (
             checkAndLogJump({ account: result.account, id: post.id, postedAt: result.postedAt, metric: 'comentarios', previous: result.previousComments, current: result.comments })
@@ -506,6 +510,13 @@ async function refreshByUrlFor(plataforma, skipSet) {
         `Revisar que los ids y las URLs del actor coincidan con los guardados.`
     );
   }
+
+  // Foto de los posteos que todavía no la tienen (openspec/changes/
+  // monitoreo-fotos), con el link que vino en esta misma respuesta: no se
+  // pide nada más. Así se completan también los posteos guardados antes de
+  // que existieran las fotos. Con copia guardada no se vuelve a bajar. Nunca
+  // tira ni frena el ciclo.
+  await syncPostImages(plataforma, imageItems);
 
   return {
     mode: 'url',

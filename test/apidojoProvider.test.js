@@ -107,6 +107,8 @@ describe('proveedor apidojo del adapter de Instagram', { concurrency: false }, (
         postedAt: '2026-09-17T22:54:00.000Z',
         postType: 'reel',
         followers: 209424,
+        // El link de la imagen (en las fixtures, reemplazado por cdn.invalid).
+        imageUrl: 'https://cdn.invalid/url',
         sourceType: 'account',
         sourceQuery: null,
       }

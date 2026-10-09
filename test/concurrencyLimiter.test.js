@@ -127,6 +127,70 @@ describe('concurrencyLimiter: activeTargets (para el heartbeat del ciclo)', () =
   });
 });
 
+describe('concurrencyLimiter: opción quiet (el limitador de las fotos)', () => {
+  // Junta lo que se escribe por console.log mientras corre fn.
+  async function capturar(fn) {
+    const lineas = [];
+    const original = console.log;
+    console.log = (...args) => lineas.push(args.join(' '));
+    try {
+      await fn();
+    } finally {
+      console.log = original;
+    }
+    return lineas;
+  }
+
+  test('callado: no escribe un renglón por tarea, y limita, encola y lista las tareas igual', async () => {
+    const limiter = createLimiter(2, 'callado', { quiet: true });
+    let enVuelo = 0;
+    let maximo = 0;
+    let activasEnElMedio = [];
+    const lineas = await capturar(async () => {
+      const tareas = [0, 1, 2, 3, 4].map((i) =>
+        limiter.run(async () => {
+          enVuelo += 1;
+          maximo = Math.max(maximo, enVuelo);
+          await sleep(15);
+          enVuelo -= 1;
+          return i;
+        }, `tarea-${i}`)
+      );
+      await sleep(5);
+      activasEnElMedio = limiter.activeTargets().map((a) => a.target);
+      assert.deepEqual(await Promise.all(tareas), [0, 1, 2, 3, 4]);
+    });
+    assert.deepEqual(lineas.filter((l) => l.includes('[limiter:')), [], 'ni adquirir, ni liberar, ni esperar cupo');
+    assert.equal(maximo, 2, 'el tope se respeta');
+    assert.deepEqual(activasEnElMedio.sort(), ['tarea-0', 'tarea-1'], 'activeTargets sigue sirviendo para el heartbeat');
+    assert.equal(limiter.inFlight(), 0);
+    assert.equal(limiter.pending(), 0);
+  });
+
+  test('por defecto sigue escribiendo, como siempre (los limitadores de Apify no cambian)', async () => {
+    const limiter = createLimiter(1, 'hablador');
+    const lineas = await capturar(async () => {
+      await Promise.all([limiter.run(() => sleep(5), 'a'), limiter.run(() => sleep(5), 'b')]);
+    });
+    const propias = lineas.filter((l) => l.includes('[limiter:hablador]'));
+    assert.equal(propias.filter((l) => l.includes('cupo adquirido')).length, 2);
+    assert.equal(propias.filter((l) => l.includes('cupo liberado')).length, 2);
+    assert.equal(propias.filter((l) => l.includes('esperando cupo')).length, 1);
+  });
+
+  test('callado y con una tarea que tira: el cupo se libera igual', async () => {
+    const limiter = createLimiter(1, 'callado-tira', { quiet: true });
+    await assert.rejects(
+      limiter.run(() => {
+        throw new Error('explota');
+      }),
+      /explota/
+    );
+    assert.equal(await limiter.run(async () => 'ok'), 'ok');
+    assert.equal(limiter.inFlight(), 0);
+  });
+});
+
 describe('runActorSync: timeout de seguridad (APIFY_CALL_TIMEOUT_MS)', () => {
   // APIFY_CALL_TIMEOUT_MS tiene un piso de 1000ms (ver apify.js: nunca
   // "todas las llamadas fallan solas" por un .env mal puesto), así que el

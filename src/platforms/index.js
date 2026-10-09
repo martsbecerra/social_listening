@@ -41,12 +41,20 @@
 //                 de la plataforma entera, no de esa fuente.
 //   normalizePost(raw, { account, sourceType, sourceQuery })
 //                 → { id, account, url, caption, hashtagsText, likes,
-//                     comments, postedAt, postType, followers, sourceType,
-//                     sourceQuery, ...métricas propias (retweets, views) }
+//                     comments, postedAt, postType, followers, imageUrl,
+//                     sourceType, sourceQuery, ...métricas propias
+//                     (retweets, views) }
 //                 `followers`: seguidores del autor si la fuente los trae en
 //                 el mismo posteo (Instagram con apidojo), si no null. El
 //                 orquestador los usa como snapshot del posteo nuevo y para
 //                 actualizar la caché account_followers (rememberFollowers).
+//                 `imageUrl` [opcional]: link de la imagen del posteo (la
+//                 foto, la portada de un reel, la primera de un carrusel;
+//                 nunca un video), o null. El link vence: el orquestador lo
+//                 usa enseguida para guardar la copia local
+//                 (src/postImages.js, que además exige que el host esté en
+//                 su lista para esa plataforma). Una plataforma que no lo
+//                 manda no tiene fotos.
 //                 `id` tiene que ser único ENTRE plataformas (X usa el
 //                 prefijo "x:").
 //                 sourceType le dice al orquestador cómo evaluar relevancia:

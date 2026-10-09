@@ -57,6 +57,7 @@ const { isPlatformError } = require('./platforms/errors');
 const { runWithContext } = require('./usageContext');
 const progress = require('./monitoringProgress');
 const db = require('./db');
+const { syncPostImages } = require('./postImageSync');
 
 // MONITORING_CONFIG_PATH: solo para tests (tempfile), mismo patrón que
 // MONITORING_DB_PATH en db.js. En runtime normal es config/monitoring.json.
@@ -835,6 +836,9 @@ async function enrichSearchResults(platform, platformId, postsById) {
       account: post.account && post.account !== 'N/D' ? post.account : detail.account,
       postType: post.postType || detail.postType || null,
       postedAt: post.postedAt || detail.postedAt || null,
+      // Link de la imagen (ver src/postImages.js): el del detalle, que es la
+      // imagen entera; el resultado de búsqueda trae una versión más chica.
+      imageUrl: detail.imageUrl || post.imageUrl || null,
     });
     out.enriched.add(post.id);
     stats.enriched += 1;
@@ -1069,6 +1073,10 @@ async function runMonitoringCycle({ plataformas, trigger } = {}) {
     const pendingClassification = [...seenInThisRun.values()].filter((post) => !db.findExistingPostId(post.id, post.url)).length;
     progress.startPhase('Clasificando relevancia', pendingClassification);
 
+    // Posteos nuevos de esta plataforma que vinieron con link de imagen: su
+    // foto se baja al terminar de guardarlos (más abajo).
+    const newPostImages = [];
+
     for (const post of seenInThisRun.values()) {
       // Por id o por url: si el scraper cambia el campo con el que armamos el
       // id, la URL sigue siendo la misma pieza y no hay que re-clasificarla.
@@ -1139,7 +1147,15 @@ async function runMonitoringCycle({ plataformas, trigger } = {}) {
       }
       newPosts.push(postWithClassification);
       porPlataforma[platformId].newCount += 1;
+      if (post.imageUrl) newPostImages.push({ id: post.id, url: post.imageUrl });
     }
+
+    // Foto de los posteos recién guardados (openspec/changes/monitoreo-fotos),
+    // con el link que ya vino en esta misma respuesta: no se pide nada más.
+    // Un posteo ya conocido no se toca acá (su foto la completa el refresco
+    // por URL). Nunca tira ni frena el ciclo; una plataforma sin fotos (X) o
+    // POST_IMAGES=0 no hace nada.
+    await syncPostImages(platformId, newPostImages);
 
     // Cuentas trackeadas cuyo perfil se scrapeó de verdad en este ciclo (no
     // las de hashtag/keyword: ahí solo se pesca el posteo puntual que
