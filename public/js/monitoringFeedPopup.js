@@ -423,7 +423,8 @@ feedPopFootEl.addEventListener('click', (e) => {
 // Abrir y cerrar.
 // -------------------------------------------------------------------------
 
-// Lo llama el feed: "Ver más" y el clic en la foto de una tarjeta.
+// Lo llama el feed: un clic en una tarjeta o, con el foco en ella, Enter o
+// Espacio.
 function openFeedPop(card) {
   if (!showFeedPopCard(card)) return;
   if (!feedPopEl.open) {
@@ -466,8 +467,8 @@ function revealFeedPopCard(card, flash) {
 }
 
 // Deja todo como antes de abrir: la página vuelve a desplazarse y el foco va
-// al "Ver más" de la tarjeta del último posteo visto. Se puede llamar de más:
-// si ya se hizo, no cambia nada.
+// a la tarjeta del último posteo visto (se puede enfocar: es la que abre el
+// pop-up). Se puede llamar de más: si ya se hizo, no cambia nada.
 function afterFeedPopClose() {
   document.documentElement.classList.remove('feed-pop-lock');
   const card = feedPopCard();
@@ -478,8 +479,7 @@ function afterFeedPopClose() {
   feedPopListChanged = false;
   feedPopConfirming = false;
   if (!card) return;
-  const more = card.querySelector('.feed-foot [data-more]');
-  if (more) more.focus({ preventScroll: true });
+  card.focus({ preventScroll: true });
   // Sin navegar y con la lista igual, la tarjeta está donde se la dejó y la
   // página no se toca.
   if (moved || listChanged) revealFeedPopCard(card, moved);

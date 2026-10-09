@@ -2018,6 +2018,13 @@ pre.report a:hover {
 .feed-card[data-s="negativo"] {
   --s: var(--coral-500);
 }
+/* Toda la tarjeta abre el pop-up del posteo. Con el teclado se llega a ella
+   con Tab (Enter o Espacio la abren): el foco se marca con un aro por fuera
+   del borde. */
+.feed-card:focus-visible {
+  outline: 3px solid var(--jade-400);
+  outline-offset: 2px;
+}
 
 /* Tarjeta a la que lleva un destacado de "Se despegaron": un aro jade que
    aparece y se va, como el parpadeo de la fila de la tabla
@@ -2091,8 +2098,7 @@ pre.report a:hover {
 /* Recuadro de la imagen: un cuadrado del ancho de la tarjeta, igual para
    todas, con fondo negro. La miniatura se ve entera y centrada, sin recorte:
    lo que sobra del cuadrado (a los costados de una foto vertical, arriba y
-   abajo de una horizontal) queda negro. Las etiquetas van encima. Un clic
-   abre el pop-up del posteo, igual que "Ver más". */
+   abajo de una horizontal) queda negro. Las etiquetas van encima. */
 .feed-media {
   position: relative;
   display: grid;
@@ -2203,7 +2209,7 @@ pre.report a:hover {
   font-family: "Instrument Sans", sans-serif;
 }
 
-/* Pie: por qué se detectó, "Ver más" y el enlace al posteo. */
+/* Pie: por qué se detectó y el enlace al posteo en Instagram. */
 .feed-foot {
   display: flex;
   align-items: center;
@@ -2226,32 +2232,16 @@ pre.report a:hover {
   color: var(--jade-700);
   font-family: "DM Mono", monospace;
 }
-.feed-foot button,
 .feed-foot a {
   flex: none;
-  width: auto;
-  margin: 0;
   padding: 4px 10px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--jade-900);
   border-radius: 999px;
-  background: #fff;
-  color: var(--jade-700);
-  font-size: 12px;
-  font-weight: 400;
-  white-space: nowrap;
-  text-decoration: none;
-  cursor: pointer;
-  box-shadow: none;
-}
-.feed-foot button:hover:not(:disabled) {
-  transform: none;
-  box-shadow: none;
-  filter: none;
-}
-.feed-foot a {
-  border-color: var(--jade-900);
   background: var(--jade-900);
   color: #fff;
+  font-size: 12px;
+  white-space: nowrap;
+  text-decoration: none;
 }
 
 /* ------------------------------------------------------------------ */

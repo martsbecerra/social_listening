@@ -7,8 +7,8 @@
 // Lo carga SOLO instagram.html, después de monitoring.js, y se apoya en lo
 // que ese archivo ya define: monitoringTable (la fuente de los posteos, ya
 // filtrados por la barra con postMatchesFilters), readFilterValues, postReach
-// (el alcance), buildSentimentSelect y los formateadores. El pop-up de "Ver
-// más" está aparte, en monitoringFeedPopup.js.
+// (el alcance), buildSentimentSelect y los formateadores. El pop-up del
+// posteo, que se abre desde la tarjeta, está aparte: monitoringFeedPopup.js.
 // x.html no lo carga: en X la solapa sigue siendo solo la tabla.
 // --------------------------------------------------------------------
 const feedContainerEl = document.getElementById('monitoringFeed');
@@ -243,19 +243,13 @@ function buildFeedFoot(post) {
   if (term) why.appendChild(feedNode('code', '', term));
   why.title = post.matched_reason || '';
 
-  // Abre el pop-up del posteo; el clic lo atiende el contenedor (ver
-  // "Acciones de la tarjeta").
-  const more = feedNode('button', '', 'Ver más');
-  more.type = 'button';
-  more.dataset.more = '';
-  more.setAttribute('aria-haspopup', 'dialog');
-
+  // El posteo en Instagram, en otra pestaña.
   const open = feedNode('a', '', 'Abrir ↗');
   open.href = post.url;
   open.target = '_blank';
   open.rel = 'noopener';
 
-  foot.append(why, more, open);
+  foot.append(why, open);
   return foot;
 }
 
@@ -264,6 +258,11 @@ function buildFeedCard(post, reach) {
   card.dataset.id = post.id;
   // Color del borde de arriba (ver .feed-card[data-s] en styles.css).
   card.dataset.s = post.sentiment || SENTIMENT_UNSET;
+  // Toda la tarjeta abre el pop-up del posteo (ver "Acciones de la tarjeta").
+  // Con el teclado se llega a ella con Tab y se abre con Enter o Espacio.
+  card.tabIndex = 0;
+  const account = post.account && post.account !== 'N/D' ? `@${post.account}` : 'cuenta sin identificar';
+  card.setAttribute('aria-label', `Posteo de ${account}: abrir el detalle`);
   card.append(buildFeedHead(post), buildFeedMedia(post, reach), buildFeedBody(post), buildFeedMetrics(post, reach), buildFeedFoot(post));
   return card;
 }
@@ -296,7 +295,7 @@ function feedSorter(order, reachById) {
 }
 
 // -------------------------------------------------------------------------
-// Aviso de que cambia la lista de tarjetas. El pop-up de "Ver más"
+// Aviso de que cambia la lista de tarjetas. El pop-up del posteo
 // (monitoringFeedPopup.js, que se carga después) se anota acá para no quedar
 // mostrando un posteo que ya no está. "change" dice qué pasó:
 //   (nada)         la lista ya cambió: se redibujó entera o salió una tarjeta.
@@ -447,20 +446,44 @@ feedContainerEl.addEventListener('change', (e) => {
   feedSetSentiment(card, select.value, select);
 });
 
+// Controles con acción propia dentro de la tarjeta: la ✕ de ignorar, el
+// selector de sentimiento y "Abrir ↗". Un clic en ellos no abre el pop-up.
+const FEED_CARD_CONTROLS = 'a, button, select, input, textarea, label';
+
+// Hay texto de la tarjeta marcado: se soltó el mouse después de arrastrar
+// para seleccionarlo. Eso también llega como un clic, y no tiene que abrir
+// nada (si no, no se podría copiar un título).
+function feedSelectingIn(card) {
+  const selection = window.getSelection();
+  if (!selection || selection.isCollapsed || !selection.toString().trim()) return false;
+  return card.contains(selection.anchorNode) || card.contains(selection.focusNode);
+}
+
 feedContainerEl.addEventListener('click', (e) => {
-  // "Ver más" y la foto abren el pop-up del posteo (monitoringFeedPopup.js).
-  const opener = e.target.closest('.feed-foot [data-more], .feed-media');
-  if (opener) {
-    openFeedPop(opener.closest('.feed-card'));
+  const card = e.target.closest('.feed-card');
+  if (!card) return;
+  if (e.target.closest('.feed-head .ico.del')) {
+    const row = feedRowOf(card);
+    // El mismo cartel de confirmación; al aceptar, confirmIgnore saca la fila
+    // de la tabla y avisa acá con { ignoredId } (ver onMonitoringChange).
+    openIgnoreModal(row ? row.getData().id : card.dataset.id);
     return;
   }
-  const ignore = e.target.closest('.feed-head .ico.del');
-  if (!ignore) return;
-  const card = ignore.closest('.feed-card');
-  const row = feedRowOf(card);
-  // El mismo cartel de confirmación; al aceptar, confirmIgnore saca la fila
-  // de la tabla y avisa acá con { ignoredId } (ver onMonitoringChange).
-  openIgnoreModal(row ? row.getData().id : card.dataset.id);
+  // Un clic en cualquier otro lado de la tarjeta abre el pop-up del posteo
+  // (monitoringFeedPopup.js).
+  if (e.target.closest(FEED_CARD_CONTROLS) || feedSelectingIn(card)) return;
+  openFeedPop(card);
+});
+
+// Lo mismo con el teclado: Enter o Espacio con el foco en la tarjeta. Con el
+// foco en uno de sus controles, la tecla es de ese control. Una tecla que se
+// mantiene apretada no vuelve a abrirlo.
+feedContainerEl.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || e.repeat) return;
+  if (!e.target.matches('.feed-card')) return;
+  e.preventDefault(); // Espacio no baja la página
+  openFeedPop(e.target);
 });
 
 // Se ignoró un posteo: sale solo su tarjeta, sin rehacer el resto (así la
