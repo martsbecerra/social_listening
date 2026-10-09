@@ -431,14 +431,34 @@ function formatBenchmarkNumber(n) {
 
 // Formateador armado una sola vez: toLocaleString con opciones crea uno
 // nuevo en cada llamada, y el feed formatea cientos de tarjetas de un saque.
-const BENCHMARK_RATIO_OPTIONS = { minimumFractionDigits: 1, maximumFractionDigits: 1 };
+const BENCHMARK_RATIO_OPTIONS = { minimumFractionDigits: 2, maximumFractionDigits: 2 };
 const BENCHMARK_RATIO_FORMAT = new Intl.NumberFormat('es-AR', BENCHMARK_RATIO_OPTIONS);
 
+// La razón del alcance, con dos decimales ("1,09"). Se CORTA, no se
+// redondea: los cortes de la regla (1,1 y 1,5, ver src/reachRule.js) tienen
+// hasta dos decimales, y un 1,096 redondeado diría "1,10" al lado de
+// "Alcance bajo". Cortando, el número que se ve nunca queda del otro lado
+// del corte que su etiqueta. El 1e-9 es por la cuenta en punto flotante
+// (1,15 * 100 da 114,99999999999999).
 function formatBenchmarkRatio(ratio) {
   // Solo los números pasan por el formateador compartido. Con cualquier otra
-  // cosa hace lo mismo que antes de tenerlo: un null tira, no sale "0,0".
+  // cosa hace lo mismo que antes de tenerlo: un null tira, no sale "0,00".
   if (typeof ratio !== 'number') return ratio.toLocaleString('es-AR', BENCHMARK_RATIO_OPTIONS);
-  return BENCHMARK_RATIO_FORMAT.format(ratio);
+  return BENCHMARK_RATIO_FORMAT.format(Math.floor(ratio * 100 + 1e-9) / 100);
+}
+
+// Nombre en pantalla de cada nivel del backend: su "normal" (entre el corte
+// de medio y el de alto) es el "medio" de la etiqueta de alcance.
+const BENCHMARK_LEVEL_NAMES = { alto: 'alto', normal: 'medio', bajo: 'bajo' };
+
+// Con qué se calculó la razón de una métrica, en palabras: "229 contra una
+// mediana de 21 en la cuenta, con colchón de 2.000". La razón no es valor /
+// mediana: el backend suma el colchón arriba y abajo y lo manda junto con
+// ella. Va donde se muestra la razón (detalle de la tabla, tarjetas y
+// pop-up), para que el número no parezca mal calculado.
+function benchmarkRatioBasis(metric) {
+  const basis = `${formatBenchmarkNumber(metric.value)} contra una mediana de ${formatBenchmarkNumber(metric.median)} en la cuenta`;
+  return metric.cushion > 0 ? `${basis}, con colchón de ${formatBenchmarkNumber(metric.cushion)}` : basis;
 }
 
 // "sin-referencia" (guión, como lo manda el backend) -> "sinref" (la clase
@@ -450,8 +470,9 @@ function benchmarkLevelClass(metric) {
 
 // <span class="bn {nivel}">{label}: <strong>{nivel}</strong> — <span
 // class="v">{valor}</span>, contra una mediana de <span class="v">
-// {mediana}</span> en esta cuenta (<span class="v">{ratio}x</span>)</span>
-// — misma estructura que bench() en design/monitoreo.html.
+// {mediana}</span> en esta cuenta (razón <span class="v">{ratio}x</span>,
+// con colchón de {colchón})</span> — la estructura de bench() en
+// design/monitoreo.html, más el colchón: la razón no es valor / mediana.
 function buildBenchLine(label, metric) {
   const span = document.createElement('span');
   span.className = `bn ${benchmarkLevelClass(metric)}`;
@@ -472,7 +493,7 @@ function buildBenchLine(label, metric) {
 
   span.appendChild(document.createTextNode(`${label}: `));
   const strong = document.createElement('strong');
-  strong.textContent = metric.level;
+  strong.textContent = BENCHMARK_LEVEL_NAMES[metric.level] || metric.level;
   span.appendChild(strong);
   span.appendChild(document.createTextNode(' — '));
   const value = document.createElement('span');
@@ -484,12 +505,13 @@ function buildBenchLine(label, metric) {
   median.className = 'v';
   median.textContent = formatBenchmarkNumber(metric.median);
   span.appendChild(median);
-  span.appendChild(document.createTextNode(' en esta cuenta ('));
+  span.appendChild(document.createTextNode(' en esta cuenta (razón '));
   const ratio = document.createElement('span');
   ratio.className = 'v';
   ratio.textContent = `${formatBenchmarkRatio(metric.ratio)}x`;
   span.appendChild(ratio);
-  span.appendChild(document.createTextNode(')'));
+  const cushion = metric.cushion > 0 ? `, con colchón de ${formatBenchmarkNumber(metric.cushion)}` : '';
+  span.appendChild(document.createTextNode(`${cushion})`));
   return span;
 }
 
@@ -582,19 +604,19 @@ function toggleRowExpansion(row) {
 }
 
 // -------------------------------------------------------------------------
-// Tarjetas destacadas ("Se despegaron"): posteos — no cuentas — cuya cuenta
-// tiene benchmark real (account_stats) y cuyo ratio mayor (likes o
-// comentarios) llega a 1.5x. La métrica ganadora la calcula el backend
-// (benchmark.top, highlightOf en src/accountStats.js) entre las que tienen
-// referencia: un posteo con likes sin dato (ocultos por el autor) se destaca
-// igual por sus comentarios, en vez de quedar afuera.
+// Tarjetas destacadas ("Se despegaron"): posteos — no cuentas — con alcance
+// alto según la regla del backend (src/reachRule.js: razón con colchón y
+// piso por métrica), los de mayor razón primero. Acá no hay ningún corte: la
+// métrica que decide y su nivel los manda el backend (benchmark.top,
+// highlightOf en src/accountStats.js) entre las que tienen referencia. Un
+// posteo con likes sin dato (ocultos por el autor) se destaca igual por sus
+// comentarios, en vez de quedar afuera.
 // -------------------------------------------------------------------------
-const HIGHLIGHT_MIN_RATIO = 1.5;
 const HIGHLIGHT_CARD_COUNT = 4;
 
 function highlightTop(post) {
   const top = post.benchmark && post.benchmark.top;
-  return top && Number.isFinite(top.ratio) ? top : null;
+  return top && top.level === 'alto' && Number.isFinite(top.ratio) ? top : null;
 }
 
 function renderHighlightCards(posts) {
@@ -604,8 +626,8 @@ function renderHighlightCards(posts) {
   }
   const scored = posts
     .map((post) => ({ post, top: highlightTop(post) }))
-    .filter((entry) => entry.top && entry.top.best >= HIGHLIGHT_MIN_RATIO)
-    .sort((a, b) => b.top.best - a.top.best)
+    .filter((entry) => entry.top)
+    .sort((a, b) => b.top.ratio - a.top.ratio)
     .slice(0, HIGHLIGHT_CARD_COUNT);
 
   cardsEl.innerHTML = '';
@@ -640,7 +662,15 @@ function renderHighlightCards(posts) {
     const b = document.createElement('b');
     b.textContent = `${formatBenchmarkRatio(top.ratio)}x`;
     metric.appendChild(b);
-    metric.appendChild(document.createTextNode(` los ${top.label} habituales de la cuenta`));
+    // La razón lleva colchón: ya no es "N veces lo habitual". Al lado van el
+    // valor y la mediana reales de la métrica que lo destacó.
+    const decisive = post.benchmark[top.metric];
+    metric.appendChild(
+      document.createTextNode(
+        ` en ${top.label}: ${formatBenchmarkNumber(decisive.value)}, contra una mediana de ${formatBenchmarkNumber(decisive.median)}`
+      )
+    );
+    metric.title = `Razón de alcance: ${benchmarkRatioBasis(decisive)}`;
 
     card.append(topRow, title, metric);
     card.addEventListener('click', () => highlightGoToRow(post.id));
@@ -679,19 +709,24 @@ async function highlightGoToRow(id) {
 // -------------------------------------------------------------------------
 // Alcance del posteo: UNA etiqueta (alto | medio | bajo) a partir de los dos
 // niveles que ya manda el backend en benchmark.likes y benchmark.comments
-// (classifyValue en src/accountStats.js, cortes 1,5x y 0,5x). Acá no se
-// recalcula nada, solo se combinan. Likes y comentarios pesan igual y vale
-// el mejor de los dos: alto si alguno da alto, bajo solo si los dos dan
-// bajo, medio en el resto ("normal" del backend se muestra como "medio").
-// Una métrica sin referencia (likes ocultos, muestra chica) no cuenta y
-// decide la otra; si ninguna tiene referencia devuelve null y el posteo no
-// lleva etiqueta de alcance.
-//   by / label: la métrica que disparó la etiqueta (empate: comentarios,
-//               igual que highlightOf en el backend).
-//   ratio:      la razón de esa métrica contra la mediana de la cuenta. Como
-//               las dos se cortan en los mismos valores, la de mejor nivel
-//               es siempre la de mayor razón: es la mayor de las dos, y por
-//               ella ordena "Mayor alcance".
+// (classifyValue en src/accountStats.js, con la regla de src/reachRule.js:
+// razón con colchón, piso para el alto, y los cortes que diga el .env). Acá
+// no se recalcula nada ni se conoce ningún corte, solo se combinan. Likes y
+// comentarios pesan igual y vale el mejor de los dos: alto si alguno da
+// alto, bajo solo si los dos dan bajo, medio en el resto ("normal" del
+// backend se muestra como "medio"; "bajo" quiere decir que el posteo no se
+// despega de lo normal de su cuenta). Una métrica sin referencia (likes
+// ocultos, muestra chica) no cuenta y decide la otra; si ninguna tiene
+// referencia devuelve null y el posteo no lleva etiqueta de alcance.
+//   by / label: la métrica que decidió la etiqueta: la de mejor nivel y, a
+//               igual nivel, la de mayor razón (empate: comentarios, igual
+//               que highlightOf en el backend).
+//   ratio:      la razón de esa métrica, (valor + colchón) / (mediana de la
+//               cuenta + colchón). Es la que se muestra al lado de la
+//               etiqueta y, dentro de cada nivel, la que ordena "Mayor
+//               alcance".
+//   metric:     lo que mandó el backend para esa métrica (valor, mediana,
+//               colchón), para poder decir con qué se calculó la razón.
 // -------------------------------------------------------------------------
 const REACH_RANK = { bajo: 0, normal: 1, alto: 2 };
 const REACH_LEVELS = ['bajo', 'medio', 'alto'];
@@ -709,11 +744,11 @@ function postReach(post) {
     // "sin-referencia" (o cualquier nivel desconocido) no entra en la cuenta.
     if (typeof rank !== 'number' || !Number.isFinite(metric.ratio)) continue;
     if (!best || rank > best.rank || (rank === best.rank && metric.ratio > best.ratio)) {
-      best = { rank, by, label, ratio: metric.ratio };
+      best = { rank, by, label, ratio: metric.ratio, metric };
     }
   }
   if (!best) return null;
-  return { level: REACH_LEVELS[best.rank], by: best.by, label: best.label, ratio: best.ratio };
+  return { level: REACH_LEVELS[best.rank], by: best.by, label: best.label, ratio: best.ratio, metric: best.metric };
 }
 
 // -------------------------------------------------------------------------
