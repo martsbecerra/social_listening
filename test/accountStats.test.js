@@ -23,6 +23,9 @@ const CONFIG_PATH = path.join(tmp, 'monitoring.json');
 process.env.MONITORING_DB_PATH = DB_PATH;
 process.env.MONITORING_CONFIG_PATH = CONFIG_PATH;
 process.env.MONITORING_X_CONFIG_PATH = path.join(tmp, 'monitoring-x.json');
+// La regla del alcance (src/reachRule.js) con sus valores por defecto,
+// aunque el entorno traiga otros.
+for (const name of Object.keys(process.env)) if (name.startsWith('REACH_')) delete process.env[name];
 
 // Config escrita directo (nunca por addAccount): una cuenta trackeada (que
 // la detección de Instagram no consulta: es guía), una keyword literal para
@@ -158,22 +161,43 @@ describe('benchmark: criterio de recálculo', { concurrency: false }, () => {
     assert.equal(accountStats.BENCHMARK_RECALC_DAYS, 30);
   });
 
-  test('mediana 0 es referencia (0 o 1 = normal, 2 o más = alto); mediana null (likes ocultos) sigue sin referencia', () => {
+  test('mediana 0 es referencia (0 es lo normal: 1x, bajo); con el colchón, 2 likes ya no dan alto; mediana null (likes ocultos) sigue sin referencia', () => {
+    const classify = (account, likes, comments) => accountStats.classifyPostAgainstBenchmark({ account, plataforma: 'instagram', likes, comments });
     setStats('chiquita', { computedDaysAgo: 1, medianLikes: 0, medianComments: 0 });
-    const cero = accountStats.classifyPostAgainstBenchmark({ account: 'chiquita', plataforma: 'instagram', likes: 0, comments: 0 });
-    assert.equal(cero.likes.level, 'normal');
+    const cero = classify('chiquita', 0, 0);
+    assert.equal(cero.likes.level, 'bajo', 'bajo = no se despega de lo normal de la cuenta');
     assert.equal(cero.likes.ratio, 1);
     assert.equal(cero.likes.basis, 'global');
-    const dos = accountStats.classifyPostAgainstBenchmark({ account: 'chiquita', plataforma: 'instagram', likes: 2, comments: 1 });
-    assert.equal(dos.likes.level, 'alto');
-    assert.equal(dos.likes.ratio, 2);
-    assert.equal(dos.comments.level, 'normal');
-    assert.equal(dos.comments.ratio, 1);
+    assert.equal(cero.comments.level, 'bajo');
+    assert.equal(cero.comments.ratio, 1);
+
+    // Antes 2 likes contra una mediana de 0 daban 2x = alto.
+    const dos = classify('chiquita', 2, 1);
+    assert.equal(dos.likes.level, 'bajo');
+    assert.equal(dos.likes.ratio, 2002 / 2000);
+    assert.equal(dos.comments.level, 'bajo');
+
+    // La regla del alcance (src/reachRule.js): medio desde 1,1 y alto desde
+    // 1,5, con colchón 2000 para likes y 300 para comentarios.
+    const medio = classify('chiquita', 200, 30);
+    assert.equal(medio.likes.level, 'normal');
+    assert.equal(medio.likes.ratio, 1.1);
+    assert.equal(medio.comments.level, 'normal');
+    assert.equal(medio.comments.ratio, 1.1);
+    const alto = classify('chiquita', 1000, 150);
+    assert.equal(alto.likes.level, 'alto');
+    assert.equal(alto.likes.ratio, 1.5);
+    assert.equal(alto.comments.level, 'alto');
+    assert.equal(alto.comments.ratio, 1.5);
+    // La respuesta dice con qué colchón y qué piso se calculó cada métrica.
+    assert.deepEqual([alto.likes.cushion, alto.likes.floor, alto.comments.cushion, alto.comments.floor], [2000, 1000, 300, 150]);
+    assert.deepEqual(accountStats.REACH_RULE, { highRatio: 1.5, midRatio: 1.1, likes: { cushion: 2000, floor: 1000 }, comments: { cushion: 300, floor: 150 } });
 
     setStats('ocultos', { computedDaysAgo: 1, medianLikes: null, medianComments: 0 });
-    const ocultos = accountStats.classifyPostAgainstBenchmark({ account: 'ocultos', plataforma: 'instagram', likes: 5, comments: 0 });
+    const ocultos = classify('ocultos', 5, 0);
     assert.equal(ocultos.likes.level, 'sin-referencia', 'sin mediana de likes no hay contra qué comparar');
-    assert.equal(ocultos.comments.level, 'normal');
+    assert.equal(ocultos.likes.cushion, undefined, 'sin referencia no hay razón ni colchón que informar');
+    assert.equal(ocultos.comments.level, 'bajo');
   });
 
   test('listAccountBenchmarkActivity: la condición sale de detected_at vs. computed_at de la fila global', () => {
@@ -240,7 +264,7 @@ describe('benchmark: criterio de recálculo', { concurrency: false }, () => {
     assert.equal(vieja.nPosts, 12);
     assert.equal(vieja.medianLikes, 100);
     assert.ok(new Date(vieja.computedAt) > new Date(iso(1)));
-    assert.equal(accountStats.classifyPostAgainstBenchmark({ account: 'vieja', plataforma: 'instagram', likes: 100, comments: 10 }).likes.level, 'normal');
+    assert.equal(accountStats.classifyPostAgainstBenchmark({ account: 'vieja', plataforma: 'instagram', likes: 100, comments: 10 }).likes.level, 'bajo');
 
     // Sin referencia previa: fila global con n_posts real (0) como marca; sigue "sin referencia".
     const nueva = db.getAccountStats('nueva', 'instagram', null);
@@ -270,7 +294,8 @@ describe('benchmark: criterio de recálculo', { concurrency: false }, () => {
     assert.equal(benchmarkCalls('nueva2'), 1);
     assert.deepEqual(statsRowsOf('nueva2').map((r) => [r.postType, r.nPosts]).sort(), [[null, 6], ['imagen', 6]]);
     const benchmark = accountStats.classifyPostAgainstBenchmark({ account: 'nueva2', plataforma: 'instagram', postType: 'imagen', likes: 100, comments: 10 });
-    assert.equal(benchmark.likes.level, 'normal');
+    assert.equal(benchmark.likes.level, 'bajo', 'con referencia: 100 likes contra una mediana de 102,5');
+    assert.equal(benchmark.likes.median, 102.5);
     assert.equal(benchmark.likes.basis, 'tipo');
     // La misma pasada propagó los seguidores al posteo guardado.
     assert.equal(calls.followers.filter((a) => a === 'nueva2').length, 1);

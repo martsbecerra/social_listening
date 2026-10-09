@@ -137,19 +137,17 @@ function printGoalCheck() {
     }
     if (post.followers != null) withFollowers += 1;
 
-    // Mismo criterio que las tarjetas "Se despegaron" del frontend: ambas
-    // métricas con referencia real, y el mayor de los dos ratios >= 1.5x.
-    if (likesReal && commentsReal) {
-      const best = Math.max(benchmark.likes.ratio, benchmark.comments.ratio);
-      if (best >= accountStats.RATIO_HIGH) highlightCandidates += 1;
-    }
+    // Mismo criterio que las tarjetas "Se despegaron" del frontend: alcance
+    // alto según la regla con colchón y piso (src/reachRule.js), por likes o
+    // por comentarios; con una sola métrica con referencia alcanza.
+    if (benchmark.top && benchmark.top.level === 'alto') highlightCandidates += 1;
   }
 
   console.log('\n--- Chequeo del objetivo ---');
   console.log(`Posteos con benchmark disponible (likes o comentarios): ${withBenchmark} de ${total}`);
   console.log(`  de esos, por tipo exacto: ${basisTipo} · por mediana global (fallback): ${basisGlobal}`);
   console.log(`Posteos con seguidores (no nulo): ${withFollowers} de ${total}`);
-  console.log(`Posteos que superan 1.5x su propia mediana ("Se despegaron"): ${highlightCandidates} de ${total}`);
+  console.log(`Posteos con alcance alto (candidatos a "Se despegaron"): ${highlightCandidates} de ${total}`);
 }
 
 /**
