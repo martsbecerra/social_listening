@@ -36,8 +36,7 @@ la razón y un piso absoluto para llegar a alto.
   alguna da alto, bajo solo si las dos dan bajo)
 - Los motivos de "sin referencia"
 - Base de datos, Apify y X
-- `public/css/styles.css`, `public/instagram.html` y las maquetas de
-  `design/`
+- Los estilos del alcance y las maquetas de `design/`
 
 ## Capabilities
 
@@ -73,6 +72,8 @@ sin conocer cortes: muestra lo que manda el backend. Detalle en `design.md`.
 | `public/js/monitoring.js` | Modified | Razón con dos decimales cortados; detalle de la tabla; "Se despegaron" |
 | `public/js/monitoringFeed.js` | Modified | Cartelito de la razón; orden "Mayor alcance" |
 | `public/js/monitoringFeedPopup.js` | Modified | Razón junto a la etiqueta; mediana y colchón por métrica |
+| `public/instagram.html` | Modified | El subtítulo de "Se despegaron" ya no habla de promedio |
+| `public/css/styles.css` | Modified | Ajuste aparte, en la misma rama: en el pie de la tarjeta del feed, el sentimiento y "Abrir ↗" van juntos a la izquierda |
 | `test/reachRule.test.js` | New | La regla, pura |
 | `test/accountStats.test.js`, `test/likesNull.test.js` | Modified | Niveles y destacado con la regla nueva |
 | `README.md`, `CLAUDE.md` | Modified | La regla y sus variables |

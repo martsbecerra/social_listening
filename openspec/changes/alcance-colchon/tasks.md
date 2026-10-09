@@ -32,6 +32,7 @@ Un commit por paso en la rama `alcance_colchon`. Sin Apify. El análisis y la p�
 - [x] 4.3 `monitoringFeed.js`: cartelito de la razón en la tarjeta; orden "Mayor alcance" por etiqueta y razón
 - [x] 4.4 `monitoringFeedPopup.js`: razón junto a la etiqueta; mediana real y colchón en cada métrica (REQ-ALC-06)
 - [x] 4.5 Probado en el navegador con el servidor de prueba y una copia de la base: tabla, feed, filtro y orden de alcance, "Se despegaron" y pop-up, en escritorio y en celular; los bordes reales (1,09 bajo, 1,10 medio, 1,50 alto)
+- [x] 4.6 `instagram.html`: el subtítulo de "Se despegaron" pasa de "muy por encima del promedio de su propia cuenta" a "Posteos con alcance alto: muy por encima de lo normal de su propia cuenta"
 
 ## Phase 5: documentación
 
@@ -39,7 +40,6 @@ Un commit por paso en la rama `alcance_colchon`. Sin Apify. El análisis y la p�
 
 ## Pendientes (fuera de este cambio)
 
-- El subtítulo de "Se despegaron" en `instagram.html` sigue diciendo "muy por encima del promedio de su propia cuenta": es la mediana, y ahora con colchón
 - Un comentario de `public/css/styles.css` y las maquetas de `design/` todavía muestran la razón con un decimal ("5,4×")
 - La suite no cubre el frontend: `formatBenchmarkRatio` (el corte a dos decimales) y `postReach` se probaron a mano
 - El alcance mira solo likes y comentarios: no hay vistas ni compartidos
