@@ -118,6 +118,29 @@ describe('alcance: regla con colchón y piso', () => {
     assert.equal(level('likes', 2, 0, sinColchon), 'alto');
   });
 
+  test('vuelta atrás desde el .env: colchón 0, piso 0 y medio en 0,5 dan la regla anterior', () => {
+    // La de antes: razón = valor / mediana (contra 1 si la mediana es 0),
+    // bajo por debajo de 0,5, alto desde 1,5.
+    const anterior = resolveReachRule({
+      REACH_LIKES_CUSHION: '0',
+      REACH_LIKES_FLOOR: '0',
+      REACH_COMMENTS_CUSHION: '0',
+      REACH_COMMENTS_FLOOR: '0',
+      REACH_MID_RATIO: '0.5',
+    });
+    for (const metric of ['likes', 'comments']) {
+      assert.equal(ratio(metric, 180, 1.5, anterior), 120, metric);
+      assert.equal(level(metric, 180, 1.5, anterior), 'alto');
+      assert.equal(level(metric, 49, 100, anterior), 'bajo');
+      assert.equal(level(metric, 50, 100, anterior), 'normal');
+      assert.equal(level(metric, 149, 100, anterior), 'normal');
+      assert.equal(level(metric, 150, 100, anterior), 'alto');
+      assert.equal(level(metric, 0, 0, anterior), 'normal', 'mediana 0: 0 o 1 era normal');
+      assert.equal(level(metric, 1, 0, anterior), 'normal');
+      assert.equal(level(metric, 2, 0, anterior), 'alto', 'mediana 0: 2 o más era alto');
+    }
+  });
+
   test('.env: los seis números se leen del entorno; la coma decimal vale', () => {
     const custom = resolveReachRule({
       REACH_LIKES_CUSHION: '500',
