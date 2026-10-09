@@ -121,7 +121,8 @@ purga a los 30 días. Si el run falla entero no se anota nada.
   `usd_real`, `apify_run_id`. `monitoring_runs`, una fila por ciclo. Fases:
   `monitoreo`, `busqueda`, `benchmark`, `refresco` (las marcan
   `src/scheduler.js` y `src/monitor.js` con `src/usageContext.js`),
-  `validacion`, `recalc-script`, `analisis`.
+  `validacion`, `recalc-script`, `analisis`, `fotos` (la carga única de
+  `scripts/cargar-fotos.js`).
 - Salidas: la línea `[costo] ciclo #N: X llamadas, Y resultados ≈ US$ Z
   (monitoreo · busqueda · benchmark · refresco)`, `npm run costo`,
   `npm run gastos` (`scripts/gastos.js`: por corrida, por corrida y fase,
@@ -382,6 +383,14 @@ videos. SDD en `openspec/changes/monitoreo-fotos/`.
 - `POST_IMAGES=0` apaga las descargas y los reintentos, y no anota nada;
   lo guardado se sigue sirviendo. Si
   `sharp` no carga, la app arranca igual, sin fotos.
+- `scripts/cargar-fotos.js`: carga única de las fotos de los posteos ya
+  guardados (incluidos los de más de 60 días). Sin `--si` SOLO INFORMA y
+  abre la base en solo lectura (no carga `src/db.js`: no migra). Con `--si`
+  GASTA EN APIFY: `fetchPostDetails` por URL en lotes de 50, de a uno, fase
+  `fotos`, y `syncPostImages` con cada respuesta; no toca métricas ni
+  cadencias; exige la app apagada y frena ante el primer problema. Como todo
+  gasto real, se corre solo con autorización del dueño y el costo a la vista.
+  Test: `test/cargarFotos.test.js`.
 - Tests (`test/postImages*.test.js`): `fetch` simulado, imágenes generadas
   con `sharp` y `MONITORING_MEDIA_DIR` (solo para tests) en una carpeta
   temporal, fijado antes de los `require`. Ninguno toca `data/media`.

@@ -107,6 +107,7 @@ social_listening_app/
 │   ├── migrate-categorias.js    # Migra categorías viejas al esquema de dos niveles.
 │   ├── costo-apify.js           # Gasto en Apify por ventana, fase y actor (npm run costo).
 │   ├── gastos.js                # Gasto por corrida, fase y término de búsqueda (npm run gastos).
+│   ├── cargar-fotos.js          # Carga única de las fotos de los posteos ya guardados (sin --si solo informa).
 │   ├── stop-server.js           # Mata el proceso que ocupa el puerto (npm run stop).
 │   ├── iniciar-con-reinicio.bat # Arranca la app en bucle (reinicio solo) con log a archivo.
 │   ├── quickedit-off.ps1        # Apaga QuickEdit en la consola del .bat (un clic no congela).
@@ -1016,6 +1017,23 @@ copias propias en JPEG**, hechas de esa única descarga.
   `REFRESH_MODE=perfil` (el refresco anterior, por cuenta) los posteos ya
   guardados **no** se completan: en ese modo solo se bajan las fotos de los
   posteos nuevos y los reintentos de pendientes.
+- **Carga única de los posteos ya guardados** (`scripts/cargar-fotos.js`).
+  El ciclo completa las fotos de a 150 posteos y nunca llega a los de más de
+  60 días; este script las trae todas de una vez. Es lo único de las fotos
+  que **sí gasta en Apify**, y solo si se lo pide:
+  - `node scripts/cargar-fotos.js` **solo informa**: cuántos posteos no
+    tienen foto, en cuántos lotes se pedirían, el costo y el tiempo. No
+    llama a nada, no baja nada y abre la base en solo lectura.
+  - `node scripts/cargar-fotos.js --si --max 5` prueba con cinco posteos;
+    `node scripts/cargar-fotos.js --si` hace la carga completa. Pide cada
+    posteo por su URL al actor oficial (0,0023 usd por posteo en Starter, el
+    mismo camino del refresco), en lotes de 50 y de a uno, y baja las fotos
+    con el código de la app. Las llamadas quedan con la fase `fotos`.
+  - Con la app apagada: si algo responde en su puerto, no arranca.
+  - No cambia likes, comentarios ni las cadencias del refresco.
+  - Frena si un pedido a Apify falla, si se agota la cuota, si el actor no
+    devuelve ninguno de los posteos pedidos o si no se pudo guardar ninguna
+    foto de un lote. Se puede volver a correr: saltea los que ya tienen foto.
 - **Lo que no sale queda pendiente.** Si una foto no se llegó a intentar (la
   tanda se cortó o llegó a su tope de tiempo) o falló por algo pasajero (la
   red, un error del servidor de imágenes, la escritura en disco), queda con
@@ -1028,7 +1046,8 @@ copias propias en JPEG**, hechas de esa única descarga.
 - **Cero gasto nuevo en Apify.** No se hace ningún pedido que no se hiciera
   antes. Si una respuesta no trae imagen, el posteo queda sin foto. Los
   posteos de más de 60 días ya no se refrescan (`REFRESH_COLD_MAX_DAYS`): los
-  que ya tenían esa edad cuando llegó este cambio quedan sin foto.
+  que ya tenían esa edad cuando llegó este cambio quedan sin foto, salvo que
+  se corra la carga única (el punto siguiente).
 - **Reglas de la descarga.** Solo `https`; solo servidores de imágenes de
   Instagram y Facebook (hosts terminados en `.cdninstagram.com` o
   `.fbcdn.net`); sin seguir redirecciones; solo respuestas `image/*` y solo
