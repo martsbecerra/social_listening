@@ -217,8 +217,10 @@ const FEED_METRIC_ICONS = {
 };
 
 // Una métrica, bien a la vista: ícono y número grande. "kind" es likes o
-// comments. La razón contra la mediana de la cuenta ("5,4×") va chica, al
-// lado del número que disparó la etiqueta de alcance, en coral si es alto.
+// comments. La razón del alcance ("1,10×", la que decidió la etiqueta) va
+// chica, al lado del número de esa métrica, en coral si es alto. No es
+// valor / mediana (lleva colchón): al pasar el mouse dice con qué se
+// calculó.
 function buildFeedMetric(kind, label, value, reach) {
   const metric = feedNode('span', `feed-metric ${kind}`);
   metric.title = label;
@@ -226,9 +228,8 @@ function buildFeedMetric(kind, label, value, reach) {
   metric.insertAdjacentHTML('beforeend', FEED_METRIC_ICONS[kind]);
   metric.appendChild(feedNode('b', '', feedCount(value)));
   if (reach && reach.by === kind) {
-    const ratio = `${formatBenchmarkRatio(reach.ratio)}×`;
-    const x = feedNode('span', `feed-x${reach.level === 'alto' ? ' up' : ''}`, ratio);
-    x.title = `${ratio} la mediana de ${reach.label} de la cuenta`;
+    const x = feedNode('span', `feed-x${reach.level === 'alto' ? ' up' : ''}`, `${formatBenchmarkRatio(reach.ratio)}×`);
+    x.title = `Razón de alcance por ${reach.label}: ${benchmarkRatioBasis(reach.metric)}`;
     metric.appendChild(x);
   }
   return metric;
@@ -299,10 +300,18 @@ function feedSorter(order, reachById) {
     const pb = b.posted_at || '';
     return pa < pb ? 1 : pa > pb ? -1 : 0;
   };
-  // "Mayor alcance": la mayor de las dos razones contra la mediana de la
-  // cuenta (postReach ya la trae).
+  // "Mayor alcance": primero la etiqueta (alto, medio, bajo) y, dentro de
+  // cada una, la razón que la decidió (postReach trae las dos). La etiqueta
+  // va primero porque no depende solo de la razón: una métrica puede pasar
+  // el corte de alto sin llegar a su piso. Sin etiqueta, al final.
+  const level = (post) => {
+    const reach = reachById.get(post.id);
+    return reach ? REACH_LEVELS.indexOf(reach.level) : null;
+  };
   const ratio = (post) => (reachById.get(post.id) || {}).ratio;
-  if (order === 'reach') return (a, b) => feedDescending(ratio(a), ratio(b)) || recent(a, b);
+  if (order === 'reach') {
+    return (a, b) => feedDescending(level(a), level(b)) || feedDescending(ratio(a), ratio(b)) || recent(a, b);
+  }
   if (order === 'likes') return (a, b) => feedDescending(a.likes, b.likes) || recent(a, b);
   return recent;
 }

@@ -21,6 +21,10 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sl-likes-null-'));
 process.env.MONITORING_DB_PATH = path.join(tmp, 'monitoring.db');
 process.env.MONITORING_CONFIG_PATH = path.join(tmp, 'monitoring.json');
 process.env.MONITORING_X_CONFIG_PATH = path.join(tmp, 'monitoring-x.json');
+// La regla del alcance (src/reachRule.js) con sus valores por defecto,
+// aunque el entorno traiga otros: colchón 2000 para likes y 300 para
+// comentarios, alto desde 1,5 y medio desde 1,1.
+for (const name of Object.keys(process.env)) if (name.startsWith('REACH_')) delete process.env[name];
 fs.writeFileSync(process.env.MONITORING_CONFIG_PATH, JSON.stringify({ instagram: { accounts: [], keywords: [] } }, null, 2) + '\n');
 
 // Clasificador stubeado antes de cargar monitor.js (accountStats lo requiere).
@@ -45,19 +49,20 @@ const classify = (account, likes, comments) => accountStats.classifyPostAgainstB
 
 describe('likes null: nunca cuenta como 0', { concurrency: false }, () => {
   test('alcance: un likes null queda sin referencia por "sin-dato", no "bajo"; los comentarios se clasifican igual', () => {
-    setStats('visible', { medianLikes: 16, medianComments: 2 });
+    setStats('visible', { medianLikes: 16, medianComments: 100 });
 
-    const conCero = classify('visible', 0, 4);
+    const conCero = classify('visible', 0, 500);
     assert.equal(conCero.likes.level, 'bajo', 'un 0 real contra una mediana de 16 sí es bajo');
+    assert.equal(conCero.likes.ratio, 2000 / 2016);
 
-    const sinDato = classify('visible', null, 4);
+    const sinDato = classify('visible', null, 500);
     assert.equal(sinDato.likes.level, 'sin-referencia', 'null no es 0: no se clasifica');
     assert.equal(sinDato.likes.reason, 'sin-dato');
     assert.equal(sinDato.likes.ratio, undefined);
     assert.equal(sinDato.comments.level, 'alto');
-    assert.equal(sinDato.comments.ratio, 2);
+    assert.equal(sinDato.comments.ratio, 2, '(500 + 300) / (100 + 300)');
 
-    const indefinido = classify('visible', undefined, 4);
+    const indefinido = classify('visible', undefined, 500);
     assert.equal(indefinido.likes.reason, 'sin-dato', 'undefined se trata igual que null');
   });
 
@@ -72,7 +77,7 @@ describe('likes null: nunca cuenta como 0', { concurrency: false }, () => {
     const oculta = classify('oculta', 5, 5);
     assert.equal(oculta.likes.level, 'sin-referencia');
     assert.equal(oculta.likes.reason, 'sin-mediana', 'hay muestra, pero ningún posteo de la cuenta trae likes');
-    assert.equal(oculta.comments.level, 'normal');
+    assert.equal(oculta.comments.level, 'bajo', 'los comentarios sí se clasifican: 5 contra una mediana de 5');
 
     assert.equal(classify('oculta', null, 5).likes.reason, 'sin-dato', 'si además falta el valor, manda eso');
     assert.equal(classify('chica', null, 5).likes.reason, 'sin-dato');
@@ -82,28 +87,43 @@ describe('likes null: nunca cuenta como 0', { concurrency: false }, () => {
     assert.equal(classify('normalita', 10, 1).likes.reason, undefined);
   });
 
-  test('destacado (benchmark.top): con likes sin dato se destaca por comentarios; con las dos gana la de mayor ratio; sin ninguna, null', () => {
-    setStats('despega', { medianLikes: 100, medianComments: 10 });
+  test('destacado (benchmark.top): con likes sin dato se destaca por comentarios; con las dos gana la de mejor nivel y, a igual nivel, la de mayor razón; sin ninguna, null', () => {
+    // Mediana 2000 de likes y 100 de comentarios: las razones salen redondas
+    // ((valor + 2000) / 4000 y (valor + 300) / 400).
+    setStats('despega', { medianLikes: 2000, medianComments: 100 });
 
-    const soloComentarios = classify('despega', null, 153);
-    assert.deepEqual(soloComentarios.top, { metric: 'comments', label: 'comentarios', ratio: 15.3, best: 15.3 });
+    const soloComentarios = classify('despega', null, 500);
+    assert.deepEqual(soloComentarios.top, { metric: 'comments', label: 'comentarios', level: 'alto', ratio: 2, best: 2 });
 
-    const soloLikes = classify('despega', 300, null);
-    assert.deepEqual(soloLikes.top, { metric: 'likes', label: 'likes', ratio: 3, best: 3 });
+    const soloLikes = classify('despega', 10000, null);
+    assert.deepEqual(soloLikes.top, { metric: 'likes', label: 'likes', level: 'alto', ratio: 3, best: 3 });
 
-    assert.equal(classify('despega', 300, 20).top.metric, 'likes', 'likes 3x contra comentarios 2x');
-    assert.equal(classify('despega', 200, 40).top.metric, 'comments', 'comentarios 4x contra likes 2x');
-    assert.equal(classify('despega', 200, 20).top.metric, 'comments', 'empate: comentarios, como siempre');
-    assert.equal(classify('despega', 50, 5).top.ratio, 0.5, 'el umbral (1,5x) lo aplica la tabla, no el backend');
+    assert.equal(classify('despega', 10000, 500).top.metric, 'likes', 'likes 3x contra comentarios 2x');
+    assert.equal(classify('despega', 6000, 1300).top.metric, 'comments', 'comentarios 4x contra likes 2x');
+    assert.equal(classify('despega', 6000, 500).top.metric, 'comments', 'empate en 2x: comentarios, como siempre');
+
+    // El nivel va en la respuesta: "Se despegaron" muestra solo los alto.
+    const comun = classify('despega', 2000, 100).top;
+    assert.deepEqual(comun, { metric: 'comments', label: 'comentarios', level: 'bajo', ratio: 1, best: 1 });
+    assert.equal(classify('despega', 2600, 100).top.level, 'normal', 'likes 1,15x: medio, no se destaca');
+    assert.equal(classify('despega', 2600, 100).top.metric, 'likes');
 
     assert.equal(classify('despega', null, null).top, null);
-    assert.equal(classify('cuenta-sin-benchmark', 300, 20).top, null);
+    assert.equal(classify('cuenta-sin-benchmark', 10000, 500).top, null);
 
     // Cuenta que oculta los likes: mediana de likes null, comentarios con referencia.
     setStats('oculta2', { medianLikes: null, medianComments: 100 });
     const oculta = classify('oculta2', null, 1526);
     assert.equal(oculta.likes.level, 'sin-referencia');
-    assert.deepEqual(oculta.top, { metric: 'comments', label: 'comentarios', ratio: 15.26, best: 15.26 });
+    assert.deepEqual(oculta.top, { metric: 'comments', label: 'comentarios', level: 'alto', ratio: 4.565, best: 4.565 });
+
+    // Manda el nivel antes que la razón: una métrica puede pasar el corte de
+    // alto sin llegar a su piso (queda en normal) y no le gana a una que sí
+    // es alto, aunque su razón sea mayor.
+    const frenada = accountStats.highlightOf({ likes: { level: 'normal', ratio: 4 }, comments: { level: 'alto', ratio: 1.6 } });
+    assert.deepEqual(frenada, { metric: 'comments', label: 'comentarios', level: 'alto', ratio: 1.6, best: 1.6 });
+    assert.equal(accountStats.highlightOf({ likes: { level: 'alto', ratio: 1.6 }, comments: { level: 'normal', ratio: 4 } }).metric, 'likes');
+    assert.equal(accountStats.highlightOf({ likes: { level: 'bajo', ratio: 1.05 }, comments: { level: 'bajo', ratio: 1 } }).metric, 'likes');
 
     assert.equal(accountStats.highlightOf({}), null);
     assert.equal(accountStats.highlightOf(), null);
@@ -128,9 +148,9 @@ describe('likes null: nunca cuenta como 0', { concurrency: false }, () => {
     const global = db.getAccountStats('ocultadora', 'instagram', null);
     assert.equal(global.medianLikes, null, 'sin ningún dato de likes no hay mediana: nunca 0');
     assert.equal(global.medianComments, 12.5);
-    const posteo = classify('ocultadora', null, 40);
+    const posteo = classify('ocultadora', null, 400);
     assert.equal(posteo.likes.level, 'sin-referencia');
-    assert.equal(posteo.comments.level, 'alto');
+    assert.equal(posteo.comments.level, 'alto', '(400 + 300) / (12,5 + 300) = 2,24');
     assert.equal(posteo.top.metric, 'comments');
 
     // La mitad con likes ocultos: la mediana sale solo de los que traen dato.

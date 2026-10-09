@@ -9,17 +9,20 @@
 // dotenv carga las variables del archivo .env a process.env (APIFY_API_TOKEN, etc.)
 require('dotenv').config();
 
-// IG_ACTOR (apidojo | apify, ver src/platforms/igActor.js) y REFRESH_MODE
-// (url | perfil, ver src/refreshMode.js) se validan ANTES de cargar el
-// resto: src/platforms/instagram.js y src/metricsRefresh.js tiran al cargar
-// si el valor no es válido, y el arranque tiene que abortar con un mensaje
-// claro en vez de un stack trace. abortarArranque está más abajo (función
-// hoisted).
+// IG_ACTOR (apidojo | apify, ver src/platforms/igActor.js), REFRESH_MODE
+// (url | perfil, ver src/refreshMode.js) y los números del alcance (REACH_*,
+// ver src/reachRule.js) se validan ANTES de cargar el resto:
+// src/platforms/instagram.js, src/metricsRefresh.js y src/accountStats.js
+// tiran al cargar si el valor no es válido, y el arranque tiene que abortar
+// con un mensaje claro en vez de un stack trace. abortarArranque está más
+// abajo (función hoisted).
 const { resolveIgActor } = require('./src/platforms/igActor');
 const { resolveRefreshMode } = require('./src/refreshMode');
+const { resolveReachRule, describeReachRule } = require('./src/reachRule');
 try {
   resolveIgActor();
   resolveRefreshMode();
+  resolveReachRule();
 } catch (err) {
   abortarArranque([err.message]);
 }
@@ -709,6 +712,7 @@ const server = app.listen(PORT, () => {
       resolveRefreshMode() === 'url' ? 'por URL con apify~instagram-scraper, 0,0023 usd por posteo' : 'por perfil con el actor del monitoreo'
     })`
   );
+  console.log(`   Alcance (REACH_*): ${describeReachRule(resolveReachRule())}`);
   console.log(
     `   Límites: COMMENTS_LIMIT (Apify)=${process.env.COMMENTS_LIMIT || 100}, COMMENTS_ANALYSIS_LIMIT (LLM)=${resolveMaxCommentsLimit()}`
   );

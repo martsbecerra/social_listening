@@ -105,13 +105,18 @@ function fillFeedPopPhoto(post) {
 // se insertan como HTML.
 // -------------------------------------------------------------------------
 
-// "Alcance alto · por comentarios": la etiqueta de la tarjeta más la métrica
-// que la disparó. Sin referencia en ninguna de las dos métricas, lo dice.
+// "Alcance alto · 2,10× por comentarios": la etiqueta de la tarjeta, la
+// razón que la decidió y de qué métrica es. Sin referencia en ninguna de las
+// dos métricas, lo dice.
 function buildFeedPopChips(post, reach) {
   const chips = feedNode('div', 'feed-pop-chips');
   chips.appendChild(
     reach
-      ? feedNode('span', `feed-pop-chip reach ${reach.level}`, `${FEED_REACH_LABELS[reach.level]} · por ${reach.label}`)
+      ? feedNode(
+          'span',
+          `feed-pop-chip reach ${reach.level}`,
+          `${FEED_REACH_LABELS[reach.level]} · ${formatBenchmarkRatio(reach.ratio)}× por ${reach.label}`
+        )
       : feedNode('span', 'feed-pop-chip reach sinref', 'Alcance sin referencia')
   );
   const typeLabel = FEED_TYPE_LABELS[post.post_type];
@@ -119,12 +124,13 @@ function buildFeedPopChips(post, reach) {
   return chips;
 }
 
-// Una fila de la tabla de métricas: "♥ Likes  4,8 k  5,4×" y, debajo, la
-// mediana de la cuenta. "metric" es lo que manda el backend en post.benchmark
-// (nivel, mediana y razón). Sin referencia (likes ocultos, cuenta con pocos
-// posteos) no hay × y debajo va el motivo, con el mismo texto que da la
-// tabla: lo arma buildBenchLine. "hit": es la métrica que disparó un alcance
-// alto.
+// Una fila de la tabla de métricas: "♥ Likes  4,8 k  1,56×" y, debajo, la
+// mediana real de la cuenta y el colchón con el que se calculó la razón (que
+// no es valor / mediana). "metric" es lo que manda el backend en
+// post.benchmark (nivel, mediana, razón y colchón). Sin referencia (likes
+// ocultos, cuenta con pocos posteos) no hay × y debajo va el motivo, con el
+// mismo texto que da la tabla: lo arma buildBenchLine. "hit": es la métrica
+// que disparó un alcance alto.
 function buildFeedPopMetric(symbol, name, value, metric, hit) {
   const row = feedNode('div', `feed-pop-mt-row${hit ? ' hit' : ''}`);
   const hasReference = Boolean(metric) && metric.level !== 'sin-referencia';
@@ -138,10 +144,12 @@ function buildFeedPopMetric(symbol, name, value, metric, hit) {
 
   const x = feedNode('span', 'x', hasReference ? `${formatBenchmarkRatio(metric.ratio)}×` : '');
   if (hasReference && metric.level === 'alto') x.classList.add('up');
+  if (hasReference) x.title = `Razón de alcance: ${benchmarkRatioBasis(metric)}`;
 
   let sub;
   if (hasReference) {
     sub = `Mediana de la cuenta: ${formatBenchmarkNumber(metric.median)}`;
+    if (metric.cushion > 0) sub += ` · razón con colchón de ${formatBenchmarkNumber(metric.cushion)}`;
   } else {
     // "Likes: sin dato (...)" -> "Sin dato (...)": el nombre ya está en la fila.
     const text = buildBenchLine(name, metric).textContent;

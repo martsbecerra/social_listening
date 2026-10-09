@@ -2255,15 +2255,16 @@ pre.report a:hover {
 }
 
 /* Pie, en dos renglones: arriba, por qué se detectó; abajo, el selector de
-   sentimiento de la tabla (.sentiment-select) a la izquierda y el enlace al
-   posteo en Instagram a la derecha. El motivo ocupa su renglón entero para
-   que los dos controles entren siempre, también en la tarjeta más angosta
-   (240px) y en el celular. */
+   sentimiento de la tabla (.sentiment-select) y, pegado a él, el enlace al
+   posteo en Instagram: los dos juntos, a la izquierda, con 8px entre uno y
+   otro (el gap). El motivo ocupa su renglón entero para que los dos
+   controles entren siempre, también en la tarjeta más angosta (240px) y en
+   el celular. */
 .feed-foot {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 8px;
   padding: 0 12px 12px;
   font-size: 12px;

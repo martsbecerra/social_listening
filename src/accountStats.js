@@ -31,6 +31,7 @@ const progress = require('./monitoringProgress');
 const { getPlatform, listPlatformIds } = require('./platforms');
 const { isQuotaExceeded } = require('./platforms/errors');
 const { createLimiter } = require('./concurrencyLimiter');
+const { resolveReachRule, reachLevel } = require('./reachRule');
 
 // Limitador PROPIO para el nivel "cuenta" del benchmark — nunca el
 // apifyLimiter de src/apify.js. computeAccountStats termina llamando a
@@ -57,9 +58,10 @@ const BENCHMARK_MAX_AGE_DAYS = 90;
 // seguidores y la mediana no queden tres meses viejas; cuesta una consulta
 // de perfil por cuenta y por mes (0,0075 usd), solo para las que reaparecen.
 const BENCHMARK_RECALC_DAYS = Number(process.env.BENCHMARK_RECALC_DAYS) || 30;
-// Umbrales de clasificación (ratio = valor del posteo / mediana de la cuenta).
-const RATIO_LOW = 0.5;
-const RATIO_HIGH = 1.5;
+// Regla del alcance (colchón y piso por métrica, cortes de alto y de medio):
+// sale del .env, ver src/reachRule.js. Se lee una vez, al cargar el módulo;
+// un valor mal escrito tira acá.
+const REACH_RULE = resolveReachRule();
 // Tope de cuentas que recalcula CADA ciclo automático (ver
 // refreshStaleAccountStats). Si en un ciclo aparecen muchas cuentas con
 // recálculo pendiente, esto lo escalona; las que quedan afuera siguen
@@ -484,8 +486,13 @@ function buildAccountStatsMap() {
  * chica (< BENCHMARK_MIN_POSTS). Una mediana de 0 SÍ es referencia: antes
  * contaba como "sin referencia" y dejaba sin benchmark a las cuentas chicas
  * que casi no reciben likes ni comentarios (97 posteos de 31 cuentas el
- * 25/9/2026). Para ellas 0 es lo normal; el ratio se calcula contra 1 para
- * no dividir por cero (0 o 1 = 1x normal, 2 = 2x alto).
+ * 25/9/2026). Para ellas 0 es lo normal.
+ *
+ * El nivel y la razón los da la regla del alcance (src/reachRule.js):
+ * `ratio` es (valor + colchón) / (mediana + colchón), NO valor / mediana,
+ * y cada métrica tiene su colchón y su piso (`cushion` y `floor` van en la
+ * respuesta, para que la pantalla pueda decir con qué se calculó). "bajo"
+ * quiere decir que el posteo no se despega de lo normal de su cuenta.
  *
  * Un valor null (dato faltante: likes ocultos por el autor, contador que no
  * llegó) NUNCA se compara como si fuera 0: queda "sin-referencia". `reason`
@@ -496,14 +503,13 @@ function buildAccountStatsMap() {
  *   - 'sin-mediana': hay muestra, pero ningún posteo de la cuenta trae esta
  *     métrica (cuenta que oculta los likes).
  */
-function classifyValue(value, medianValue, nPosts, basis) {
+function classifyValue(metric, value, medianValue, nPosts, basis) {
   if (value == null || !Number.isFinite(medianValue) || medianValue < 0 || nPosts < BENCHMARK_MIN_POSTS) {
     const reason = value == null ? 'sin-dato' : nPosts < BENCHMARK_MIN_POSTS ? 'muestra-chica' : 'sin-mediana';
     return { level: 'sin-referencia', reason, nPosts: nPosts || 0 };
   }
-  const ratio = medianValue > 0 ? value / medianValue : value === 0 ? 1 : value;
-  const level = ratio < RATIO_LOW ? 'bajo' : ratio >= RATIO_HIGH ? 'alto' : 'normal';
-  return { level, value, median: medianValue, ratio, nPosts, basis };
+  const { level, ratio, cushion, floor } = reachLevel(metric, value, medianValue, REACH_RULE);
+  return { level, value, median: medianValue, ratio, cushion, floor, nPosts, basis };
 }
 
 /**
@@ -544,33 +550,47 @@ function classifyPostAgainstBenchmark({ account, plataforma, postType = null, li
   const nPosts = stats ? stats.nPosts : 0;
 
   const result = {
-    likes: classifyValue(likes, stats ? stats.medianLikes : null, nPosts, basis),
-    comments: classifyValue(comments, stats ? stats.medianComments : null, nPosts, basis),
+    likes: classifyValue('likes', likes, stats ? stats.medianLikes : null, nPosts, basis),
+    comments: classifyValue('comments', comments, stats ? stats.medianComments : null, nPosts, basis),
   };
   result.top = highlightOf(result);
   return result;
 }
 
+const HIGHLIGHT_RANK = { bajo: 0, normal: 1, alto: 2 };
+
 /**
- * Métrica por la que un posteo "se despega" (tarjetas destacadas de la tabla
- * de Monitoreo): la de mayor ratio contra la mediana de su cuenta, entre las
- * que tienen referencia. Antes hacían falta las DOS métricas con referencia,
- * así que un posteo con likes null (ocultos por el autor) nunca se destacaba
- * aunque sus comentarios explotaran: ahora alcanza con una. El umbral
- * (1,5x) lo aplica el frontend. Empate: comentarios, como siempre.
- * @returns {{ metric: 'likes'|'comments', label: string, ratio: number, best: number }|null}
+ * Métrica que decide el alcance del posteo, entre las que tienen referencia:
+ * la de mejor nivel (alto > normal > bajo) y, a igual nivel, la de mayor
+ * razón. Es la misma combinación que hace la pantalla para la etiqueta de
+ * alcance (postReach en public/js/monitoring.js): alto si alguna da alto,
+ * bajo solo si las dos dan bajo. Con una sola métrica con referencia alcanza
+ * (un posteo con likes ocultos por el autor se mide por sus comentarios).
+ * Empate: comentarios, como siempre.
+ *
+ * `level` es el nivel de esa métrica. "Se despegaron" (las tarjetas
+ * destacadas de la tabla de Monitoreo) muestra solo los `alto`: la regla
+ * del alcance, con su colchón y su piso, decide qué se destaca. No alcanza
+ * con mirar la razón: una métrica puede llegar al corte de alto sin llegar
+ * a su piso.
+ * @returns {{ metric: 'likes'|'comments', label: string, level: 'alto'|'normal'|'bajo', ratio: number, best: number }|null}
  *   null si ninguna de las dos métricas tiene referencia.
  */
 function highlightOf({ likes, comments } = {}) {
-  const usable = (m) => Boolean(m && m.level !== 'sin-referencia' && Number.isFinite(m.ratio));
+  const usable = (m) => Boolean(m && typeof HIGHLIGHT_RANK[m.level] === 'number' && Number.isFinite(m.ratio));
   const hasLikes = usable(likes);
   const hasComments = usable(comments);
   if (!hasLikes && !hasComments) return null;
-  const useComments = hasComments && (!hasLikes || comments.ratio >= likes.ratio);
+  const beats = (a, b) => {
+    const byLevel = HIGHLIGHT_RANK[a.level] - HIGHLIGHT_RANK[b.level];
+    return byLevel !== 0 ? byLevel > 0 : a.ratio >= b.ratio;
+  };
+  const useComments = hasComments && (!hasLikes || beats(comments, likes));
   const chosen = useComments ? comments : likes;
   return {
     metric: useComments ? 'comments' : 'likes',
     label: useComments ? 'comentarios' : 'likes',
+    level: chosen.level,
     ratio: chosen.ratio,
     best: chosen.ratio,
   };
@@ -582,8 +602,7 @@ module.exports = {
   BENCHMARK_MAX_AGE_DAYS,
   BENCHMARK_RECALC_DAYS,
   MAX_ACCOUNTS_PER_CYCLE,
-  RATIO_LOW,
-  RATIO_HIGH,
+  REACH_RULE,
   median,
   benchmarkPlatformIds,
   buildAccountUniverse,

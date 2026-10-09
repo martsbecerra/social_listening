@@ -60,6 +60,7 @@ social_listening_app/
 │   ├── reclamosFromAnalysis.js # reclamosGeo de Claude -> filas para la tabla reclamos.
 │   ├── monitor.js            # Orquestador del monitoreo (todas las redes) + config.
 │   ├── accountStats.js       # Benchmark por cuenta (solo redes con esa capability).
+│   ├── reachRule.js          # Regla del alcance: razón con colchón, piso y cortes (REACH_* del .env), validada al arrancar.
 │   ├── metricsRefresh.js     # Refresco de métricas de posteos ya guardados: por URL con el actor oficial (REFRESH_MODE=url) o por perfil.
 │   ├── refreshMode.js        # Interruptor REFRESH_MODE (url | perfil), validado al arrancar.
 │   ├── postImages.js         # Fotos de los posteos: descarga segura y las dos copias JPEG (sharp). No toca la base.
@@ -332,9 +333,47 @@ como llegaba y `/API/...` pasaba sin sesión hasta el handler. Test:
   posteo más una global de fallback, contra la que cada posteo de la tabla
   se clasifica como alto/normal/bajo. Se guarda en `account_stats`. Una
   mediana de 0 (cuentas chicas que casi no reciben likes ni comentarios) es
-  una referencia válida: 0 es lo normal y 2 o más es alto (el ratio se
-  calcula contra 1). "Sin referencia" queda solo cuando falta la mediana
-  (likes ocultos) o la cuenta tiene menos de 5 posteos recientes.
+  una referencia válida: 0 es lo normal. "Sin referencia" queda solo cuando
+  falta la mediana (likes ocultos) o la cuenta tiene menos de 5 posteos
+  recientes.
+
+  **Alcance: la regla del colchón** (`src/reachRule.js`, octubre 2026; SDD
+  en `openspec/changes/alcance-colchon/`). Likes y comentarios se miran por
+  separado, cada uno contra la mediana de su cuenta, y ninguno pesa más que
+  el otro:
+
+  ```
+  razón = (valor + colchón) / (mediana de la cuenta + colchón)
+  ```
+
+  | | Colchón | Piso | Alto | Medio | Bajo |
+  |---|---|---|---|---|---|
+  | Likes | 2000 | 1000 | razón ≥ 1,5 y valor ≥ piso | razón ≥ 1,1 | el resto |
+  | Comentarios | 300 | 150 | razón ≥ 1,5 y valor ≥ piso | razón ≥ 1,1 | el resto |
+
+  Antes la razón era valor / mediana, con cortes en 1,5 y 0,5: contra una
+  mediana de 2 likes, 100 likes eran 50 veces lo habitual y 202 de 473
+  posteos salían "alto". Con el colchón, una cuenta con mediana 0 llega a
+  medio con 200 likes o 30 comentarios y a alto con 1000 likes o 150
+  comentarios, y una cuenta grande se mide casi igual que antes. "Bajo"
+  cambió de significado: ya no es "le fue mal", es "no se despega de lo
+  normal de su cuenta" (la mayoría de los posteos). El piso es el mínimo
+  absoluto para ser alto: con estos colchones no llega a actuar, y empieza
+  a contar si el colchón se achica o el piso se sube. La etiqueta del
+  posteo combina las dos métricas como siempre (alto si alguna da alto,
+  bajo solo si las dos dan bajo) y "Se despegaron" muestra los alto, los de
+  mayor razón primero (`benchmark.top` trae la métrica que decide y su
+  nivel). Con los posteos del 9/10/2026: 41 alto, 42 medio, 378 bajo y 12
+  sin referencia.
+
+  Los seis números van en el `.env` (`REACH_LIKES_CUSHION`,
+  `REACH_LIKES_FLOOR`, `REACH_COMMENTS_CUSHION`, `REACH_COMMENTS_FLOOR`,
+  `REACH_HIGH_RATIO`, `REACH_MID_RATIO`), con esos valores por defecto:
+  se calibra sin tocar código y sin recalcular nada (el alcance se calcula
+  cada vez que se muestran los posteos; las medianas guardadas no cambian).
+  Colchones y pisos son enteros sin separador de miles (`2000`, no `2.000`,
+  que se leería como 2); un valor mal escrito no deja arrancar la app, y al
+  levantar una línea muestra los números en uso.
 
   **Cuándo se calcula.** Una cuenta se (re)calcula SOLO cuando aparece con
   un posteo nuevo en el monitoreo (`detected_posts`) y, además, nunca se
@@ -963,16 +1002,21 @@ vista elegida en ese navegador.
   Cuenta, Desde / Hasta, el buscador y el contador "Mostrando N de M" valen
   para las dos vistas. Si se filtra, se ordena o se cambia de vista con la
   página bajada, los resultados se muestran desde el principio.
-- **Alcance (alto / medio / bajo).** Sale del benchmark que ya calcula el
-  backend para likes y para comentarios (cortes 1,5× y 0,5× contra la
-  mediana de la cuenta; ese cálculo no cambió). Vale el mejor de los dos:
-  alto si alguno da alto, bajo solo si los dos dan bajo, medio en el resto.
-  Si una métrica no tiene referencia (likes ocultos, cuenta con pocos
-  posteos) decide la otra; si ninguna la tiene, el posteo no lleva etiqueta
-  y solo aparece con el filtro "Alcance" en blanco. La tarjeta muestra la
-  razón ("5,4×") al lado de la métrica que disparó la etiqueta.
-- **Orden** (solo en Feed): más recientes, mayor alcance (la mayor de las
-  dos razones) o más likes. La tabla sigue ordenando por encabezado.
+- **Alcance (alto / medio / bajo).** Sale del benchmark que calcula el
+  backend para likes y para comentarios, con la regla del colchón (ver
+  `src/accountStats.js` más arriba): alto desde 1,5 y medio desde 1,1 sobre
+  la razón con colchón; bajo quiere decir que el posteo no se despega de lo
+  normal de su cuenta. Vale el mejor de los dos: alto si alguno da alto,
+  bajo solo si los dos dan bajo, medio en el resto. Si una métrica no tiene
+  referencia (likes ocultos, cuenta con pocos posteos) decide la otra; si
+  ninguna la tiene, el posteo no lleva etiqueta y solo aparece con el
+  filtro "Alcance" en blanco. La tarjeta muestra la razón ("1,10×") al lado
+  de la métrica que decidió la etiqueta, con dos decimales cortados (no
+  redondeados), para que el número nunca quede del otro lado del corte que
+  su etiqueta.
+- **Orden** (solo en Feed): más recientes, mayor alcance (primero la
+  etiqueta y, dentro de cada una, la razón) o más likes. La tabla sigue
+  ordenando por encabezado.
 - **Acciones**: corregir el sentimiento e ignorar, con los mismos endpoints
   y el mismo cartel de confirmación que la fila de la tabla.
 - **La tarjeta.** Likes y comentarios van en una franja propia, con su
@@ -986,9 +1030,10 @@ vista elegida en ese navegador.
   Enter o Espacio la abren. No lo abren la ✕ de ignorar, el selector de
   sentimiento ni "Abrir ↗", ni soltar el mouse después de marcar texto.
   Muestra el posteo completo: la foto a la izquierda y, a la derecha, el
-  texto entero, likes y comentarios con su razón y la mediana de la cuenta, el alcance con la
-  métrica que lo disparó, la fecha y hora, el motivo completo de detección y
-  el perfil. Se pasa al posteo anterior y al siguiente de la lista filtrada
+  texto entero, likes y comentarios con su razón, la mediana real de la
+  cuenta y el colchón con el que se calculó, el alcance con su razón y la
+  métrica que lo decidió, la fecha y hora, el motivo completo de detección
+  y el perfil. Se pasa al posteo anterior y al siguiente de la lista filtrada
   con las flechas o con ← →, y se cierra con la ✕, con Esc o con un clic
   afuera. Desde ahí también se corrige el sentimiento y se ignora (la
   confirmación va adentro; al ignorar pasa al posteo siguiente). En celular
