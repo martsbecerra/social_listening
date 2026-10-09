@@ -61,6 +61,15 @@ Tres revisores de solo lectura, en paralelo, sobre copias de la base: (a) descar
 - [x] 9.10 Comentarios viejos de `styles.css` y "tres puntos" en el README
 - [x] 9.11 Login salteable con `/API/` en mayúsculas: arreglado aparte, en la rama `fix_login_mayusculas` (ya estaba así en `main`). Tiene que estar en `main` antes o junto con este cambio: sin él la ruta de la foto no cumple REQ-FOTO-06
 
+## Phase 10: carga única de los posteos ya guardados
+
+Rama `monitoreo_carga_fotos`. El ciclo trae las fotos de a 150 posteos (el tope del refresco) y nunca las de más de 60 días: para verlas todas de una vez hace falta pedirlas aparte.
+
+- [x] 10.1 `scripts/cargar-fotos.js`: sin `--si` solo informa (base en solo lectura, sin Apify); con `--si` pide por URL al actor oficial en lotes y baja las fotos con el código de la app, sin tocar métricas ni cadencias
+- [x] 10.2 `test/cargarFotos.test.js`, con el adapter stubeado y la red simulada
+- [ ] 10.3 Prueba real de 5 posteos (`--si --max 5`), con el OK del dueño
+- [ ] 10.4 Carga completa (`--si`), con el OK del dueño
+
 ## Antes de la base real
 
 - [ ] Backup de `data/monitoring.db` (hecho el 2026-10-07 en `data/backups/2026-10-07_pre-fotos/`, como copia de archivo; repetirlo justo antes de relanzar)
