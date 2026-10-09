@@ -2101,6 +2101,7 @@ pre.report a:hover {
    abajo de una horizontal) queda negro. Las etiquetas van encima. */
 .feed-media {
   position: relative;
+  flex: none; /* no se achica aunque la tarjeta tenga el alto fijado */
   display: grid;
   place-items: center;
   aspect-ratio: 1 / 1;
@@ -2184,41 +2185,68 @@ pre.report a:hover {
   overflow: hidden;
 }
 
-/* Likes, comentarios y el selector de sentimiento de la tabla
-   (.sentiment-select), que acá va a la derecha en lugar de la pastilla fija
-   de la maqueta. Si no entra, baja a una segunda línea. */
+/* Likes y comentarios, en una franja propia arriba del pie y bien a la
+   vista: ícono, número grande y, chica al lado del número que la disparó, la
+   razón del alcance ("5,4×"). */
 .feed-metrics {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 14px;
-  padding: 10px 12px;
+  gap: 6px 22px;
+  padding: 11px 12px;
   border-top: 1px solid var(--line);
-  font-family: "DM Mono", monospace;
-  font-size: 12.5px;
+}
+.feed-metric {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+  white-space: nowrap;
+}
+.feed-metric svg {
+  flex: none;
+  align-self: center;
+  width: 21px;
+  height: 21px;
+}
+.feed-metric.likes svg {
+  color: var(--coral-500);
+}
+.feed-metric.comments svg {
+  color: var(--jade-500);
+}
+.feed-metric b {
+  font-family: "Bricolage Grotesque", sans-serif;
+  font-size: 21px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--jade-950);
 }
 .feed-x {
+  font-family: "DM Mono", monospace;
   font-size: 11px;
   color: var(--clay-500);
 }
 .feed-x.up {
   color: var(--coral-700);
 }
-.feed-metrics .sentiment-select {
-  margin-left: auto;
-  font-family: "Instrument Sans", sans-serif;
-}
 
-/* Pie: por qué se detectó y el enlace al posteo en Instagram. */
+/* Pie, en dos renglones: arriba, por qué se detectó; abajo, el selector de
+   sentimiento de la tabla (.sentiment-select) a la izquierda y el enlace al
+   posteo en Instagram a la derecha. El motivo ocupa su renglón entero para
+   que los dos controles entren siempre, también en la tarjeta más angosta
+   (240px) y en el celular. */
 .feed-foot {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
   padding: 0 12px 12px;
   font-size: 12px;
 }
 .feed-why {
-  flex: 1;
+  flex: 0 0 100%;
   min-width: 0;
   color: var(--clay-500);
   white-space: nowrap;

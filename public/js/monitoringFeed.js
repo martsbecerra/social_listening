@@ -206,31 +206,36 @@ function buildFeedBody(post) {
   return body;
 }
 
-// "♥ 4,8 k" / "💬 612". La razón contra la mediana de la cuenta ("5,4×") va al
-// lado de la métrica que disparó la etiqueta de alcance, en coral si es alto.
-function buildFeedMetric(symbol, label, value, reach, by) {
-  const metric = feedNode('span', '', `${symbol} ${feedCount(value)}`);
+// Íconos de las dos métricas (corazón y globo de comentario).
+const FEED_METRIC_ICONS = {
+  likes:
+    '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 20.5 3.6 12.3a5.2 5.2 0 0 1 7.4-7.4l1 1 1-1a5.2 5.2 0 0 1 7.4 7.4z"/></svg>',
+  comments:
+    '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M5 3.5h14A2.5 2.5 0 0 1 21.5 6v9a2.5 2.5 0 0 1-2.5 2.5h-8.2L6 21.5v-4H5A2.5 2.5 0 0 1 2.5 15V6A2.5 2.5 0 0 1 5 3.5z"/></svg>',
+};
+
+// Una métrica, bien a la vista: ícono y número grande. "kind" es likes o
+// comments. La razón contra la mediana de la cuenta ("5,4×") va chica, al
+// lado del número que disparó la etiqueta de alcance, en coral si es alto.
+function buildFeedMetric(kind, label, value, reach) {
+  const metric = feedNode('span', `feed-metric ${kind}`);
   metric.title = label;
-  if (reach && reach.by === by) {
+  // Constante propia, no un dato del posteo: se puede insertar como HTML.
+  metric.insertAdjacentHTML('beforeend', FEED_METRIC_ICONS[kind]);
+  metric.appendChild(feedNode('b', '', feedCount(value)));
+  if (reach && reach.by === kind) {
     const ratio = `${formatBenchmarkRatio(reach.ratio)}×`;
     const x = feedNode('span', `feed-x${reach.level === 'alto' ? ' up' : ''}`, ratio);
     x.title = `${ratio} la mediana de ${reach.label} de la cuenta`;
-    metric.append(' ', x);
+    metric.appendChild(x);
   }
   return metric;
 }
 
+// Franja propia de likes y comentarios, arriba del pie.
 function buildFeedMetrics(post, reach) {
   const metrics = feedNode('div', 'feed-metrics');
-  // El mismo selector de la tabla; el cambio lo atiende el contenedor (ver
-  // "Acciones de la tarjeta").
-  const sentiment = buildSentimentSelect(post.sentiment);
-  sentiment.setAttribute('aria-label', 'Sentimiento');
-  metrics.append(
-    buildFeedMetric('♥', 'Likes', post.likes, reach, 'likes'),
-    buildFeedMetric('💬', 'Comentarios', post.comments, reach, 'comments'),
-    sentiment
-  );
+  metrics.append(buildFeedMetric('likes', 'Likes', post.likes, reach), buildFeedMetric('comments', 'Comentarios', post.comments, reach));
   return metrics;
 }
 
@@ -243,13 +248,19 @@ function buildFeedFoot(post) {
   if (term) why.appendChild(feedNode('code', '', term));
   why.title = post.matched_reason || '';
 
+  // El mismo selector de la tabla; el cambio lo atiende el contenedor (ver
+  // "Acciones de la tarjeta").
+  const sentiment = buildSentimentSelect(post.sentiment);
+  sentiment.setAttribute('aria-label', 'Sentimiento');
+
   // El posteo en Instagram, en otra pestaña.
   const open = feedNode('a', '', 'Abrir ↗');
   open.href = post.url;
   open.target = '_blank';
   open.rel = 'noopener';
 
-  foot.append(why, open);
+  // El motivo ocupa su renglón; abajo, el selector y el enlace (styles.css).
+  foot.append(why, sentiment, open);
   return foot;
 }
 
