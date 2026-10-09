@@ -8,7 +8,7 @@ Pop-up "Ver más" del feed del Monitoreo de Instagram. Solo frontend; el backend
 
 ### Requirement: REQ-POP-01 — Abrir y cerrar
 
-"Ver más" y un clic en la foto de una tarjeta MUST abrir el pop-up de ese posteo. El pop-up MUST cerrarse con la ✕, con Esc y con un clic en el fondo oscuro. Mientras está abierto, la página de atrás MUST NOT desplazarse ni recibir foco. Al abrir, el foco MUST ir al botón de cerrar; al cerrar, MUST volver al "Ver más" de la tarjeta del último posteo visto. Si se navegó a otro posteo que el de partida, esa tarjeta MUST quedar a la vista y marcarse un instante. Si la lista cambió mientras estaba abierto y la tarjeta no quedó entera a la vista, también MUST traerse a la vista; sin navegar y con la lista igual, la página MUST NOT moverse. Hasta 860 px de ancho el pop-up MUST ocupar la pantalla completa, sin que la ✕ ni el pie queden fuera de lo que se ve. El segundo clic de un doble clic MUST NOT actuar sobre algo que no estaba bajo el puntero en el primero (el pop-up recién abierto, el pie recién rehecho).
+Un clic en cualquier parte de una tarjeta MUST abrir el pop-up de ese posteo, y también Enter o Espacio con el foco en la tarjeta, que MUST poder recibirlo con Tab y mostrarlo (desde octubre de 2026, rama `monitoreo_foto_proporcion`; antes lo abrían el botón "Ver más", que ya no existe, y un clic en la foto). Un clic en un control de la tarjeta (la ✕ de ignorar, el selector de sentimiento, "Abrir ↗") MUST NOT abrirlo, ni soltar el mouse después de marcar texto de la tarjeta. El pop-up MUST cerrarse con la ✕, con Esc y con un clic en el fondo oscuro. Mientras está abierto, la página de atrás MUST NOT desplazarse ni recibir foco. Al abrir, el foco MUST ir al botón de cerrar; al cerrar, MUST volver a la tarjeta del último posteo visto. Si se navegó a otro posteo que el de partida, esa tarjeta MUST quedar a la vista y marcarse un instante. Si la lista cambió mientras estaba abierto y la tarjeta no quedó entera a la vista, también MUST traerse a la vista; sin navegar y con la lista igual, la página MUST NOT moverse. Hasta 860 px de ancho el pop-up MUST ocupar la pantalla completa, sin que la ✕ ni el pie queden fuera de lo que se ve. El segundo clic de un doble clic MUST NOT actuar sobre algo que no estaba bajo el puntero en el primero (el pop-up recién abierto, el pie recién rehecho).
 
 #### Scenario: Doble clic en la foto
 
@@ -16,11 +16,29 @@ Pop-up "Ver más" del feed del Monitoreo de Instagram. Solo frontend; el backend
 - WHEN se hace doble clic en su foto
 - THEN el pop-up queda abierto en ese posteo
 
-#### Scenario: Abrir desde la foto
+#### Scenario: Abrir desde la tarjeta
 
 - GIVEN el feed con tarjetas
-- WHEN se hace clic en la foto de una tarjeta
+- WHEN se hace clic en la foto, el título o cualquier otra parte de una tarjeta que no sea un control
 - THEN se abre el pop-up de ese posteo y el foco queda en el botón de cerrar
+
+#### Scenario: Abrir con el teclado
+
+- GIVEN el foco en una tarjeta
+- WHEN se aprieta Enter o Espacio
+- THEN se abre el pop-up de ese posteo, la página no se desplaza y, al cerrarlo con Esc, el foco vuelve a esa tarjeta
+
+#### Scenario: Clic en un control de la tarjeta
+
+- GIVEN el feed con tarjetas
+- WHEN se hace clic en el selector de sentimiento, en la ✕ de ignorar o en "Abrir ↗"
+- THEN el control hace lo suyo y el pop-up no se abre
+
+#### Scenario: Marcar texto de la tarjeta
+
+- GIVEN el feed con tarjetas
+- WHEN se arrastra el mouse sobre el texto de una tarjeta para marcarlo y se suelta
+- THEN el texto queda marcado y el pop-up no se abre
 
 #### Scenario: Selección de texto que termina afuera
 

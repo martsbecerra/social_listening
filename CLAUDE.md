@@ -311,16 +311,28 @@ mejor de los dos; "normal" se muestra "medio"; sin ninguna métrica con
 referencia no hay etiqueta) y no recalcula nada. Todo dato del posteo entra
 por `textContent`, nunca como HTML. Son cientos de tarjetas sin paginar: el
 redibujo es completo, con espera de 150 ms y `content-visibility: auto`.
-"Ver más" y el clic en la foto abren un pop-up con el posteo completo:
+Toda la tarjeta abre un pop-up con el posteo completo: un clic en cualquier
+parte, o Enter / Espacio con el foco en ella (`tabindex="0"`, aro de foco
+visible). No lo abren sus controles (`FEED_CARD_CONTROLS`: la ✕ de ignorar,
+el selector de sentimiento, "Abrir ↗") ni soltar el mouse después de marcar
+texto (`feedSelectingIn`); un control nuevo en la tarjeta tiene que entrar
+en esa lista. Ya no hay botón "Ver más". El pop-up es
 `public/js/monitoringFeedPopup.js` (también solo `instagram.html`, después
 del feed; prefijo `feedPop`), un `<dialog>` que se rellena con la fila de
 Tabulator, recorre las tarjetas en pantalla (← →) y usa `updateSentiment` y
 `confirmIgnore` tal como están; el feed le avisa los cambios de la lista con
-`feedListListeners`. La foto llega en `image` del listado (ver "Fotos de los
-posteos") y el frontend la lee solo en `feedImageUrl` (tarjeta, miniatura),
-`feedPopImageUrl` (pop-up, imagen grande) y `feedImageFailed`: sin intento
-de descarga, recuadro de color en la tarjeta y "Sin foto" en el pop-up;
-descarga fallida o copia que no carga, "Imagen no disponible" en los dos.
+`feedListListeners`; al cerrarse devuelve el foco a la tarjeta. La foto
+llega en `image` del listado (ver "Fotos de los posteos") y el frontend la
+lee solo en `feedImageUrl` (tarjeta, miniatura), `feedPopImageUrl` (pop-up,
+imagen grande) y `feedImageFailed`: sin intento de descarga, "Sin foto" en
+los dos; descarga fallida o copia que no carga, "Imagen no disponible" en
+los dos. En la tarjeta el recuadro de la foto es siempre un cuadrado del
+ancho de la tarjeta con fondo negro, y la foto va entera
+(`object-fit: contain`), sin recorte. Likes y comentarios van en una franja
+propia, en grande; el selector de sentimiento está en el pie. El hover
+(sube, borde del color del sentimiento, foto que se acerca) va solo con
+mouse (`hover: hover`) y el movimiento se apaga con
+`prefers-reduced-motion`.
 Maquetas aprobadas en `design/monitoreo-feed.html` y
 `design/monitoreo-popup.html`; SDD en `openspec/changes/monitoreo-feed/` y
 `openspec/changes/monitoreo-popup/`. La suite no cubre el frontend: se

@@ -103,4 +103,4 @@ Aparte, en código anterior a este cambio: la conciliación del costo real (`rec
 - Los posteos de más de 60 días al llegar el cambio quedan sin foto: ya no se refrescan y no se pide nada extra
 - Sin borrado automático de fotos: `data/media/` crece hasta unos 125 KB por posteo
 - `image_width` e `image_height` se guardan y van en el listado, sin uso en el frontend (el lado de la foto del pop-up tiene tamaño fijo)
-- La tarjeta recorta la miniatura a su recuadro (150 px de alto): de una foto vertical o de la portada de un reel se ve la franja del medio. Entera se ve en el pop-up. Cambiarlo es tocar `public/css/styles.css`, que en este cambio no se tocó
+- ~~La tarjeta recorta la miniatura a su recuadro (150 px de alto)~~: resuelto en la rama `monitoreo_foto_proporcion` (la foto va entera en un cuadrado con fondo negro; ver la Phase 10 de `openspec/changes/monitoreo-feed/tasks.md`)
