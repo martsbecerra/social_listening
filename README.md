@@ -100,7 +100,7 @@ social_listening_app/
 │       ├── temasEditor.js    # Temas emergentes editables (antes de copiar/WhatsApp).
 │       ├── monitoring.js     # Monitoreo en vivo (parametrizado por data-platform).
 │       ├── monitoringFeed.js # Vista Feed del Monitoreo (tarjetas). Solo Instagram.
-│       ├── monitoringFeedPopup.js # Pop-up "Ver más" del feed. Solo Instagram.
+│       ├── monitoringFeedPopup.js # Pop-up del posteo, desde el feed. Solo Instagram.
 │       └── claimsMap.js      # Mapa de reclamos (Leaflet, filtrado por plataforma).
 ├── scripts/
 │   ├── import-reclamos.js       # Importador genérico de Excel/CSV (solo CLI).
@@ -951,9 +951,10 @@ posteos").
 ### Vista Feed del Monitoreo de Instagram (octubre 2026)
 
 La solapa "Monitoreo en vivo" de Instagram se puede ver como **Tabla** (la
-de siempre) o como **Feed**: una tarjeta por publicación, con la cuenta, el
-título, el texto, likes, comentarios, el sentimiento y una etiqueta de
-alcance. El interruptor está arriba de los resultados y recuerda la última
+de siempre) o como **Feed**: una tarjeta por publicación, con la cuenta, la
+foto, el título, likes, comentarios, el sentimiento y una etiqueta de
+alcance. El texto del posteo no va en la tarjeta: se lee entero en el
+pop-up. El interruptor está arriba de los resultados y recuerda la última
 vista elegida en ese navegador.
 
 - **Mismos datos y mismos filtros.** El feed no pide nada al servidor:
@@ -974,9 +975,18 @@ vista elegida en ese navegador.
   dos razones) o más likes. La tabla sigue ordenando por encabezado.
 - **Acciones**: corregir el sentimiento e ignorar, con los mismos endpoints
   y el mismo cartel de confirmación que la fila de la tabla.
-- **"Ver más"** y el clic en la foto abren un pop-up con el posteo
-  completo: la foto a la izquierda y, a la derecha, el texto entero, likes y
-  comentarios con su razón y la mediana de la cuenta, el alcance con la
+- **La tarjeta.** Likes y comentarios van en una franja propia, con su
+  ícono y el número en grande; la razón del alcance queda chica al lado del
+  número que la disparó. En el pie, el motivo de detección y, debajo, el
+  selector de sentimiento y "Abrir ↗" (el posteo en Instagram). Al pasar el
+  mouse la tarjeta sube, toma el borde del color de su sentimiento y la
+  foto se acerca apenas; con `prefers-reduced-motion` no se mueve nada.
+- **Pop-up del posteo.** Un clic en cualquier parte de la tarjeta lo abre;
+  con el teclado, Tab lleva el foco a la tarjeta (con un aro visible) y
+  Enter o Espacio la abren. No lo abren la ✕ de ignorar, el selector de
+  sentimiento ni "Abrir ↗", ni soltar el mouse después de marcar texto.
+  Muestra el posteo completo: la foto a la izquierda y, a la derecha, el
+  texto entero, likes y comentarios con su razón y la mediana de la cuenta, el alcance con la
   métrica que lo disparó, la fecha y hora, el motivo completo de detección y
   el perfil. Se pasa al posteo anterior y al siguiente de la lista filtrada
   con las flechas o con ← →, y se cierra con la ✕, con Esc o con un clic
@@ -984,10 +994,12 @@ vista elegida en ese navegador.
   confirmación va adentro; al ignorar pasa al posteo siguiente). En celular
   ocupa la pantalla completa.
 - **Imagen**: la tarjeta muestra la miniatura de la foto guardada y el
-  pop-up la imagen grande (ver "Fotos de los posteos", acá abajo). Si el
-  posteo no tiene foto, la tarjeta queda con el recuadro de color y el ícono
-  del tipo, y el pop-up dice "Sin foto". Si la descarga falló o la copia no
-  carga, los dos dicen "Imagen no disponible". El frontend lee el dato en
+  pop-up la imagen grande (ver "Fotos de los posteos", acá abajo). En la
+  tarjeta el recuadro es un cuadrado del ancho de la tarjeta, igual para
+  todas, con fondo negro: la foto va entera y centrada, sin recorte, y lo
+  que sobra queda negro. Si el posteo no tiene foto, la tarjeta y el pop-up
+  dicen "Sin foto" sobre un recuadro rayado. Si la descarga falló o la copia
+  no carga, los dos dicen "Imagen no disponible". El frontend lee el dato en
   tres puntos: `feedImageUrl` y `feedImageFailed` en
   `public/js/monitoringFeed.js`, y `feedPopImageUrl` en
   `public/js/monitoringFeedPopup.js`.
@@ -999,7 +1011,7 @@ vista elegida en ese navegador.
 
 ### Fotos de los posteos (octubre 2026)
 
-Las tarjetas del Feed y el pop-up "Ver más" muestran la foto de cada posteo
+Las tarjetas del Feed y el pop-up del posteo muestran la foto de cada posteo
 de Instagram. Los links de imagen de Instagram vencen a los pocos días, así
 que la app no guarda solo el link: baja la imagen una vez y deja **dos
 copias propias en JPEG**, hechas de esa única descarga.
@@ -1081,7 +1093,7 @@ copias propias en JPEG**, hechas de esa única descarga.
   `status`, `width`, `height`); el link original de Instagram no sale del
   servidor.
 - **En pantalla.** Con copia: la foto. Sin intento, o con la foto
-  pendiente: la tarjeta con el recuadro de color y el pop-up con "Sin foto".
+  pendiente: "Sin foto", en la tarjeta y en el pop-up.
   Con el link vencido o la imagen rechazada, o si la copia no carga: "Imagen
   no disponible".
 - **Apagarlo.** `POST_IMAGES=0` en `.env` apaga las descargas sin tocar

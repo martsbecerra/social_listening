@@ -60,6 +60,20 @@ Un commit por paso en la rama `monitoreo_feed`, cada uno aprobado por el dueño 
 - [x] 9.4 Hallazgo 4, solo el borde: "hace 1 h" y "hace 1 día" en vez de "hace 60 min" y "hace 24 h". Queda como estaba que el texto no se actualiza solo con la página abierta
 - [x] 9.5 Hallazgos 5 (un motivo viejo "palabra clave … — sin clasificar" se ve mal en el pie; hoy no hay ningún caso en la base) y 6 (la razón redondeada puede decir "1,5×" al lado de "Alcance medio"; 3 tarjetas hoy, y el mismo redondeo ya está en la tabla): el dueño decidió dejarlos como están
 
+## Phase 10: ajustes de la tarjeta (octubre 2026, rama `monitoreo_foto_proporcion`)
+
+Pedidos por el dueño con las fotos reales ya a la vista. Un commit por punto; probado en el navegador con el servidor de prueba y fotos de varias proporciones (9:16, 4:5, 1:1, 1,91:1, rota, fallida y sin foto), en escritorio y en celular.
+
+- [x] 10.1 Foto sin recorte: el recuadro es un cuadrado del ancho de la tarjeta, con fondo negro, y la miniatura va entera y centrada. Sin foto, el mismo cuadrado rayado con "Sin foto" o "Imagen no disponible"; salen el recuadro de color y el ícono del tipo
+- [x] 10.2 Toda la tarjeta abre el pop-up, con un clic o con Enter / Espacio (foco visible); sale el botón "Ver más". No lo abren la ✕ de ignorar, el selector de sentimiento, "Abrir ↗" ni soltar el mouse después de marcar texto. Al cerrar el pop-up, el foco vuelve a la tarjeta
+- [x] 10.3 Likes y comentarios en una franja propia, con ícono y el número en 21 px y negrita; la razón del alcance, chica al lado del número que la disparó. El selector de sentimiento pasa al pie, que queda en dos renglones (motivo arriba; selector y "Abrir ↗" abajo): entra en la tarjeta de 240 px y en celular
+- [x] 10.4 Hover más marcado: la tarjeta sube 6 px con sombra fuerte y borde del color del sentimiento, la foto se acerca a 1,05 dentro de su cuadrado y el cursor es la manito. Solo con mouse; el movimiento se apaga con `prefers-reduced-motion`
+- [x] 10.5 `README.md`, `CLAUDE.md`, REQ-POP-01 de `monitoreo-popup` y los pendientes de `monitoreo-fotos`
+- [x] 10.6 La tarjeta muestra solo el título, sin el texto del posteo (que sigue entero en el pop-up); el cuerpo queda con el mismo aire arriba y abajo. Con los 473 posteos reales, 431 títulos ocupan dos renglones, 30 tres y 12 uno. Probado con las fotos reales de `data/media`, leídas en solo lectura por el servidor de prueba
+- [x] 10.7 Likes y comentarios un 17 % más chicos: número e ícono pasan de 21 px a 17,5 px, siempre en negrita. Con las fotos reales a la vista, 21 px quedaba exagerado
+
+La maqueta `design/monitoreo-feed.html` no se actualizó: muestra la tarjeta anterior (foto en franja de 150 px, botón "Ver más").
+
 ## Pendiente fuera de este cambio
 
 - [ ] Imagen del posteo: guardarla o servirla desde el backend y devolverla en `feedImageUrl`

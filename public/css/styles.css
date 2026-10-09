@@ -1964,14 +1964,12 @@ pre.report a:hover {
   min-width: 0;
 }
 
-/* Grilla. Foto chica fija: es la variante "compact" de la maqueta, sin
-   selector de tamaño. El mínimo de la tarjeta es 240px y no los 230px de la
-   maqueta: .container-wide (1240px) es más ancho que la maqueta (1148px) y
-   con 230 entraban 5 columnas de 235px, con las cuentas cortadas y el
-   selector de sentimiento en una segunda línea. Con 240 quedan las 4
-   columnas que muestra la maqueta. */
+/* Grilla. El mínimo de la tarjeta es 240px y no los 230px de la maqueta:
+   .container-wide (1240px) es más ancho que la maqueta (1148px) y con 230
+   entraban 5 columnas de 235px, con las cuentas cortadas. Con 240 quedan las
+   4 columnas que muestra la maqueta. La foto es un cuadrado del ancho de la
+   tarjeta (.feed-media), no la franja de alto fijo de la maqueta. */
 .feed {
-  --feed-img-h: 150px;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: 16px;
@@ -1989,10 +1987,11 @@ pre.report a:hover {
 .feed-card {
   --s: #cfd6d2;
   /* Son cientos de tarjetas sin paginar: el navegador no calcula ni pinta las
-     que están fuera de la pantalla hasta que se acercan (420px es el alto
-     estimado mientras tanto; una vez dibujada recuerda el real). */
+     que están fuera de la pantalla hasta que se acercan (525px es el alto
+     estimado mientras tanto, el que tiene con cuatro columnas y un título de
+     dos renglones; una vez dibujada recuerda el real). */
   content-visibility: auto;
-  contain-intrinsic-height: auto 420px;
+  contain-intrinsic-height: auto 525px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -2003,13 +2002,11 @@ pre.report a:hover {
   box-shadow: var(--shadow-sm);
   font-size: 14px;
   line-height: 1.45;
+  cursor: pointer; /* toda la tarjeta abre el pop-up */
   transition:
-    box-shadow 0.15s,
-    transform 0.15s;
-}
-.feed-card:hover {
-  box-shadow: var(--shadow-md);
-  transform: translateY(-1px);
+    box-shadow 0.2s ease,
+    border-color 0.2s ease,
+    transform 0.2s ease;
 }
 .feed-card[data-s="positivo"] {
   --s: var(--jade-400);
@@ -2019,6 +2016,44 @@ pre.report a:hover {
 }
 .feed-card[data-s="negativo"] {
   --s: var(--coral-500);
+}
+/* Al pasar el mouse la tarjeta se destaca: borde de color en los cuatro
+   lados (el del sentimiento; sin clasificar, un gris oscuro) y una sombra
+   fuerte. Solo donde hay mouse: en una pantalla táctil el hover queda
+   pegado después de tocar. */
+.feed-card {
+  --edge: var(--clay-500);
+}
+.feed-card[data-s="positivo"],
+.feed-card[data-s="neutral"],
+.feed-card[data-s="negativo"] {
+  --edge: var(--s);
+}
+@media (hover: hover) {
+  .feed-card:hover {
+    border-color: var(--edge);
+    box-shadow:
+      0 0 0 1px var(--edge),
+      0 22px 38px -16px rgba(3, 42, 35, 0.5),
+      0 8px 16px -8px rgba(3, 42, 35, 0.25);
+  }
+}
+/* Y se mueve, salvo que el sistema pida menos movimiento: la tarjeta sube
+   unos píxeles y la foto se acerca apenas, sin salirse de su cuadrado. */
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .feed-card:hover {
+    transform: translateY(-6px);
+  }
+  .feed-card:hover .feed-media img {
+    transform: scale(1.05);
+  }
+}
+/* Toda la tarjeta abre el pop-up del posteo. Con el teclado se llega a ella
+   con Tab (Enter o Espacio la abren): el foco se marca con un aro por fuera
+   del borde. */
+.feed-card:focus-visible {
+  outline: 3px solid var(--jade-400);
+  outline-offset: 2px;
 }
 
 /* Tarjeta a la que lleva un destacado de "Se despegaron": un aro jade que
@@ -2090,32 +2125,26 @@ pre.report a:hover {
   margin: 0 -4px 0 -4px;
 }
 
-/* Recuadro de la imagen. De fondo, el de reemplazo: un degradé con el tono
-   de la cuenta (lo pone el JS; el fondo de acá es el respaldo) y el ícono
-   del tipo. Si el posteo tiene foto guardada, el <img> de la miniatura lo
-   tapa y las etiquetas quedan encima. Un clic abre el pop-up del posteo,
-   igual que "Ver más". */
+/* Recuadro de la imagen: un cuadrado del ancho de la tarjeta, igual para
+   todas, con fondo negro. La miniatura se ve entera y centrada, sin recorte:
+   lo que sobra del cuadrado (a los costados de una foto vertical, arriba y
+   abajo de una horizontal) queda negro. Las etiquetas van encima. */
 .feed-media {
   position: relative;
+  flex: none; /* no se achica aunque la tarjeta tenga el alto fijado */
   display: grid;
   place-items: center;
-  height: var(--feed-img-h);
-  overflow: hidden;
-  background: var(--jade-700);
-  cursor: pointer;
-}
-.feed-media svg {
-  width: 46px;
-  height: 46px;
-  color: #fff;
-  opacity: 0.55;
+  aspect-ratio: 1 / 1;
+  overflow: hidden; /* también recorta el acercamiento de la foto al pasar el mouse */
+  background: #000;
 }
 .feed-media img {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
+  transition: transform 0.35s ease;
 }
 .feed-badge {
   position: absolute;
@@ -2145,9 +2174,10 @@ pre.report a:hover {
 .feed-badge.reach.bajo {
   background: rgba(3, 42, 35, 0.55);
 }
-/* "Imagen no disponible": la descarga de la foto falló, o la copia guardada
-   no cargó. */
-.feed-media.broken {
+/* Sin imagen para mostrar, el mismo cuadrado, rayado y con su texto: "Sin
+   foto" (el posteo todavía no tiene) o "Imagen no disponible" (la descarga
+   falló, o la copia guardada no cargó). */
+.feed-media.empty {
   background: repeating-linear-gradient(
     45deg,
     var(--clay-100),
@@ -2161,13 +2191,14 @@ pre.report a:hover {
   color: var(--clay-500);
 }
 
-/* Título y texto del posteo, cortado a tres líneas: entero va en el pop-up. */
+/* Solo el título del posteo, con el mismo aire arriba y abajo. El texto no
+   va en la tarjeta: se lee entero en el pop-up. */
 .feed-body {
   flex: 1;
-  padding: 12px 12px 4px;
+  padding: 12px;
 }
 .feed-title {
-  margin: 0 0 6px;
+  margin: 0;
   font-family: "Bricolage Grotesque", sans-serif;
   font-size: 15.5px;
   font-weight: 600;
@@ -2175,51 +2206,70 @@ pre.report a:hover {
   color: var(--jade-950);
   overflow-wrap: anywhere;
 }
-.feed-cap {
-  margin: 0;
-  color: var(--clay-700);
-  overflow-wrap: anywhere;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
 
-/* Likes, comentarios y el selector de sentimiento de la tabla
-   (.sentiment-select), que acá va a la derecha en lugar de la pastilla fija
-   de la maqueta. Si no entra, baja a una segunda línea. */
+/* Likes y comentarios, en una franja propia arriba del pie y bien a la
+   vista: ícono, número en negrita y, chica al lado del número que la
+   disparó, la razón del alcance ("5,4×"). Número e ícono miden 17,5px: con
+   21px quedaban exagerados para el tamaño de la tarjeta. */
 .feed-metrics {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 14px;
-  padding: 10px 12px;
+  gap: 6px 20px;
+  padding: 11px 12px;
   border-top: 1px solid var(--line);
-  font-family: "DM Mono", monospace;
-  font-size: 12.5px;
+}
+.feed-metric {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  white-space: nowrap;
+}
+.feed-metric svg {
+  flex: none;
+  align-self: center;
+  width: 17.5px;
+  height: 17.5px;
+}
+.feed-metric.likes svg {
+  color: var(--coral-500);
+}
+.feed-metric.comments svg {
+  color: var(--jade-500);
+}
+.feed-metric b {
+  font-family: "Bricolage Grotesque", sans-serif;
+  font-size: 17.5px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--jade-950);
 }
 .feed-x {
+  font-family: "DM Mono", monospace;
   font-size: 11px;
   color: var(--clay-500);
 }
 .feed-x.up {
   color: var(--coral-700);
 }
-.feed-metrics .sentiment-select {
-  margin-left: auto;
-  font-family: "Instrument Sans", sans-serif;
-}
 
-/* Pie: por qué se detectó, "Ver más" y el enlace al posteo. */
+/* Pie, en dos renglones: arriba, por qué se detectó; abajo, el selector de
+   sentimiento de la tabla (.sentiment-select) a la izquierda y el enlace al
+   posteo en Instagram a la derecha. El motivo ocupa su renglón entero para
+   que los dos controles entren siempre, también en la tarjeta más angosta
+   (240px) y en el celular. */
 .feed-foot {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
   padding: 0 12px 12px;
   font-size: 12px;
 }
 .feed-why {
-  flex: 1;
+  flex: 0 0 100%;
   min-width: 0;
   color: var(--clay-500);
   white-space: nowrap;
@@ -2233,32 +2283,16 @@ pre.report a:hover {
   color: var(--jade-700);
   font-family: "DM Mono", monospace;
 }
-.feed-foot button,
 .feed-foot a {
   flex: none;
-  width: auto;
-  margin: 0;
   padding: 4px 10px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--jade-900);
   border-radius: 999px;
-  background: #fff;
-  color: var(--jade-700);
-  font-size: 12px;
-  font-weight: 400;
-  white-space: nowrap;
-  text-decoration: none;
-  cursor: pointer;
-  box-shadow: none;
-}
-.feed-foot button:hover:not(:disabled) {
-  transform: none;
-  box-shadow: none;
-  filter: none;
-}
-.feed-foot a {
-  border-color: var(--jade-900);
   background: var(--jade-900);
   color: #fff;
+  font-size: 12px;
+  white-space: nowrap;
+  text-decoration: none;
 }
 
 /* ------------------------------------------------------------------ */

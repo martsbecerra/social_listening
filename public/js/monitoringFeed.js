@@ -7,8 +7,8 @@
 // Lo carga SOLO instagram.html, después de monitoring.js, y se apoya en lo
 // que ese archivo ya define: monitoringTable (la fuente de los posteos, ya
 // filtrados por la barra con postMatchesFilters), readFilterValues, postReach
-// (el alcance), buildSentimentSelect y los formateadores. El pop-up de "Ver
-// más" está aparte, en monitoringFeedPopup.js.
+// (el alcance), buildSentimentSelect y los formateadores. El pop-up del
+// posteo, que se abre desde la tarjeta, está aparte: monitoringFeedPopup.js.
 // x.html no lo carga: en X la solapa sigue siendo solo la tabla.
 // --------------------------------------------------------------------
 const feedContainerEl = document.getElementById('monitoringFeed');
@@ -84,19 +84,11 @@ function feedReasonParts(reason) {
 // -------------------------------------------------------------------------
 // Recuadro de la imagen.
 // -------------------------------------------------------------------------
+// Un posteo sin tipo detectado no lleva etiqueta de tipo.
 const FEED_TYPE_LABELS = { reel: 'Reel', imagen: 'Imagen', carrusel: 'Carrusel' };
-// Íconos de la maqueta, uno por post_type. Un posteo sin tipo detectado lleva
-// el de imagen y ninguna etiqueta de tipo.
-const FEED_TYPE_ICONS = {
-  reel: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>',
-  imagen:
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="2"/><path d="m21 17-5-5-9 8"/></svg>',
-  carrusel:
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="6" y="4" width="13" height="16" rx="2.5"/><path d="M3 7v10"/><path d="M22 7v10"/></svg>',
-};
 const FEED_REACH_LABELS = { alto: 'Alcance alto', medio: 'Alcance medio', bajo: 'Alcance bajo' };
-// Colores del avatar de la maqueta. El color del avatar y el tono del recuadro
-// salen del nombre de la cuenta, así cada cuenta se ve siempre igual.
+// Colores del avatar de la maqueta. El color sale del nombre de la cuenta,
+// así cada cuenta se ve siempre igual.
 const FEED_PALETTE = ['#12805f', '#c4522c', '#2f6f9e', '#8a5a10', '#6b4c8f', '#a8324f', '#4f7a3a', '#3f6f6a'];
 
 function feedHash(text) {
@@ -118,8 +110,8 @@ function feedImageUrl(post) {
 // Se intentó bajar la foto y no quedó ninguna copia (el link de Instagram
 // venció o la imagen no se aceptó): la tarjeta y el pop-up avisan "Imagen no
 // disponible". Si nunca se intentó (posteo viejo, respuesta sin link de
-// imagen) o quedó pendiente de reintentar (status "pendiente") no hay
-// aviso: es un posteo que todavía no tiene foto.
+// imagen) o quedó pendiente de reintentar (status "pendiente") es un posteo
+// que todavía no tiene foto: los dos dicen "Sin foto".
 function feedImageFailed(post) {
   const image = post.image;
   return Boolean(image && !image.thumbUrl && (image.status === 'vencido' || image.status === 'error'));
@@ -136,19 +128,16 @@ function feedNode(tag, className, text) {
   return node;
 }
 
+// El recuadro es siempre el mismo cuadrado (.feed-media en styles.css): con
+// foto, la miniatura entera sobre fondo negro; sin foto, rayado y con su
+// texto.
 function buildFeedMedia(post, reach) {
   const media = feedNode('div', 'feed-media');
-  const hue = (feedHash(post.account) >>> 3) % 360;
-  media.style.background = `linear-gradient(135deg, hsl(${hue}, 45%, 38%), hsl(${(hue + 40) % 360}, 50%, 58%))`;
-  // Constante propia, no un dato del posteo: se puede insertar como HTML.
-  media.insertAdjacentHTML('beforeend', FEED_TYPE_ICONS[post.post_type] || FEED_TYPE_ICONS.imagen);
 
-  // Recuadro rayado con el aviso, en lugar del color y el ícono del tipo.
-  const showUnavailable = (img) => {
-    media.classList.add('broken');
-    media.style.background = '';
-    media.querySelector('svg')?.remove();
-    const msg = feedNode('span', 'feed-media-msg', 'Imagen no disponible');
+  // Recuadro rayado con el texto, en lugar de la foto.
+  const showEmpty = (text, img) => {
+    media.classList.add('empty');
+    const msg = feedNode('span', 'feed-media-msg', text);
     if (img) img.replaceWith(msg);
     else media.appendChild(msg);
   };
@@ -165,11 +154,11 @@ function buildFeedMedia(post, reach) {
     img.draggable = false;
     // La copia guardada no se pudo mostrar (falta el archivo, se cortó la
     // red): se avisa en vez de dejar el ícono de imagen rota.
-    img.addEventListener('error', () => showUnavailable(img));
+    img.addEventListener('error', () => showEmpty('Imagen no disponible', img));
     img.src = imageUrl;
     media.appendChild(img);
-  } else if (feedImageFailed(post)) {
-    showUnavailable(null);
+  } else {
+    showEmpty(feedImageFailed(post) ? 'Imagen no disponible' : 'Sin foto', null);
   }
 
   const typeLabel = FEED_TYPE_LABELS[post.post_type];
@@ -211,37 +200,44 @@ function buildFeedHead(post) {
   return head;
 }
 
+// Solo el título. El texto del posteo no va en la tarjeta: se lee entero en
+// el pop-up.
 function buildFeedBody(post) {
   const body = feedNode('div', 'feed-body');
-  body.append(feedNode('h3', 'feed-title', post.title || '(sin clasificar)'), feedNode('p', 'feed-cap', post.caption || ''));
+  body.appendChild(feedNode('h3', 'feed-title', post.title || '(sin clasificar)'));
   return body;
 }
 
-// "♥ 4,8 k" / "💬 612". La razón contra la mediana de la cuenta ("5,4×") va al
-// lado de la métrica que disparó la etiqueta de alcance, en coral si es alto.
-function buildFeedMetric(symbol, label, value, reach, by) {
-  const metric = feedNode('span', '', `${symbol} ${feedCount(value)}`);
+// Íconos de las dos métricas (corazón y globo de comentario).
+const FEED_METRIC_ICONS = {
+  likes:
+    '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 20.5 3.6 12.3a5.2 5.2 0 0 1 7.4-7.4l1 1 1-1a5.2 5.2 0 0 1 7.4 7.4z"/></svg>',
+  comments:
+    '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M5 3.5h14A2.5 2.5 0 0 1 21.5 6v9a2.5 2.5 0 0 1-2.5 2.5h-8.2L6 21.5v-4H5A2.5 2.5 0 0 1 2.5 15V6A2.5 2.5 0 0 1 5 3.5z"/></svg>',
+};
+
+// Una métrica, bien a la vista: ícono y número grande. "kind" es likes o
+// comments. La razón contra la mediana de la cuenta ("5,4×") va chica, al
+// lado del número que disparó la etiqueta de alcance, en coral si es alto.
+function buildFeedMetric(kind, label, value, reach) {
+  const metric = feedNode('span', `feed-metric ${kind}`);
   metric.title = label;
-  if (reach && reach.by === by) {
+  // Constante propia, no un dato del posteo: se puede insertar como HTML.
+  metric.insertAdjacentHTML('beforeend', FEED_METRIC_ICONS[kind]);
+  metric.appendChild(feedNode('b', '', feedCount(value)));
+  if (reach && reach.by === kind) {
     const ratio = `${formatBenchmarkRatio(reach.ratio)}×`;
     const x = feedNode('span', `feed-x${reach.level === 'alto' ? ' up' : ''}`, ratio);
     x.title = `${ratio} la mediana de ${reach.label} de la cuenta`;
-    metric.append(' ', x);
+    metric.appendChild(x);
   }
   return metric;
 }
 
+// Franja propia de likes y comentarios, arriba del pie.
 function buildFeedMetrics(post, reach) {
   const metrics = feedNode('div', 'feed-metrics');
-  // El mismo selector de la tabla; el cambio lo atiende el contenedor (ver
-  // "Acciones de la tarjeta").
-  const sentiment = buildSentimentSelect(post.sentiment);
-  sentiment.setAttribute('aria-label', 'Sentimiento');
-  metrics.append(
-    buildFeedMetric('♥', 'Likes', post.likes, reach, 'likes'),
-    buildFeedMetric('💬', 'Comentarios', post.comments, reach, 'comments'),
-    sentiment
-  );
+  metrics.append(buildFeedMetric('likes', 'Likes', post.likes, reach), buildFeedMetric('comments', 'Comentarios', post.comments, reach));
   return metrics;
 }
 
@@ -254,19 +250,19 @@ function buildFeedFoot(post) {
   if (term) why.appendChild(feedNode('code', '', term));
   why.title = post.matched_reason || '';
 
-  // Abre el pop-up del posteo; el clic lo atiende el contenedor (ver
+  // El mismo selector de la tabla; el cambio lo atiende el contenedor (ver
   // "Acciones de la tarjeta").
-  const more = feedNode('button', '', 'Ver más');
-  more.type = 'button';
-  more.dataset.more = '';
-  more.setAttribute('aria-haspopup', 'dialog');
+  const sentiment = buildSentimentSelect(post.sentiment);
+  sentiment.setAttribute('aria-label', 'Sentimiento');
 
+  // El posteo en Instagram, en otra pestaña.
   const open = feedNode('a', '', 'Abrir ↗');
   open.href = post.url;
   open.target = '_blank';
   open.rel = 'noopener';
 
-  foot.append(why, more, open);
+  // El motivo ocupa su renglón; abajo, el selector y el enlace (styles.css).
+  foot.append(why, sentiment, open);
   return foot;
 }
 
@@ -275,6 +271,11 @@ function buildFeedCard(post, reach) {
   card.dataset.id = post.id;
   // Color del borde de arriba (ver .feed-card[data-s] en styles.css).
   card.dataset.s = post.sentiment || SENTIMENT_UNSET;
+  // Toda la tarjeta abre el pop-up del posteo (ver "Acciones de la tarjeta").
+  // Con el teclado se llega a ella con Tab y se abre con Enter o Espacio.
+  card.tabIndex = 0;
+  const account = post.account && post.account !== 'N/D' ? `@${post.account}` : 'cuenta sin identificar';
+  card.setAttribute('aria-label', `Posteo de ${account}: abrir el detalle`);
   card.append(buildFeedHead(post), buildFeedMedia(post, reach), buildFeedBody(post), buildFeedMetrics(post, reach), buildFeedFoot(post));
   return card;
 }
@@ -307,7 +308,7 @@ function feedSorter(order, reachById) {
 }
 
 // -------------------------------------------------------------------------
-// Aviso de que cambia la lista de tarjetas. El pop-up de "Ver más"
+// Aviso de que cambia la lista de tarjetas. El pop-up del posteo
 // (monitoringFeedPopup.js, que se carga después) se anota acá para no quedar
 // mostrando un posteo que ya no está. "change" dice qué pasó:
 //   (nada)         la lista ya cambió: se redibujó entera o salió una tarjeta.
@@ -458,20 +459,44 @@ feedContainerEl.addEventListener('change', (e) => {
   feedSetSentiment(card, select.value, select);
 });
 
+// Controles con acción propia dentro de la tarjeta: la ✕ de ignorar, el
+// selector de sentimiento y "Abrir ↗". Un clic en ellos no abre el pop-up.
+const FEED_CARD_CONTROLS = 'a, button, select, input, textarea, label';
+
+// Hay texto de la tarjeta marcado: se soltó el mouse después de arrastrar
+// para seleccionarlo. Eso también llega como un clic, y no tiene que abrir
+// nada (si no, no se podría copiar un título).
+function feedSelectingIn(card) {
+  const selection = window.getSelection();
+  if (!selection || selection.isCollapsed || !selection.toString().trim()) return false;
+  return card.contains(selection.anchorNode) || card.contains(selection.focusNode);
+}
+
 feedContainerEl.addEventListener('click', (e) => {
-  // "Ver más" y la foto abren el pop-up del posteo (monitoringFeedPopup.js).
-  const opener = e.target.closest('.feed-foot [data-more], .feed-media');
-  if (opener) {
-    openFeedPop(opener.closest('.feed-card'));
+  const card = e.target.closest('.feed-card');
+  if (!card) return;
+  if (e.target.closest('.feed-head .ico.del')) {
+    const row = feedRowOf(card);
+    // El mismo cartel de confirmación; al aceptar, confirmIgnore saca la fila
+    // de la tabla y avisa acá con { ignoredId } (ver onMonitoringChange).
+    openIgnoreModal(row ? row.getData().id : card.dataset.id);
     return;
   }
-  const ignore = e.target.closest('.feed-head .ico.del');
-  if (!ignore) return;
-  const card = ignore.closest('.feed-card');
-  const row = feedRowOf(card);
-  // El mismo cartel de confirmación; al aceptar, confirmIgnore saca la fila
-  // de la tabla y avisa acá con { ignoredId } (ver onMonitoringChange).
-  openIgnoreModal(row ? row.getData().id : card.dataset.id);
+  // Un clic en cualquier otro lado de la tarjeta abre el pop-up del posteo
+  // (monitoringFeedPopup.js).
+  if (e.target.closest(FEED_CARD_CONTROLS) || feedSelectingIn(card)) return;
+  openFeedPop(card);
+});
+
+// Lo mismo con el teclado: Enter o Espacio con el foco en la tarjeta. Con el
+// foco en uno de sus controles, la tecla es de ese control. Una tecla que se
+// mantiene apretada no vuelve a abrirlo.
+feedContainerEl.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || e.repeat) return;
+  if (!e.target.matches('.feed-card')) return;
+  e.preventDefault(); // Espacio no baja la página
+  openFeedPop(e.target);
 });
 
 // Se ignoró un posteo: sale solo su tarjeta, sin rehacer el resto (así la
