@@ -1964,14 +1964,12 @@ pre.report a:hover {
   min-width: 0;
 }
 
-/* Grilla. Foto chica fija: es la variante "compact" de la maqueta, sin
-   selector de tamaño. El mínimo de la tarjeta es 240px y no los 230px de la
-   maqueta: .container-wide (1240px) es más ancho que la maqueta (1148px) y
-   con 230 entraban 5 columnas de 235px, con las cuentas cortadas y el
-   selector de sentimiento en una segunda línea. Con 240 quedan las 4
-   columnas que muestra la maqueta. */
+/* Grilla. El mínimo de la tarjeta es 240px y no los 230px de la maqueta:
+   .container-wide (1240px) es más ancho que la maqueta (1148px) y con 230
+   entraban 5 columnas de 235px, con las cuentas cortadas. Con 240 quedan las
+   4 columnas que muestra la maqueta. La foto es un cuadrado del ancho de la
+   tarjeta (.feed-media), no la franja de alto fijo de la maqueta. */
 .feed {
-  --feed-img-h: 150px;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: 16px;
@@ -1989,10 +1987,10 @@ pre.report a:hover {
 .feed-card {
   --s: #cfd6d2;
   /* Son cientos de tarjetas sin paginar: el navegador no calcula ni pinta las
-     que están fuera de la pantalla hasta que se acercan (420px es el alto
+     que están fuera de la pantalla hasta que se acercan (560px es el alto
      estimado mientras tanto; una vez dibujada recuerda el real). */
   content-visibility: auto;
-  contain-intrinsic-height: auto 420px;
+  contain-intrinsic-height: auto 560px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -2090,32 +2088,26 @@ pre.report a:hover {
   margin: 0 -4px 0 -4px;
 }
 
-/* Recuadro de la imagen. De fondo, el de reemplazo: un degradé con el tono
-   de la cuenta (lo pone el JS; el fondo de acá es el respaldo) y el ícono
-   del tipo. Si el posteo tiene foto guardada, el <img> de la miniatura lo
-   tapa y las etiquetas quedan encima. Un clic abre el pop-up del posteo,
-   igual que "Ver más". */
+/* Recuadro de la imagen: un cuadrado del ancho de la tarjeta, igual para
+   todas, con fondo negro. La miniatura se ve entera y centrada, sin recorte:
+   lo que sobra del cuadrado (a los costados de una foto vertical, arriba y
+   abajo de una horizontal) queda negro. Las etiquetas van encima. Un clic
+   abre el pop-up del posteo, igual que "Ver más". */
 .feed-media {
   position: relative;
   display: grid;
   place-items: center;
-  height: var(--feed-img-h);
+  aspect-ratio: 1 / 1;
   overflow: hidden;
-  background: var(--jade-700);
+  background: #000;
   cursor: pointer;
-}
-.feed-media svg {
-  width: 46px;
-  height: 46px;
-  color: #fff;
-  opacity: 0.55;
 }
 .feed-media img {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
 }
 .feed-badge {
   position: absolute;
@@ -2145,9 +2137,10 @@ pre.report a:hover {
 .feed-badge.reach.bajo {
   background: rgba(3, 42, 35, 0.55);
 }
-/* "Imagen no disponible": la descarga de la foto falló, o la copia guardada
-   no cargó. */
-.feed-media.broken {
+/* Sin imagen para mostrar, el mismo cuadrado, rayado y con su texto: "Sin
+   foto" (el posteo todavía no tiene) o "Imagen no disponible" (la descarga
+   falló, o la copia guardada no cargó). */
+.feed-media.empty {
   background: repeating-linear-gradient(
     45deg,
     var(--clay-100),

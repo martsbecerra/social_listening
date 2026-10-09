@@ -84,19 +84,11 @@ function feedReasonParts(reason) {
 // -------------------------------------------------------------------------
 // Recuadro de la imagen.
 // -------------------------------------------------------------------------
+// Un posteo sin tipo detectado no lleva etiqueta de tipo.
 const FEED_TYPE_LABELS = { reel: 'Reel', imagen: 'Imagen', carrusel: 'Carrusel' };
-// Íconos de la maqueta, uno por post_type. Un posteo sin tipo detectado lleva
-// el de imagen y ninguna etiqueta de tipo.
-const FEED_TYPE_ICONS = {
-  reel: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>',
-  imagen:
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="2"/><path d="m21 17-5-5-9 8"/></svg>',
-  carrusel:
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="6" y="4" width="13" height="16" rx="2.5"/><path d="M3 7v10"/><path d="M22 7v10"/></svg>',
-};
 const FEED_REACH_LABELS = { alto: 'Alcance alto', medio: 'Alcance medio', bajo: 'Alcance bajo' };
-// Colores del avatar de la maqueta. El color del avatar y el tono del recuadro
-// salen del nombre de la cuenta, así cada cuenta se ve siempre igual.
+// Colores del avatar de la maqueta. El color sale del nombre de la cuenta,
+// así cada cuenta se ve siempre igual.
 const FEED_PALETTE = ['#12805f', '#c4522c', '#2f6f9e', '#8a5a10', '#6b4c8f', '#a8324f', '#4f7a3a', '#3f6f6a'];
 
 function feedHash(text) {
@@ -118,8 +110,8 @@ function feedImageUrl(post) {
 // Se intentó bajar la foto y no quedó ninguna copia (el link de Instagram
 // venció o la imagen no se aceptó): la tarjeta y el pop-up avisan "Imagen no
 // disponible". Si nunca se intentó (posteo viejo, respuesta sin link de
-// imagen) o quedó pendiente de reintentar (status "pendiente") no hay
-// aviso: es un posteo que todavía no tiene foto.
+// imagen) o quedó pendiente de reintentar (status "pendiente") es un posteo
+// que todavía no tiene foto: los dos dicen "Sin foto".
 function feedImageFailed(post) {
   const image = post.image;
   return Boolean(image && !image.thumbUrl && (image.status === 'vencido' || image.status === 'error'));
@@ -136,19 +128,16 @@ function feedNode(tag, className, text) {
   return node;
 }
 
+// El recuadro es siempre el mismo cuadrado (.feed-media en styles.css): con
+// foto, la miniatura entera sobre fondo negro; sin foto, rayado y con su
+// texto.
 function buildFeedMedia(post, reach) {
   const media = feedNode('div', 'feed-media');
-  const hue = (feedHash(post.account) >>> 3) % 360;
-  media.style.background = `linear-gradient(135deg, hsl(${hue}, 45%, 38%), hsl(${(hue + 40) % 360}, 50%, 58%))`;
-  // Constante propia, no un dato del posteo: se puede insertar como HTML.
-  media.insertAdjacentHTML('beforeend', FEED_TYPE_ICONS[post.post_type] || FEED_TYPE_ICONS.imagen);
 
-  // Recuadro rayado con el aviso, en lugar del color y el ícono del tipo.
-  const showUnavailable = (img) => {
-    media.classList.add('broken');
-    media.style.background = '';
-    media.querySelector('svg')?.remove();
-    const msg = feedNode('span', 'feed-media-msg', 'Imagen no disponible');
+  // Recuadro rayado con el texto, en lugar de la foto.
+  const showEmpty = (text, img) => {
+    media.classList.add('empty');
+    const msg = feedNode('span', 'feed-media-msg', text);
     if (img) img.replaceWith(msg);
     else media.appendChild(msg);
   };
@@ -165,11 +154,11 @@ function buildFeedMedia(post, reach) {
     img.draggable = false;
     // La copia guardada no se pudo mostrar (falta el archivo, se cortó la
     // red): se avisa en vez de dejar el ícono de imagen rota.
-    img.addEventListener('error', () => showUnavailable(img));
+    img.addEventListener('error', () => showEmpty('Imagen no disponible', img));
     img.src = imageUrl;
     media.appendChild(img);
-  } else if (feedImageFailed(post)) {
-    showUnavailable(null);
+  } else {
+    showEmpty(feedImageFailed(post) ? 'Imagen no disponible' : 'Sin foto', null);
   }
 
   const typeLabel = FEED_TYPE_LABELS[post.post_type];
