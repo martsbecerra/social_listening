@@ -67,7 +67,7 @@ Rama `monitoreo_carga_fotos`. El ciclo trae las fotos de a 150 posteos (el tope 
 
 - [x] 10.1 `scripts/cargar-fotos.js`: sin `--si` solo informa (base en solo lectura, sin Apify); con `--si` pide por URL al actor oficial en lotes y baja las fotos con el código de la app, sin tocar métricas ni cadencias
 - [x] 10.2 `test/cargarFotos.test.js`, con el adapter stubeado y la red simulada
-- [ ] 10.3 Prueba real de 5 posteos (`--si --max 5`), con el OK del dueño
+- [x] 10.3 Prueba real de 5 posteos (`--si --max 5`), con el OK del dueño: el 2026-10-08, 5 de 5 fotos guardadas en 18 s, 0,0115 usd estimado, sin errores. Los links vinieron de `scontent-*.cdninstagram.com` (4) y de `instagram.*.fna.fbcdn.net` (1): los dos están en la lista permitida. Ahí se migró la base real
 - [ ] 10.4 Carga completa (`--si`), con el OK del dueño
 
 ## Antes de la base real
