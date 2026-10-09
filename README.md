@@ -151,6 +151,15 @@ es la misma aunque el email no esté en la lista (no se enumeran los autorizados
 Hace falta `SESSION_SECRET` (string largo aleatorio) y `APP_BASE_URL` (p. ej.
 `http://localhost:3000`). El SMTP es el mismo de las alertas (`SMTP_*`).
 
+Qué pide sesión lo decide `src/auth/gate.js`, que corre antes que todo lo
+demás: `/api/` (salvo las cuatro rutas de `/api/auth/`) y cualquier página
+`.html` que no sea la de login. Lo público se reconoce por el camino exacto;
+lo protegido, por el camino **decodificado y en minúsculas, con las barras
+unificadas**, porque Express no distingue mayúsculas en las rutas y el disco
+de Windows tampoco: hasta octubre de 2026 el gate comparaba el camino tal
+como llegaba y `/API/...` pasaba sin sesión hasta el handler. Test:
+`test/authGate.test.js` (mayúsculas, doble barra, caracteres codificados).
+
 ### Monitoreo automático — archivos nuevos explicados
 
 - **`config/monitoring.json`**: qué se monitorea, con una sección por red
