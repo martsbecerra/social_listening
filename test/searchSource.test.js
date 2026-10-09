@@ -54,6 +54,7 @@ classifier.clasificarPosteo = async (caption, { pista } = {}) => {
 
 const db = require('../src/db');
 const monitor = require('../src/monitor');
+const progress = require('../src/monitoringProgress');
 const { getContext } = require('../src/usageContext');
 const { getPlatform } = require('../src/platforms');
 const instagram = getPlatform('instagram');
@@ -221,6 +222,93 @@ describe('búsqueda por palabra clave (fuente search)', { concurrency: false }, 
       assert.equal(s5.sentiment, null);
     } finally {
       relevanceMode = 'normal';
+      Object.assign(instagram, originals);
+    }
+  });
+
+  test('progreso para la pantalla: una línea por búsqueda (encontrados y nuevos, sin resultados, falló), el resumen de relevancia y los nuevos del ciclo', async () => {
+    const originals = { scrapeAccount: instagram.scrapeAccount, scrapeSearch: instagram.scrapeSearch, isConfigured: instagram.isConfigured };
+    instagram.isConfigured = () => true;
+    instagram.scrapeAccount = async () => [];
+    for (const term of ['veredas', 'subte', 'nada']) monitor.addSearch(term, 'instagram');
+    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    let duringSearch = null;
+    instagram.scrapeSearch = async (term) => {
+      if (term === 'jorge macri') {
+        await wait(5);
+        // Las cuatro búsquedas ya salieron y ninguna terminó.
+        duringSearch = progress.getView();
+        return [
+          post({ id: 's1', caption: 'Jorge Macri inauguró el túnel' }), // ya guardado: no es nuevo
+          post({ id: 'n1', caption: 'Jorge Macri anunció obras' }), // nuevo, relevante
+          post({ id: 'n2', caption: 'receta de tortas' }), // nuevo, se descarta
+        ];
+      }
+      if (term === 'veredas') {
+        await wait(15);
+        return [
+          post({ id: 'n1', caption: 'Jorge Macri anunció obras', sourceQuery: 'veredas' }), // el mismo posteo, por otra búsqueda
+          post({ id: 'n3', caption: 'La gestión arregla veredas', sourceQuery: 'veredas' }), // nuevo, relevante
+        ];
+      }
+      if (term === 'subte') {
+        await wait(25);
+        throw new Error('Instagram no respondió la búsqueda');
+      }
+      await wait(35);
+      return [];
+    };
+    const originalError = console.error;
+    console.error = () => {};
+    const originalLog = console.log;
+    console.log = () => {};
+    const run = (label) => ({ state: 'run', label, detail: 'buscando…' });
+    try {
+      progress.startCycle();
+      const result = await monitor.runMonitoringCycle({ plataformas: ['instagram'] });
+
+      // Mientras buscaba: la cabecera con su contador y, de las cuatro en
+      // curso, las dos primeras y "y 2 más".
+      const { lines: runningLines, ...head } = duringSearch;
+      assert.deepEqual(head, { phase: 'Buscando posteos nuevos', done: 0, total: 4, suffix: 'listas', percent: 0 });
+      assert.deepEqual(runningLines, [run('«jorge macri»'), run('«veredas»'), run('y 2 más')]);
+
+      // Nuevos del ciclo: n1, n2 y n3 (n1 llegó por dos búsquedas y cuenta
+      // una vez; s1 ya estaba guardado). Se guardan los dos relevantes.
+      assert.equal(result.porPlataforma.instagram.newCandidates, 3);
+      assert.equal(result.porPlataforma.instagram.newCount, 2);
+      assert.ok(savedPost('n1') && savedPost('n3'));
+      assert.equal(savedPost('n2'), undefined);
+
+      const view = progress.getView();
+      assert.equal(view.phase, 'Clasificando relevancia');
+      assert.equal(view.suffix, '');
+      assert.deepEqual(view.lines, [
+        { state: 'ok', label: '«jorge macri»', detail: '3 encontrados, 2 nuevos' },
+        { state: 'ok', label: '«veredas»', detail: '2 encontrados, 2 nuevos' },
+        { state: 'err', label: '«subte»', detail: 'falló' },
+        { state: 'ok', label: '«nada»', detail: 'sin resultados' },
+      ]);
+
+      // Al cerrar el ciclo, la fase de relevancia deja su resumen.
+      progress.endCycle();
+      const closed = progress.getView();
+      assert.equal(closed.finished, true);
+      assert.deepEqual(closed.lines.at(-1), { state: 'ok', label: 'Relevancia', detail: '2 relevantes, 1 descartado' });
+      assert.equal(closed.lines.length, 5);
+
+      // Segunda corrida: n1 ya está guardado, así que no es nuevo.
+      instagram.scrapeSearch = async (term) => (term === 'jorge macri' ? [post({ id: 'n1', caption: 'Jorge Macri anunció obras' })] : []);
+      progress.startCycle();
+      const again = await monitor.runMonitoringCycle({ plataformas: ['instagram'] });
+      assert.equal(again.porPlataforma.instagram.newCandidates, 0);
+      assert.deepEqual(progress.getView().lines[0], { state: 'ok', label: '«jorge macri»', detail: '1 encontrado, ninguno nuevo' });
+      progress.endCycle();
+    } finally {
+      progress.endCycle();
+      console.error = originalError;
+      console.log = originalLog;
+      for (const term of ['veredas', 'subte', 'nada']) monitor.removeSearch(term, 'instagram');
       Object.assign(instagram, originals);
     }
   });

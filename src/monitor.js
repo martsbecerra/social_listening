@@ -714,6 +714,42 @@ function postCodeOf(url) {
   return match ? match[1] : null;
 }
 
+/**
+ * ¿Es un posteo "nuevo" para el monitoreo? Nuevo = no está guardado en
+ * detected_posts ni anotado en search_seen (ya se pagó su detalle y se lo
+ * evaluó en un ciclo anterior). Es lo que cuenta la pantalla en todos lados:
+ * "50 encontrados, 6 nuevos" por fuente y "N relevantes guardados de M
+ * nuevos" al final.
+ */
+function isNewPost(post, platformId) {
+  if (!post || !post.url) return false;
+  return !db.findExistingPostId(post.id, post.url) && !db.isSearchSeen(post.id, platformId);
+}
+
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+
+/**
+ * El final de la línea de una fuente en el progreso: "50 encontrados, 6
+ * nuevos", "3 encontrados, ninguno nuevo" o "sin resultados". Cuenta posteos
+ * distintos. Nunca tira: es texto para la pantalla, no puede frenar el ciclo.
+ */
+function describeFound(posts, platformId) {
+  const byId = new Map();
+  for (const post of Array.isArray(posts) ? posts : []) {
+    if (post && post.id !== undefined && post.id !== null) byId.set(String(post.id), post);
+  }
+  if (byId.size === 0) return 'sin resultados';
+  const found = plural(byId.size, 'encontrado', 'encontrados');
+  try {
+    let fresh = 0;
+    for (const post of byId.values()) if (isNewPost(post, platformId)) fresh += 1;
+    return `${found}, ${fresh === 0 ? 'ninguno nuevo' : plural(fresh, 'nuevo', 'nuevos')}`;
+  } catch (err) {
+    console.error(`[monitor] (${platformId}) no se pudo contar los posteos nuevos de una fuente:`, err.message);
+    return found;
+  }
+}
+
 /** Nunca tira: no poder anotar un visto no puede frenar el ciclo (a lo sumo se vuelve a pedir ese detalle). */
 function markSearchSeen(post, platformId, outcome) {
   try {
@@ -796,6 +832,7 @@ async function enrichSearchResults(platform, platformId, postsById) {
     details = await runWithContext({ phase: 'busqueda' }, () => platform.fetchPostDetails(batch.map((post) => post.url)));
   } catch (err) {
     stats.failed = true;
+    progress.setPhaseSummary('Detalle de búsquedas', { detail: 'falló', ok: false });
     if (isPlatformError(err)) {
       out.platformError = err;
       console.error(`Monitoreo (${platformId}): la plataforma no se pudo consultar (${err.code}):`, err.message);
@@ -843,6 +880,11 @@ async function enrichSearchResults(platform, platformId, postsById) {
     out.enriched.add(post.id);
     stats.enriched += 1;
   }
+  // Resumen de la fase para la pantalla (src/monitoringProgress.js).
+  const withoutText = stats.noCaption + stats.noDetail;
+  progress.setPhaseSummary('Detalle de búsquedas', {
+    detail: plural(stats.requested, 'posteo nuevo', 'posteos nuevos') + (withoutText > 0 ? `, ${withoutText} sin texto` : ''),
+  });
 
   console.log(
     `[monitor] ${platformId}: detalle de ${stats.requested} resultado(s) de búsqueda sin caption → ${stats.enriched} con texto, ` +
@@ -919,7 +961,7 @@ async function runMonitoringCycle({ plataformas, trigger } = {}) {
   for (const platformId of ids) {
     const platform = getPlatform(platformId);
     const config = all[platformId] || { accounts: [], keywords: [] };
-    porPlataforma[platformId] = { checked: 0, newCount: 0, skipped: false };
+    porPlataforma[platformId] = { checked: 0, newCount: 0, newCandidates: 0, skipped: false };
 
     if (typeof platform.isConfigured === 'function' && !platform.isConfigured()) {
       if (singlePlatformRun) throw notConfiguredError(platform);
@@ -985,33 +1027,50 @@ async function runMonitoringCycle({ plataformas, trigger } = {}) {
     // por cada llamada que termina (bien o mal) — ver src/monitoringProgress.js.
     const detectionTotal =
       accountsToScrape.length + hashtagsToScrape.length + (canSearchKeywords ? textKeywords.length : 0) + (canSearch ? searches.length : 0);
-    progress.startPhase('Detectando posteos nuevos', detectionTotal);
+    // En pantalla: "Buscando posteos nuevos · 5 de 8 listas" (las fuentes
+    // corren en paralelo, no hay "la búsqueda actual"). La fase no deja
+    // resumen propio: sus líneas son las de cada fuente (trackSource).
+    progress.startPhase('Buscando posteos nuevos', detectionTotal, { suffix: 'listas', summary: false });
+    // Cada fuente deja una línea en el progreso: en curso mientras se
+    // consulta y, al terminar, cuántos posteos trajo y cuántos son nuevos, o
+    // que falló (src/monitoringProgress.js). `kind` solo arma la clave.
     // .then(ok, error) en vez de .finally(): así cada tick sabe si esa
     // llamada terminó bien o mal (para "[fase] termina ... N ok, N error"),
     // y sigue devolviendo el mismo valor/error para Promise.allSettled.
-    const tickDetection = (promise) =>
-      promise.then(
+    const trackSource = (kind, label, promise) => {
+      const key = `${platformId}:${kind}:${label}`;
+      progress.startItem(key, label, 'buscando…');
+      return promise.then(
         (value) => {
+          progress.finishItem(key, { ok: true, detail: describeFound(value, platformId) });
           progress.tick(1, { ok: true });
           return value;
         },
         (err) => {
+          progress.finishItem(key, { ok: false, detail: 'falló' });
           progress.tick(1, { ok: false });
           throw err;
         }
       );
+    };
 
     const sourceResults = await Promise.allSettled([
-      ...accountsToScrape.map((account) => tickDetection(platform.scrapeAccount(account, { resultsLimit: accountLimit, lookback: window.lookback }))),
-      ...hashtagsToScrape.map((tag) => tickDetection(platform.scrapeHashtag(tag, { resultsLimit: hashtagLimit, lookback: window.lookback }))),
+      ...accountsToScrape.map((account) =>
+        trackSource('cuenta', `@${account}`, platform.scrapeAccount(account, { resultsLimit: accountLimit, lookback: window.lookback }))
+      ),
+      ...hashtagsToScrape.map((tag) =>
+        trackSource('hashtag', `#${tag}`, platform.scrapeHashtag(tag, { resultsLimit: hashtagLimit, lookback: window.lookback }))
+      ),
       ...(canSearchKeywords
         ? textKeywords.map((keyword) =>
-            tickDetection(platform.scrapeKeyword(keyword, { resultsLimit: limits.search, lookback: legacyLookback }))
+            trackSource('keyword', `«${keyword}»`, platform.scrapeKeyword(keyword, { resultsLimit: limits.search, lookback: legacyLookback }))
           )
         : []),
       ...(canSearch
         ? searches.map((term) =>
-            tickDetection(
+            trackSource(
+              'busqueda',
+              `«${term}»`,
               runWithContext({ phase: 'busqueda' }, () => platform.scrapeSearch(term, { resultsLimit: searchLimit, lookback: window.lookback }))
             )
           )
@@ -1062,6 +1121,20 @@ async function runMonitoringCycle({ plataformas, trigger } = {}) {
     checked += seenInThisRun.size;
     porPlataforma[platformId].checked = seenInThisRun.size;
 
+    // Los "nuevos" de esta corrida: posteos que no estaban guardados ni se
+    // habían evaluado antes (ver isNewPost). Es el mismo criterio de cada
+    // línea del progreso ("50 encontrados, 6 nuevos"), acá sin repetidos
+    // entre fuentes. Se cuenta ANTES del detalle, que ya anota en
+    // search_seen lo que paga. La pantalla cierra con "N relevantes
+    // guardados de M nuevos": M es este número.
+    const newIds = new Set();
+    for (const post of seenInThisRun.values()) {
+      if (isNewPost(post, platformId)) newIds.add(post.id);
+    }
+    porPlataforma[platformId].newCandidates = newIds.size;
+    let relevantNew = 0;
+    let discardedNew = 0;
+
     // Los resultados de búsqueda llegan sin caption: a los nuevos se les pide
     // el detalle (una consulta para todos) antes de evaluar relevancia.
     const enrichment = await enrichSearchResults(platform, platformId, seenInThisRun);
@@ -1097,6 +1170,10 @@ async function runMonitoringCycle({ plataformas, trigger } = {}) {
 
       const evaluation = await evaluateRelevance(post, plainKeywords, { platform });
       progress.tick();
+      if (newIds.has(post.id)) {
+        if (evaluation.relevant) relevantNew += 1;
+        else discardedNew += 1;
+      }
       // Un resultado de búsqueda con el detalle ya pagado queda anotado con
       // lo que se decidió: descartado no se vuelve a consultar ni a evaluar.
       const paidDetail = enrichment.enriched.has(post.id);
@@ -1149,6 +1226,11 @@ async function runMonitoringCycle({ plataformas, trigger } = {}) {
       porPlataforma[platformId].newCount += 1;
       if (post.imageUrl) newPostImages.push({ id: post.id, url: post.imageUrl });
     }
+    // Resumen de la fase para la pantalla, antes de que arranque la de fotos.
+    progress.setPhaseSummary('Clasificando relevancia', {
+      label: 'Relevancia',
+      detail: `${plural(relevantNew, 'relevante', 'relevantes')}, ${plural(discardedNew, 'descartado', 'descartados')}`,
+    });
 
     // Foto de los posteos recién guardados (openspec/changes/monitoreo-fotos),
     // con el link que ya vino en esta misma respuesta: no se pide nada más.

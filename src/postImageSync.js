@@ -164,6 +164,17 @@ async function syncPostImages(plataforma, items, deps = {}) {
       results.forEach((result, index) => {
         if (!recorded[index]) record(plataforma, pending[index], result, stats);
       });
+      // Resumen de la fase para la pantalla: "Fotos · 11 guardadas, 1 no
+      // disponible" (link vencido o imagen que no se aceptó).
+      const unavailable = stats.expired + stats.failed;
+      progress.setPhaseSummary(phaseLabel, {
+        label: phaseLabel === PENDING_PHASE_LABEL ? 'Fotos pendientes' : 'Fotos',
+        detail:
+          `${stats.saved} ${stats.saved === 1 ? 'guardada' : 'guardadas'}` +
+          (unavailable > 0 ? `, ${unavailable} no ${unavailable === 1 ? 'disponible' : 'disponibles'}` : '') +
+          (stats.pending > 0 ? `, ${stats.pending} ${stats.pending === 1 ? 'pendiente' : 'pendientes'}` : ''),
+        ok: stats.saved > 0 || unavailable === 0,
+      });
     }
   } catch (err) {
     console.error(`[imagenes] (${plataforma}) falló la tanda de fotos (el ciclo sigue):`, err && err.message);

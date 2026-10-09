@@ -39,9 +39,13 @@ const ignoreConfirmBtn = document.getElementById('ignoreConfirmBtn');
 
 const runNowBtn = document.getElementById('runNowBtn');
 const monitoringStatusCard = document.getElementById('monitoringStatusCard');
+const monitoringProgressEl = document.getElementById('monitoringProgress');
+const monitoringStatusIconEl = document.getElementById('monitoringStatusIcon');
 const monitoringStatusTextEl = document.getElementById('monitoringStatusText');
+const monitoringStatusCountEl = document.getElementById('monitoringStatusCount');
 const monitoringProgressFillEl = document.getElementById('monitoringProgressFill');
-const monitoringResultEl = document.getElementById('monitoringResult');
+const monitoringProgressListEl = document.getElementById('monitoringProgressList');
+const monitoringProgressHideEl = document.getElementById('monitoringProgressHide');
 const monitoringLoadErrorEl = document.getElementById('monitoringLoadError');
 const monitoringNextRunEl = document.getElementById('monitoringNextRun');
 
@@ -1263,24 +1267,86 @@ async function loadNextRun() {
 }
 
 // --------------------------------------------------------------------
-// Progreso real del ciclo (GET /api/monitoring/progress, ver
-// src/monitoringProgress.js): mientras "Actualizar ahora" está en curso,
-// se consulta cada PROGRESS_POLL_MS y se muestra la fase con su contador
-// real y el porcentaje real. null (sin ciclo corriendo, o entre el fetch
-// inicial y que el scheduler arranque la primera fase) deja el texto/barra
-// como estaban, no los pisa con nada inventado.
+// Progreso real del ciclo (GET /api/monitoring/progress, ver getView en
+// src/monitoringProgress.js): mientras "Actualizar ahora" está en curso, se
+// consulta cada PROGRESS_POLL_MS y se dibuja lo que manda el backend:
+//   - arriba, la fase con su contador ("Buscando posteos nuevos · 5 de 8
+//     listas");
+//   - la barra, con el porcentaje real;
+//   - debajo, las últimas líneas del ciclo, que ya vienen escritas y
+//     elegidas (qué búsqueda terminó y con cuántos nuevos, cuál falló, cuáles
+//     siguen en curso, el resumen de cada fase). Acá no se arma ni se recorta
+//     ninguna: solo se dibujan.
+// null (el ciclo todavía no arrancó su primera fase) deja todo como estaba,
+// no lo pisa con nada inventado. Al terminar, el recuadro queda a la vista
+// con el resultado hasta que se aprieta "Ocultar" o se lanza otro ciclo.
 // --------------------------------------------------------------------
 const PROGRESS_POLL_MS = 1500;
 let progressPollTimer = null;
+// ¿Se está esperando un ciclo? Una respuesta del progreso que llega tarde,
+// con el resultado ya dibujado, no tiene que pisarlo.
+let progressWaiting = false;
+// ¿Ya se vio avanzar ESTE ciclo? Antes de eso, un "terminado" que mande el
+// backend es el cierre del ciclo anterior (el nuevo todavía no arrancó).
+let progressSeenRunning = false;
+// Las últimas líneas dibujadas, para no rehacer la lista si no cambió (al
+// rehacerla, las rueditas de lo que está en curso vuelven a empezar).
+let progressLinesDrawn = '';
+
+const PROGRESS_LINE_ICONS = { ok: '✓', err: '✕', run: '' };
+
+// Cada línea: ícono (✓, ✕ o la ruedita de "en curso"), de qué se trata y
+// cómo salió. Todo entra por textContent: los términos de búsqueda y las
+// cuentas los escribe el usuario.
+function drawProgressLines(lines) {
+  const list = Array.isArray(lines) ? lines : [];
+  const key = JSON.stringify(list);
+  if (key === progressLinesDrawn) return;
+  progressLinesDrawn = key;
+  monitoringProgressListEl.replaceChildren(
+    ...list.map((line) => {
+      const state = Object.prototype.hasOwnProperty.call(PROGRESS_LINE_ICONS, line.state) ? line.state : 'ok';
+      const li = document.createElement('li');
+      li.className = state;
+      const icon = document.createElement('span');
+      icon.className = 'i';
+      icon.textContent = PROGRESS_LINE_ICONS[state];
+      icon.setAttribute('aria-hidden', 'true');
+      const label = document.createElement('span');
+      label.className = 't';
+      label.textContent = line.label || '';
+      const detail = document.createElement('span');
+      detail.className = 'd';
+      detail.textContent = line.detail || '';
+      li.append(icon, label, detail);
+      // Para un lector de pantalla, el estado va en palabras.
+      if (state !== 'ok') li.setAttribute('aria-label', `${state === 'err' ? 'Falló' : 'En curso'}: ${label.textContent} · ${detail.textContent}`);
+      return li;
+    })
+  );
+}
+
+function setProgressHead(text, counter = '') {
+  monitoringStatusTextEl.textContent = text;
+  monitoringStatusCountEl.textContent = counter;
+}
 
 async function pollMonitorProgress() {
   try {
     const resp = await fetch(withPlataforma('/api/monitoring/progress'));
     if (!resp.ok) return;
     const data = await resp.json();
-    if (!data) return;
-    monitoringStatusTextEl.textContent = `${data.phase} · ${data.done} de ${data.total}`;
+    if (!data || !progressWaiting) return;
+    if (data.finished) {
+      // El ciclo ya terminó y la respuesta de "Actualizar ahora" todavía no
+      // llegó: van quedando sus líneas completas.
+      if (progressSeenRunning) drawProgressLines(data.lines);
+      return;
+    }
+    progressSeenRunning = true;
+    setProgressHead(data.phase, `${data.done} de ${data.total}${data.suffix ? ` ${data.suffix}` : ''}`);
     monitoringProgressFillEl.style.width = `${data.percent}%`;
+    drawProgressLines(data.lines);
   } catch (err) {
     // Un fallo puntual de polling no tiene que interrumpir la espera del
     // resultado real (runNow sigue esperando su propio fetch).
@@ -1288,29 +1354,61 @@ async function pollMonitorProgress() {
 }
 
 function startMonitorLoading() {
-  monitoringResultEl.classList.add('hidden');
+  progressWaiting = true;
+  progressSeenRunning = false;
+  monitoringProgressEl.classList.remove('done', 'failed');
+  monitoringStatusIconEl.className = 'spinner';
+  monitoringStatusIconEl.textContent = '';
+  monitoringProgressHideEl.classList.add('hidden');
   monitoringStatusCard.classList.remove('hidden');
-  monitoringStatusTextEl.textContent = IS_X_MONITOR ? 'Buscando posteos nuevos con Grok…' : 'Buscando posteos nuevos…';
+  setProgressHead(IS_X_MONITOR ? 'Buscando posteos nuevos con Grok…' : 'Buscando posteos nuevos…');
   monitoringProgressFillEl.style.width = '0%';
+  drawProgressLines([]);
 
   pollMonitorProgress();
   progressPollTimer = setInterval(pollMonitorProgress, PROGRESS_POLL_MS);
 }
 
-function stopMonitorLoading(exito) {
+// "Listo: 4 relevantes guardados de 11 nuevos". "Nuevos" es lo mismo que en
+// cada línea de búsqueda: posteos que no estaban guardados ni se habían
+// evaluado antes (newCandidates, por plataforma, en la respuesta del ciclo).
+function monitorDoneText(data) {
+  const saved = Number(data.newCount) || 0;
+  const perPlatform = Object.values(data.porPlataforma || {});
+  if (!perPlatform.some((p) => p && Number.isFinite(p.newCandidates))) {
+    return `Listo: ${saved} ${saved === 1 ? 'posteo nuevo' : 'posteos nuevos'}`;
+  }
+  const fresh = perPlatform.reduce((sum, p) => sum + ((p && p.newCandidates) || 0), 0);
+  if (fresh === 0 && saved === 0) return 'Listo: no hubo posteos nuevos';
+  return `Listo: ${saved} ${saved === 1 ? 'relevante guardado' : 'relevantes guardados'} de ${fresh} ${fresh === 1 ? 'nuevo' : 'nuevos'}`;
+}
+
+// Deja el recuadro en su estado final: ✓ con el resultado o ✕ con el error.
+// Las líneas quedan a la vista; se va con "Ocultar".
+async function finishMonitorLoading(ok, text) {
   clearInterval(progressPollTimer);
   progressPollTimer = null;
 
-  if (exito) {
-    monitoringProgressFillEl.style.width = '100%';
-    setTimeout(() => {
-      monitoringStatusCard.classList.add('hidden');
-      monitoringProgressFillEl.style.width = '0%';
-    }, 350);
-  } else {
-    monitoringStatusCard.classList.add('hidden');
-    monitoringProgressFillEl.style.width = '0%';
+  // El cierre completo del ciclo: la última fase deja su resumen recién al
+  // terminar, cuando ya no hay nada "en curso" que consultar. Con error solo
+  // vale si se vio avanzar este ciclo (si no arrancó, el cierre que haya es
+  // de uno anterior).
+  if (ok || progressSeenRunning) {
+    try {
+      const resp = await fetch(withPlataforma('/api/monitoring/progress'));
+      const data = resp.ok ? await resp.json() : null;
+      if (data && data.finished) drawProgressLines(data.lines);
+    } catch (err) {
+      // Sin el cierre quedan las últimas líneas que se llegaron a ver.
+    }
   }
+  if (ok) monitoringProgressFillEl.style.width = '100%';
+  progressWaiting = false;
+  monitoringProgressEl.classList.add(ok ? 'done' : 'failed');
+  monitoringStatusIconEl.className = ok ? 'run-progress-mark' : 'run-progress-mark err';
+  monitoringStatusIconEl.textContent = ok ? '✓' : '✕';
+  setProgressHead(text);
+  monitoringProgressHideEl.classList.remove('hidden');
 }
 
 async function runNow() {
@@ -1327,15 +1425,11 @@ async function runNow() {
 
     if (!resp.ok) throw new Error(data.error || 'Ocurrió un error inesperado.');
 
-    stopMonitorLoading(true);
-    monitoringResultEl.textContent = `Listo: ${data.checked} posteos revisados, ${data.newCount} nuevos.`;
-    monitoringResultEl.classList.remove('hidden');
+    await finishMonitorLoading(true, monitorDoneText(data));
     await loadPosts();
     if (monitoringTable) monitoringTable.setPage(1);
   } catch (err) {
-    stopMonitorLoading(false);
-    monitoringResultEl.textContent = `Error: ${err.message}`;
-    monitoringResultEl.classList.remove('hidden');
+    await finishMonitorLoading(false, `Error: ${err.message}`);
   } finally {
     runNowBtn.disabled = false;
   }
@@ -1362,6 +1456,7 @@ ignoreCancelBtn.addEventListener('click', closeIgnoreModal);
 ignoreConfirmBtn.addEventListener('click', confirmIgnore);
 ignoreModal.addEventListener('click', (e) => { if (e.target === ignoreModal) closeIgnoreModal(); });
 runNowBtn.addEventListener('click', runNow);
+monitoringProgressHideEl.addEventListener('click', () => monitoringStatusCard.classList.add('hidden'));
 
 fSentEl.addEventListener('change', applyFilters);
 if (fAlcanceEl) fAlcanceEl.addEventListener('change', applyFilters);

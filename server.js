@@ -509,12 +509,15 @@ app.get('/api/monitoring/status', (req, res) => {
   res.json({ nextRunAt: getNextRunAt(getCronExpression()).toISOString() });
 });
 
-// Progreso real del ciclo en curso (fase + contador + porcentaje), para que
-// "Actualizar ahora" lo muestre en vivo en vez de una barra simulada. null si
-// no hay ningún ciclo corriendo. Mismo control de acceso que el resto de
-// /api/monitoring (el middleware de arriba corre antes que esta ruta).
+// Progreso real del ciclo en curso (fase + contador + porcentaje + las
+// últimas líneas, ya escritas para la pantalla), para que "Actualizar ahora"
+// lo muestre en vivo en vez de una barra simulada. Terminado el ciclo, y
+// hasta que arranque otro, devuelve su cierre ({ finished: true, lines });
+// null si nunca corrió ninguno. Ver getView en src/monitoringProgress.js.
+// Mismo control de acceso que el resto de /api/monitoring (el middleware de
+// arriba corre antes que esta ruta).
 app.get('/api/monitoring/progress', (req, res) => {
-  res.json(monitoringProgress.getProgress());
+  res.json(monitoringProgress.getView());
 });
 
 // Menciones detectadas en los últimos 7 días, para el resumen del dashboard,

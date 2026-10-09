@@ -296,6 +296,16 @@ async function refreshPostMetricsFor(plataforma, skipSet) {
     if (coldDue) db.setRefreshState(coldKey, nowIso);
   }
 
+  // Resumen de la fase para la pantalla (src/monitoringProgress.js).
+  const accountsFailed = prioritized.length - accountsChecked;
+  progress.setPhaseSummary('Refrescando métricas', {
+    label: 'Métricas',
+    detail:
+      `${accountsChecked} ${accountsChecked === 1 ? 'cuenta consultada' : 'cuentas consultadas'}` +
+      (accountsFailed > 0 ? `, ${accountsFailed} sin consultar` : ''),
+    ok: accountsChecked > 0 || accountsFailed === 0,
+  });
+
   console.log(
     `[metricsRefresh] (${plataforma}) ${hotCount} posteos en tramo caliente, ${warmCount} en tibio, ${coldCount} en frío, ` +
       `${accountsChecked} cuentas consultadas, ${resultsConsumed} resultados consumidos, ` +
@@ -489,6 +499,19 @@ async function refreshByUrlFor(plataforma, skipSet) {
     if (warmDue) db.setRefreshState(warmKey, nowIso);
     if (coldDue) db.setRefreshState(coldKey, nowIso);
   }
+
+  // Resumen de la fase para la pantalla (src/monitoringProgress.js), antes
+  // de que la fase de fotos de más abajo la reemplace. "Sin consultar": los
+  // posteos de un lote que falló o que no se lanzó por corte de cuota.
+  const notAsked = requested.length - postsAnswered - postsMissing;
+  progress.setPhaseSummary('Refrescando métricas', {
+    label: 'Métricas',
+    detail:
+      `${postsAnswered} ${postsAnswered === 1 ? 'actualizada' : 'actualizadas'}` +
+      (postsMissing > 0 ? `, ${postsMissing} sin respuesta` : '') +
+      (notAsked > 0 ? `, ${notAsked} sin consultar` : ''),
+    ok: postsAnswered > 0 || requested.length === 0,
+  });
 
   console.log(
     `[metricsRefresh] (${plataforma}) ${hotCount} posteos en tramo caliente, ${warmCount} en tibio, ${coldCount} en frío → ` +

@@ -886,6 +886,168 @@ button:disabled {
   }
 }
 
+/* ------------------------------------------------------------------ */
+/* Progreso de "Actualizar ahora" (Monitoreo): lista simple             */
+/* ------------------------------------------------------------------ */
+/* Arriba, qué se está haciendo y su contador; la barra a todo el ancho;
+   debajo, las últimas líneas del ciclo, que arma el backend
+   (src/monitoringProgress.js) y dibuja public/js/monitoring.js. */
+.run-progress {
+  color: var(--clay-700);
+}
+.run-progress-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-height: 24px;
+  font-size: 14px;
+  line-height: 1.45;
+}
+/* La ruedita (o la marca del final) queda a la altura del primer renglón. */
+.run-progress-head .spinner,
+.run-progress-mark {
+  flex: none;
+  margin: 2px 0 0;
+}
+/* El texto nunca se corta con "…": fluye como un renglón y, si no entra
+   (celular, o un mensaje de error largo), sigue en el de abajo. El contador
+   no se parte. */
+.run-progress-text {
+  flex: 1 1 0%;
+  min-width: 0;
+}
+.run-progress-title {
+  color: var(--jade-900);
+  font-weight: 600;
+}
+.run-progress-count {
+  color: var(--clay-500);
+  white-space: nowrap;
+}
+.run-progress-count::before {
+  content: "· ";
+}
+.run-progress-count:empty {
+  display: none;
+}
+/* ✓ o ✕ del final, en el lugar de la ruedita. */
+.run-progress-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--jade-500);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+.run-progress-mark.err {
+  background: var(--coral-500);
+}
+/* "Ocultar": botón chico, sin nada del botón general de la página. */
+.run-progress-hide,
+.run-progress-hide:hover:not(:disabled) {
+  flex: none;
+  width: auto;
+  margin: 0 0 0 auto;
+  padding: 2px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: none;
+  color: var(--clay-500);
+  font-size: 12px;
+  font-weight: 400;
+  transform: none;
+  filter: none;
+}
+.run-progress-hide:hover:not(:disabled) {
+  border-color: var(--jade-300);
+  color: var(--jade-900);
+}
+.run-progress .progress-track {
+  margin-top: 10px;
+}
+/* Terminado: la barra deja de brillar; con error, queda en coral. */
+.run-progress.done .progress-fill::after,
+.run-progress.failed .progress-fill::after {
+  display: none;
+}
+.run-progress.failed .progress-fill {
+  background: var(--coral-500);
+}
+
+/* Las últimas líneas, de la más vieja (arriba) a la más nueva. */
+.run-progress-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 5px;
+  font-size: 13px;
+}
+.run-progress-list:empty {
+  display: none;
+}
+.run-progress-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--clay-500);
+}
+.run-progress-list .i {
+  flex: none;
+  width: 14px;
+  text-align: center;
+  font-weight: 700;
+  line-height: 1;
+}
+.run-progress-list .t {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--clay-900);
+}
+.run-progress-list .d {
+  flex: none;
+  white-space: nowrap;
+}
+.run-progress-list .d::before {
+  content: "· ";
+}
+.run-progress-list .d:empty {
+  display: none;
+}
+.run-progress-list li.ok .i {
+  color: var(--jade-500);
+}
+.run-progress-list li.err .i,
+.run-progress-list li.err .d {
+  color: var(--coral-700);
+}
+/* En curso: una ruedita chica en el lugar del ícono. */
+.run-progress-list li.run .i {
+  width: 11px;
+  height: 11px;
+  margin: 0 1.5px;
+  border: 2px solid var(--jade-150);
+  border-top-color: var(--jade-500);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+.run-progress-list li.run .t {
+  color: var(--clay-700);
+}
+@media (prefers-reduced-motion: reduce) {
+  .run-progress-list li.run .i {
+    animation: none;
+  }
+}
+
 .error {
   margin-top: 16px;
   color: var(--coral-700);
