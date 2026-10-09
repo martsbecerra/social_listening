@@ -68,7 +68,9 @@ Rama `monitoreo_carga_fotos`. El ciclo trae las fotos de a 150 posteos (el tope 
 - [x] 10.1 `scripts/cargar-fotos.js`: sin `--si` solo informa (base en solo lectura, sin Apify); con `--si` pide por URL al actor oficial en lotes y baja las fotos con el código de la app, sin tocar métricas ni cadencias
 - [x] 10.2 `test/cargarFotos.test.js`, con el adapter stubeado y la red simulada
 - [x] 10.3 Prueba real de 5 posteos (`--si --max 5`), con el OK del dueño: el 2026-10-08, 5 de 5 fotos guardadas en 18 s, 0,0115 usd estimado, sin errores. Los links vinieron de `scontent-*.cdninstagram.com` (4) y de `instagram.*.fna.fbcdn.net` (1): los dos están en la lista permitida. Ahí se migró la base real
-- [ ] 10.4 Carga completa (`--si`), con el OK del dueño
+- [x] 10.4 Carga completa (`--si`), con el OK del dueño: el 2026-10-08, 468 posteos en 10 lotes y 12 minutos, 453 fotos guardadas (458 de 473 contando la prueba), 1,08 usd estimado (el actor devolvió y cobró los 468). `data/media/` quedó en 916 archivos y 44 MB. Links: 251 de `*.cdninstagram.com` y 207 de `*.fbcdn.net`, ninguno rechazado por la lista. Likes, comentarios y cadencias, sin cambios
+- [ ] 10.5 Pendiente de decisión del dueño: 6 fotos quedaron con `error` por `imagen-demasiado-grande` (más de 12 megapíxeles, `MAX_INPUT_PIXELS`; la mayor aceptada fue de 4096 × 2851). Con ese estado no se reintentan hasta el próximo refresco del posteo, y ahí vuelven a fallar si el tope no se sube
+- 9 posteos no volvieron del actor (borrados o privados; 5 son de julio y agosto): quedan sin foto y sin anotación
 
 ## Antes de la base real
 
