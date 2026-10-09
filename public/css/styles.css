@@ -1409,6 +1409,21 @@ pre.report a:hover {
   font-size: 13px;
   color: var(--clay-500);
 }
+/* "Se despegaron": el título no se parte. Donde no entra al lado del
+   subtítulo (celular), el subtítulo baja a su propio renglón, pegado al
+   título: por eso el margen de abajo del título (0,83em de sus 19px, el del
+   navegador) pasa a la cabecera. Con los dos en un renglón (escritorio) todo
+   queda donde estaba. */
+#monitoringHighlightsSection .sec-head {
+  flex-wrap: wrap;
+  row-gap: 4px;
+  margin-bottom: calc(13px + 0.83 * 19px);
+}
+#monitoringHighlightsSection .sec-head h2 {
+  flex: none;
+  margin-bottom: 0;
+  white-space: nowrap;
+}
 .cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
