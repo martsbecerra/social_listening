@@ -2371,15 +2371,39 @@ pre.report a:hover {
 
 /* Likes y comentarios, en una franja propia arriba del pie y bien a la
    vista: ícono, número en negrita y, chica al lado del número que la
-   disparó, la razón del alcance ("5,4×"). Número e ícono miden 17,5px: con
-   21px quedaban exagerados para el tamaño de la tarjeta. */
+   disparó, la razón del alcance ("1,10×"). Número e ícono miden 17,5px: con
+   21px quedaban exagerados para el tamaño de la tarjeta. A la derecha, la
+   fecha de esos números ("al 08/10").
+   Todo va en UN renglón, para que la fecha no le sume alto a la tarjeta:
+   es una grilla con dos espacios que ceden. Entre likes y comentarios hay
+   20px mientras haya lugar; en la tarjeta más angosta (240px), con números
+   largos y la razón a la vista, ese espacio y el de antes de la fecha se
+   achican hasta 4px. */
 .feed-metrics {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: auto minmax(4px, 20px) auto minmax(4px, 1fr) auto;
   align-items: center;
-  gap: 6px 20px;
   padding: 11px 12px;
   border-top: 1px solid var(--line);
+  overflow: hidden;
+}
+.feed-metric.likes {
+  grid-column: 1;
+}
+.feed-metric.comments {
+  grid-column: 3;
+}
+/* De cuándo son las métricas. En naranja si tienen más de 3 días. */
+.feed-metrics-date {
+  grid-column: 5;
+  justify-self: end;
+  font-size: 10.5px;
+  color: var(--clay-500);
+  white-space: nowrap;
+}
+.feed-metrics-date.stale,
+.feed-pop-mt-date.stale {
+  color: #c2570c;
 }
 .feed-metric {
   display: inline-flex;
@@ -2793,6 +2817,15 @@ html.feed-pop-lock body {
 .feed-pop-mt-row .sub {
   grid-column: 1 / -1;
   margin-top: -2px;
+  font-size: 12px;
+  color: var(--clay-500);
+}
+/* Debajo del recuadro de métricas: de cuándo son ("Métricas al 08/10/2026 ·
+   23:48"). El naranja de las que tienen más de 3 días está con el de la
+   tarjeta (.feed-metrics-date.stale). */
+.feed-pop-mt-date {
+  margin: -8px 0 14px;
+  padding: 0 10px;
   font-size: 12px;
   color: var(--clay-500);
 }

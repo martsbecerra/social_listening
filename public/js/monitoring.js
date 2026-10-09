@@ -533,6 +533,34 @@ function formatFullDateTime(iso) {
   return { date: FULL_DATE_FORMAT.format(d), time: FULL_TIME_FORMAT.format(d) };
 }
 
+// -------------------------------------------------------------------------
+// Fecha de las métricas de un posteo: de cuándo son los likes y comentarios
+// que se están mostrando. Es la última vez que se escribieron
+// (metrics_updated_at: un refresco, o el benchmark al pasar por la cuenta);
+// si el posteo nunca se refrescó, la fecha en que se detectó, porque sus
+// números son los de ese momento. Con más de METRICS_STALE_DAYS días se
+// avisa (stale): la tarjeta y el pop-up la muestran en naranja.
+//   short: "08/10"   full: "08/10/2026 · 23:48"
+// null si el posteo no trae ninguna de las dos fechas.
+// -------------------------------------------------------------------------
+const METRICS_STALE_DAYS = 3;
+
+function postMetricsDate(post) {
+  const iso = (post && (post.metrics_updated_at || post.detected_at)) || null;
+  const date = iso ? new Date(iso) : null;
+  if (!date || Number.isNaN(date.getTime())) return null;
+  // Día y mes siempre con dos dígitos ("08/10"), en la hora de este
+  // navegador. A mano: el formateador de es-AR no rellena el día cuando va
+  // sin el año ("8/10").
+  const two = (n) => String(n).padStart(2, '0');
+  const short = `${two(date.getDate())}/${two(date.getMonth() + 1)}`;
+  return {
+    short,
+    full: `${short}/${date.getFullYear()} · ${FULL_TIME_FORMAT.format(date)}`,
+    stale: Date.now() - date.getTime() > METRICS_STALE_DAYS * 24 * 60 * 60 * 1000,
+  };
+}
+
 // Panel desplegable — mismo marcado que .dt en design/monitoreo.html.
 function buildDetailPanel(data) {
   const wrap = document.createElement('div');

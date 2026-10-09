@@ -172,6 +172,17 @@ function buildFeedPopMetrics(post, reach) {
   return table;
 }
 
+// Debajo de las métricas: de cuándo son ("Métricas al 08/10/2026 · 23:48",
+// ver postMetricsDate en monitoring.js). En naranja si tienen más de 3 días.
+// null si el posteo no trae fecha.
+function buildFeedPopMetricsDate(post) {
+  const when = postMetricsDate(post);
+  if (!when) return null;
+  const line = feedNode('p', `feed-pop-mt-date${when.stale ? ' stale' : ''}`, `Métricas al ${when.full}`);
+  if (when.stale) line.title = `Hace más de ${METRICS_STALE_DAYS} días que no se actualizan`;
+  return line;
+}
+
 // "value": un texto o un nodo ya armado (el enlace al perfil).
 function appendFeedPopDetail(list, label, value) {
   const dd = feedNode('dd');
@@ -260,11 +271,13 @@ function fillFeedPop(post) {
 
   const title = feedNode('h2', 'feed-pop-title', post.title || '(sin clasificar)');
   title.id = 'feedPopTitle'; // el nombre del diálogo (aria-labelledby)
+  const metricsDate = buildFeedPopMetricsDate(post);
   feedPopScrollEl.replaceChildren(
     buildFeedPopChips(post, reach),
     title,
     feedNode('p', 'feed-pop-cap', post.caption || ''),
     buildFeedPopMetrics(post, reach),
+    ...(metricsDate ? [metricsDate] : []),
     buildFeedPopDetails(post)
   );
   feedPopScrollEl.scrollTop = 0;
