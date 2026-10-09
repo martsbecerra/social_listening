@@ -1987,10 +1987,11 @@ pre.report a:hover {
 .feed-card {
   --s: #cfd6d2;
   /* Son cientos de tarjetas sin paginar: el navegador no calcula ni pinta las
-     que están fuera de la pantalla hasta que se acercan (560px es el alto
-     estimado mientras tanto; una vez dibujada recuerda el real). */
+     que están fuera de la pantalla hasta que se acercan (590px es el alto
+     estimado mientras tanto, el que tiene con cuatro columnas; una vez
+     dibujada recuerda el real). */
   content-visibility: auto;
-  contain-intrinsic-height: auto 560px;
+  contain-intrinsic-height: auto 590px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
