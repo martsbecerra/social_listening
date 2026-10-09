@@ -705,15 +705,26 @@ function renderHighlightCards(posts) {
     metric.title = `Razón de alcance: ${benchmarkRatioBasis(decisive)}`;
 
     card.append(topRow, title, metric);
-    card.addEventListener('click', () => highlightGoToRow(post.id));
+    card.addEventListener('click', () => openHighlight(post.id));
     cardsEl.appendChild(card);
   }
 }
 
-// Busca la fila en el conjunto activo (filtrado + ordenado) actual — igual
-// que la referencia, no reinicia filtros: si el posteo está tapado por un
-// filtro, no hace nada. A diferencia de la referencia (tabla plana, sin
-// paginación), acá hay que ubicar en qué página de Tabulator cae.
+// Clic en un destacado: abre el pop-up de ese posteo, solo (sin anterior ni
+// siguiente), en la vista Tabla y en el Feed, y aunque un filtro lo esté
+// tapando. El pop-up es de public/js/monitoringFeedPopup.js, que carga solo
+// instagram.html: donde no está (x.html), o si no encuentra el posteo, queda
+// lo de antes: ir a su fila.
+function openHighlight(id) {
+  if (typeof openFeedPopSolo === 'function' && openFeedPopSolo(id)) return;
+  highlightGoToRow(id);
+}
+
+// Respaldo de openHighlight, para cuando no hay pop-up. Busca la fila en el
+// conjunto activo (filtrado + ordenado) actual — igual que la referencia, no
+// reinicia filtros: si el posteo está tapado por un filtro, no hace nada. A
+// diferencia de la referencia (tabla plana, sin paginación), acá hay que
+// ubicar en qué página de Tabulator cae.
 async function highlightGoToRow(id) {
   if (!monitoringTable) return;
   // Con el Feed como vista activa (solo Instagram) la tabla está oculta: el
