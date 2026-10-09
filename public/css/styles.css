@@ -2001,13 +2001,11 @@ pre.report a:hover {
   box-shadow: var(--shadow-sm);
   font-size: 14px;
   line-height: 1.45;
+  cursor: pointer; /* toda la tarjeta abre el pop-up */
   transition:
-    box-shadow 0.15s,
-    transform 0.15s;
-}
-.feed-card:hover {
-  box-shadow: var(--shadow-md);
-  transform: translateY(-1px);
+    box-shadow 0.2s ease,
+    border-color 0.2s ease,
+    transform 0.2s ease;
 }
 .feed-card[data-s="positivo"] {
   --s: var(--jade-400);
@@ -2017,6 +2015,37 @@ pre.report a:hover {
 }
 .feed-card[data-s="negativo"] {
   --s: var(--coral-500);
+}
+/* Al pasar el mouse la tarjeta se destaca: borde de color en los cuatro
+   lados (el del sentimiento; sin clasificar, un gris oscuro) y una sombra
+   fuerte. Solo donde hay mouse: en una pantalla táctil el hover queda
+   pegado después de tocar. */
+.feed-card {
+  --edge: var(--clay-500);
+}
+.feed-card[data-s="positivo"],
+.feed-card[data-s="neutral"],
+.feed-card[data-s="negativo"] {
+  --edge: var(--s);
+}
+@media (hover: hover) {
+  .feed-card:hover {
+    border-color: var(--edge);
+    box-shadow:
+      0 0 0 1px var(--edge),
+      0 22px 38px -16px rgba(3, 42, 35, 0.5),
+      0 8px 16px -8px rgba(3, 42, 35, 0.25);
+  }
+}
+/* Y se mueve, salvo que el sistema pida menos movimiento: la tarjeta sube
+   unos píxeles y la foto se acerca apenas, sin salirse de su cuadrado. */
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .feed-card:hover {
+    transform: translateY(-6px);
+  }
+  .feed-card:hover .feed-media img {
+    transform: scale(1.05);
+  }
 }
 /* Toda la tarjeta abre el pop-up del posteo. Con el teclado se llega a ella
    con Tab (Enter o Espacio la abren): el foco se marca con un aro por fuera
@@ -2105,9 +2134,8 @@ pre.report a:hover {
   display: grid;
   place-items: center;
   aspect-ratio: 1 / 1;
-  overflow: hidden;
+  overflow: hidden; /* también recorta el acercamiento de la foto al pasar el mouse */
   background: #000;
-  cursor: pointer;
 }
 .feed-media img {
   position: absolute;
@@ -2115,6 +2143,7 @@ pre.report a:hover {
   width: 100%;
   height: 100%;
   object-fit: contain;
+  transition: transform 0.35s ease;
 }
 .feed-badge {
   position: absolute;
