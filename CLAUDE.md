@@ -328,8 +328,10 @@ imagen grande) y `feedImageFailed`: sin intento de descarga, "Sin foto" en
 los dos; descarga fallida o copia que no carga, "Imagen no disponible" en
 los dos. En la tarjeta el recuadro de la foto es siempre un cuadrado del
 ancho de la tarjeta con fondo negro, y la foto va entera
-(`object-fit: contain`), sin recorte. Likes y comentarios van en una franja
-propia, en grande; el selector de sentimiento está en el pie. El hover
+(`object-fit: contain`), sin recorte. Debajo va solo el título: el texto del
+posteo no se muestra en la tarjeta, se lee entero en el pop-up. Likes y
+comentarios van en una franja propia, en grande; el selector de sentimiento
+está en el pie. El hover
 (sube, borde del color del sentimiento, foto que se acerca) va solo con
 mouse (`hover: hover`) y el movimiento se apaga con
 `prefers-reduced-motion`.

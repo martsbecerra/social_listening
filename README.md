@@ -950,9 +950,10 @@ posteos").
 ### Vista Feed del Monitoreo de Instagram (octubre 2026)
 
 La solapa "Monitoreo en vivo" de Instagram se puede ver como **Tabla** (la
-de siempre) o como **Feed**: una tarjeta por publicación, con la cuenta, el
-título, el texto, likes, comentarios, el sentimiento y una etiqueta de
-alcance. El interruptor está arriba de los resultados y recuerda la última
+de siempre) o como **Feed**: una tarjeta por publicación, con la cuenta, la
+foto, el título, likes, comentarios, el sentimiento y una etiqueta de
+alcance. El texto del posteo no va en la tarjeta: se lee entero en el
+pop-up. El interruptor está arriba de los resultados y recuerda la última
 vista elegida en ese navegador.
 
 - **Mismos datos y mismos filtros.** El feed no pide nada al servidor:

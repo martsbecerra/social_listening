@@ -1987,11 +1987,11 @@ pre.report a:hover {
 .feed-card {
   --s: #cfd6d2;
   /* Son cientos de tarjetas sin paginar: el navegador no calcula ni pinta las
-     que están fuera de la pantalla hasta que se acercan (590px es el alto
-     estimado mientras tanto, el que tiene con cuatro columnas; una vez
-     dibujada recuerda el real). */
+     que están fuera de la pantalla hasta que se acercan (530px es el alto
+     estimado mientras tanto, el que tiene con cuatro columnas y un título de
+     dos renglones; una vez dibujada recuerda el real). */
   content-visibility: auto;
-  contain-intrinsic-height: auto 590px;
+  contain-intrinsic-height: auto 530px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -2191,28 +2191,20 @@ pre.report a:hover {
   color: var(--clay-500);
 }
 
-/* Título y texto del posteo, cortado a tres líneas: entero va en el pop-up. */
+/* Solo el título del posteo, con el mismo aire arriba y abajo. El texto no
+   va en la tarjeta: se lee entero en el pop-up. */
 .feed-body {
   flex: 1;
-  padding: 12px 12px 4px;
+  padding: 12px;
 }
 .feed-title {
-  margin: 0 0 6px;
+  margin: 0;
   font-family: "Bricolage Grotesque", sans-serif;
   font-size: 15.5px;
   font-weight: 600;
   line-height: 1.25;
   color: var(--jade-950);
   overflow-wrap: anywhere;
-}
-.feed-cap {
-  margin: 0;
-  color: var(--clay-700);
-  overflow-wrap: anywhere;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
 }
 
 /* Likes y comentarios, en una franja propia arriba del pie y bien a la

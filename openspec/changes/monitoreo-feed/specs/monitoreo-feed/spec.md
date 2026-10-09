@@ -100,6 +100,14 @@ La barra de filtros de Instagram MUST tener un selector "Alcance" (Alto, Medio, 
 
 La tarjeta MUST seguir la maqueta `design/monitoreo-feed.html`: cabecera con la inicial y el nombre de la cuenta, seguidores y antigüedad; recuadro de imagen; título y texto (tres líneas); likes, comentarios y sentimiento; motivo corto de detección y enlace al posteo. Por ahora el recuadro MUST ser siempre el de reemplazo, con el ícono del tipo y las etiquetas de tipo y de alcance, y MUST quedar listo para mostrar una imagen cuando el posteo traiga ese dato (carga diferida y aviso si no carga). Un posteo sin tipo MUST llevar el ícono de imagen y ninguna etiqueta de tipo. Un valor sin dato (likes ocultos) MUST verse "—", nunca 0. El borde de arriba MUST llevar el color del sentimiento (neutral en ámbar; sin clasificar, gris).
 
+Cambios de octubre de 2026 (rama `monitoreo_foto_proporcion`, Phase 10 de `tasks.md`), que valen por encima de la maqueta: la tarjeta MUST mostrar solo el título, sin el texto del posteo, que se lee entero en el pop-up; el recuadro de imagen MUST ser un cuadrado con la foto entera sobre fondo negro o, sin foto, rayado con su texto (ya no hay recuadro de reemplazo con ícono); likes y comentarios MUST ir en una franja propia y el sentimiento en el pie.
+
+#### Scenario: Tarjeta sin el texto del posteo
+
+- GIVEN un posteo con título y con texto
+- WHEN se dibuja su tarjeta
+- THEN se ve el título y no el texto; al abrir el pop-up, el texto está entero
+
 #### Scenario: Likes ocultos
 
 - GIVEN un posteo con likes null

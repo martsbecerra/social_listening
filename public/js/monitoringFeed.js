@@ -200,9 +200,11 @@ function buildFeedHead(post) {
   return head;
 }
 
+// Solo el título. El texto del posteo no va en la tarjeta: se lee entero en
+// el pop-up.
 function buildFeedBody(post) {
   const body = feedNode('div', 'feed-body');
-  body.append(feedNode('h3', 'feed-title', post.title || '(sin clasificar)'), feedNode('p', 'feed-cap', post.caption || ''));
+  body.appendChild(feedNode('h3', 'feed-title', post.title || '(sin clasificar)'));
   return body;
 }
 
