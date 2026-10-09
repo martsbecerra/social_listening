@@ -188,19 +188,26 @@
         </span>
       </div>
 
+      <!-- Progreso de "Actualizar ahora": arriba, qué se está haciendo y su
+           contador; la barra a todo el ancho; debajo, las últimas líneas del
+           ciclo (las arma el backend, src/monitoringProgress.js). Al terminar
+           queda a la vista con el resultado, hasta "Ocultar". -->
       <div id="monitoringStatusCard" class="card hidden">
-        <div class="status">
-          <div>
-            <span class="spinner"></span>
-            <span id="monitoringStatusText" class="status-text">Buscando posteos nuevos…</span>
+        <div id="monitoringProgress" class="run-progress">
+          <div class="run-progress-head" role="status" aria-live="polite">
+            <span id="monitoringStatusIcon" class="spinner"></span>
+            <span class="run-progress-text">
+              <span id="monitoringStatusText" class="run-progress-title">Buscando posteos nuevos…</span>
+              <span id="monitoringStatusCount" class="run-progress-count"></span>
+            </span>
+            <button type="button" id="monitoringProgressHide" class="run-progress-hide hidden">Ocultar</button>
           </div>
           <div class="progress-track">
             <div id="monitoringProgressFill" class="progress-fill"></div>
           </div>
+          <ol id="monitoringProgressList" class="run-progress-list" aria-label="Últimos pasos"></ol>
         </div>
       </div>
-
-      <p id="monitoringResult" class="muted hidden" style="text-align:center;"></p>
 
       <p id="monitoringLoadError" class="error hidden"></p>
 

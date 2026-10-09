@@ -399,6 +399,14 @@ async function refreshStaleAccountStatsFor(plataforma, { maxPerCycle = MAX_ACCOU
     recalculatedAccounts.push(r.account);
   }
 
+  // Resumen de la fase para la pantalla (src/monitoringProgress.js).
+  const notDone = toProcess.length - recalculated;
+  progress.setPhaseSummary('Calculando benchmark de cuentas', {
+    label: 'Benchmark de cuentas',
+    detail: `${recalculated} ${recalculated === 1 ? 'cuenta' : 'cuentas'}${notDone > 0 ? `, ${notDone} sin calcular` : ''}`,
+    ok: recalculated > 0 || notDone === 0,
+  });
+
   console.log(
     `[accountStats] (${plataforma}) ${activity.length} cuentas con posteos: ${recalculated}/${toProcess.length} recalculadas` +
       (attemptsOnly > 0 ? ` (${attemptsOnly} sin datos suficientes: solo quedó la marca del intento)` : '') +

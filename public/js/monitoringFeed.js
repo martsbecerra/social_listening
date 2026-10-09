@@ -235,10 +235,19 @@ function buildFeedMetric(kind, label, value, reach) {
   return metric;
 }
 
-// Franja propia de likes y comentarios, arriba del pie.
+// Franja propia de likes y comentarios, arriba del pie. A la derecha, chica,
+// la fecha de esos números ("al 08/10", ver postMetricsDate en
+// monitoring.js): en naranja si tienen más de 3 días. Va en el mismo
+// renglón: no le suma alto a la tarjeta (styles.css).
 function buildFeedMetrics(post, reach) {
   const metrics = feedNode('div', 'feed-metrics');
   metrics.append(buildFeedMetric('likes', 'Likes', post.likes, reach), buildFeedMetric('comments', 'Comentarios', post.comments, reach));
+  const when = postMetricsDate(post);
+  if (when) {
+    const date = feedNode('span', `feed-metrics-date${when.stale ? ' stale' : ''}`, `al ${when.short}`);
+    date.title = `Métricas al ${when.full}${when.stale ? ` (hace más de ${METRICS_STALE_DAYS} días)` : ''}`;
+    metrics.appendChild(date);
+  }
   return metrics;
 }
 

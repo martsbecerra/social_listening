@@ -74,6 +74,15 @@ Pedidos por el dueño con las fotos reales ya a la vista. Un commit por punto; p
 
 La maqueta `design/monitoreo-feed.html` no se actualizó: muestra la tarjeta anterior (foto en franja de 150 px, botón "Ver más").
 
+## Phase 11: fecha de las métricas y "Se despegaron" (octubre 2026, rama `monitoreo_progreso_lista`)
+
+Pedidos por el dueño. Probado en el navegador con el servidor de prueba y una copia de la base; como en la copia todas las métricas son del 2 de octubre o antes, a parte de los posteos se les simuló una fecha reciente (solo en la página de prueba) para ver los dos casos.
+
+- [x] 11.1 Fecha de las métricas en la tarjeta ("al 08/10"), a la derecha de likes y comentarios y en el mismo renglón; en naranja con más de 3 días. La franja pasa de flex a una grilla con dos espacios que ceden. Medido en las 473 tarjetas a 240 px: todas en un renglón, ninguna se sale, y el alto de la franja es el mismo con la fecha que sin ella (REQ-FEED-10)
+- [x] 11.2 `postMetricsDate` en `monitoring.js`: `metrics_updated_at` o, si nunca se refrescó, `detected_at`. El dato ya llegaba en el listado: sin cambios de backend
+- [x] 11.3 Un clic en un destacado de "Se despegaron" abre el pop-up de ese posteo, solo (REQ-FEED-08; el detalle, en `monitoreo-popup`)
+- [x] 11.4 El título "Se despegaron" ya no se parte en celular: va entero y el subtítulo baja a su renglón. En escritorio, con los dos en un renglón, todo queda en el mismo lugar (medido)
+
 ## Pendiente fuera de este cambio
 
 - [ ] Imagen del posteo: guardarla o servirla desde el backend y devolverla en `feedImageUrl`

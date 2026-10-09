@@ -36,6 +36,16 @@ Un commit por arreglo, cada uno probado en la página de prueba.
 - [x] 4.4 Hallazgo 4: con el pedido de ignorar en camino, Esc cierra y no vuelve a armar el pie (REQ-POP-06)
 - [x] 4.5 Hallazgo 5: al cerrar, la tarjeta queda a la vista también si la lista cambió por detrás (REQ-POP-01)
 
+## Phase 5: posteo solo desde "Se despegaron" y fecha de las métricas (octubre 2026, rama `monitoreo_progreso_lista`)
+
+Pedidos por el dueño. Probado en el navegador con el servidor de prueba y una copia de la base.
+
+- [x] 5.1 `openFeedPopSolo(id)`: abre un posteo solo, buscándolo por su fila (`feedPopRow`), sin flechas ni contador (REQ-POP-09). `monitoring.js` lo llama desde el clic en un destacado (`openHighlight`); donde no hay pop-up, va a la fila como antes
+- [x] 5.2 Sentimiento e ignorar sin tarjeta detrás: directo sobre la fila; al ignorar se cierra, y si falla queda abierto con el aviso (REQ-POP-09)
+- [x] 5.3 Al cerrar, el foco vuelve al destacado y la página no se mueve; abierto después desde una tarjeta, vuelve a tener flechas y contador (REQ-POP-09)
+- [x] 5.4 "Métricas al dd/mm/aaaa · hh:mm" debajo de las métricas, en naranja con más de 3 días (REQ-POP-10)
+- [x] 5.5 Probado: vista Tabla y Feed, con el posteo a la vista y con un filtro que lo tapa; Esc, ← →, sentimiento, ignorar (cancelado, con fallo y bien); tarjeta común después
+
 ## Pendiente fuera de este cambio
 
 - Imagen del posteo (cambio siguiente: fotos). Punto único: `feedPopImageUrl`.

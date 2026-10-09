@@ -42,6 +42,12 @@ let feedPopConfirming = false;
 // Elemento en el que cayó el último clic dentro del pop-up. null: todavía
 // ninguno desde que se abrió (ver "Doble clic").
 let feedPopLastClicked = null;
+// Abierto desde un destacado de "Se despegaron" (openFeedPopSolo): muestra
+// ESE posteo solo, sin anterior ni siguiente, y no depende de las tarjetas
+// del feed (en la vista Tabla no hay ninguna, y un filtro puede estar
+// tapando la del posteo). { goId }: el posteo del destacado, para devolverle
+// el foco al cerrar. null: abierto desde una tarjeta, como siempre.
+let feedPopSolo = null;
 
 // -------------------------------------------------------------------------
 // Lado de la foto.
@@ -172,6 +178,17 @@ function buildFeedPopMetrics(post, reach) {
   return table;
 }
 
+// Debajo de las métricas: de cuándo son ("Métricas al 08/10/2026 · 23:48",
+// ver postMetricsDate en monitoring.js). En naranja si tienen más de 3 días.
+// null si el posteo no trae fecha.
+function buildFeedPopMetricsDate(post) {
+  const when = postMetricsDate(post);
+  if (!when) return null;
+  const line = feedNode('p', `feed-pop-mt-date${when.stale ? ' stale' : ''}`, `Métricas al ${when.full}`);
+  if (when.stale) line.title = `Hace más de ${METRICS_STALE_DAYS} días que no se actualizan`;
+  return line;
+}
+
 // "value": un texto o un nodo ya armado (el enlace al perfil).
 function appendFeedPopDetail(list, label, value) {
   const dd = feedNode('dd');
@@ -260,11 +277,13 @@ function fillFeedPop(post) {
 
   const title = feedNode('h2', 'feed-pop-title', post.title || '(sin clasificar)');
   title.id = 'feedPopTitle'; // el nombre del diálogo (aria-labelledby)
+  const metricsDate = buildFeedPopMetricsDate(post);
   feedPopScrollEl.replaceChildren(
     buildFeedPopChips(post, reach),
     title,
     feedNode('p', 'feed-pop-cap', post.caption || ''),
     buildFeedPopMetrics(post, reach),
+    ...(metricsDate ? [metricsDate] : []),
     buildFeedPopDetails(post)
   );
   feedPopScrollEl.scrollTop = 0;
@@ -281,23 +300,36 @@ function feedPopCard() {
   return feedPopId === null ? null : feedCardById(feedPopId);
 }
 
+// La fila de Tabulator del posteo que se está mostrando. Se busca por id, no
+// por la tarjeta: abierto desde "Se despegaron" puede no haber tarjeta.
+function feedPopRow() {
+  return (feedPopId !== null && monitoringTable && monitoringTable.getRow(feedPopId)) || null;
+}
+
 // El posteo que se está mostrando, tal como está ahora en la tabla.
 function feedPopPost() {
-  const card = feedPopCard();
-  const row = card ? feedRowOf(card) : null;
+  const row = feedPopRow();
   return row ? row.getData() : null;
 }
 
 // La tarjeta de antes (-1) o de después (1) de la que se está mostrando.
 function feedPopNeighbor(step) {
+  if (feedPopSolo) return null; // un posteo solo: no hay a dónde pasar
   const card = feedPopCard();
   const other = card && (step < 0 ? card.previousElementSibling : card.nextElementSibling);
   return other && other.classList.contains('feed-card') ? other : null;
 }
 
+// Las flechas (las grandes y las chicas) y el contador: a la vista al
+// recorrer el feed, escondidos cuando se muestra un posteo solo.
+function showFeedPopNav(visible) {
+  for (const el of [...feedPopPrevEls, ...feedPopNextEls, feedPopPosEl]) el.classList.toggle('hidden', !visible);
+}
+
 // Contador "3 / 195" y flechas. En los extremos, la flecha que no lleva a
 // ningún lado queda deshabilitada.
 function updateFeedPopPosition() {
+  if (feedPopSolo) return;
   const card = feedPopCard();
   if (!card) return;
   const cards = feedContainerEl.querySelectorAll('.feed-card');
@@ -316,6 +348,8 @@ function updateFeedPopPosition() {
 function showFeedPopCard(card) {
   const row = card ? feedRowOf(card) : null;
   if (!row) return false;
+  feedPopSolo = null;
+  showFeedPopNav(true);
   feedPopId = card.dataset.id;
   fillFeedPop(row.getData());
   updateFeedPopPosition();
@@ -368,15 +402,23 @@ feedPopFootEl.addEventListener('keydown', (e) => {
 feedPopFootEl.addEventListener('change', (e) => {
   const select = e.target.closest('select.sentiment-select');
   const card = feedPopCard();
-  if (!select || !card || select.value === SENTIMENT_UNSET) return;
-  // PATCH, color de la pastilla, dato de la tabla y "Se despegaron".
-  feedSetSentiment(card, select.value, select);
+  const row = feedPopRow();
+  if (!select || (!card && !row) || select.value === SENTIMENT_UNSET) return;
+  if (card) {
+    // PATCH, color de la pastilla, dato de la tabla y "Se despegaron".
+    feedSetSentiment(card, select.value, select);
+  } else {
+    // Abierto desde "Se despegaron" sin tarjeta detrás (vista Tabla, o un
+    // filtro la tapa): lo mismo, directo sobre la fila.
+    updateSentiment(row.getData().id, select.value, select);
+    row.update({ sentiment: select.value });
+    renderHighlightCards(monitoringTable.getData());
+  }
   feedPopBoxEl.dataset.s = select.value; // borde de arriba de la ventana
   // La tarjeta de atrás se rehace con el dato nuevo. No sale de la lista
   // aunque haya un filtro de sentimiento puesto: eso pasa recién al volver a
   // filtrar, igual que al corregirlo desde la tarjeta.
-  const row = feedRowOf(card);
-  if (row) card.replaceWith(buildFeedCard(row.getData(), postReach(row.getData())));
+  if (card && row) card.replaceWith(buildFeedCard(row.getData(), postReach(row.getData())));
   // Elegido con el mouse, el foco quedaría en el selector, y ahí las flechas
   // cambian el valor y lo guardan: al apretar → para pasar de posteo se
   // corregía otra vez el sentimiento. El foco pasa a la ✕. Si se lo está
@@ -397,10 +439,10 @@ function cancelFeedPopConfirm(error = '') {
 }
 
 async function confirmFeedPopIgnore() {
-  const card = feedPopCard();
-  if (!card) return;
+  const row = feedPopRow();
+  if (!row && !feedPopCard()) return;
   const id = feedPopId;
-  const row = feedRowOf(card);
+  const solo = Boolean(feedPopSolo);
   // Un solo pedido, aunque se apriete dos veces.
   for (const button of feedPopFootEl.querySelectorAll('button')) button.disabled = true;
   // La pregunta ya se contestó y el pedido sale: no queda nada que cancelar.
@@ -413,6 +455,12 @@ async function confirmFeedPopIgnore() {
   // la confirmación ya se dio en el pie: se anota directo, sin ese cartel.
   pendingIgnoreId = row ? row.getData().id : id;
   await confirmIgnore();
+  // Un posteo solo (abierto desde "Se despegaron"): no hay a cuál pasar. Si
+  // se ignoró, su fila ya no está y el pop-up se cierra.
+  if (solo && feedPopEl.open && feedPopId === id && !feedPopRow()) {
+    closeFeedPop();
+    return;
+  }
   // Si salió bien, confirmIgnore sacó la fila y avisó al feed, que sacó la
   // tarjeta: el pop-up ya pasó a otro posteo o se cerró (ver
   // feedListListeners, más abajo). Si sigue en el mismo, el pedido falló.
@@ -431,10 +479,8 @@ feedPopFootEl.addEventListener('click', (e) => {
 // Abrir y cerrar.
 // -------------------------------------------------------------------------
 
-// Lo llama el feed: un clic en una tarjeta o, con el foco en ella, Enter o
-// Espacio.
-function openFeedPop(card) {
-  if (!showFeedPopCard(card)) return;
+// Muestra el <dialog>, si no está ya abierto, y deja el foco en la ✕.
+function showFeedPopDialog() {
   if (!feedPopEl.open) {
     feedPopOpenerId = feedPopId;
     feedPopListChanged = false;
@@ -451,6 +497,35 @@ function openFeedPop(card) {
     feedPopEl.showModal();
   }
   feedPopCloseEl.focus();
+}
+
+// Lo llama el feed: un clic en una tarjeta o, con el foco en ella, Enter o
+// Espacio.
+function openFeedPop(card) {
+  if (!showFeedPopCard(card)) return;
+  showFeedPopDialog();
+}
+
+// Lo llama "Se despegaron" (monitoring.js): abre el posteo de un destacado,
+// solo, sin anterior ni siguiente. Los datos salen de su fila de Tabulator,
+// buscada por id: vale igual en la vista Tabla (donde no hay tarjetas) y en
+// el Feed, y aunque un filtro esté tapando el posteo. Devuelve false si esa
+// fila no está (quien llama decide qué hacer).
+function openFeedPopSolo(id) {
+  const row = (monitoringTable && monitoringTable.getRow(id)) || null;
+  if (!row) return false;
+  feedPopSolo = { goId: String(id) };
+  feedPopId = String(id);
+  showFeedPopNav(false);
+  fillFeedPop(row.getData());
+  showFeedPopDialog();
+  return true;
+}
+
+// El destacado de "Se despegaron" de un posteo, si sigue en pantalla (la
+// sección se redibuja al corregir un sentimiento o ignorar).
+function feedPopHighlightOf(id) {
+  return [...document.querySelectorAll('#cards .hl')].find((el) => el.dataset.go === id) || null;
 }
 
 // La tarjeta del posteo en el que se cerró puede no estar donde se la dejó:
@@ -482,10 +557,19 @@ function afterFeedPopClose() {
   const card = feedPopCard();
   const moved = feedPopId !== feedPopOpenerId;
   const listChanged = feedPopListChanged;
+  const solo = feedPopSolo;
   feedPopId = null;
   feedPopOpenerId = null;
   feedPopListChanged = false;
   feedPopConfirming = false;
+  feedPopSolo = null;
+  if (solo) {
+    // Se abrió desde "Se despegaron": el foco vuelve a ese destacado (si el
+    // posteo se ignoró ya no está) y la página no se mueve.
+    const highlight = feedPopHighlightOf(solo.goId);
+    if (highlight) highlight.focus({ preventScroll: true });
+    return;
+  }
   if (!card) return;
   card.focus({ preventScroll: true });
   // Sin navegar y con la lista igual, la tarjeta está donde se la dejó y la
@@ -561,6 +645,9 @@ feedPopEl.addEventListener('click', (e) => {
 // La lista de tarjetas cambió (ver feedListListeners en monitoringFeed.js).
 feedListListeners.push((change) => {
   if (feedPopId === null) return;
+  // Un posteo solo no depende de las tarjetas: si se ignora, lo cierra
+  // confirmFeedPopIgnore.
+  if (feedPopSolo) return;
   feedPopListChanged = true;
   if (change && change.removing) {
     // Está por salir una tarjeta (se ignoró su posteo) y todavía ocupa su
