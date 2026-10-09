@@ -1987,11 +1987,11 @@ pre.report a:hover {
 .feed-card {
   --s: #cfd6d2;
   /* Son cientos de tarjetas sin paginar: el navegador no calcula ni pinta las
-     que están fuera de la pantalla hasta que se acercan (530px es el alto
+     que están fuera de la pantalla hasta que se acercan (525px es el alto
      estimado mientras tanto, el que tiene con cuatro columnas y un título de
      dos renglones; una vez dibujada recuerda el real). */
   content-visibility: auto;
-  contain-intrinsic-height: auto 530px;
+  contain-intrinsic-height: auto 525px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -2208,27 +2208,28 @@ pre.report a:hover {
 }
 
 /* Likes y comentarios, en una franja propia arriba del pie y bien a la
-   vista: ícono, número grande y, chica al lado del número que la disparó, la
-   razón del alcance ("5,4×"). */
+   vista: ícono, número en negrita y, chica al lado del número que la
+   disparó, la razón del alcance ("5,4×"). Número e ícono miden 17,5px: con
+   21px quedaban exagerados para el tamaño de la tarjeta. */
 .feed-metrics {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 22px;
+  gap: 6px 20px;
   padding: 11px 12px;
   border-top: 1px solid var(--line);
 }
 .feed-metric {
   display: inline-flex;
   align-items: baseline;
-  gap: 7px;
+  gap: 6px;
   white-space: nowrap;
 }
 .feed-metric svg {
   flex: none;
   align-self: center;
-  width: 21px;
-  height: 21px;
+  width: 17.5px;
+  height: 17.5px;
 }
 .feed-metric.likes svg {
   color: var(--coral-500);
@@ -2238,7 +2239,7 @@ pre.report a:hover {
 }
 .feed-metric b {
   font-family: "Bricolage Grotesque", sans-serif;
-  font-size: 21px;
+  font-size: 17.5px;
   font-weight: 700;
   line-height: 1;
   font-variant-numeric: tabular-nums;

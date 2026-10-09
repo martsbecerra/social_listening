@@ -70,6 +70,7 @@ Pedidos por el dueño con las fotos reales ya a la vista. Un commit por punto; p
 - [x] 10.4 Hover más marcado: la tarjeta sube 6 px con sombra fuerte y borde del color del sentimiento, la foto se acerca a 1,05 dentro de su cuadrado y el cursor es la manito. Solo con mouse; el movimiento se apaga con `prefers-reduced-motion`
 - [x] 10.5 `README.md`, `CLAUDE.md`, REQ-POP-01 de `monitoreo-popup` y los pendientes de `monitoreo-fotos`
 - [x] 10.6 La tarjeta muestra solo el título, sin el texto del posteo (que sigue entero en el pop-up); el cuerpo queda con el mismo aire arriba y abajo. Con los 473 posteos reales, 431 títulos ocupan dos renglones, 30 tres y 12 uno. Probado con las fotos reales de `data/media`, leídas en solo lectura por el servidor de prueba
+- [x] 10.7 Likes y comentarios un 17 % más chicos: número e ícono pasan de 21 px a 17,5 px, siempre en negrita. Con las fotos reales a la vista, 21 px quedaba exagerado
 
 La maqueta `design/monitoreo-feed.html` no se actualizó: muestra la tarjeta anterior (foto en franja de 150 px, botón "Ver más").
 
