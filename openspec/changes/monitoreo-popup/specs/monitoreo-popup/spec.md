@@ -110,7 +110,43 @@ Si la lista de tarjetas cambia y el posteo que muestra el pop-up ya no está, el
 
 ### Requirement: REQ-POP-08 — La tabla y X no cambian
 
-La vista Tabla y `x.html` MUST comportarse igual que antes. `public/js/monitoring.js` MUST NOT cambiar.
+La vista Tabla y `x.html` MUST comportarse igual que antes. `public/js/monitoring.js` MUST NOT cambiar. Desde octubre de 2026 hay una excepción, REQ-POP-09: el clic en un destacado de "Se despegaron".
+
+---
+
+### Requirement: REQ-POP-09 — Abrir un posteo solo, desde "Se despegaron"
+
+Desde octubre de 2026 (rama `monitoreo_progreso_lista`). Un clic en un destacado de "Se despegaron" MUST abrir el pop-up de ese posteo, con la tabla o con el feed como vista activa, y aunque un filtro esté tapando el posteo. Abierto así, el pop-up MUST mostrar ese posteo solo: sin flechas de anterior y siguiente, sin contador, y ← → MUST NOT hacer nada. MUST NOT depender de que exista la tarjeta del posteo. Corregir el sentimiento e ignorar MUST funcionar igual que desde una tarjeta; al ignorar, el pop-up MUST cerrarse, y si el pedido falla MUST quedar abierto con el aviso. Al cerrar, el foco MUST volver al destacado de ese posteo (si sigue en pantalla) y la página MUST NOT moverse. Abierto después desde una tarjeta, MUST volver a tener flechas y contador. Donde no hay pop-up (`x.html`), el clic MUST seguir llevando a la fila.
+
+#### Scenario: Vista Tabla
+
+- GIVEN la tabla como vista activa (no hay tarjetas dibujadas)
+- WHEN se hace clic en un destacado
+- THEN se abre el pop-up de ese posteo, sin flechas ni contador, y al cerrarlo con Esc el foco vuelve al destacado
+
+#### Scenario: Ignorar el posteo abierto
+
+- GIVEN el pop-up abierto desde un destacado
+- WHEN se confirma "Ignorar" y el pedido sale bien
+- THEN el pop-up se cierra y ese posteo ya no está entre los destacados
+
+#### Scenario: Después, desde una tarjeta
+
+- GIVEN que se abrió y se cerró un posteo desde "Se despegaron"
+- WHEN se abre otro con un clic en su tarjeta del feed
+- THEN el pop-up tiene flechas y contador, y → pasa al siguiente
+
+---
+
+### Requirement: REQ-POP-10 — Fecha de las métricas
+
+Desde octubre de 2026. Debajo de las métricas, el pop-up MUST decir de cuándo son: "Métricas al dd/mm/aaaa · hh:mm" (hora de 24 horas), con la misma fecha que la tarjeta (REQ-FEED-10 de `monitoreo-feed`): el último refresco de likes y comentarios o, si el posteo nunca se refrescó, su detección. Con más de 3 días MUST verse en naranja.
+
+#### Scenario: Métricas viejas
+
+- GIVEN un posteo cuyo último refresco fue hace 7 días
+- WHEN se abre su pop-up
+- THEN la línea "Métricas al …" va en naranja
 
 ---
 

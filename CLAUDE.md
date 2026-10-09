@@ -137,12 +137,34 @@ purga a los 30 días. Si el run falla entero no se anota nada.
 benchmark, refresco), su contador y un porcentaje global (trabajo
 completado / trabajo conocido, recalculado en cada `startPhase`).
 `GET /api/monitoring/progress` (mismo control de acceso que el resto de
-`/api/monitoring`) lo expone; `null` sin ciclo corriendo. El frontend lo
-consulta cada 1,5s mientras espera "Actualizar ahora" — ya no hay frases
-fijas ni barra simulada. Cuentas, hashtags, búsquedas y keywords se lanzan
-juntas (`Promise.allSettled`) y se muestran como una sola fase combinada
-("Detectando posteos nuevos"); una fase sin trabajo para esa plataforma
-(ej. benchmark en X) nunca se anuncia, sin casos especiales por plataforma.
+`/api/monitoring`) expone `getView()`: con un ciclo en curso, `{ phase,
+done, total, suffix, percent, lines }`; terminado, `{ finished: true, lines
+}` hasta que arranque otro (la última fase cierra su resumen recién en
+`endCycle`); `null` si nunca corrió ninguno. `getProgress()` no cambió
+(estado del ciclo en curso, `null` sin ciclo): lo usa el aviso de ciclo
+trabado. El frontend lo consulta cada 1,5s mientras espera "Actualizar
+ahora" — ya no hay frases fijas ni barra simulada. Cuentas, hashtags,
+búsquedas y keywords se lanzan juntas (`Promise.allSettled`) y se muestran
+como una sola fase combinada ("Buscando posteos nuevos", contador "N de 8
+listas": van en paralelo, no hay "la actual"); una fase sin trabajo para
+esa plataforma (ej. benchmark en X) nunca se anuncia, sin casos especiales
+por plataforma.
+
+`lines` son las líneas de la lista del recuadro, ya escritas para una
+persona y ya elegidas (hasta `VIEW_MAX_LINES` 6; lo que está en curso ocupa
+como mucho `VIEW_MAX_RUNNING` 3: las primeras y "y N más"): el frontend
+solo las dibuja, por `textContent`. Las arma el ciclo: `startItem` /
+`finishItem` por cada fuente de la detección (`monitor.js`, `trackSource`:
+"«macri» · 50 encontrados, 6 nuevos" o "· falló") y `setPhaseSummary` por
+cada fase al terminar su trabajo y ANTES de que arranque la siguiente
+(relevancia, detalle, benchmark, métricas, fotos); sin resumen propio sale
+uno genérico con el contador, y `startPhase(..., { summary: false })` no
+deja ninguno. Una fase nueva tiene que dejar el suyo. "Nuevo" es una sola
+cosa en toda la pantalla (`monitor.isNewPost`: ni en `detected_posts` ni en
+`search_seen`); el ciclo lo cuenta sin repetidos, antes del detalle, en
+`porPlataforma.<red>.newCandidates`, y el recuadro cierra con "Listo: N
+relevantes guardados de M nuevos". SDD en
+`openspec/changes/monitoreo-progreso-lista/`.
 Las fases de fotos son la excepción al porcentaje: se anuncian con su
 contador pero `startPhase(..., { countsInPercent: false })` las deja fuera
 del total global (si no, la barra volvía de 100 % a la mitad al final del
@@ -347,7 +369,8 @@ principio (`feedScrollToStart`). Un filtro nuevo va en ese predicado; si su
 control existe solo en `instagram.html` (como `fAlcanceEl`), en X es null y
 hay que tratarlo así. `monitoring.js` avisa los cambios con
 `notifyMonitoringViews(change)` (sin argumento = redibujar;
-`{ ignoredId }`; `{ goToId }` desde "Se despegaron"). El alcance de la
+`{ ignoredId }`; `{ goToId }`, que quedó como respaldo: ver "Se despegaron"
+más abajo). El alcance de la
 tarjeta y del filtro "Alcance" es `postReach`: combina los niveles que ya
 manda el backend en `benchmark.likes` y `benchmark.comments` (vale el
 mejor de los dos; "normal" se muestra "medio"; sin ninguna métrica con
@@ -366,7 +389,14 @@ en esa lista. Ya no hay botón "Ver más". El pop-up es
 del feed; prefijo `feedPop`), un `<dialog>` que se rellena con la fila de
 Tabulator, recorre las tarjetas en pantalla (← →) y usa `updateSentiment` y
 `confirmIgnore` tal como están; el feed le avisa los cambios de la lista con
-`feedListListeners`; al cerrarse devuelve el foco a la tarjeta. La foto
+`feedListListeners`; al cerrarse devuelve el foco a la tarjeta. Un clic en
+un destacado de "Se despegaron" (`openHighlight` en `monitoring.js`) abre
+ese posteo SOLO (`openFeedPopSolo`, estado `feedPopSolo`): sin flechas ni
+contador, igual en Tabla y en Feed y aunque un filtro lo tape; por eso el
+pop-up busca el posteo por su fila (`feedPopRow`), no por la tarjeta, que
+puede no existir. Todo lo que el pop-up haga con el posteo abierto tiene
+que andar sin tarjeta. Donde no hay pop-up (`x.html`) queda lo anterior, ir
+a la fila (`highlightGoToRow`). La foto
 llega en `image` del listado (ver "Fotos de los posteos") y el frontend la
 lee solo en `feedImageUrl` (tarjeta, miniatura), `feedPopImageUrl` (pop-up,
 imagen grande) y `feedImageFailed`: sin intento de descarga, "Sin foto" en
@@ -375,8 +405,14 @@ los dos. En la tarjeta el recuadro de la foto es siempre un cuadrado del
 ancho de la tarjeta con fondo negro, y la foto va entera
 (`object-fit: contain`), sin recorte. Debajo va solo el título: el texto del
 posteo no se muestra en la tarjeta, se lee entero en el pop-up. Likes y
-comentarios van en una franja propia, en grande; el selector de sentimiento
-está en el pie. El hover
+comentarios van en una franja propia, en grande, con la fecha de esos
+números a la derecha ("al 08/10"; en el pop-up, "Métricas al 08/10/2026 ·
+23:48" debajo de las métricas). La fecha sale de `postMetricsDate`
+(`monitoring.js`): `metrics_updated_at` o, si nunca se refrescó,
+`detected_at`; con más de `METRICS_STALE_DAYS` (3) va en naranja. La franja
+es una grilla de UN renglón con dos espacios que ceden: lo que se le sume
+no puede agregarle alto a la tarjeta (medir en la de 240 px). El selector
+de sentimiento está en el pie. El hover
 (sube, borde del color del sentimiento, foto que se acerca) va solo con
 mouse (`hover: hover`) y el movimiento se apaga con
 `prefers-reduced-motion`.

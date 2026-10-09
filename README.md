@@ -911,21 +911,45 @@ relevancia, benchmark de cuentas, refrescando métricas), cuánto de esa fase
 se completó y un porcentaje global = trabajo completado / trabajo conocido
 hasta ese momento (se recalcula cada vez que una fase arranca y suma su
 propio total). `GET /api/monitoring/progress` (mismo control de acceso que
-el resto de `/api/monitoring`) devuelve `{ phase, done, total, percent }` o
-`null` si no hay ningún ciclo corriendo. El frontend (`public/js/monitoring.js`)
-lo consulta cada 1,5 s mientras espera la respuesta de "Actualizar ahora" y
-pinta la fase y el porcentaje reales en la misma tarjeta de siempre — ya no
-hay frases fijas rotando ni una barra que avanza sola.
+el resto de `/api/monitoring`) devuelve lo que dibuja la pantalla
+(`getView`): `{ phase, done, total, suffix, percent, lines }` con un ciclo
+en curso, `{ finished: true, lines }` cuando terminó (hasta que arranque
+otro) y `null` si nunca corrió ninguno. El frontend
+(`public/js/monitoring.js`) lo consulta cada 1,5 s mientras espera la
+respuesta de "Actualizar ahora" — no hay frases fijas rotando ni una barra
+que avanza sola.
+
+**Lo que se ve** (octubre 2026, SDD en
+`openspec/changes/monitoreo-progreso-lista/`):
+
+- Arriba, la fase con su contador: "Buscando posteos nuevos · 5 de 8
+  listas", "Clasificando relevancia · 3 de 11", "Guardando fotos · 4 de 12".
+- La barra, a todo el ancho.
+- Debajo, hasta 6 líneas escritas para una persona (no el log): una por
+  búsqueda ("✓ «macri» · 50 encontrados, 6 nuevos", "✕ «PDLC» · falló"), las
+  que siguen en curso con su ruedita, y un resumen por cada fase que termina
+  ("✓ Relevancia · 4 relevantes, 7 descartados", "✓ Métricas · 148
+  actualizadas, 2 sin respuesta"). Las líneas las arma y las elige el
+  backend; el frontend solo las dibuja.
+- Al terminar, el recuadro queda a la vista: "✓ Listo: 4 relevantes
+  guardados de 11 nuevos" (o "✕ Error: …"), con un botón "Ocultar".
+
+"Nuevos" quiere decir lo mismo en todos lados: posteos que no estaban
+guardados ni se habían evaluado antes (`monitor.isNewPost`). Cada búsqueda
+cuenta los suyos; el ciclo los cuenta sin repetidos y los devuelve en
+`porPlataforma.<red>.newCandidates`.
 
 Cuentas, hashtags, búsquedas por palabra clave y keywords (X) se lanzan
 todas juntas (`Promise.allSettled`), no son fases secuenciales de verdad:
-se muestran combinadas en una sola fase visible, "Detectando posteos
-nuevos", con un tick por cada llamada que termina. Una fase sin trabajo
-(ej. benchmark en un ciclo de solo X, que no tiene esa capability) nunca se
-anuncia — no hace falta ningún caso especial por plataforma: la solapa de X
-muestra progreso real en "Detectando posteos nuevos" y "Clasificando
-relevancia" igual que Instagram, y simplemente no pasa por las fases que su
-adapter no tiene.
+se muestran combinadas en una sola fase visible, "Buscando posteos nuevos",
+con un tick y una línea por cada llamada que termina. Como van en paralelo
+no hay "la búsqueda actual": la cabecera cuenta cuántas terminaron y lo que
+está en curso ocupa como mucho 3 líneas (las dos primeras y "y N más ·
+buscando…"). Una fase sin trabajo (ej. benchmark en un ciclo de solo X, que
+no tiene esa capability) nunca se anuncia — no hace falta ningún caso
+especial por plataforma: la solapa de X muestra el mismo recuadro, con una
+línea por cuenta, hashtag o keyword, y simplemente no pasa por las fases
+que su adapter no tiene.
 
 ### Refresco de métricas por URL (octubre 2026)
 
@@ -1021,7 +1045,12 @@ vista elegida en ese navegador.
   y el mismo cartel de confirmación que la fila de la tabla.
 - **La tarjeta.** Likes y comentarios van en una franja propia, con su
   ícono y el número en grande; la razón del alcance queda chica al lado del
-  número que la disparó. En el pie, el motivo de detección y, debajo, el
+  número que la disparó. A la derecha de esa franja, en el mismo renglón,
+  la fecha de esos números ("al 08/10"); en el pop-up va entera, debajo de
+  las métricas ("Métricas al 08/10/2026 · 23:48"). Es la última vez que se
+  refrescaron likes y comentarios (`metrics_updated_at`) o, si el posteo
+  nunca se refrescó, la fecha en que se detectó. Con más de 3 días sale en
+  naranja. En el pie, el motivo de detección y, debajo, el
   selector de sentimiento y "Abrir ↗" (el posteo en Instagram). Al pasar el
   mouse la tarjeta sube, toma el borde del color de su sentimiento y la
   foto se acerca apenas; con `prefers-reduced-motion` no se mueve nada.
@@ -1038,6 +1067,10 @@ vista elegida en ese navegador.
   afuera. Desde ahí también se corrige el sentimiento y se ignora (la
   confirmación va adentro; al ignorar pasa al posteo siguiente). En celular
   ocupa la pantalla completa.
+- **Desde "Se despegaron".** Un clic en un destacado abre el pop-up de ese
+  posteo solo: sin flechas ni contador, igual en la vista Tabla y en el
+  Feed, y aunque un filtro lo esté tapando. Al ignorarlo se cierra; al
+  cerrar, el foco vuelve al destacado.
 - **Imagen**: la tarjeta muestra la miniatura de la foto guardada y el
   pop-up la imagen grande (ver "Fotos de los posteos", acá abajo). En la
   tarjeta el recuadro es un cuadrado del ancho de la tarjeta, igual para

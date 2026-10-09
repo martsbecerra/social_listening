@@ -92,7 +92,16 @@ prefijo `feedPop` / `FEED_POP_`.
   pudo ignorar".
 - Con un sentimiento recién corregido, la tarjeta de atrás se actualiza pero
   no sale hasta volver a filtrar, como hoy.
-- "Se despegaron" sigue llevando a la tarjeta, sin abrir el pop-up.
+- "Se despegaron" seguía llevando a la tarjeta, sin abrir el pop-up. Desde
+  octubre de 2026 (rama `monitoreo_progreso_lista`) un clic en un destacado
+  abre el pop-up de ese posteo solo: sin flechas ni contador, igual en la
+  vista Tabla y en el Feed, y aunque un filtro lo tape (REQ-POP-09). Para
+  eso el pop-up dejó de depender de la tarjeta: busca el posteo por su fila
+  de Tabulator (`feedPopRow`); con `feedPopSolo` puesto no navega, no
+  escucha los cambios de la lista de tarjetas, se cierra solo al ignorar y
+  devuelve el foco al destacado.
+- Debajo de las métricas va de cuándo son ("Métricas al 08/10/2026 ·
+  23:48"), en naranja con más de 3 días (REQ-POP-10).
 - La barra superior que se pasa del ancho en celular y el aviso cuando falla
   el guardado del sentimiento quedan pendientes fuera de este cambio (ver
   `tasks.md`).

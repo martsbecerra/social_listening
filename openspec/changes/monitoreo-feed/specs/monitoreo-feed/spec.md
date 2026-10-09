@@ -158,15 +158,33 @@ La tarjeta MUST permitir corregir el sentimiento e ignorar el posteo con los mis
 
 ---
 
-### Requirement: REQ-FEED-08 — "Se despegaron" lleva a la tarjeta
+### Requirement: REQ-FEED-08 — "Se despegaron" abre el pop-up del posteo
 
-Con el feed como vista activa, un clic en un destacado de "Se despegaron" MUST llevar a la tarjeta de ese posteo, dejarla debajo de la barra de filtros y marcarla un momento. MUST NOT tocar los filtros: si el posteo está tapado por uno, no hace nada. MUST NOT abrir la tarjeta. Con la tabla como vista activa, el comportamiento MUST ser el de siempre.
+Desde octubre de 2026 (rama `monitoreo_progreso_lista`), un clic en un destacado de "Se despegaron" MUST abrir el pop-up de ese posteo, solo, según REQ-POP-09 de `monitoreo-popup`: igual con el feed o con la tabla como vista activa. MUST NOT tocar los filtros ni mover la página. Antes llevaba a la tarjeta (feed) o a la fila (tabla), y no hacía nada si un filtro tapaba el posteo; ese camino queda solo como respaldo donde no hay pop-up.
 
 #### Scenario: Posteo tapado por un filtro
 
 - GIVEN un filtro que no incluye al posteo destacado
 - WHEN se hace clic en el destacado
-- THEN la página no se mueve
+- THEN se abre el pop-up de ese posteo y los filtros quedan como estaban
+
+---
+
+### Requirement: REQ-FEED-10 — Fecha de las métricas
+
+La tarjeta MUST mostrar, chica y a la derecha de likes y comentarios, la fecha de esos números ("al 08/10", día y mes con dos dígitos), en el mismo renglón: MUST NOT sumarle alto a la tarjeta, tampoco en la más angosta (240 px) con números largos y la razón del alcance a la vista. La fecha MUST ser la del último refresco de likes y comentarios del posteo o, si nunca se refrescó, la de su detección. Con más de 3 días MUST verse en naranja. Al pasar el mouse MUST decir la fecha y la hora completas.
+
+#### Scenario: Nunca refrescado
+
+- GIVEN un posteo detectado ayer que todavía no pasó por ningún refresco
+- WHEN se dibuja su tarjeta
+- THEN la fecha de las métricas es la de ayer, sin naranja
+
+#### Scenario: Métricas viejas
+
+- GIVEN un posteo cuyo último refresco fue hace 7 días
+- WHEN se dibuja su tarjeta
+- THEN la fecha va en naranja
 
 ---
 
