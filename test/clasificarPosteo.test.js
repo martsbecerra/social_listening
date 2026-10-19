@@ -35,7 +35,8 @@ const assert = require('node:assert/strict');
 // El LLM se stubea en la capa src/llm (por el objeto del módulo) ANTES de
 // cargar el clasificador y monitor.js.
 const llm = require('../src/llm');
-let modo = 'normal'; // 'normal' | 'falla' | 'ilegible'
+// 'normal' | 'falla' | 'ilegible' | 'temaPlegado' | 'temaInventado' | 'sinTema'
+let modo = 'normal';
 const llamadas = [];
 llm.requestStructuredAnalysis = async (req) => {
   llamadas.push(req);
@@ -45,12 +46,34 @@ llm.requestStructuredAnalysis = async (req) => {
     throw e;
   }
   if (modo === 'ilegible') return { parsed: { relevant: 'sí', title: 'x', sentiment: 'neutral' }, usage: null, attempts: 1 };
-  return { parsed: modeloDeReglas(req.userPrompt), usage: null, attempts: 1 };
+  const parsed = modeloDeReglas(req.userPrompt);
+  // Lo que puede mandar un modelo sin structured outputs (el respaldo
+  // json_object de OpenRouter): el tema sin acentos ni mayúsculas, uno que
+  // no es de la lista (el enum viejo de 9 temas), o ninguno.
+  if (modo === 'temaPlegado') parsed.tema = 'educacion';
+  if (modo === 'temaInventado') parsed.tema = 'obras_espacio_publico';
+  if (modo === 'sinTema') delete parsed.tema;
+  return { parsed, usage: null, attempts: 1 };
 };
 
 /** "Modelo" de mentira: aplica sobre el caption las reglas que el prompt le pide al real. */
 function modeloDeReglas(userPrompt) {
   const texto = (userPrompt.split('POSTEO:\n')[1] || '').toLowerCase();
+  return { ...decisionDeReglas(texto), tema: temaDeReglas(texto) };
+}
+
+/** El tema: una categoría de config/categorias-reclamos.json, por palabras del caption. */
+function temaDeReglas(texto) {
+  if (/milei|adorni/.test(texto)) return 'Política';
+  if (/subte|colectivo/.test(texto)) return 'Transporte';
+  if (/obra|paseo del bajo/.test(texto)) return 'Infraestructura';
+  if (/plaza|vereda/.test(texto)) return 'Espacio Público';
+  if (/escuela/.test(texto)) return 'Educación';
+  if (/seguridad|policía|pdlc/.test(texto)) return 'Seguridad';
+  return 'Coyuntura / Otros';
+}
+
+function decisionDeReglas(texto) {
   if (/blackri|blacri/.test(texto)) {
     return { relevant: true, title: 'Blackri y la gestión porteña', sentiment: 'negativo', motivo: 'Blackri es Jorge Macri' };
   }
@@ -71,6 +94,7 @@ function modeloDeReglas(userPrompt) {
 }
 
 const classifier = require('../src/classifier');
+const categoriasConfig = require('../src/categoriasConfig');
 const providerConfig = require('../src/llm/providerConfig');
 const db = require('../src/db');
 const monitor = require('../src/monitor');
@@ -92,16 +116,17 @@ describe('clasificarPosteo: una sola llamada, con schema', { concurrency: false 
       platformLabel: 'Instagram',
       pista: { termino: 'jorge macri', cuenta: 'cuenta' },
     });
-    assert.deepEqual(r, { relevant: true, title: 'Jorge Macri y la gestión porteña', sentiment: 'positivo', motivo: 'habla de CABA' });
+    assert.deepEqual(r, { relevant: true, title: 'Jorge Macri y la gestión porteña', sentiment: 'positivo', tema: 'Educación', motivo: 'habla de CABA' });
 
     assert.equal(llamadas.length, 1);
     const req = ultima();
     assert.equal(req.schemaName, 'clasificacion_posteo');
     assert.equal(req.maxTokens, 300);
     assert.equal(req.schema.additionalProperties, false);
-    assert.deepEqual(req.schema.required, ['relevant', 'title', 'sentiment', 'motivo']);
+    assert.deepEqual(req.schema.required, ['relevant', 'title', 'sentiment', 'tema', 'motivo']);
     assert.match(req.system, /motivo: una frase corta/);
     assert.deepEqual(req.schema.properties.sentiment.enum, ['positivo', 'neutral', 'negativo']);
+    assert.deepEqual(req.schema.properties.tema.enum, categoriasConfig.listCategorias());
     assert.match(req.system, /posteo de Instagram/);
     assert.equal(
       req.userPrompt,
@@ -112,15 +137,63 @@ describe('clasificarPosteo: una sola llamada, con schema', { concurrency: false 
 
   test('sin pista no hay línea CONTEXTO; el caption se recorta a 2000 caracteres; sin caption no llama al modelo', async () => {
     const r = await classifier.clasificarPosteo('receta de pan casero');
-    assert.deepEqual(r, { relevant: false, title: 'Otro tema', sentiment: 'neutral', motivo: 'no habla de la Ciudad' });
+    assert.deepEqual(r, { relevant: false, title: 'Otro tema', sentiment: 'neutral', tema: 'Coyuntura / Otros', motivo: 'no habla de la Ciudad' });
     assert.equal(ultima().userPrompt, 'POSTEO:\nreceta de pan casero');
 
     await classifier.clasificarPosteo('a'.repeat(3000));
     assert.equal(ultima().userPrompt.length, 'POSTEO:\n'.length + 2000);
 
     const antes = llamadas.length;
-    assert.deepEqual(await classifier.clasificarPosteo('   '), { relevant: false, title: 'Sin descripción', sentiment: 'neutral', motivo: null });
+    assert.deepEqual(await classifier.clasificarPosteo('   '), { relevant: false, title: 'Sin descripción', sentiment: 'neutral', tema: 'Coyuntura / Otros', motivo: null });
     assert.equal(llamadas.length, antes, 'sin texto no hay nada que preguntar');
+  });
+
+  test('tema: las categorías de primer nivel del mapa de reclamos, una línea por categoría con sus subcategorías', async () => {
+    const categorias = categoriasConfig.listCategorias();
+    assert.deepEqual(classifier.TEMAS, categorias, 'la lista sale de config/categorias-reclamos.json');
+    assert.equal(categoriasConfig.CATEGORIA_FALLBACK, 'Coyuntura / Otros');
+    assert.ok(categorias.includes(categoriasConfig.CATEGORIA_FALLBACK), 'el fallback es una de las opciones');
+    assert.deepEqual(classifier.CLASIFICACION_SCHEMA.properties.tema.enum, categorias);
+
+    const s = classifier.systemPrompt('Instagram');
+    const seccion = s.split('\nTEMA\n')[1].split('\nRESPUESTA')[0];
+    const lineas = seccion.split('\n').filter((l) => l.startsWith('- '));
+    assert.equal(lineas.length, categorias.length, 'una línea por categoría, ni una más');
+    categorias.forEach((nombre, i) => {
+      const subs = categoriasConfig.subcategoriasDe(nombre);
+      assert.ok(subs.length > 0, `${nombre} tiene subcategorías`);
+      assert.equal(lineas[i], `- ${nombre}: ${subs.join('; ')}`, 'nombre y subcategorías tal cual, en el orden del JSON');
+    });
+    assert.match(seccion, /copiada tal cual \(respetá mayúsculas y acentos\)/);
+    assert.match(seccion, /Si toca varias, la que más pesa en el posteo/);
+    assert.match(seccion, /un anuncio, un logro o un elogio va en la misma categoría que una crítica sobre lo mismo/);
+    assert.match(seccion.trimEnd(), /\nSi no encaja en ninguna, "Coyuntura \/ Otros"\.$/);
+    assert.match(s.split('\nRESPUESTA')[1], /^- tema: una de las categorías de TEMA, copiada tal cual\. Siempre, también si relevant es false: la más cercana, o "Coyuntura \/ Otros"\.$/m);
+
+    const r = await classifier.clasificarPosteo('Milei y Adorni presentaron el presupuesto nacional');
+    assert.deepEqual(r, { relevant: false, title: 'Gobierno nacional', sentiment: 'neutral', tema: 'Política', motivo: 'política nacional sin relación con CABA' });
+  });
+
+  test('el tema pasa por normalizeClasificacion: mayúsculas y acentos se resuelven; lo que no existe, o falta, cae en "Coyuntura / Otros"', async () => {
+    const base = { relevant: true, title: 'Jorge Macri y la gestión porteña', sentiment: 'positivo', motivo: 'habla de CABA' };
+    const avisos = [];
+    const originalWarn = console.warn;
+    console.warn = (msg) => avisos.push(String(msg));
+    try {
+      modo = 'temaPlegado';
+      assert.deepEqual(await classifier.clasificarPosteo('Jorge Macri inauguró una escuela'), { ...base, tema: 'Educación' });
+      assert.deepEqual(avisos, [], 'resolver acentos y mayúsculas no es un ajuste');
+
+      modo = 'temaInventado';
+      assert.deepEqual(await classifier.clasificarPosteo('Jorge Macri inauguró una escuela'), { ...base, tema: 'Coyuntura / Otros' });
+      assert.deepEqual(avisos, ['[categorias] [tema de un posteo del monitoreo] categoría "obras_espacio_publico" no existe -> "Coyuntura / Otros"']);
+
+      modo = 'sinTema';
+      assert.deepEqual(await classifier.clasificarPosteo('Jorge Macri inauguró una escuela'), { ...base, tema: 'Coyuntura / Otros' });
+      assert.equal(avisos.length, 1);
+    } finally {
+      console.warn = originalWarn;
+    }
   });
 
   test('el system prompt desambigua geografía: CABA vs. Ciudad de México, términos ambiguos, señales que no descartan solas, política nacional afuera', () => {
@@ -145,7 +218,7 @@ describe('clasificarPosteo: una sola llamada, con schema', { concurrency: false 
   });
 
   test('fallo de la API o respuesta fuera del schema: sin clasificar, nunca descartado en silencio', async () => {
-    const sinClasificar = { relevant: true, title: null, sentiment: null, motivo: null, unclassified: true };
+    const sinClasificar = { relevant: true, title: null, sentiment: null, tema: null, motivo: null, unclassified: true };
     const errores = [];
     const originalError = console.error;
     console.error = (msg) => errores.push(String(msg));
@@ -188,8 +261,16 @@ describe('evaluateRelevance: el modelo decide, la keyword es una pista', { concu
     assert.equal(r.relevant, true);
     assert.equal(r.title, 'Jorge Macri y la gestión porteña');
     assert.equal(r.sentiment, 'positivo');
+    assert.equal(r.tema, 'Infraestructura');
     assert.equal(r.motivo, 'habla de CABA');
     assert.equal(r.matchedReason, 'Cuenta trackeada: @cuenta (coincidencia: "jorge macri") · habla de CABA');
+  });
+
+  test('cuenta trackeada sin caption: entra sin llamar al modelo, con el tema de fallback', async () => {
+    const antes = llamadas.length;
+    const r = await evaluar({ caption: '  ', sourceType: 'account', account: 'cuenta' });
+    assert.deepEqual(r, { relevant: true, title: 'Sin descripción', sentiment: 'neutral', tema: 'Coyuntura / Otros', matchedReason: 'Cuenta trackeada: @cuenta' });
+    assert.equal(llamadas.length, antes);
   });
 
   test('"Blackri" sin nombrar a Jorge Macri: entra (el prompt lista los apodos como señal a favor)', async () => {
@@ -202,6 +283,7 @@ describe('evaluateRelevance: el modelo decide, la keyword es una pista', { concu
     assert.equal(r.relevant, true);
     assert.equal(r.title, 'Blackri y la gestión porteña');
     assert.equal(r.sentiment, 'negativo');
+    assert.equal(r.tema, 'Transporte');
     assert.equal(r.matchedReason, 'Búsqueda: blackri (relacionado por contenido) · Blackri es Jorge Macri');
     assert.equal(ultima().userPrompt, 'CONTEXTO: llegó por la búsqueda del término "blackri" en Instagram.\nPOSTEO:\nBlackri otra vez de vacaciones mientras el subte no anda');
     assert.match(ultima().system, /"Blackri", "Blacri", "jorgemacri"/);
@@ -241,9 +323,32 @@ describe('evaluateRelevance: el modelo decide, la keyword es una pista', { concu
       ['jorge macri'],
       { platform: x }
     );
-    assert.deepEqual(r, { relevant: true, title: 'Otro tema', sentiment: 'neutral', unclassified: undefined, matchedReason: 'Búsqueda por palabra clave: "Jorge Macri"' });
+    assert.deepEqual(r, { relevant: true, title: 'Otro tema', sentiment: 'neutral', tema: 'Coyuntura / Otros', unclassified: undefined, matchedReason: 'Búsqueda por palabra clave: "Jorge Macri"' });
     assert.match(ultima().system, /posteo de X/);
     assert.equal(ultima().userPrompt, 'CONTEXTO: llegó por la búsqueda del término "Jorge Macri" en X.\nPOSTEO:\nreceta de pan casero');
+  });
+
+  test('el ciclo guarda el tema que devolvió el modelo', async () => {
+    const originals = { isConfigured: instagram.isConfigured, scrapeAccount: instagram.scrapeAccount, scrapeHashtag: instagram.scrapeHashtag, scrapeSearch: instagram.scrapeSearch };
+    instagram.isConfigured = () => true;
+    instagram.scrapeHashtag = async () => [];
+    instagram.scrapeAccount = async () => {
+      throw new Error('la detección de Instagram no consulta cuentas trackeadas');
+    };
+    const ahora = new Date().toISOString();
+    instagram.scrapeSearch = async () => [
+      { id: '9101', url: 'https://www.instagram.com/p/TEMA1/', caption: 'Jorge Macri anunció obras en Caballito', account: 'cuenta', sourceType: 'search', sourceQuery: 'jorge macri', likes: 1, comments: 1, postedAt: ahora },
+      { id: '9102', url: 'https://www.instagram.com/p/TEMA2/', caption: 'Jorge Macri y el subte en CABA', account: 'cuenta', sourceType: 'search', sourceQuery: 'jorge macri', likes: 1, comments: 1, postedAt: ahora },
+    ];
+    const guardado = (id) => db.listDetectedPosts({ plataforma: 'instagram' }).posts.find((p) => p.id === id);
+    try {
+      const result = await monitor.runMonitoringCycle({ plataformas: ['instagram'] });
+      assert.equal(result.porPlataforma.instagram.newCount, 2);
+      assert.equal(guardado('9101').tema, 'Infraestructura');
+      assert.equal(guardado('9102').tema, 'Transporte');
+    } finally {
+      Object.assign(instagram, originals);
+    }
   });
 
   test('ciclo con el modelo caído: el posteo se guarda sin clasificar (motivo base, sin título) y el backfill lo completa después', async () => {
@@ -273,6 +378,7 @@ describe('evaluateRelevance: el modelo decide, la keyword es una pista', { concu
       assert.equal(result.porPlataforma.instagram.newCount, 2, 'los dos se guardaron aunque el modelo haya fallado');
       assert.equal(guardado('9001').title, null);
       assert.equal(guardado('9001').sentiment, null);
+      assert.equal(guardado('9001').tema, null);
       assert.equal(guardado('9001').matched_reason, 'Búsqueda: jorge macri (coincidencia: "jorge macri") — sin clasificar (falló el clasificador, relevancia sin verificar)');
       assert.equal(guardado('9002').matched_reason, 'Búsqueda: jorge macri — sin clasificar (falló el clasificador, relevancia sin verificar)');
 
@@ -289,11 +395,13 @@ describe('evaluateRelevance: el modelo decide, la keyword es una pista', { concu
       } finally {
         console.warn = originalWarn;
       }
-      assert.deepEqual(backfill, { classified: 2, stillPending: 0 });
+      assert.deepEqual(backfill, { classified: 2, temasCompletados: 0, stillPending: 0 });
       assert.equal(guardado('9001').title, 'Jorge Macri y la gestión porteña');
       assert.equal(guardado('9001').sentiment, 'positivo');
+      assert.equal(guardado('9001').tema, 'Infraestructura');
       assert.equal(guardado('9001').matched_reason, 'Búsqueda: jorge macri (coincidencia: "jorge macri") · habla de CABA');
       assert.equal(guardado('9002').title, 'Gobierno nacional');
+      assert.equal(guardado('9002').tema, 'Política', 'también el que el modelo ahora considera no relevante');
       assert.equal(guardado('9002').matched_reason, 'Búsqueda: jorge macri · no relevante según el modelo: política nacional sin relación con CABA');
       assert.deepEqual(avisos, [
         '[monitor] backfill: el modelo considera NO relevante el posteo 9002 de @cuenta (política nacional sin relación con CABA); queda guardado para revisión.',
@@ -301,6 +409,87 @@ describe('evaluateRelevance: el modelo decide, la keyword es una pista', { concu
     } finally {
       Object.assign(instagram, originals);
     }
+  });
+
+  test('backfill de los ya clasificados sin tema: completa SOLO el tema, sin tocar título, sentimiento ni motivo', async () => {
+    const guardar = (id, caption, extra = {}) =>
+      db.saveDetectedPost({
+        id,
+        plataforma: 'instagram',
+        account: 'cuenta',
+        url: `https://www.instagram.com/p/${id.toUpperCase()}/`,
+        caption,
+        matchedReason: 'Búsqueda: jorge macri · motivo de cuando se guardó',
+        likes: 1,
+        comments: 1,
+        postedAt: new Date().toISOString(),
+        title: 'Título de cuando se guardó',
+        sentiment: 'negativo',
+        ...extra,
+      });
+    const fila = (id, plataforma = 'instagram') => db.listDetectedPosts({ plataforma }).posts.find((p) => p.id === id);
+    const sinTocar = (id) => {
+      const p = fila(id);
+      return [p.title, p.sentiment, p.matched_reason];
+    };
+    const ORIGINAL = ['Título de cuando se guardó', 'negativo', 'Búsqueda: jorge macri · motivo de cuando se guardó'];
+
+    guardar('tb1', 'Jorge Macri inauguró una escuela en Lugano');
+    guardar('tb2', 'Milei y Adorni presentaron el presupuesto nacional'); // el modelo hoy diría "no relevante"
+    guardar('tb3', 'Jorge Macri y el subte', { tema: 'Salud' }); // ya tiene tema
+    guardar('tb4', 'Jorge Macri inauguró una plaza');
+    assert.equal(db.ignorePost('tb4', 'instagram'), true);
+    db.saveDetectedPost({ id: 'tbx', plataforma: 'x', account: 'c', url: 'https://x.com/c/status/77', caption: 'Jorge Macri y el subte', matchedReason: 'Búsqueda por palabra clave: "macri"', title: 'Tuit', sentiment: 'neutral' });
+
+    const avisos = [];
+    const originalWarn = console.warn;
+    console.warn = (msg) => avisos.push(String(msg));
+    const originalError = console.error;
+    console.error = () => {};
+    try {
+      llamadas.length = 0;
+      assert.deepEqual(await monitor.backfillClassification('instagram'), { classified: 0, temasCompletados: 2, stillPending: 0 });
+      assert.deepEqual(
+        llamadas.map((req) => req.userPrompt.split('POSTEO:\n')[1]).sort(),
+        ['Jorge Macri inauguró una escuela en Lugano', 'Milei y Adorni presentaron el presupuesto nacional'],
+        'el modelo no se consulta por los que ya tienen tema, los ignorados ni los de otra red'
+      );
+      assert.equal(fila('tb1').tema, 'Educación');
+      assert.deepEqual(sinTocar('tb1'), ORIGINAL);
+      assert.equal(fila('tb2').tema, 'Política');
+      assert.deepEqual(sinTocar('tb2'), ORIGINAL, 'un "no relevante" del modelo no toca un posteo ya clasificado');
+      assert.equal(fila('tb3').tema, 'Salud', 'un tema ya guardado no se pisa');
+      assert.equal(fila('tbx', 'x').tema, null, 'el backfill de Instagram no toca X');
+      assert.deepEqual(avisos, []);
+
+      // Modelo caído: queda pendiente, sin escribir nada.
+      guardar('tb5', 'Jorge Macri recorrió la obra del Paseo del Bajo');
+      modo = 'falla';
+      assert.deepEqual(await monitor.backfillClassification('instagram'), { classified: 0, temasCompletados: 0, stillPending: 1 });
+      assert.equal(fila('tb5').tema, null);
+      assert.deepEqual(sinTocar('tb5'), ORIGINAL);
+      assert.match(avisos[0], /1 posteo\(s\) siguen sin clasificar o sin tema/);
+
+      // Con el modelo de vuelta se completa; una segunda pasada no consulta nada.
+      modo = 'normal';
+      assert.deepEqual(await monitor.backfillClassification('instagram'), { classified: 0, temasCompletados: 1, stillPending: 0 });
+      assert.equal(fila('tb5').tema, 'Infraestructura');
+      const antes = llamadas.length;
+      assert.deepEqual(await monitor.backfillClassification('instagram'), { classified: 0, temasCompletados: 0, stillPending: 0 });
+      assert.equal(llamadas.length, antes);
+    } finally {
+      console.warn = originalWarn;
+      console.error = originalError;
+    }
+  });
+
+  test('updateTema solo completa: no pisa un tema guardado ni toca otra plataforma', () => {
+    db.saveDetectedPost({ id: 'ut1', plataforma: 'instagram', account: 'c', url: 'https://www.instagram.com/p/UT1/', caption: 't', matchedReason: 'm', title: 'T', sentiment: 'neutral' });
+    assert.equal(db.updateTema('ut1', 'Transporte', 'x'), false, 'id de otra plataforma');
+    assert.equal(db.updateTema('ut1', 'Transporte', 'instagram'), true);
+    assert.equal(db.updateTema('ut1', 'Salud', 'instagram'), false, 'ya tenía tema');
+    assert.equal(db.listDetectedPosts({ plataforma: 'instagram' }).posts.find((p) => p.id === 'ut1').tema, 'Transporte');
+    assert.throws(() => db.updateTema('ut1', 'Salud'), /falta plataforma/);
   });
 });
 

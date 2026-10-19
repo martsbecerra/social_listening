@@ -48,6 +48,7 @@ describe('plataforma obligatoria: sin default a instagram', { concurrency: false
     assert.equal(raw.prepare('SELECT COUNT(*) AS n FROM search_seen').get().n, 0);
     assert.throws(() => db.ignorePost('1'), FALTA);
     assert.throws(() => db.updateSentiment('1', 'positivo'), FALTA);
+    assert.throws(() => db.updateTema('1', 'Salud'), FALTA);
 
     // Con plataforma, todo sigue funcionando igual.
     assert.equal(

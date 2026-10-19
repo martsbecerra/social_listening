@@ -631,8 +631,11 @@ app.post('/api/monitoring/run-now', async (req, res) => {
   }
 });
 
-// Genera título + sentimiento para posteos guardados que todavía no lo
-// tienen (posteos de antes de esta funcionalidad, o que fallaron al clasificar).
+// Genera título + sentimiento + tema para posteos guardados que todavía no lo
+// tienen (posteos de antes de esta funcionalidad, o que fallaron al
+// clasificar), y SOLO el tema para los ya clasificados que no lo tienen (los
+// guardados antes de la columna tema). Una llamada al LLM por posteo: con
+// muchos pendientes tarda (el avance sale por consola cada 50).
 app.post('/api/monitoring/backfill-classification', async (req, res) => {
   try {
     const result = await monitor.backfillClassification(monitoringPlataforma(req));

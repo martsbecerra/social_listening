@@ -152,6 +152,15 @@ for (const [column, type] of [
     db.exec(`ALTER TABLE detected_posts ADD COLUMN ${column} ${type}`);
   }
 }
+// Tema del posteo para la sección Estadísticas: el nombre canónico de una
+// categoría de config/categorias-reclamos.json (src/classifier.js), el mismo
+// texto que reclamos.categoria. Sin CHECK a propósito, como en reclamos: la
+// lista la define el cliente en el JSON. NULL = sin dato: posteos guardados
+// antes de esta columna o un fallo del clasificador; backfillClassification
+// lo completa. Anulable y sin tocar las filas guardadas.
+if (!existingColumns.includes('tema')) {
+  db.exec('ALTER TABLE detected_posts ADD COLUMN tema TEXT');
+}
 // Limpieza de datos: Apify devuelve -1 en likesCount cuando el autor ocultó
 // el contador de "me gusta" (centinela documentado del actor, no un error de
 // parseo) — se guardaba tal cual, como si fuera un valor real. Un posteo sin
@@ -174,9 +183,9 @@ const getPostIdByUrlStmt = db.prepare('SELECT id FROM detected_posts WHERE url =
 // posteo ya está, changes === 0 y el llamador lo trata como conocido.
 const insertPostStmt = db.prepare(`
   INSERT OR IGNORE INTO detected_posts
-    (id, account, url, caption, matched_reason, likes, comments, posted_at, detected_at, notified, title, sentiment, post_type, followers, plataforma, retweets, views)
+    (id, account, url, caption, matched_reason, likes, comments, posted_at, detected_at, notified, title, sentiment, tema, post_type, followers, plataforma, retweets, views)
   VALUES
-    (@id, @account, @url, @caption, @matchedReason, @likes, @comments, @postedAt, @detectedAt, 0, @title, @sentiment, @postType, @followers, @plataforma, @retweets, @views)
+    (@id, @account, @url, @caption, @matchedReason, @likes, @comments, @postedAt, @detectedAt, 0, @title, @sentiment, @tema, @postType, @followers, @plataforma, @retweets, @views)
 `);
 // Cada listado/conteo tiene su variante filtrada por plataforma: el filtro es
 // opcional (sin plataforma = todas), así los llamadores existentes no cambian.
@@ -193,15 +202,17 @@ const listPostsPageByPlataformaStmt = db.prepare(
   'SELECT * FROM detected_posts WHERE ignored = 0 AND plataforma = ? ORDER BY detected_at DESC LIMIT ? OFFSET ?'
 );
 const listUnclassifiedStmt = db.prepare(
-  'SELECT id, account, caption, matched_reason FROM detected_posts WHERE title IS NULL AND ignored = 0 ORDER BY detected_at ASC'
+  'SELECT id, account, caption, matched_reason, title FROM detected_posts WHERE (title IS NULL OR tema IS NULL) AND ignored = 0 ORDER BY detected_at ASC'
 );
 const listUnclassifiedByPlataformaStmt = db.prepare(
-  'SELECT id, account, caption, matched_reason FROM detected_posts WHERE title IS NULL AND ignored = 0 AND plataforma = ? ORDER BY detected_at ASC'
+  'SELECT id, account, caption, matched_reason, title FROM detected_posts WHERE (title IS NULL OR tema IS NULL) AND ignored = 0 AND plataforma = ? ORDER BY detected_at ASC'
 );
-const updateClassificationStmt = db.prepare('UPDATE detected_posts SET title = ?, sentiment = ? WHERE id = ?');
+// El tema, en los dos casos, solo se completa: uno ya guardado no se pisa.
+const updateClassificationStmt = db.prepare('UPDATE detected_posts SET title = ?, sentiment = ?, tema = COALESCE(tema, ?) WHERE id = ?');
 const updateClassificationConMotivoStmt = db.prepare(
-  'UPDATE detected_posts SET title = ?, sentiment = ?, matched_reason = ? WHERE id = ?'
+  'UPDATE detected_posts SET title = ?, sentiment = ?, tema = COALESCE(tema, ?), matched_reason = ? WHERE id = ?'
 );
+const updateTemaStmt = db.prepare('UPDATE detected_posts SET tema = ? WHERE id = ? AND plataforma = ? AND tema IS NULL');
 // Las acciones de la tabla (ignorar, corregir sentimiento) van por id Y
 // plataforma: desde la solapa de Instagram no se toca un posteo de X aunque
 // se conozca su id (los ids ya son únicos entre redes, esto es el contrato).
@@ -971,6 +982,7 @@ function saveDetectedPost(post) {
     detectedAt: new Date().toISOString(),
     title: post.title || null,
     sentiment: post.sentiment || null,
+    tema: post.tema || null,
     postType: post.postType || null,
     followers: post.followers ?? null,
     plataforma,
@@ -996,25 +1008,40 @@ function listDetectedPosts({ page = 1, pageSize = 20, plataforma } = {}) {
 }
 
 /**
- * Posteos guardados a los que todavía no se les generó título/sentimiento
- * (posteos viejos de antes de esta funcionalidad, o alguno que falló al
- * clasificar). Sirve para el "backfill" manual.
+ * Posteos guardados (no ignorados) a los que les falta algo de la
+ * clasificación: título/sentimiento (posteos viejos de antes de esta
+ * funcionalidad, o alguno que falló al clasificar) o el tema (los guardados
+ * antes de la columna tema). Trae `title` para que el backfill sepa qué
+ * completar en cada fila. Sirve para el "backfill" manual.
  */
 function listUnclassified({ plataforma } = {}) {
   return plataforma ? listUnclassifiedByPlataformaStmt.all(plataforma) : listUnclassifiedStmt.all();
 }
 
 /**
- * Completa título y sentimiento de un posteo (backfill). Con `matchedReason`
- * también reescribe matched_reason (el backfill le suma el motivo del modelo
- * y le saca la marca "sin clasificar"); sin él, no lo toca.
+ * Completa título, sentimiento y tema de un posteo sin clasificar
+ * (backfill); el tema solo si estaba vacío. Con `matchedReason` también
+ * reescribe matched_reason (el backfill le suma el motivo del modelo y le
+ * saca la marca "sin clasificar"); sin él, no lo toca.
  */
-function updateClassification(id, { title, sentiment, matchedReason }) {
+function updateClassification(id, { title, sentiment, tema = null, matchedReason }) {
   if (matchedReason === undefined) {
-    updateClassificationStmt.run(title, sentiment, id);
+    updateClassificationStmt.run(title, sentiment, tema, id);
   } else {
-    updateClassificationConMotivoStmt.run(title, sentiment, matchedReason, id);
+    updateClassificationConMotivoStmt.run(title, sentiment, tema, matchedReason, id);
   }
+}
+
+/**
+ * Completa SOLO el tema de un posteo ya clasificado (backfill de los
+ * guardados antes de la columna): no toca título, sentimiento ni
+ * matched_reason, y un tema ya guardado no se pisa. Solo si el posteo es de
+ * ESA plataforma.
+ * @returns {boolean} true si se escribió el tema.
+ */
+function updateTema(id, tema, plataforma) {
+  requirePlataforma(plataforma, 'updateTema');
+  return updateTemaStmt.run(tema, id, plataforma).changes > 0;
 }
 
 /**
@@ -1805,6 +1832,7 @@ module.exports = {
   countRecentPosts,
   listUnclassified,
   updateClassification,
+  updateTema,
   updateSentiment,
   ignorePost,
   getPostIgnoreState,

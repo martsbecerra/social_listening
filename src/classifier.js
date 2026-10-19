@@ -2,12 +2,25 @@
 // classifier.js
 // --------------------------------------------------------------------------
 // Clasificación de un posteo del monitoreo en UNA llamada al LLM: relevancia
-// (¿habla de Jorge Macri o de la gestión de la Ciudad?), título, sentimiento
-// y el MOTIVO de la decisión (una frase corta que queda en matched_reason,
-// para auditar por qué entró o salió cada posteo). Una sola función,
-// clasificarPosteo, para todas las
+// (¿habla de Jorge Macri o de la gestión de la Ciudad?), título, sentimiento,
+// TEMA y el MOTIVO de la decisión (una frase corta que queda en
+// matched_reason, para auditar por qué entró o salió cada posteo). Una sola
+// función, clasificarPosteo, para todas las
 // plataformas (Instagram, X, ...): solo cambia la etiqueta de la red en el
 // prompt (platformLabel).
+//
+// El tema alimenta la sección Estadísticas y es una categoría de primer nivel
+// del mapa de reclamos (config/categorias-reclamos.json, vía
+// categoriasConfig): así el tema de un posteo y la categoría de un reclamo
+// hablan el mismo idioma. El enum del schema y las líneas del prompt (cada
+// categoría con sus subcategorías) se arman de esa lista al cargar, como el
+// análisis de publicación (src/analysisSchema.js, src/prompt.js): si el
+// cliente cambia el JSON, el clasificador cambia solo. Viene en la misma
+// llamada, sin modelo ni llamada aparte, y se pide siempre, también cuando
+// relevant es false (ahí no se usa). Lo que devuelve el modelo pasa por
+// normalizeClasificacion, el mismo camino que la categoría de un reclamo:
+// mayúsculas, acentos y alias se resuelven, y lo que no existe cae en el
+// fallback ("Coyuntura / Otros").
 //
 // Antes había dos caminos y ninguno verificaba geografía: con una keyword
 // literal en el caption el posteo entraba sin preguntarle nada al modelo
@@ -27,7 +40,7 @@
 //
 // SOBRE LOS FALLOS: un error del LLM, una respuesta que no cumple el schema
 // o un "relevant" que no es booleano devuelven unclassified:true y el posteo
-// se guarda igual, con title/sentiment en null → la UI lo muestra como
+// se guarda igual, con title/sentiment/tema en null → la UI lo muestra como
 // "(sin clasificar)" y backfillClassification lo reintenta después.
 // Preferimos ruido visible a pérdida silenciosa. Un relevant:false del
 // modelo, en cambio, es una respuesta legítima y sí descarta.
@@ -36,12 +49,26 @@
 // Por el objeto del módulo (no destructurado): los tests stubean
 // llm.requestStructuredAnalysis para ejercitar esta función sin red.
 const llm = require('./llm');
+const { listCategorias, subcategoriasDe, normalizeClasificacion, CATEGORIA_FALLBACK } = require('./categoriasConfig');
 
 const VALID_SENTIMENTS = ['positivo', 'neutral', 'negativo'];
+// Temas posibles: los nombres canónicos de las categorías de reclamos, en el
+// orden del JSON. Es lo que se guarda en detected_posts.tema y lo que
+// Estadísticas muestra, sin mapa de nombres aparte.
+const TEMAS = listCategorias();
+// Una línea por categoría con sus subcategorías como descripción, tal cual
+// están en el JSON (los ejemplos entre paréntesis ayudan a clasificar). Con
+// la lista de octubre 2026 (26 categorías, 85 subcategorías) la sección TEMA
+// suma unos 5.700 caracteres al system prompt, del orden de 1.500 tokens de
+// entrada más por clasificación; el schema solo lleva los nombres.
+const TEMAS_PARA_PROMPT = TEMAS.map((nombre) => {
+  const subs = subcategoriasDe(nombre);
+  return subs.length > 0 ? `- ${nombre}: ${subs.join('; ')}` : `- ${nombre}`;
+}).join('\n');
 const DEFAULT_PLATFORM_LABEL = 'Instagram';
 const MAX_CAPTION_CHARS = 2000;
-// Un título de hasta 10 palabras, el sentimiento, un motivo de hasta 12 y el
-// JSON: sobra con esto.
+// Un título de hasta 10 palabras, el sentimiento, el tema, un motivo de hasta
+// 12 y el JSON: sobra con esto.
 const MAX_TOKENS = 300;
 // Una clasificación tarda segundos; si en un minuto no llegó, el proveedor
 // está trabado. El provider aborta la request y reintenta una vez (ver
@@ -54,7 +81,7 @@ const SCHEMA_NAME = 'clasificacion_posteo';
 const CLASIFICACION_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['relevant', 'title', 'sentiment', 'motivo'],
+  required: ['relevant', 'title', 'sentiment', 'tema', 'motivo'],
   properties: {
     relevant: {
       type: 'boolean',
@@ -62,6 +89,12 @@ const CLASIFICACION_SCHEMA = {
     },
     title: { type: 'string', description: 'De qué habla el posteo, en español, máximo 10 palabras' },
     sentiment: { type: 'string', enum: VALID_SENTIMENTS },
+    tema: {
+      type: 'string',
+      // Generado desde config/categorias-reclamos.json, nunca escrito a mano.
+      enum: TEMAS,
+      description: `Categoría del tema central del posteo, de la lista TEMA del prompt; "${CATEGORIA_FALLBACK}" si no encaja en ninguna`,
+    },
     motivo: { type: 'string', description: 'Razón de la decisión en una frase corta (máximo 12 palabras), para auditoría' },
   },
 };
@@ -95,10 +128,16 @@ TAMBIÉN SE DESCARTA
 PISTA DE CONTEXTO
 El mensaje puede incluir una línea "CONTEXTO" con cómo llegó el posteo: contiene un término de nuestra lista de seguimiento, viene de una cuenta trackeada, de un hashtag o de una búsqueda. Los términos de la lista son una guía, no una señal fuerte ni una garantía: explican por qué el posteo llegó hasta acá, pero la decisión es tuya por el contenido; un término de la lista en un posteo de otra ciudad o sin relación con la gestión sigue siendo no relevante. Venir de una cuenta trackeada es una señal débil: las cuentas de política general publican mucho contenido nacional sin relación con la gestión porteña, así que eso solo no alcanza para darlo por relevante.
 
+TEMA
+El tema central del posteo: una de estas categorías, copiada tal cual (respetá mayúsculas y acentos). Si toca varias, la que más pesa en el posteo. Después de cada categoría van sus subcategorías: están escritas como reclamos, pero acá describen el tema, así que un anuncio, un logro o un elogio va en la misma categoría que una crítica sobre lo mismo.
+${TEMAS_PARA_PROMPT}
+Si no encaja en ninguna, "${CATEGORIA_FALLBACK}".
+
 RESPUESTA (JSON según el schema)
 - relevant: true solo si habla de Jorge Macri o de la gestión de CABA según lo de arriba.
 - title: frase corta (máximo 10 palabras) en español de qué habla el posteo. Siempre, también si relevant es false.
 - sentiment: cómo retrata a Jorge Macri o a su gestión. "positivo" si lo muestra favorablemente o destaca un logro; "negativo" si lo critica, cuestiona o muestra un hecho desfavorable; "neutral" si es informativo, no queda claro o relevant es false. Ante la duda, "neutral".
+- tema: una de las categorías de TEMA, copiada tal cual. Siempre, también si relevant es false: la más cercana, o "${CATEGORIA_FALLBACK}".
 - motivo: una frase corta (máximo 12 palabras) con la razón de la decisión, para auditoría. Ejemplos: "habla de una obra en CABA", "es de la Ciudad de México", "Mauricio Macri sin relación con la gestión porteña", "menciona a Sheinbaum pero critica a Jorge Macri".`;
 }
 
@@ -123,13 +162,13 @@ function buildUserPrompt(caption, { pista, platformLabel }) {
 
 /**
  * Resultado cuando no se pudo clasificar (API caída, respuesta fuera del
- * schema). relevant:true para que el posteo se guarde; title y sentiment en
- * null a propósito: es lo que hace que aparezca como "(sin clasificar)" en la
- * tabla y que listUnclassified() lo agarre en el próximo backfill (su
- * criterio es title IS NULL).
+ * schema). relevant:true para que el posteo se guarde; title, sentiment y
+ * tema en null a propósito: es lo que hace que aparezca como "(sin
+ * clasificar)" en la tabla y que listUnclassified() lo agarre en el próximo
+ * backfill (su criterio es title IS NULL o tema IS NULL).
  */
 function unclassifiedResult() {
-  return { relevant: true, title: null, sentiment: null, motivo: null, unclassified: true };
+  return { relevant: true, title: null, sentiment: null, tema: null, motivo: null, unclassified: true };
 }
 
 /** Log uniforme, distinguiendo el tipo de fallo para poder diagnosticar. */
@@ -143,19 +182,22 @@ function logClassifierFailure(err) {
 
 /**
  * Clasifica un caption en una sola llamada: relevancia + título + sentimiento
- * + motivo. Si el LLM falla o responde algo fuera del schema, devuelve
+ * + tema + motivo. Si el LLM falla o responde algo fuera del schema, devuelve
  * unclassified:true en vez de inventar un "neutral" o un "no relevante".
  * @param {string} caption
  * @param {{ platformLabel?: string, pista?: object|null }} [options]
  *   platformLabel: etiqueta de la red para el prompt; pista: cómo llegó el
  *   posteo (ver renderContexto), va como contexto para el modelo.
- * @returns {Promise<{ relevant: boolean, title: string|null, sentiment: string|null, motivo: string|null, unclassified?: true }>}
+ * @returns {Promise<{ relevant: boolean, title: string|null, sentiment: string|null, tema: string|null, motivo: string|null, unclassified?: true }>}
+ *   tema: una de TEMAS (nombre canónico de la categoría); null solo si no
+ *   se pudo clasificar.
  */
 async function clasificarPosteo(caption, { platformLabel = DEFAULT_PLATFORM_LABEL, pista = null } = {}) {
   if (!caption || !caption.trim()) {
     // Nada que evaluar; quien llama decide qué hacer con un posteo sin texto
-    // (evaluateRelevance ni siquiera llega acá).
-    return { relevant: false, title: 'Sin descripción', sentiment: 'neutral', motivo: null };
+    // (evaluateRelevance ni siquiera llega acá). El backfill sí puede llegar
+    // con uno viejo: con el tema de fallback no queda pendiente para siempre.
+    return { relevant: false, title: 'Sin descripción', sentiment: 'neutral', tema: CATEGORIA_FALLBACK, motivo: null };
   }
 
   try {
@@ -173,19 +215,23 @@ async function clasificarPosteo(caption, { platformLabel = DEFAULT_PLATFORM_LABE
     }
     const title = typeof parsed.title === 'string' && parsed.title.trim() ? parsed.title.trim() : null;
     const sentiment = VALID_SENTIMENTS.includes(parsed.sentiment) ? parsed.sentiment : 'neutral';
+    // Con structured outputs el enum viene garantizado; sin él (el respaldo
+    // json_object de OpenRouter) puede llegar otra cosa. Mismo camino que la
+    // categoría de un reclamo: lo que no existe cae en el fallback, con aviso.
+    const { categoria: tema } = normalizeClasificacion({ categoria: parsed.tema, contexto: 'tema de un posteo del monitoreo' });
     const motivo = typeof parsed.motivo === 'string' && parsed.motivo.trim() ? parsed.motivo.trim() : null;
 
-    if (!parsed.relevant) return { relevant: false, title, sentiment, motivo };
+    if (!parsed.relevant) return { relevant: false, title, sentiment, tema, motivo };
 
     // Dijo que es relevante pero no dio título: sirve como hallazgo, no como
     // clasificación — se guarda para reintentar el título después.
     if (!title) return unclassifiedResult();
 
-    return { relevant: true, title, sentiment, motivo };
+    return { relevant: true, title, sentiment, tema, motivo };
   } catch (err) {
     logClassifierFailure(err);
     return unclassifiedResult();
   }
 }
 
-module.exports = { clasificarPosteo, systemPrompt, CLASIFICACION_SCHEMA };
+module.exports = { clasificarPosteo, systemPrompt, CLASIFICACION_SCHEMA, TEMAS };
