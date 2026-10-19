@@ -323,8 +323,8 @@ log en `logs/`, QuickEdit apagado).
 `src/classifier.js` tiene UNA función, `clasificarPosteo(caption, {
 platformLabel, pista })`: una llamada con schema
 (`llm.requestStructuredAnalysis`, `maxTokens` 300, `timeoutMs` 60000) que
-devuelve `relevant`, `title`, `sentiment` y `motivo`, con el modelo de
-análisis. En `openrouterProvider.js` toda request lleva timeout (default
+devuelve `relevant`, `title`, `sentiment`, `tema` y `motivo`, con el modelo
+de análisis. En `openrouterProvider.js` toda request lleva timeout (default
 5 min; el clasificador pasa 60 s) y un fallo transitorio (429, 408, 5xx,
 red, timeout) se reintenta UNA vez a los 3 s (`LLM_RETRY_DELAY_MS` solo para
 tests); 400/401/402 no. Con Anthropic el timeout va al SDK, que ya
@@ -347,10 +347,38 @@ clasificador, relevancia sin verificar)`), nunca descarte silencioso;
 `relevant: false` sí descarta y se loguea `[clasificador] descartado (<red>)
 @cuenta <url>: <motivo>`. `matched_reason` = motivo base + ` · <motivo>`. X
 en stand by: `sourceType 'keyword'` entra directo (título y sentimiento,
-`relevant` ignorado, sin motivo). El backfill completa título, sentimiento y
-motivo y no borra: si el modelo dice no relevante, deja `no relevante según
-el modelo: <motivo>`. Los tests stubean `llm.requestStructuredAnalysis` (por
-el objeto del módulo) o `classifier.clasificarPosteo`; nunca el modelo real.
+`relevant` ignorado, sin motivo). Los tests stubean
+`llm.requestStructuredAnalysis` (por el objeto del módulo) o
+`classifier.clasificarPosteo`; nunca el modelo real.
+
+**Tema** (para Estadísticas, desde octubre 2026): es una categoría de
+primer nivel del mapa de reclamos, `config/categorias-reclamos.json` vía
+`src/categoriasConfig.js` (26 hoy), el mismo texto que `reclamos.categoria`:
+el tema de un posteo y la categoría de un reclamo hablan el mismo idioma.
+NO hay enum ni mapa de nombres propio: el enum del schema (`TEMAS`) y la
+sección TEMA del system prompt (una línea por categoría con sus
+subcategorías, tal cual del JSON) se arman al cargar, como en
+`analysisSchema.js` / `prompt.js`; Estadísticas muestra los nombres del
+JSON. Esa sección suma unos 5.700 caracteres (~1.500 tokens) de entrada por
+clasificación. Se pide siempre, también con `relevant: false`. Lo que
+devuelve el modelo pasa por `normalizeClasificacion` (acentos, mayúsculas y
+alias; lo que no existe o falta → "Coyuntura / Otros", con aviso
+`[categorias]`); caption vacío → "Coyuntura / Otros" sin llamar al modelo.
+Fallo o schema roto → `tema` null, como `title` y `sentiment`. Se guarda en
+`detected_posts.tema` (TEXT, anulable, sin CHECK); null es "sin dato" (la
+sección Estadísticas, cuando exista, lo va a contar como "Coyuntura /
+Otros").
+
+**Backfill** (`POST /api/monitoring/backfill-classification`,
+`monitor.backfillClassification`): levanta los posteos no ignorados de la
+plataforma sin título O sin tema (`db.listUnclassified`). A los sin título
+les completa título, sentimiento, tema y motivo y no borra: si el modelo
+dice no relevante, deja `no relevante según el modelo: <motivo>`. A los ya
+clasificados sin tema les completa SOLO el tema (`db.updateTema`, que no
+pisa uno guardado), sin tocar título, sentimiento ni `matched_reason`. Una
+llamada al LLM por posteo, de a una (avance por consola cada 50); devuelve
+`{ classified, temasCompletados, stillPending }`. Lo corre el dueño, nunca
+un agente: cuesta una clasificación por posteo pendiente.
 
 ## Vista Feed del Monitoreo (solo Instagram)
 

@@ -407,11 +407,12 @@ como llegaba y `/API/...` pasaba sin sesión hasta el handler. Test:
 
 - **`src/classifier.js`**: acá vive el llamado al LLM del monitoreo, una
   sola función, `clasificarPosteo`: en una llamada con schema (structured
-  outputs) devuelve `relevant`, `title`, `sentiment` y `motivo`, con el
-  mismo modelo que el análisis de publicación (Sonnet; ya no hay un modelo
-  clasificador aparte). Todo a partir del caption, no de los comentarios de
-  la gente (eso sigue siendo un análisis aparte, manual, en "Análisis de
-  publicación"). Si el clasificador falla, el posteo no se descarta: se
+  outputs) devuelve `relevant`, `title`, `sentiment`, `tema` y `motivo`, con
+  el mismo modelo que el análisis de publicación (Sonnet; ya no hay un modelo
+  clasificador aparte). El `tema` es una categoría del mapa de reclamos
+  (ver "Clasificación con contexto"). Todo a partir del caption, no de los
+  comentarios de la gente (eso sigue siendo un análisis aparte, manual, en
+  "Análisis de publicación"). Si el clasificador falla, el posteo no se descarta: se
   guarda marcado como "sin clasificar" para revisarlo a mano (ver "Cuando
   falla el clasificador del monitoreo", más abajo).
 
@@ -1752,9 +1753,33 @@ Ahora:
   "pdlc") · habla de la Policía de la Ciudad en CABA`), visible en
   `GET /api/monitoring/posts` y en la base. Un descarte se loguea
   `[clasificador] descartado (<red>) @cuenta <url>: <motivo>`. El backfill
-  completa título, sentimiento y motivo; si el modelo dice que un posteo ya
-  guardado no es relevante, no lo borra: deja `no relevante según el
-  modelo: <motivo>` y avisa por consola.
+  completa título, sentimiento, tema y motivo; si el modelo dice que un
+  posteo ya guardado no es relevante, no lo borra: deja `no relevante según
+  el modelo: <motivo>` y avisa por consola.
+- **Tema del posteo** (octubre 2026, para la sección Estadísticas): en la
+  misma llamada el modelo elige el tema central del posteo entre las
+  **categorías de primer nivel del mapa de reclamos**
+  (`config/categorias-reclamos.json`, las mismas 26 que usa la categoría de
+  un reclamo), así los dos hablan el mismo idioma. No hay una lista propia:
+  el enum del schema y las líneas del prompt (cada categoría con sus
+  subcategorías como descripción) se arman al cargar desde ese JSON, y
+  Estadísticas muestra esos mismos nombres. Si no encaja en ninguna,
+  "Coyuntura / Otros". Se pide también cuando el posteo no es relevante
+  (ahí no se usa). Lo que devuelve el modelo pasa por la misma validación
+  que la categoría de un reclamo (`normalizeClasificacion`): un valor que no
+  existe cae en "Coyuntura / Otros". Se guarda en `detected_posts.tema`;
+  `NULL` quiere decir sin dato (posteos de antes de la columna o un fallo
+  del clasificador). Costo: la lista suma unos 5.700 caracteres (del orden
+  de 1.500 tokens) de entrada a cada clasificación.
+- **Completar el tema de los posteos ya guardados**: el mismo backfill
+  (`POST /api/monitoring/backfill-classification?plataforma=instagram`)
+  levanta también los posteos ya clasificados que no tienen tema y les
+  completa **solo** el tema, sin tocar título, sentimiento ni
+  `matched_reason` (aunque el modelo ahora diga que no es relevante). Es
+  una llamada al LLM por posteo, de a una: con cientos de posteos tarda un
+  buen rato, y el avance sale por consola cada 50. Devuelve
+  `{ classified, temasCompletados, stillPending }`. Lo corre el dueño
+  cuando decide gastarlo.
 - **X en stand by**: lo que llega por búsqueda por término de X sigue
   entrando directo (título y sentimiento del modelo, `relevant` ignorado,
   sin motivo).
@@ -1773,7 +1798,9 @@ en `NULL`, y eso significa "sin clasificar":
 - En la tabla aparece con la píldora gris **Sin clasificar** (borde punteado) y
   título `(sin clasificar)`. Hay un filtro `Sin clasificar` para encontrarlos.
 - El sentimiento se puede corregir a mano desde el desplegable de siempre.
-- `backfillClassification()` los reintenta solo: su criterio es `title IS NULL`.
+- `backfillClassification()` los reintenta cuando se lo llama: su criterio
+  es `title IS NULL` (o `tema IS NULL`, para completar solo el tema de los ya
+  clasificados).
 
 La contrapartida es ruido: un posteo que llegó por hashtag y no se pudo
 evaluar entra igual, con `matched_reason` avisando que la relevancia quedó sin
