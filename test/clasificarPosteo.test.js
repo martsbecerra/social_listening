@@ -35,7 +35,7 @@ const assert = require('node:assert/strict');
 // El LLM se stubea en la capa src/llm (por el objeto del módulo) ANTES de
 // cargar el clasificador y monitor.js.
 const llm = require('../src/llm');
-let modo = 'normal'; // 'normal' | 'falla' | 'ilegible'
+let modo = 'normal'; // 'normal' | 'falla' | 'ilegible' | 'temaFuera' | 'sinTema'
 const llamadas = [];
 llm.requestStructuredAnalysis = async (req) => {
   llamadas.push(req);
@@ -45,12 +45,31 @@ llm.requestStructuredAnalysis = async (req) => {
     throw e;
   }
   if (modo === 'ilegible') return { parsed: { relevant: 'sí', title: 'x', sentiment: 'neutral' }, usage: null, attempts: 1 };
-  return { parsed: modeloDeReglas(req.userPrompt), usage: null, attempts: 1 };
+  const parsed = modeloDeReglas(req.userPrompt);
+  // Lo que puede mandar un modelo sin structured outputs (el respaldo
+  // json_object de OpenRouter): un tema que no es de la lista, o ninguno.
+  if (modo === 'temaFuera') parsed.tema = 'Transporte';
+  if (modo === 'sinTema') delete parsed.tema;
+  return { parsed, usage: null, attempts: 1 };
 };
 
 /** "Modelo" de mentira: aplica sobre el caption las reglas que el prompt le pide al real. */
 function modeloDeReglas(userPrompt) {
   const texto = (userPrompt.split('POSTEO:\n')[1] || '').toLowerCase();
+  return { ...decisionDeReglas(texto), tema: temaDeReglas(texto) };
+}
+
+/** El tema, con palabras de las líneas de TEMA del prompt. */
+function temaDeReglas(texto) {
+  if (/milei|adorni/.test(texto)) return 'politica';
+  if (/subte|colectivo/.test(texto)) return 'transporte';
+  if (/obra|plaza|paseo del bajo/.test(texto)) return 'obras_espacio_publico';
+  if (/escuela/.test(texto)) return 'cultura_educacion';
+  if (/seguridad|policía|pdlc/.test(texto)) return 'seguridad';
+  return 'otros';
+}
+
+function decisionDeReglas(texto) {
   if (/blackri|blacri/.test(texto)) {
     return { relevant: true, title: 'Blackri y la gestión porteña', sentiment: 'negativo', motivo: 'Blackri es Jorge Macri' };
   }
@@ -92,16 +111,17 @@ describe('clasificarPosteo: una sola llamada, con schema', { concurrency: false 
       platformLabel: 'Instagram',
       pista: { termino: 'jorge macri', cuenta: 'cuenta' },
     });
-    assert.deepEqual(r, { relevant: true, title: 'Jorge Macri y la gestión porteña', sentiment: 'positivo', motivo: 'habla de CABA' });
+    assert.deepEqual(r, { relevant: true, title: 'Jorge Macri y la gestión porteña', sentiment: 'positivo', tema: 'cultura_educacion', motivo: 'habla de CABA' });
 
     assert.equal(llamadas.length, 1);
     const req = ultima();
     assert.equal(req.schemaName, 'clasificacion_posteo');
     assert.equal(req.maxTokens, 300);
     assert.equal(req.schema.additionalProperties, false);
-    assert.deepEqual(req.schema.required, ['relevant', 'title', 'sentiment', 'motivo']);
+    assert.deepEqual(req.schema.required, ['relevant', 'title', 'sentiment', 'tema', 'motivo']);
     assert.match(req.system, /motivo: una frase corta/);
     assert.deepEqual(req.schema.properties.sentiment.enum, ['positivo', 'neutral', 'negativo']);
+    assert.deepEqual(req.schema.properties.tema.enum, classifier.TEMAS);
     assert.match(req.system, /posteo de Instagram/);
     assert.equal(
       req.userPrompt,
@@ -112,15 +132,53 @@ describe('clasificarPosteo: una sola llamada, con schema', { concurrency: false 
 
   test('sin pista no hay línea CONTEXTO; el caption se recorta a 2000 caracteres; sin caption no llama al modelo', async () => {
     const r = await classifier.clasificarPosteo('receta de pan casero');
-    assert.deepEqual(r, { relevant: false, title: 'Otro tema', sentiment: 'neutral', motivo: 'no habla de la Ciudad' });
+    assert.deepEqual(r, { relevant: false, title: 'Otro tema', sentiment: 'neutral', tema: 'otros', motivo: 'no habla de la Ciudad' });
     assert.equal(ultima().userPrompt, 'POSTEO:\nreceta de pan casero');
 
     await classifier.clasificarPosteo('a'.repeat(3000));
     assert.equal(ultima().userPrompt.length, 'POSTEO:\n'.length + 2000);
 
     const antes = llamadas.length;
-    assert.deepEqual(await classifier.clasificarPosteo('   '), { relevant: false, title: 'Sin descripción', sentiment: 'neutral', motivo: null });
+    assert.deepEqual(await classifier.clasificarPosteo('   '), { relevant: false, title: 'Sin descripción', sentiment: 'neutral', tema: 'otros', motivo: null });
     assert.equal(llamadas.length, antes, 'sin texto no hay nada que preguntar');
+  });
+
+  test('tema: lista fija, una línea por tema en el prompt, y viene también cuando relevant es false', async () => {
+    assert.deepEqual(classifier.TEMAS, [
+      'transporte',
+      'obras_espacio_publico',
+      'seguridad',
+      'inundaciones_clima',
+      'impuestos_economia',
+      'cultura_educacion',
+      'salud',
+      'politica',
+      'otros',
+    ]);
+    assert.deepEqual(classifier.CLASIFICACION_SCHEMA.properties.tema.enum, classifier.TEMAS);
+
+    const s = classifier.systemPrompt('Instagram');
+    const seccion = s.split('\nTEMA\n')[1].split('\nRESPUESTA')[0];
+    for (const tema of classifier.TEMAS) {
+      assert.match(seccion, new RegExp(`^- ${tema}: \\S`, 'm'), `falta la línea de ${tema}`);
+    }
+    assert.equal(seccion.match(/^- /gm).length, classifier.TEMAS.length, 'una línea por tema, ni una más');
+    assert.match(seccion, /Si toca varios, el que más pesa/);
+    assert.match(seccion, /^- transporte: .*subte.*colectivos.*bicisendas.*estacionamiento/m);
+    assert.match(seccion, /^- obras_espacio_publico: .*obras.*bacheo.*veredas.*plazas/m);
+    assert.match(seccion, /^- impuestos_economia: .*ABL.*tarifas.*presupuesto/m);
+    assert.match(s.split('\nRESPUESTA')[1], /^- tema: uno de la lista TEMA.*también si relevant es false/m);
+
+    const r = await classifier.clasificarPosteo('Milei y Adorni presentaron el presupuesto nacional');
+    assert.deepEqual(r, { relevant: false, title: 'Gobierno nacional', sentiment: 'neutral', tema: 'politica', motivo: 'política nacional sin relación con CABA' });
+  });
+
+  test('un tema fuera de la lista, o ninguno, queda en null sin marcar el posteo como sin clasificar', async () => {
+    const esperado = { relevant: true, title: 'Jorge Macri y la gestión porteña', sentiment: 'positivo', tema: null, motivo: 'habla de CABA' };
+    modo = 'temaFuera';
+    assert.deepEqual(await classifier.clasificarPosteo('Jorge Macri inauguró una escuela'), esperado);
+    modo = 'sinTema';
+    assert.deepEqual(await classifier.clasificarPosteo('Jorge Macri inauguró una escuela'), esperado);
   });
 
   test('el system prompt desambigua geografía: CABA vs. Ciudad de México, términos ambiguos, señales que no descartan solas, política nacional afuera', () => {
@@ -145,7 +203,7 @@ describe('clasificarPosteo: una sola llamada, con schema', { concurrency: false 
   });
 
   test('fallo de la API o respuesta fuera del schema: sin clasificar, nunca descartado en silencio', async () => {
-    const sinClasificar = { relevant: true, title: null, sentiment: null, motivo: null, unclassified: true };
+    const sinClasificar = { relevant: true, title: null, sentiment: null, tema: null, motivo: null, unclassified: true };
     const errores = [];
     const originalError = console.error;
     console.error = (msg) => errores.push(String(msg));
