@@ -51,6 +51,7 @@
 const fs = require('fs');
 const path = require('path');
 const { clasificarPosteo } = require('./classifier');
+const { CATEGORIA_FALLBACK } = require('./categoriasConfig');
 const { checkAndLogJump } = require('./viralJumpDetector');
 const { getPlatform, listPlatformIds, DEFAULT_PLATFORM_ID } = require('./platforms');
 const { isPlatformError } = require('./platforms/errors');
@@ -612,7 +613,15 @@ async function evaluateRelevance(post, keywords, { platform } = {}) {
 
   if (!post.caption || !post.caption.trim()) {
     if (post.sourceType === 'account') {
-      return { relevant: true, title: 'Sin descripción', sentiment: 'neutral', matchedReason: `Cuenta trackeada: @${post.account}` };
+      // Sin texto no hay de qué sacar un tema: el de fallback, igual que el
+      // clasificador con un caption vacío.
+      return {
+        relevant: true,
+        title: 'Sin descripción',
+        sentiment: 'neutral',
+        tema: CATEGORIA_FALLBACK,
+        matchedReason: `Cuenta trackeada: @${post.account}`,
+      };
     }
     return { relevant: false };
   }
@@ -621,7 +630,7 @@ async function evaluateRelevance(post, keywords, { platform } = {}) {
 
   if (post.sourceType === 'keyword') {
     const term = post.sourceQuery || literalMatch;
-    const { title, sentiment, unclassified } = await clasificarPosteo(post.caption, { platformLabel, pista: { busqueda: term } });
+    const { title, sentiment, tema, unclassified } = await clasificarPosteo(post.caption, { platformLabel, pista: { busqueda: term } });
     let base = 'Búsqueda por palabra clave';
     if (term) {
       base = String(term).startsWith('#')
@@ -632,6 +641,7 @@ async function evaluateRelevance(post, keywords, { platform } = {}) {
       relevant: true,
       title,
       sentiment,
+      tema,
       unclassified,
       matchedReason: unclassified ? `${base} — sin clasificar` : base,
     };
@@ -668,6 +678,7 @@ async function evaluateRelevance(post, keywords, { platform } = {}) {
       relevant: true,
       title: null,
       sentiment: null,
+      tema: null,
       unclassified: true,
       matchedReason: `${sinVerificar} — sin clasificar (falló el clasificador, relevancia sin verificar)`,
     };
@@ -686,6 +697,7 @@ async function evaluateRelevance(post, keywords, { platform } = {}) {
     relevant: true,
     title: result.title,
     sentiment: result.sentiment,
+    tema: result.tema,
     motivo: result.motivo || null,
     matchedReason: result.motivo ? `${base} · ${result.motivo}` : base,
   };
@@ -1188,6 +1200,7 @@ async function runMonitoringCycle({ plataformas, trigger } = {}) {
         plataforma: platformId,
         title: evaluation.title,
         sentiment: evaluation.sentiment,
+        tema: evaluation.tema,
         matchedReason: evaluation.matchedReason,
         // Snapshot de seguidores: el dato que vino con el posteo (apidojo)
         // o, si no, la caché account_followers (nunca un llamado al scraper

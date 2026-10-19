@@ -152,6 +152,15 @@ for (const [column, type] of [
     db.exec(`ALTER TABLE detected_posts ADD COLUMN ${column} ${type}`);
   }
 }
+// Tema del posteo para la sección Estadísticas: el nombre canónico de una
+// categoría de config/categorias-reclamos.json (src/classifier.js), el mismo
+// texto que reclamos.categoria. Sin CHECK a propósito, como en reclamos: la
+// lista la define el cliente en el JSON. NULL = sin dato: posteos guardados
+// antes de esta columna o un fallo del clasificador; backfillClassification
+// lo completa. Anulable y sin tocar las filas guardadas.
+if (!existingColumns.includes('tema')) {
+  db.exec('ALTER TABLE detected_posts ADD COLUMN tema TEXT');
+}
 // Limpieza de datos: Apify devuelve -1 en likesCount cuando el autor ocultó
 // el contador de "me gusta" (centinela documentado del actor, no un error de
 // parseo) — se guardaba tal cual, como si fuera un valor real. Un posteo sin
@@ -174,9 +183,9 @@ const getPostIdByUrlStmt = db.prepare('SELECT id FROM detected_posts WHERE url =
 // posteo ya está, changes === 0 y el llamador lo trata como conocido.
 const insertPostStmt = db.prepare(`
   INSERT OR IGNORE INTO detected_posts
-    (id, account, url, caption, matched_reason, likes, comments, posted_at, detected_at, notified, title, sentiment, post_type, followers, plataforma, retweets, views)
+    (id, account, url, caption, matched_reason, likes, comments, posted_at, detected_at, notified, title, sentiment, tema, post_type, followers, plataforma, retweets, views)
   VALUES
-    (@id, @account, @url, @caption, @matchedReason, @likes, @comments, @postedAt, @detectedAt, 0, @title, @sentiment, @postType, @followers, @plataforma, @retweets, @views)
+    (@id, @account, @url, @caption, @matchedReason, @likes, @comments, @postedAt, @detectedAt, 0, @title, @sentiment, @tema, @postType, @followers, @plataforma, @retweets, @views)
 `);
 // Cada listado/conteo tiene su variante filtrada por plataforma: el filtro es
 // opcional (sin plataforma = todas), así los llamadores existentes no cambian.
@@ -971,6 +980,7 @@ function saveDetectedPost(post) {
     detectedAt: new Date().toISOString(),
     title: post.title || null,
     sentiment: post.sentiment || null,
+    tema: post.tema || null,
     postType: post.postType || null,
     followers: post.followers ?? null,
     plataforma,

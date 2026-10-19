@@ -261,8 +261,16 @@ describe('evaluateRelevance: el modelo decide, la keyword es una pista', { concu
     assert.equal(r.relevant, true);
     assert.equal(r.title, 'Jorge Macri y la gestión porteña');
     assert.equal(r.sentiment, 'positivo');
+    assert.equal(r.tema, 'Infraestructura');
     assert.equal(r.motivo, 'habla de CABA');
     assert.equal(r.matchedReason, 'Cuenta trackeada: @cuenta (coincidencia: "jorge macri") · habla de CABA');
+  });
+
+  test('cuenta trackeada sin caption: entra sin llamar al modelo, con el tema de fallback', async () => {
+    const antes = llamadas.length;
+    const r = await evaluar({ caption: '  ', sourceType: 'account', account: 'cuenta' });
+    assert.deepEqual(r, { relevant: true, title: 'Sin descripción', sentiment: 'neutral', tema: 'Coyuntura / Otros', matchedReason: 'Cuenta trackeada: @cuenta' });
+    assert.equal(llamadas.length, antes);
   });
 
   test('"Blackri" sin nombrar a Jorge Macri: entra (el prompt lista los apodos como señal a favor)', async () => {
@@ -275,6 +283,7 @@ describe('evaluateRelevance: el modelo decide, la keyword es una pista', { concu
     assert.equal(r.relevant, true);
     assert.equal(r.title, 'Blackri y la gestión porteña');
     assert.equal(r.sentiment, 'negativo');
+    assert.equal(r.tema, 'Transporte');
     assert.equal(r.matchedReason, 'Búsqueda: blackri (relacionado por contenido) · Blackri es Jorge Macri');
     assert.equal(ultima().userPrompt, 'CONTEXTO: llegó por la búsqueda del término "blackri" en Instagram.\nPOSTEO:\nBlackri otra vez de vacaciones mientras el subte no anda');
     assert.match(ultima().system, /"Blackri", "Blacri", "jorgemacri"/);
@@ -314,9 +323,32 @@ describe('evaluateRelevance: el modelo decide, la keyword es una pista', { concu
       ['jorge macri'],
       { platform: x }
     );
-    assert.deepEqual(r, { relevant: true, title: 'Otro tema', sentiment: 'neutral', unclassified: undefined, matchedReason: 'Búsqueda por palabra clave: "Jorge Macri"' });
+    assert.deepEqual(r, { relevant: true, title: 'Otro tema', sentiment: 'neutral', tema: 'Coyuntura / Otros', unclassified: undefined, matchedReason: 'Búsqueda por palabra clave: "Jorge Macri"' });
     assert.match(ultima().system, /posteo de X/);
     assert.equal(ultima().userPrompt, 'CONTEXTO: llegó por la búsqueda del término "Jorge Macri" en X.\nPOSTEO:\nreceta de pan casero');
+  });
+
+  test('el ciclo guarda el tema que devolvió el modelo', async () => {
+    const originals = { isConfigured: instagram.isConfigured, scrapeAccount: instagram.scrapeAccount, scrapeHashtag: instagram.scrapeHashtag, scrapeSearch: instagram.scrapeSearch };
+    instagram.isConfigured = () => true;
+    instagram.scrapeHashtag = async () => [];
+    instagram.scrapeAccount = async () => {
+      throw new Error('la detección de Instagram no consulta cuentas trackeadas');
+    };
+    const ahora = new Date().toISOString();
+    instagram.scrapeSearch = async () => [
+      { id: '9101', url: 'https://www.instagram.com/p/TEMA1/', caption: 'Jorge Macri anunció obras en Caballito', account: 'cuenta', sourceType: 'search', sourceQuery: 'jorge macri', likes: 1, comments: 1, postedAt: ahora },
+      { id: '9102', url: 'https://www.instagram.com/p/TEMA2/', caption: 'Jorge Macri y el subte en CABA', account: 'cuenta', sourceType: 'search', sourceQuery: 'jorge macri', likes: 1, comments: 1, postedAt: ahora },
+    ];
+    const guardado = (id) => db.listDetectedPosts({ plataforma: 'instagram' }).posts.find((p) => p.id === id);
+    try {
+      const result = await monitor.runMonitoringCycle({ plataformas: ['instagram'] });
+      assert.equal(result.porPlataforma.instagram.newCount, 2);
+      assert.equal(guardado('9101').tema, 'Infraestructura');
+      assert.equal(guardado('9102').tema, 'Transporte');
+    } finally {
+      Object.assign(instagram, originals);
+    }
   });
 
   test('ciclo con el modelo caído: el posteo se guarda sin clasificar (motivo base, sin título) y el backfill lo completa después', async () => {
@@ -346,6 +378,7 @@ describe('evaluateRelevance: el modelo decide, la keyword es una pista', { concu
       assert.equal(result.porPlataforma.instagram.newCount, 2, 'los dos se guardaron aunque el modelo haya fallado');
       assert.equal(guardado('9001').title, null);
       assert.equal(guardado('9001').sentiment, null);
+      assert.equal(guardado('9001').tema, null);
       assert.equal(guardado('9001').matched_reason, 'Búsqueda: jorge macri (coincidencia: "jorge macri") — sin clasificar (falló el clasificador, relevancia sin verificar)');
       assert.equal(guardado('9002').matched_reason, 'Búsqueda: jorge macri — sin clasificar (falló el clasificador, relevancia sin verificar)');
 
