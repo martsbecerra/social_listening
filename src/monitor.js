@@ -1300,24 +1300,51 @@ async function runMonitoringCycle({ plataformas, trigger } = {}) {
 }
 
 /**
- * Genera título + sentimiento para los posteos guardados de una plataforma
- * que todavía no lo tienen (posteos de antes de esta funcionalidad, o
- * alguno que falló). Se puede llamar las veces que haga falta: no vuelve a
- * tocar los que ya están clasificados.
+ * Completa la clasificación de los posteos guardados (no ignorados) de una
+ * plataforma: título + sentimiento + tema para los que no tienen título
+ * (posteos de antes de esta funcionalidad, o alguno que falló), y SOLO el
+ * tema para los ya clasificados que no lo tienen (guardados antes de la
+ * columna tema). Una llamada al LLM por posteo, de a una. Se puede llamar
+ * las veces que haga falta: no vuelve a tocar lo que ya está completo.
+ * @returns {Promise<{ classified: number, temasCompletados: number, stillPending: number }>}
+ *   classified: sin título que quedaron clasificados; temasCompletados: ya
+ *   clasificados a los que solo se les completó el tema; stillPending: los
+ *   que el clasificador no pudo resolver (quedan para la próxima).
  */
 async function backfillClassification(platformId) {
   requirePlatformId(platformId, 'backfillClassification');
   const platform = getPlatform(platformId);
   const pending = db.listUnclassified({ plataforma: platformId });
   let classified = 0;
+  let temasCompletados = 0;
   let stillPending = 0;
 
-  for (const row of pending) {
+  if (pending.length > 0) {
+    console.log(`[monitor] backfill (${platformId}): ${pending.length} posteo(s) sin clasificar o sin tema.`);
+  }
+  for (const [i, row] of pending.entries()) {
+    // Puede tardar (una llamada por posteo): una línea cada 50 para seguirlo.
+    if (i > 0 && i % 50 === 0) console.log(`[monitor] backfill (${platformId}): ${i} de ${pending.length}`);
+
     // Sin pista: el origen ya quedó en matched_reason. El modelo también
-    // devuelve relevant, pero desde acá no se borra nada ya guardado: se
-    // completan título, sentimiento y motivo, y si el modelo dice que no es
-    // relevante queda avisado en matched_reason para que alguien lo revise.
+    // devuelve relevant, pero desde acá no se borra nada ya guardado.
     const r = await clasificarPosteo(row.caption, { platformLabel: platform.label });
+
+    if (row.title != null) {
+      // Ya clasificado, solo le falta el tema: se completa ESO. Título,
+      // sentimiento y matched_reason quedan como estaban, diga lo que diga
+      // el modelo sobre la relevancia (eso ya se decidió al guardarlo).
+      if (r.unclassified || !r.tema) {
+        stillPending++;
+        continue;
+      }
+      if (db.updateTema(row.id, r.tema, platformId)) temasCompletados++;
+      continue;
+    }
+
+    // Sin título: se completan título, sentimiento, tema y motivo, y si el
+    // modelo dice que no es relevante queda avisado en matched_reason para
+    // que alguien lo revise.
     if (r.unclassified || !r.title) {
       // Sigue fallando: no pisamos la fila con los mismos nulls, queda
       // pendiente para el próximo intento.
@@ -1338,16 +1365,16 @@ async function backfillClassification(platformId) {
         `[monitor] backfill: el modelo considera NO relevante el posteo ${row.id} de @${row.account || '?'} (${r.motivo || 'sin motivo'}); queda guardado para revisión.`
       );
     }
-    db.updateClassification(row.id, { title: r.title, sentiment: r.sentiment, matchedReason });
+    db.updateClassification(row.id, { title: r.title, sentiment: r.sentiment, tema: r.tema, matchedReason });
     classified++;
   }
 
   if (stillPending > 0) {
     console.warn(
-      `[monitor] backfill: ${stillPending} posteo(s) siguen sin clasificar (el clasificador falló). Se reintentan en la próxima corrida.`
+      `[monitor] backfill: ${stillPending} posteo(s) siguen sin clasificar o sin tema (el clasificador falló). Se reintentan en la próxima corrida.`
     );
   }
-  return { classified, stillPending };
+  return { classified, temasCompletados, stillPending };
 }
 
 module.exports = {

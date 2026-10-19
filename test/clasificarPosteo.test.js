@@ -395,11 +395,13 @@ describe('evaluateRelevance: el modelo decide, la keyword es una pista', { concu
       } finally {
         console.warn = originalWarn;
       }
-      assert.deepEqual(backfill, { classified: 2, stillPending: 0 });
+      assert.deepEqual(backfill, { classified: 2, temasCompletados: 0, stillPending: 0 });
       assert.equal(guardado('9001').title, 'Jorge Macri y la gestión porteña');
       assert.equal(guardado('9001').sentiment, 'positivo');
+      assert.equal(guardado('9001').tema, 'Infraestructura');
       assert.equal(guardado('9001').matched_reason, 'Búsqueda: jorge macri (coincidencia: "jorge macri") · habla de CABA');
       assert.equal(guardado('9002').title, 'Gobierno nacional');
+      assert.equal(guardado('9002').tema, 'Política', 'también el que el modelo ahora considera no relevante');
       assert.equal(guardado('9002').matched_reason, 'Búsqueda: jorge macri · no relevante según el modelo: política nacional sin relación con CABA');
       assert.deepEqual(avisos, [
         '[monitor] backfill: el modelo considera NO relevante el posteo 9002 de @cuenta (política nacional sin relación con CABA); queda guardado para revisión.',
@@ -407,6 +409,87 @@ describe('evaluateRelevance: el modelo decide, la keyword es una pista', { concu
     } finally {
       Object.assign(instagram, originals);
     }
+  });
+
+  test('backfill de los ya clasificados sin tema: completa SOLO el tema, sin tocar título, sentimiento ni motivo', async () => {
+    const guardar = (id, caption, extra = {}) =>
+      db.saveDetectedPost({
+        id,
+        plataforma: 'instagram',
+        account: 'cuenta',
+        url: `https://www.instagram.com/p/${id.toUpperCase()}/`,
+        caption,
+        matchedReason: 'Búsqueda: jorge macri · motivo de cuando se guardó',
+        likes: 1,
+        comments: 1,
+        postedAt: new Date().toISOString(),
+        title: 'Título de cuando se guardó',
+        sentiment: 'negativo',
+        ...extra,
+      });
+    const fila = (id, plataforma = 'instagram') => db.listDetectedPosts({ plataforma }).posts.find((p) => p.id === id);
+    const sinTocar = (id) => {
+      const p = fila(id);
+      return [p.title, p.sentiment, p.matched_reason];
+    };
+    const ORIGINAL = ['Título de cuando se guardó', 'negativo', 'Búsqueda: jorge macri · motivo de cuando se guardó'];
+
+    guardar('tb1', 'Jorge Macri inauguró una escuela en Lugano');
+    guardar('tb2', 'Milei y Adorni presentaron el presupuesto nacional'); // el modelo hoy diría "no relevante"
+    guardar('tb3', 'Jorge Macri y el subte', { tema: 'Salud' }); // ya tiene tema
+    guardar('tb4', 'Jorge Macri inauguró una plaza');
+    assert.equal(db.ignorePost('tb4', 'instagram'), true);
+    db.saveDetectedPost({ id: 'tbx', plataforma: 'x', account: 'c', url: 'https://x.com/c/status/77', caption: 'Jorge Macri y el subte', matchedReason: 'Búsqueda por palabra clave: "macri"', title: 'Tuit', sentiment: 'neutral' });
+
+    const avisos = [];
+    const originalWarn = console.warn;
+    console.warn = (msg) => avisos.push(String(msg));
+    const originalError = console.error;
+    console.error = () => {};
+    try {
+      llamadas.length = 0;
+      assert.deepEqual(await monitor.backfillClassification('instagram'), { classified: 0, temasCompletados: 2, stillPending: 0 });
+      assert.deepEqual(
+        llamadas.map((req) => req.userPrompt.split('POSTEO:\n')[1]).sort(),
+        ['Jorge Macri inauguró una escuela en Lugano', 'Milei y Adorni presentaron el presupuesto nacional'],
+        'el modelo no se consulta por los que ya tienen tema, los ignorados ni los de otra red'
+      );
+      assert.equal(fila('tb1').tema, 'Educación');
+      assert.deepEqual(sinTocar('tb1'), ORIGINAL);
+      assert.equal(fila('tb2').tema, 'Política');
+      assert.deepEqual(sinTocar('tb2'), ORIGINAL, 'un "no relevante" del modelo no toca un posteo ya clasificado');
+      assert.equal(fila('tb3').tema, 'Salud', 'un tema ya guardado no se pisa');
+      assert.equal(fila('tbx', 'x').tema, null, 'el backfill de Instagram no toca X');
+      assert.deepEqual(avisos, []);
+
+      // Modelo caído: queda pendiente, sin escribir nada.
+      guardar('tb5', 'Jorge Macri recorrió la obra del Paseo del Bajo');
+      modo = 'falla';
+      assert.deepEqual(await monitor.backfillClassification('instagram'), { classified: 0, temasCompletados: 0, stillPending: 1 });
+      assert.equal(fila('tb5').tema, null);
+      assert.deepEqual(sinTocar('tb5'), ORIGINAL);
+      assert.match(avisos[0], /1 posteo\(s\) siguen sin clasificar o sin tema/);
+
+      // Con el modelo de vuelta se completa; una segunda pasada no consulta nada.
+      modo = 'normal';
+      assert.deepEqual(await monitor.backfillClassification('instagram'), { classified: 0, temasCompletados: 1, stillPending: 0 });
+      assert.equal(fila('tb5').tema, 'Infraestructura');
+      const antes = llamadas.length;
+      assert.deepEqual(await monitor.backfillClassification('instagram'), { classified: 0, temasCompletados: 0, stillPending: 0 });
+      assert.equal(llamadas.length, antes);
+    } finally {
+      console.warn = originalWarn;
+      console.error = originalError;
+    }
+  });
+
+  test('updateTema solo completa: no pisa un tema guardado ni toca otra plataforma', () => {
+    db.saveDetectedPost({ id: 'ut1', plataforma: 'instagram', account: 'c', url: 'https://www.instagram.com/p/UT1/', caption: 't', matchedReason: 'm', title: 'T', sentiment: 'neutral' });
+    assert.equal(db.updateTema('ut1', 'Transporte', 'x'), false, 'id de otra plataforma');
+    assert.equal(db.updateTema('ut1', 'Transporte', 'instagram'), true);
+    assert.equal(db.updateTema('ut1', 'Salud', 'instagram'), false, 'ya tenía tema');
+    assert.equal(db.listDetectedPosts({ plataforma: 'instagram' }).posts.find((p) => p.id === 'ut1').tema, 'Transporte');
+    assert.throws(() => db.updateTema('ut1', 'Salud'), /falta plataforma/);
   });
 });
 
