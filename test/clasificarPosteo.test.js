@@ -35,7 +35,8 @@ const assert = require('node:assert/strict');
 // El LLM se stubea en la capa src/llm (por el objeto del módulo) ANTES de
 // cargar el clasificador y monitor.js.
 const llm = require('../src/llm');
-let modo = 'normal'; // 'normal' | 'falla' | 'ilegible' | 'temaFuera' | 'sinTema'
+// 'normal' | 'falla' | 'ilegible' | 'temaPlegado' | 'temaInventado' | 'sinTema'
+let modo = 'normal';
 const llamadas = [];
 llm.requestStructuredAnalysis = async (req) => {
   llamadas.push(req);
@@ -47,8 +48,10 @@ llm.requestStructuredAnalysis = async (req) => {
   if (modo === 'ilegible') return { parsed: { relevant: 'sí', title: 'x', sentiment: 'neutral' }, usage: null, attempts: 1 };
   const parsed = modeloDeReglas(req.userPrompt);
   // Lo que puede mandar un modelo sin structured outputs (el respaldo
-  // json_object de OpenRouter): un tema que no es de la lista, o ninguno.
-  if (modo === 'temaFuera') parsed.tema = 'Transporte';
+  // json_object de OpenRouter): el tema sin acentos ni mayúsculas, uno que
+  // no es de la lista (el enum viejo de 9 temas), o ninguno.
+  if (modo === 'temaPlegado') parsed.tema = 'educacion';
+  if (modo === 'temaInventado') parsed.tema = 'obras_espacio_publico';
   if (modo === 'sinTema') delete parsed.tema;
   return { parsed, usage: null, attempts: 1 };
 };
@@ -59,14 +62,15 @@ function modeloDeReglas(userPrompt) {
   return { ...decisionDeReglas(texto), tema: temaDeReglas(texto) };
 }
 
-/** El tema, con palabras de las líneas de TEMA del prompt. */
+/** El tema: una categoría de config/categorias-reclamos.json, por palabras del caption. */
 function temaDeReglas(texto) {
-  if (/milei|adorni/.test(texto)) return 'politica';
-  if (/subte|colectivo/.test(texto)) return 'transporte';
-  if (/obra|plaza|paseo del bajo/.test(texto)) return 'obras_espacio_publico';
-  if (/escuela/.test(texto)) return 'cultura_educacion';
-  if (/seguridad|policía|pdlc/.test(texto)) return 'seguridad';
-  return 'otros';
+  if (/milei|adorni/.test(texto)) return 'Política';
+  if (/subte|colectivo/.test(texto)) return 'Transporte';
+  if (/obra|paseo del bajo/.test(texto)) return 'Infraestructura';
+  if (/plaza|vereda/.test(texto)) return 'Espacio Público';
+  if (/escuela/.test(texto)) return 'Educación';
+  if (/seguridad|policía|pdlc/.test(texto)) return 'Seguridad';
+  return 'Coyuntura / Otros';
 }
 
 function decisionDeReglas(texto) {
@@ -90,6 +94,7 @@ function decisionDeReglas(texto) {
 }
 
 const classifier = require('../src/classifier');
+const categoriasConfig = require('../src/categoriasConfig');
 const providerConfig = require('../src/llm/providerConfig');
 const db = require('../src/db');
 const monitor = require('../src/monitor');
@@ -111,7 +116,7 @@ describe('clasificarPosteo: una sola llamada, con schema', { concurrency: false 
       platformLabel: 'Instagram',
       pista: { termino: 'jorge macri', cuenta: 'cuenta' },
     });
-    assert.deepEqual(r, { relevant: true, title: 'Jorge Macri y la gestión porteña', sentiment: 'positivo', tema: 'cultura_educacion', motivo: 'habla de CABA' });
+    assert.deepEqual(r, { relevant: true, title: 'Jorge Macri y la gestión porteña', sentiment: 'positivo', tema: 'Educación', motivo: 'habla de CABA' });
 
     assert.equal(llamadas.length, 1);
     const req = ultima();
@@ -121,7 +126,7 @@ describe('clasificarPosteo: una sola llamada, con schema', { concurrency: false 
     assert.deepEqual(req.schema.required, ['relevant', 'title', 'sentiment', 'tema', 'motivo']);
     assert.match(req.system, /motivo: una frase corta/);
     assert.deepEqual(req.schema.properties.sentiment.enum, ['positivo', 'neutral', 'negativo']);
-    assert.deepEqual(req.schema.properties.tema.enum, classifier.TEMAS);
+    assert.deepEqual(req.schema.properties.tema.enum, categoriasConfig.listCategorias());
     assert.match(req.system, /posteo de Instagram/);
     assert.equal(
       req.userPrompt,
@@ -132,53 +137,63 @@ describe('clasificarPosteo: una sola llamada, con schema', { concurrency: false 
 
   test('sin pista no hay línea CONTEXTO; el caption se recorta a 2000 caracteres; sin caption no llama al modelo', async () => {
     const r = await classifier.clasificarPosteo('receta de pan casero');
-    assert.deepEqual(r, { relevant: false, title: 'Otro tema', sentiment: 'neutral', tema: 'otros', motivo: 'no habla de la Ciudad' });
+    assert.deepEqual(r, { relevant: false, title: 'Otro tema', sentiment: 'neutral', tema: 'Coyuntura / Otros', motivo: 'no habla de la Ciudad' });
     assert.equal(ultima().userPrompt, 'POSTEO:\nreceta de pan casero');
 
     await classifier.clasificarPosteo('a'.repeat(3000));
     assert.equal(ultima().userPrompt.length, 'POSTEO:\n'.length + 2000);
 
     const antes = llamadas.length;
-    assert.deepEqual(await classifier.clasificarPosteo('   '), { relevant: false, title: 'Sin descripción', sentiment: 'neutral', tema: 'otros', motivo: null });
+    assert.deepEqual(await classifier.clasificarPosteo('   '), { relevant: false, title: 'Sin descripción', sentiment: 'neutral', tema: 'Coyuntura / Otros', motivo: null });
     assert.equal(llamadas.length, antes, 'sin texto no hay nada que preguntar');
   });
 
-  test('tema: lista fija, una línea por tema en el prompt, y viene también cuando relevant es false', async () => {
-    assert.deepEqual(classifier.TEMAS, [
-      'transporte',
-      'obras_espacio_publico',
-      'seguridad',
-      'inundaciones_clima',
-      'impuestos_economia',
-      'cultura_educacion',
-      'salud',
-      'politica',
-      'otros',
-    ]);
-    assert.deepEqual(classifier.CLASIFICACION_SCHEMA.properties.tema.enum, classifier.TEMAS);
+  test('tema: las categorías de primer nivel del mapa de reclamos, una línea por categoría con sus subcategorías', async () => {
+    const categorias = categoriasConfig.listCategorias();
+    assert.deepEqual(classifier.TEMAS, categorias, 'la lista sale de config/categorias-reclamos.json');
+    assert.equal(categoriasConfig.CATEGORIA_FALLBACK, 'Coyuntura / Otros');
+    assert.ok(categorias.includes(categoriasConfig.CATEGORIA_FALLBACK), 'el fallback es una de las opciones');
+    assert.deepEqual(classifier.CLASIFICACION_SCHEMA.properties.tema.enum, categorias);
 
     const s = classifier.systemPrompt('Instagram');
     const seccion = s.split('\nTEMA\n')[1].split('\nRESPUESTA')[0];
-    for (const tema of classifier.TEMAS) {
-      assert.match(seccion, new RegExp(`^- ${tema}: \\S`, 'm'), `falta la línea de ${tema}`);
-    }
-    assert.equal(seccion.match(/^- /gm).length, classifier.TEMAS.length, 'una línea por tema, ni una más');
-    assert.match(seccion, /Si toca varios, el que más pesa/);
-    assert.match(seccion, /^- transporte: .*subte.*colectivos.*bicisendas.*estacionamiento/m);
-    assert.match(seccion, /^- obras_espacio_publico: .*obras.*bacheo.*veredas.*plazas/m);
-    assert.match(seccion, /^- impuestos_economia: .*ABL.*tarifas.*presupuesto/m);
-    assert.match(s.split('\nRESPUESTA')[1], /^- tema: uno de la lista TEMA.*también si relevant es false/m);
+    const lineas = seccion.split('\n').filter((l) => l.startsWith('- '));
+    assert.equal(lineas.length, categorias.length, 'una línea por categoría, ni una más');
+    categorias.forEach((nombre, i) => {
+      const subs = categoriasConfig.subcategoriasDe(nombre);
+      assert.ok(subs.length > 0, `${nombre} tiene subcategorías`);
+      assert.equal(lineas[i], `- ${nombre}: ${subs.join('; ')}`, 'nombre y subcategorías tal cual, en el orden del JSON');
+    });
+    assert.match(seccion, /copiada tal cual \(respetá mayúsculas y acentos\)/);
+    assert.match(seccion, /Si toca varias, la que más pesa en el posteo/);
+    assert.match(seccion, /un anuncio, un logro o un elogio va en la misma categoría que una crítica sobre lo mismo/);
+    assert.match(seccion.trimEnd(), /\nSi no encaja en ninguna, "Coyuntura \/ Otros"\.$/);
+    assert.match(s.split('\nRESPUESTA')[1], /^- tema: una de las categorías de TEMA, copiada tal cual\. Siempre, también si relevant es false: la más cercana, o "Coyuntura \/ Otros"\.$/m);
 
     const r = await classifier.clasificarPosteo('Milei y Adorni presentaron el presupuesto nacional');
-    assert.deepEqual(r, { relevant: false, title: 'Gobierno nacional', sentiment: 'neutral', tema: 'politica', motivo: 'política nacional sin relación con CABA' });
+    assert.deepEqual(r, { relevant: false, title: 'Gobierno nacional', sentiment: 'neutral', tema: 'Política', motivo: 'política nacional sin relación con CABA' });
   });
 
-  test('un tema fuera de la lista, o ninguno, queda en null sin marcar el posteo como sin clasificar', async () => {
-    const esperado = { relevant: true, title: 'Jorge Macri y la gestión porteña', sentiment: 'positivo', tema: null, motivo: 'habla de CABA' };
-    modo = 'temaFuera';
-    assert.deepEqual(await classifier.clasificarPosteo('Jorge Macri inauguró una escuela'), esperado);
-    modo = 'sinTema';
-    assert.deepEqual(await classifier.clasificarPosteo('Jorge Macri inauguró una escuela'), esperado);
+  test('el tema pasa por normalizeClasificacion: mayúsculas y acentos se resuelven; lo que no existe, o falta, cae en "Coyuntura / Otros"', async () => {
+    const base = { relevant: true, title: 'Jorge Macri y la gestión porteña', sentiment: 'positivo', motivo: 'habla de CABA' };
+    const avisos = [];
+    const originalWarn = console.warn;
+    console.warn = (msg) => avisos.push(String(msg));
+    try {
+      modo = 'temaPlegado';
+      assert.deepEqual(await classifier.clasificarPosteo('Jorge Macri inauguró una escuela'), { ...base, tema: 'Educación' });
+      assert.deepEqual(avisos, [], 'resolver acentos y mayúsculas no es un ajuste');
+
+      modo = 'temaInventado';
+      assert.deepEqual(await classifier.clasificarPosteo('Jorge Macri inauguró una escuela'), { ...base, tema: 'Coyuntura / Otros' });
+      assert.deepEqual(avisos, ['[categorias] [tema de un posteo del monitoreo] categoría "obras_espacio_publico" no existe -> "Coyuntura / Otros"']);
+
+      modo = 'sinTema';
+      assert.deepEqual(await classifier.clasificarPosteo('Jorge Macri inauguró una escuela'), { ...base, tema: 'Coyuntura / Otros' });
+      assert.equal(avisos.length, 1);
+    } finally {
+      console.warn = originalWarn;
+    }
   });
 
   test('el system prompt desambigua geografía: CABA vs. Ciudad de México, términos ambiguos, señales que no descartan solas, política nacional afuera', () => {
