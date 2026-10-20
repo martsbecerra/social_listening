@@ -380,11 +380,68 @@ llamada al LLM por posteo, de a una (avance por consola cada 50); devuelve
 `{ classified, temasCompletados, stillPending }`. Lo corre el dueño, nunca
 un agente: cuesta una clasificación por posteo pendiente.
 
+## Riel, franja y radar de Instagram
+
+Desde octubre 2026 `instagram.html` no tiene solapas arriba: un riel
+lateral (`nav.rail`) con Monitoreo, Estadísticas (todavía deshabilitado:
+`aria-disabled`, atenuado, title "Pronto"; se activa en la fase 3, sin
+pantalla "en preparación"), Mapa de reclamos, Análisis y las tres fuentes.
+Maqueta aprobada en `design/riel-radar-v3.html`; SDD en
+`openspec/changes/riel-y-radar/`. `x.html` y `dashboard.html` solo cambian
+el pie.
+
+- **Solapas** (`main.js`, `openTab`): cualquier `[data-tab]` (riel o
+  solapas de X), con `aria-current` y el hash (`#monitoring`,
+  `#claims-map`, `#analysis`, `history.replaceState`); un botón con
+  `aria-disabled` no abre nada.
+- **Fuentes** (`public/js/rail.js`, prefijo `rail`): búsquedas, cuentas y
+  palabras se editan en un panel que sale del riel (`aside#srcPanel`,
+  `inert` cerrado; se cierra con Esc, el fondo o la ✕). Adentro van los
+  MISMOS ids de antes (`newSearch`, `searchListPreview`…), así
+  `monitoring.js` agrega, valida y borra sin cambios; `updateSourceCount`
+  llena los contadores del riel (`[data-src-count]`). `#fuentes-busquedas`
+  / `-cuentas` / `-palabras` abren el panel (lo usan los enlaces del pie).
+  `rail.js` también mide el alto de la cabecera en `--top`.
+- **Franja oscura** (`section.sky`): estado de la escucha con
+  `GET /api/monitoring/status`, que ahora trae `lastRunAt` (la última
+  corrida TERMINADA de esa plataforma, `db.getLastFinishedRunAt`) y
+  `runHours` (`scheduler.getRunHours`, las horas del cron). "Actualizar
+  ahora" y su recuadro de progreso (con el porcentaje real) viven ahí.
+- **Radar** (`public/js/monitoringRadar.js`, prefijo `radar`, solo
+  `instagram.html`): un canvas con los posteos de HOY (hora de Argentina por
+  `Intl`, nunca la del navegador) de las filas que la tabla ya filtró. x =
+  hora; y = la razón de `benchmark.top` en escala logarítmica de 0,6 a 3,
+  con la línea "lo habitual" (1) y la de alto rotulada "alto: razón 1,5
+  contra su cuenta" (NUNCA "N veces lo habitual": la razón lleva colchón);
+  radio por comentarios (tope 22); sin `top` es un círculo hueco sobre lo
+  habitual, con el aviso en el tooltip. Marca las horas de corrida y sombrea
+  lo que falta del día. Tooltip por `textContent`; un clic abre el posteo
+  solo (`openFeedPopSolo`); el hover resalta la tarjeta o la fila (`.hot`)
+  y al revés. Escucha `notifyMonitoringViews`: `{ run: 'start' }` (barrido
+  mientras corre) y `{ run: 'end', newIds }` (ondas en los posteos nuevos);
+  el feed los ignora. Vacíos: sin posteos de hoy (con la próxima corrida),
+  "Ninguna publicación de hoy coincide con los filtros." y sin canvas. El
+  `requestAnimationFrame` se frena fuera de pantalla, en otra solapa y con
+  la pestaña oculta; con `prefers-reduced-motion` no hay barrido ni ondas.
+- **"Se despegaron"**: hasta 4 tiras (`buildHighlightStrip`, grilla 2×2)
+  con la razón, título, cuenta, hora, valor contra mediana y el selector de
+  sentimiento (cambiarlo no abre el posteo).
+- **Medidor de alcance** (`buildReachMeter` en `monitoring.js`, clase
+  `.reach-meter`, NO `.reach`: choca con el chip del pop-up): cinco barras +
+  Alto / Medio / Bajo, o "—" sin referencia. Va en el pie de la tarjeta del
+  feed y en la columna "Alcance" de la tabla (solo Instagram, ordenable;
+  `reachSortValue`). Con Cuenta (`minWidth` 120) y Título (200) la tabla
+  entra entera desde ~1280 px; más angosta, se desplaza de costado.
+- **Pie** (`public/js/footer.js`): lo arma en `#siteFooter` para las tres
+  páginas; Estadísticas, Facebook y TikTok van sin enlace. Las corridas
+  salen de `runHours` de `/api/footer-stats`.
+- En celular (≤ 900 px) la barra de filtros deja de ser pegajosa.
+
 ## Vista Feed del Monitoreo (solo Instagram)
 
-La solapa "Monitoreo en vivo" de Instagram tiene dos vistas, Tabla y Feed
-(tarjetas), con un interruptor que recuerda la última en `localStorage`
-(`sl.monitoreo.vista`, con try/catch). El feed es
+El Monitoreo de Instagram tiene dos vistas, Feed (tarjetas, la de por
+defecto) y Tabla, con un interruptor que recuerda la última en
+`localStorage` (`sl.monitoreo.vista`, con try/catch). El feed es
 `public/js/monitoringFeed.js`: lo carga SOLO `instagram.html`, después de
 `monitoring.js` (scripts clásicos, mismo ámbito global: todo lo suyo lleva
 prefijo `feed` / `FEED_`); `x.html` no lo carga y no cambia. No tiene
@@ -398,11 +455,11 @@ control existe solo en `instagram.html` (como `fAlcanceEl`), en X es null y
 hay que tratarlo así. `monitoring.js` avisa los cambios con
 `notifyMonitoringViews(change)` (sin argumento = redibujar;
 `{ ignoredId }`; `{ goToId }`, que quedó como respaldo: ver "Se despegaron"
-más abajo). El alcance de la
+más abajo; `{ run }`, solo para el radar). El alcance de la
 tarjeta y del filtro "Alcance" es `postReach`: combina los niveles que ya
 manda el backend en `benchmark.likes` y `benchmark.comments` (vale el
 mejor de los dos; "normal" se muestra "medio"; sin ninguna métrica con
-referencia no hay etiqueta) y no recalcula nada ni conoce ningún corte (ver
+referencia el medidor muestra "—") y no recalcula nada ni conoce ningún corte (ver
 "Alcance: la regla del colchón"). El orden "Mayor alcance" va primero por
 la etiqueta y, dentro de cada una, por la razón. Todo dato del posteo entra
 por `textContent`, nunca como HTML. Son cientos de tarjetas sin paginar: el
@@ -439,8 +496,9 @@ números a la derecha ("al 08/10"; en el pop-up, "Métricas al 08/10/2026 ·
 (`monitoring.js`): `metrics_updated_at` o, si nunca se refrescó,
 `detected_at`; con más de `METRICS_STALE_DAYS` (3) va en naranja. La franja
 es una grilla de UN renglón con dos espacios que ceden: lo que se le sume
-no puede agregarle alto a la tarjeta (medir en la de 240 px). El selector
-de sentimiento está en el pie. El hover
+no puede agregarle alto a la tarjeta (medir en la de 240 px). El pie tiene
+dos renglones: el motivo y "Abrir ↗"; debajo, el selector de sentimiento y
+el medidor de alcance (`buildFeedFoot`). El hover
 (sube, borde del color del sentimiento, foto que se acerca) va solo con
 mouse (`hover: hover`) y el movimiento se apaga con
 `prefers-reduced-motion`.
