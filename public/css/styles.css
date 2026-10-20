@@ -4928,3 +4928,27 @@ html.feed-pop-lock body {
     position: static;
   }
 }
+
+/* En una pantalla angosta el botón de usuario muestra solo las iniciales:
+   con el nombre completo la cabecera no entraba en 375 px y la página se
+   desplazaba de costado. El nombre sigue en el botón para los lectores de
+   pantalla. */
+@media (max-width: 540px) {
+  .user-btn {
+    padding: 4px;
+  }
+  .user-btn .avatar {
+    width: 30px;
+    height: 30px;
+    font-size: 11.5px;
+  }
+  .user-btn .user-name {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
