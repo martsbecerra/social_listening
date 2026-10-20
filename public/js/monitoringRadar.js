@@ -110,7 +110,8 @@ const RADAR_RATIO_MIN = 0.6;
 const RADAR_RATIO_MAX = 3;
 const RADAR_RATIO_HIGH = 1.5;
 const RADAR_PAD = { l: 34, r: 24, t: 26, b: 44 };
-const RADAR_MAX_RADIUS = 30;
+// Un posteo con miles de comentarios no tapa medio radar.
+const RADAR_MAX_RADIUS = 22;
 const RADAR_SWEEP_MS = 2400;
 const RADAR_RIPPLE_MS = 1400;
 const RADAR_RIPPLE_DELAYS = [0, 350, 700];
@@ -204,10 +205,14 @@ function radarLayout() {
 
   radarDots = posts.map((post) => {
     const top = radarTopOf(post);
+    const r = radarRadius(post);
+    // Arriba de 3 o abajo de 0,6 queda en el borde, con el pulso entero
+    // adentro del área.
+    const y = Math.max(RADAR_PAD.t - 6 + r, Math.min(radarH - RADAR_PAD.b - r, radarY(top ? top.ratio : 1)));
     return {
       x: radarX(radarHourOf(new Date(post.posted_at))),
-      y: radarY(top ? top.ratio : 1),
-      r: radarRadius(post),
+      y,
+      r,
       post,
       top,
       color: RADAR_COLORS[post.sentiment] || RADAR_COLORS.neutral,

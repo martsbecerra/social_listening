@@ -4658,9 +4658,10 @@ html.feed-pop-lock body {
 .hl-head .hl-count:empty {
   display: none;
 }
+/* Hasta 4 tiras: de a dos por renglón en escritorio (2 x 2), una en celular. */
 .hl-tops {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
   gap: 14px;
 }
 .hl-strip {
@@ -4917,4 +4918,13 @@ html.feed-pop-lock body {
 }
 .mon-page .filters input[type="search"] {
   min-width: 180px;
+}
+
+/* En una pantalla angosta la fila de herramientas ocupa media pantalla:
+   pegada arriba taparía las tarjetas. Ahí queda en su lugar, como en la
+   maqueta (en escritorio sigue pegada debajo de la cabecera). */
+@media (max-width: 900px) {
+  .mon-page .filters {
+    position: static;
+  }
 }
