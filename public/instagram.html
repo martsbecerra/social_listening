@@ -166,41 +166,65 @@
 
   <!-- ===================== Solapa: Monitoreo en vivo ===================== -->
   <section id="tab-monitoring" class="tab-panel">
-    <div class="container-wide">
-      <p class="tag panel-eyebrow">Monitoreo</p>
-      <h1 class="display">Monitoreo en vivo</h1>
-      <p class="sub">Detección automática de menciones cada 4 horas.</p>
-
-      <!-- Barra fina de acción -->
-      <div class="runbar">
-        <button id="runNowBtn" class="btn">Actualizar ahora</button>
-        <span class="live">
-          <div class="meter" data-meter="7"></div>
-          <span><b>Escuchando</b> · <span id="monitoringNextRun">próxima corrida –</span></span>
-        </span>
-      </div>
-
-      <!-- Progreso de "Actualizar ahora": arriba, qué se está haciendo y su
-           contador; la barra a todo el ancho; debajo, las últimas líneas del
-           ciclo (las arma el backend, src/monitoringProgress.js). Al terminar
-           queda a la vista con el resultado, hasta "Ocultar". -->
-      <div id="monitoringStatusCard" class="card hidden">
-        <div id="monitoringProgress" class="run-progress">
-          <div class="run-progress-head" role="status" aria-live="polite">
-            <span id="monitoringStatusIcon" class="spinner"></span>
-            <span class="run-progress-text">
-              <span id="monitoringStatusText" class="run-progress-title">Buscando posteos nuevos…</span>
-              <span id="monitoringStatusCount" class="run-progress-count"></span>
-            </span>
-            <button type="button" id="monitoringProgressHide" class="run-progress-hide hidden">Ocultar</button>
+    <!-- La franja oscura: el día en una línea de tiempo (el radar,
+         public/js/monitoringRadar.js), el estado real de la escucha y
+         "Actualizar ahora" con su recuadro de progreso. -->
+    <section class="sky" aria-label="El día en la línea de tiempo">
+      <div class="sky-in">
+        <div class="sky-head">
+          <div>
+            <h1>Monitoreo en vivo</h1>
+            <p class="sky-status">
+              <span class="dot" aria-hidden="true"></span>
+              <span id="radarStatus"><b>Escuchando.</b></span>
+            </p>
           </div>
-          <div class="progress-track">
-            <div id="monitoringProgressFill" class="progress-fill"></div>
+          <button id="runNowBtn" class="sky-run" type="button"><div class="meter" data-meter="5"></div>Actualizar ahora</button>
+        </div>
+
+        <div class="radar" id="radar">
+          <canvas id="radarCanvas" role="img" aria-label="Publicaciones de hoy por hora y alcance"></canvas>
+          <div class="radar-tip" id="radarTip" aria-hidden="true"></div>
+          <p class="radar-empty hidden" id="radarEmpty"></p>
+        </div>
+        <div class="sky-legend">
+          <ul>
+            <li class="pos"><i></i>Positivo</li>
+            <li class="neu"><i></i>Neutral</li>
+            <li class="neg"><i></i>Negativo</li>
+            <li class="size"><i></i><i></i>Más grande, más comentarios</li>
+            <li>Más arriba, más se despegó de lo habitual de su cuenta</li>
+          </ul>
+          <span class="now">Ahora: <b id="radarNow">–</b></span>
+        </div>
+
+        <!-- Progreso de "Actualizar ahora": arriba, qué se está haciendo, su
+             contador y el porcentaje; la barra a todo el ancho; debajo, las
+             últimas líneas del ciclo (las arma el backend,
+             src/monitoringProgress.js). Al terminar queda a la vista con el
+             resultado, hasta "Ocultar". -->
+        <div id="monitoringStatusCard" class="sky-run-card hidden">
+          <div id="monitoringProgress" class="run-progress">
+            <div class="run-progress-head" role="status" aria-live="polite">
+              <span id="monitoringStatusIcon" class="spinner"></span>
+              <span class="run-progress-text">
+                <span id="monitoringStatusText" class="run-progress-title">Buscando posteos nuevos…</span>
+                <span id="monitoringStatusCount" class="run-progress-count"></span>
+              </span>
+              <span id="monitoringProgressPct" class="run-progress-pct" aria-hidden="true">0%</span>
+              <button type="button" id="monitoringProgressHide" class="run-progress-hide hidden">Ocultar</button>
+            </div>
+            <div class="progress-track">
+              <div id="monitoringProgressFill" class="progress-fill"></div>
+            </div>
+            <ol id="monitoringProgressList" class="run-progress-list" aria-label="Últimos pasos"></ol>
           </div>
-          <ol id="monitoringProgressList" class="run-progress-list" aria-label="Últimos pasos"></ol>
         </div>
       </div>
+    </section>
 
+    <!-- De la franja para abajo, la página es clara. -->
+    <div class="mon-page">
       <p id="monitoringLoadError" class="error hidden"></p>
 
       <!-- Tarjetas destacadas -->
@@ -470,6 +494,7 @@
   <script src="js/monitoring.js?v=plat"></script>
   <script src="js/monitoringFeed.js"></script>
   <script src="js/monitoringFeedPopup.js"></script>
+  <script src="js/monitoringRadar.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="js/claimsMap.js"></script>
   <script src="js/footer.js"></script>

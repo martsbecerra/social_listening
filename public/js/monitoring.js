@@ -46,7 +46,11 @@ const monitoringStatusCountEl = document.getElementById('monitoringStatusCount')
 const monitoringProgressFillEl = document.getElementById('monitoringProgressFill');
 const monitoringProgressListEl = document.getElementById('monitoringProgressList');
 const monitoringProgressHideEl = document.getElementById('monitoringProgressHide');
+// El porcentaje grande del recuadro (solo en la franja de instagram.html).
+const monitoringProgressPctEl = document.getElementById('monitoringProgressPct');
 const monitoringLoadErrorEl = document.getElementById('monitoringLoadError');
+// "próxima corrida HH:MM" de x.html. En instagram.html el estado de la
+// escucha lo escribe la franja del radar (monitoringRadar.js).
 const monitoringNextRunEl = document.getElementById('monitoringNextRun');
 
 const highlightsSectionEl = document.getElementById('monitoringHighlightsSection');
@@ -1304,6 +1308,7 @@ async function loadPosts() {
 // Hora real de la próxima corrida (el backend calcula desde MONITOR_CRON) —
 // nunca una hora inventada. Si falla, queda el placeholder "–".
 async function loadNextRun() {
+  if (!monitoringNextRunEl) return;
   try {
     const resp = await fetch('/api/monitoring/status');
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -1384,6 +1389,12 @@ function setProgressHead(text, counter = '') {
   monitoringStatusCountEl.textContent = counter;
 }
 
+// La barra y, donde está, el porcentaje grande: el mismo número real.
+function setProgressPercent(percent) {
+  monitoringProgressFillEl.style.width = `${percent}%`;
+  if (monitoringProgressPctEl) monitoringProgressPctEl.textContent = `${percent}%`;
+}
+
 async function pollMonitorProgress() {
   try {
     const resp = await fetch(withPlataforma('/api/monitoring/progress'));
@@ -1398,7 +1409,7 @@ async function pollMonitorProgress() {
     }
     progressSeenRunning = true;
     setProgressHead(data.phase, `${data.done} de ${data.total}${data.suffix ? ` ${data.suffix}` : ''}`);
-    monitoringProgressFillEl.style.width = `${data.percent}%`;
+    setProgressPercent(data.percent);
     drawProgressLines(data.lines);
   } catch (err) {
     // Un fallo puntual de polling no tiene que interrumpir la espera del
@@ -1415,7 +1426,7 @@ function startMonitorLoading() {
   monitoringProgressHideEl.classList.add('hidden');
   monitoringStatusCard.classList.remove('hidden');
   setProgressHead(IS_X_MONITOR ? 'Buscando posteos nuevos con Grok…' : 'Buscando posteos nuevos…');
-  monitoringProgressFillEl.style.width = '0%';
+  setProgressPercent(0);
   drawProgressLines([]);
 
   pollMonitorProgress();
@@ -1455,7 +1466,7 @@ async function finishMonitorLoading(ok, text) {
       // Sin el cierre quedan las últimas líneas que se llegaron a ver.
     }
   }
-  if (ok) monitoringProgressFillEl.style.width = '100%';
+  if (ok) setProgressPercent(100);
   progressWaiting = false;
   monitoringProgressEl.classList.add(ok ? 'done' : 'failed');
   monitoringStatusIconEl.className = ok ? 'run-progress-mark' : 'run-progress-mark err';

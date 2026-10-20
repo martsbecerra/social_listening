@@ -4386,3 +4386,345 @@ html.feed-pop-lock body {
   font-size: 12.5px;
   color: var(--sky-text-3);
 }
+
+/* ---------- Monitoreo: la franja oscura del radar ---------- */
+#tab-monitoring.tab-panel {
+  padding: 0;
+  align-items: stretch;
+}
+.sky {
+  position: relative;
+  color: var(--sky-text);
+  background:
+    radial-gradient(60% 120% at 50% 0%, #0a4a3c 0%, transparent 60%),
+    linear-gradient(180deg, var(--jade-950) 0%, #021e19 100%);
+  border-bottom: 1px solid var(--jade-150);
+}
+.sky-in {
+  max-width: 1220px;
+  margin: 0 auto;
+  padding: 30px clamp(18px, 3vw, 40px) 22px;
+}
+.sky-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.sky-head h1 {
+  margin: 0;
+  font-family: "Bricolage Grotesque", sans-serif;
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  color: #fff;
+}
+.sky-status {
+  margin: 10px 0 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: var(--sky-text-2);
+}
+.sky-status .dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 99px;
+  background: var(--jade-300);
+  animation: skyRing 2.4s ease-out infinite;
+}
+@keyframes skyRing {
+  0% {
+    box-shadow: 0 0 0 0 rgba(99, 199, 162, 0.55);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(99, 199, 162, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(99, 199, 162, 0);
+  }
+}
+.sky-status b {
+  color: #fff;
+  font-weight: 600;
+}
+.sky-run {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  width: auto;
+  margin: 0;
+  padding: 12px 18px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--jade-300);
+  box-shadow: none;
+  color: var(--jade-950);
+  font-size: 14.5px;
+  font-weight: 700;
+  transition: transform 0.18s var(--ease-out), background 0.18s, box-shadow 0.2s;
+}
+.sky-run:hover:not(:disabled) {
+  background: var(--jade-200);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 30px rgba(99, 199, 162, 0.25);
+  filter: none;
+}
+.sky-run:disabled {
+  opacity: 0.75;
+  cursor: progress;
+}
+.sky-run .meter {
+  --meter-h: 15px;
+  --bar-w: 2.5px;
+  --bar-gap: 2px;
+  --bar-color: var(--jade-950);
+}
+.radar {
+  position: relative;
+  margin-top: 22px;
+  height: 250px;
+}
+.radar canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: crosshair;
+}
+.radar.no-canvas canvas {
+  display: none;
+}
+/* Sin posteos de hoy (o sin canvas): el texto, nunca un recuadro negro. */
+.radar-empty {
+  position: absolute;
+  left: 50%;
+  top: 42%;
+  transform: translate(-50%, -50%);
+  width: min(460px, 90%);
+  margin: 0;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: rgba(2, 30, 25, 0.72);
+  border: 1px solid var(--sky-line-2);
+  color: var(--sky-text-2);
+  font-size: 14px;
+  text-align: center;
+  pointer-events: none;
+}
+.radar-tip {
+  position: absolute;
+  z-index: 5;
+  min-width: 220px;
+  max-width: 300px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #fff;
+  color: var(--clay-900);
+  box-shadow: var(--shadow-lg);
+  font-size: 12.5px;
+  line-height: 1.4;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, 8px);
+  transition: opacity 0.15s, transform 0.15s;
+}
+.radar-tip.on {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+.radar-tip b {
+  font-weight: 600;
+  color: var(--jade-900);
+}
+.radar-tip .t {
+  display: block;
+  margin: 3px 0 5px;
+  font-family: "Bricolage Grotesque", sans-serif;
+  font-weight: 600;
+  font-size: 13.5px;
+  line-height: 1.25;
+  color: var(--clay-900);
+}
+.radar-tip .m {
+  color: var(--clay-700);
+}
+.sky-legend {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  font-size: 12.5px;
+  color: var(--sky-text-2);
+}
+.sky-legend ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.sky-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.sky-legend i {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 99px;
+}
+.sky-legend .pos i {
+  background: var(--jade-300);
+}
+.sky-legend .neu i {
+  background: var(--clay-300);
+}
+.sky-legend .neg i {
+  background: var(--coral-400);
+}
+.sky-legend .size i {
+  width: 5px;
+  height: 5px;
+  margin-right: 4px;
+  box-shadow: 0 0 0 2px #0a4a3c, 0 0 0 3px rgba(255, 255, 255, 0.35);
+}
+.sky-legend .size i + i {
+  width: 11px;
+  height: 11px;
+}
+.sky-legend .now b {
+  font-family: "DM Mono", monospace;
+  font-weight: 500;
+  color: var(--jade-200);
+}
+
+/* El recuadro de progreso de "Actualizar ahora", en oscuro dentro de la
+   franja. Mismos ids y mismo comportamiento que antes (monitoring.js). */
+.sky-run-card {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+.sky .run-progress {
+  color: var(--sky-text-2);
+}
+.sky .run-progress-title {
+  color: #fff;
+}
+.sky .run-progress-count {
+  color: var(--sky-text-2);
+  font-family: "DM Mono", monospace;
+  font-size: 12.5px;
+}
+.sky .run-progress-head {
+  align-items: center;
+}
+.sky .run-progress-head .spinner {
+  border-color: rgba(255, 255, 255, 0.15);
+  border-top-color: var(--jade-300);
+  margin: 0;
+}
+.run-progress-pct {
+  flex: none;
+  margin-left: auto;
+  font-family: "Bricolage Grotesque", sans-serif;
+  font-weight: 700;
+  font-size: 28px;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  color: var(--jade-200);
+  font-variant-numeric: tabular-nums;
+}
+.sky .run-progress-hide,
+.sky .run-progress-hide:hover:not(:disabled) {
+  margin-left: 14px;
+  border-color: var(--sky-line-2);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--sky-text-2);
+}
+.sky .run-progress-hide:hover:not(:disabled) {
+  border-color: var(--jade-300);
+  color: #fff;
+}
+.sky .progress-track {
+  height: 3px;
+  margin-top: 10px;
+  border: 0;
+  background: rgba(255, 255, 255, 0.1);
+}
+.sky .progress-fill {
+  background: var(--jade-300);
+  box-shadow: 0 0 10px rgba(99, 199, 162, 0.7);
+  transition: width 0.5s var(--ease-out);
+}
+.sky .progress-fill::after {
+  display: none;
+}
+.sky .run-progress.failed .progress-fill {
+  background: var(--coral-400);
+  box-shadow: none;
+}
+.sky .run-progress-mark {
+  background: var(--jade-300);
+  color: var(--jade-950);
+}
+.sky .run-progress-mark.err {
+  background: var(--coral-400);
+  color: #fff;
+}
+.sky .run-progress-list {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  font-size: 12.5px;
+}
+.sky .run-progress-list li {
+  color: var(--sky-text-2);
+  max-width: 100%;
+}
+.sky .run-progress-list .t {
+  color: var(--sky-text);
+}
+.sky .run-progress-list li.run .t {
+  color: var(--jade-200);
+}
+.sky .run-progress-list li.ok .i {
+  color: var(--jade-300);
+}
+.sky .run-progress-list li.err .i,
+.sky .run-progress-list li.err .d {
+  color: var(--coral-300);
+}
+.sky .run-progress-list li.run .i {
+  border-color: rgba(255, 255, 255, 0.15);
+  border-top-color: var(--jade-300);
+}
+
+/* De la franja para abajo, claro. */
+.mon-page {
+  width: 100%;
+  max-width: 1220px;
+  margin: 0 auto;
+  /* Aire debajo para que el desplegable de "Filas por página" abra hacia
+     abajo (ver #tab-monitoring.tab-panel más arriba). */
+  padding: 30px clamp(18px, 3vw, 40px) 260px;
+}
+@media (max-width: 900px) {
+  .radar {
+    height: 210px;
+  }
+  .sky-head h1 {
+    font-size: 28px;
+  }
+}
