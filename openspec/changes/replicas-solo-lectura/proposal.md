@@ -25,7 +25,7 @@ siguiente, que se construye encima de esta sin rehacerla.
   arrancar como `IG_ACTOR` y `REFRESH_MODE`
 - Publicación al final de cada ciclo en la PC principal
   (`REPLICA_PUBLISH_DIR`): base copiada con `VACUUM INTO` y sin
-  `magic_links`, config del monitoreo, `account-types.json`, fotos
+  `magic_links`, config del monitoreo, fotos
   (`data/media/`) y `snapshot.json`; un commit único en la rama `snapshot`
   con `push --force`. Nunca frena ni rompe un ciclo
 - Modo réplica en `server.js`: sin scheduler, sin keep-awake, sin claves,

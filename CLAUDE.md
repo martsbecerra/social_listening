@@ -537,6 +537,45 @@ plataforma tiran). Ninguna función por plataforma tiene default a
 `/progress`, `/counts` y `/costs`. Al sumar una función nueva por
 plataforma: parámetro obligatorio, sin default.
 
+## Réplicas de solo lectura
+
+Otras máquinas de una red sin túneles usan una copia local que se trae los
+datos de un repo privado de GitHub. SDD en
+`openspec/changes/replicas-solo-lectura/`.
+
+- `APP_MODE` (`src/appMode.js`): `principal` (default) | `replica`; un
+ valor desconocido aborta el arranque. En réplica `server.js` no corre
+ `checkEnv`, el scheduler ni `startKeepAwake`, escucha en 127.0.0.1 y usa
+ `createReplicaGuard` en vez del login: solo GET/HEAD (el resto, 403 "Esta
+ copia es de solo lectura."), `Host` localhost con el puerto (si no, 421),
+ `req.auth = { email: 'copia.local' }`. La barrera es el método, no la
+ ruta: una ruta nueva que escribe queda cubierta sola; una que GASTA o
+ escribe por GET no, así que eso no se hace.
+- Publicación (`src/replicaPublish.js`, desde el `finally` del ciclo en
+ `scheduler.js`): solo con `REPLICA_PUBLISH_DIR`. Base con `VACUUM INTO`
+ desde una conexión de solo lectura y SIN `magic_links`, más
+ `config/monitoring.json`, `media/` en espejo y `snapshot.json`. Un commit
+ en la rama `snapshot` (amend) y `push --force`. Nunca tira. Lo que se
+ sume al snapshot no puede llevar datos del login ni secretos.
+- Réplica: `src/replicaPoller.js` (`git ls-remote` cada
+ `REPLICA_POLL_MINUTES`, sale con 75 si cambió), `scripts/replica-sync.js`
+ / `src/replicaSync.js` (clon o fetch `--depth 1`, `integrity_check`,
+ reemplazo de la base, fotos y config; no carga `src/db.js`) y
+ `installer/iniciar-replica.bat`, que los encadena. El token
+ (`DATA_REPO_TOKEN`) va por entorno a git (`src/replicaGit.js`,
+ `http.extraHeader`), nunca en la URL, y se borra de los errores.
+- Frontend: `main.js` pregunta `GET /api/app/mode` y marca
+ `<html data-readonly>`; el CSS esconde lo que escribe y los selectores
+ (sentimiento, estado de reclamos) se dibujan `disabled`. Un control nuevo
+ que escribe tiene que entrar en ese CSS o quedar deshabilitado ahí.
+- `installer/` (PowerShell 5.1: `.ps1` con BOM, archivos que lee Node SIN
+ BOM; `.bat` en CRLF). El armado baja Node y MinGit portables (descargas
+ públicas) y no hace push; publicar en el repo de datos real o usar su
+ token necesita autorización del dueño.
+- Tests: `test/appMode`, `appVersion`, `replica*.test.js` (git simulado,
+ carpetas temporales; `replicaServer.test.js` levanta `server.js` en modo
+ réplica). El instalador y el frontend se prueban a mano.
+
 ## Datos que no se tocan
 
 - `detected_posts.id` es el id numérico de Instagram y `url` es

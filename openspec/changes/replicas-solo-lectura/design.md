@@ -60,10 +60,12 @@ flowchart LR
   monitoring.db
   snapshot.json            { publishedAt, runId, appVersion }
   config/monitoring.json
-  config/monitoring-x.json (si existe)
-  config/account-types.json (data/account-types.json, si existe)
   media/<plataforma>/<id>_thumb.jpg, <id>_full.jpg
   ```
+
+  Ni `config/monitoring-x.json` (lo absorbió `monitoring.json`, queda solo
+  como legado) ni `account-types.json` (lo usa únicamente el análisis de
+  publicación, que la réplica no tiene).
 
   Fotos en espejo: se copian las que faltan o cambiaron de tamaño y se
   borran las que ya no están.
@@ -97,10 +99,9 @@ flowchart LR
   (`src/replicaSync.js`) corre antes de cada arranque y no carga
   `src/db.js`. Sin clon: `git clone --depth 1 --branch snapshot`. Con clon:
   `git fetch --depth 1 origin snapshot` + `git reset --hard FETCH_HEAD`.
-  Aplicar: copiar la base a `monitoring.db.tmp`, `PRAGMA integrity_check`
+  Aplicar: copiar la base a `monitoring.db.nuevo`, `PRAGMA integrity_check`
   en solo lectura, borrar `-wal` y `-shm` viejos, renombrar sobre
-  `monitoring.db`; espejo de `media/`; config a `config/` y
-  `account-types.json` a `data/`; `snapshot.json` a
+  `monitoring.db`; espejo de `media/`; config a `config/`; `snapshot.json` a
   `data/replica-snapshot.json`. Si git falla (sin red), aplica lo que ya
   tiene el clon y lo dice; si nunca hubo clon, arranca con lo que haya.
 
@@ -109,7 +110,7 @@ flowchart LR
     `SESSION_SECRET`.
   - Sin `startScheduler()` ni `startKeepAwake()`.
   - `app.listen(PORT, '127.0.0.1')`.
-  - En vez de `createAuthGate()`, `createReplicaGuard({ port })`.
+  - En vez de `createAuthGate()`, `createReplicaGuard({ getPort })`.
 
 - **`replicaGuard`.** En este orden:
   1. `Host` distinto de `localhost:<port>`, `127.0.0.1:<port>` o
@@ -142,8 +143,9 @@ flowchart LR
   análisis, los `add-row` y la ✕ de los chips, "Actualizar ahora" y el
   "Escuchando · próxima corrida", la ✕ de ignorar (tabla y feed) e
   "Ignorar" del pop-up, el selector de estado de los reclamos y "Cerrar
-  sesión"; el selector de sentimiento queda a la vista sin poder cambiarse
-  (`pointer-events: none`). El servidor es la barrera real: lo que se
+  sesión". Los selectores de sentimiento y de estado de los reclamos quedan
+  a la vista, deshabilitados (`disabled` al dibujarlos, con el estilo
+  normal). El servidor es la barrera real: lo que se
   escape del CSS recibe 403.
 
 - **Instalador** (`installer/`). `armar-instalador.ps1` arma

@@ -75,6 +75,15 @@ social_listening_app/
 │   ├── concurrencyLimiter.js # Cola FIFO para los runs simultáneos de Apify.
 │   ├── usageContext.js       # En qué ciclo y fase estamos (AsyncLocalStorage), para medir Apify.
 │   ├── apifyCost.js          # Tarifas de los dos actores, registro de cada llamada a Apify (estimado y real) y reporte de gasto.
+│   ├── appMode.js            # APP_MODE (principal | replica), validado al arrancar.
+│   ├── appVersion.js         # Versión del código (build-info.json o el commit de git).
+│   ├── replicaPublish.js     # Principal: publica el snapshot para las réplicas al cerrar el ciclo.
+│   ├── replicaGit.js         # Corre git con el token por entorno (nunca en la URL ni en los errores).
+│   ├── replicaFiles.js       # Copias atómicas y espejo de carpetas (fotos).
+│   ├── replicaGuard.js       # Réplica: solo GET/HEAD y solo Host localhost, sin login.
+│   ├── replicaSync.js        # Réplica: trae el snapshot y lo aplica (base revisada, fotos, config).
+│   ├── replicaPoller.js      # Réplica: ve si hay un snapshot nuevo y sale con 75 para actualizarse.
+│   ├── replicaRoutes.js      # GET /api/app/mode (modo, fecha de los datos, aviso de versión).
 │   └── notifiers/
 │       └── whatsapp.js       # Placeholder para notificación por WhatsApp (no implementado).
 ├── config/
@@ -112,7 +121,9 @@ social_listening_app/
 │   ├── stop-server.js           # Mata el proceso que ocupa el puerto (npm run stop).
 │   ├── iniciar-con-reinicio.bat # Arranca la app en bucle (reinicio solo) con log a archivo.
 │   ├── quickedit-off.ps1        # Apaga QuickEdit en la consola del .bat (un clic no congela).
+│   ├── replica-sync.js          # Réplica: trae y aplica el último snapshot (lo corre el lanzador).
 │   └── keep-awake.ps1           # Pide a Windows no suspender ni apagar la pantalla (lo lanza el server).
+├── installer/                 # Réplicas: armado del zip, instalar.ps1, iniciar-replica.bat y LEEME.txt.
 ├── CLAUDE.md                  # Guía corta del proyecto para trabajar con Claude Code.
 ├── .env.example               # Plantilla de las claves (copiala a .env).
 ├── .gitignore                 # Evita subir node_modules, .env y data/.
@@ -1197,6 +1208,54 @@ copias propias en JPEG**, hechas de esa única descarga.
   listado); tests en `test/postImages*.test.js` (red simulada e imágenes
   generadas: ni Apify ni descargas reales); SDD en
   `openspec/changes/monitoreo-fotos/`.
+
+### Réplicas de solo lectura (octubre 2026)
+
+Para que varias personas de una red que no deja instalar túneles ni
+servidores usen la app, cada una corre en su máquina una **copia de solo
+lectura** que se trae los datos de un repo privado de GitHub. La PC
+principal (la que corre el monitoreo) publica ahí después de cada ciclo.
+SDD en `openspec/changes/replicas-solo-lectura/`.
+
+- **Publicar (PC principal).** Con `REPLICA_PUBLISH_DIR` apuntando a un
+  clon del repo de datos, al cerrar cada ciclo `src/replicaPublish.js`
+  deja en esa carpeta la base (copiada con `VACUUM INTO`, sin
+  `magic_links`), `config/monitoring.json`, las fotos (`media/`, en
+  espejo de `data/media/`) y `snapshot.json` (`publishedAt`, `runId`,
+  `appVersion`), y lo sube como UN commit en la rama `snapshot` con
+  `push --force`: GitHub guarda solo la foto actual. Usa el git del
+  sistema con sus credenciales guardadas. Si algo falla lo dice en el log
+  (`[réplica] no se pudo publicar: ...`) y el ciclo sigue. Vacío no
+  publica.
+- **La réplica** (`APP_MODE=replica`) no tiene monitoreo, ni login, ni
+  claves: escucha solo en 127.0.0.1, rechaza todo lo que no sea GET/HEAD
+  con 403 "Esta copia es de solo lectura." (`src/replicaGuard.js`) y un
+  `Host` que no sea localhost con 421. El frontend pregunta
+  `GET /api/app/mode`, muestra la franja "Copia de solo lectura · Datos al
+  ..." y esconde o deshabilita los controles que escriben; avisa cuando el
+  snapshot vino de otra versión del código.
+- **Actualización de datos.** Cada `REPLICA_POLL_MINUTES` (10) la réplica
+  compara la punta de `snapshot` en GitHub (`git ls-remote`) con la que
+  tiene; si cambió, sale con código 75. El lanzador
+  (`iniciar-replica.bat`) corre `scripts/replica-sync.js` (trae el
+  snapshot, revisa la base con `PRAGMA integrity_check` y la reemplaza,
+  fotos en espejo) y vuelve a levantar la app. Sin red, sigue con lo que
+  tenía.
+- **Instalador** (`installer/`). `armar-instalador.ps1 -RepoUrl <url>` arma
+  `dist/SocialListening-replica.zip` (~95 MB): Node y MinGit portables, la
+  app del último commit con sus dependencias de producción, `.env` de
+  réplica sin secretos. En cada máquina, `instalar.ps1` copia todo a
+  `%LOCALAPPDATA%\SocialListening` sin pedir administrador, pide el token
+  de lectura (queda solo en el `.env` de esa máquina), crea los accesos
+  directos (escritorio y arranque al iniciar sesión) y abre el navegador.
+  Una actualización conserva `.env`, datos y logs.
+
+Para ponerlo en marcha: un repo privado vacío para los datos; un token
+fine-grained de GitHub con permiso de escritura en ese repo para la PC
+principal (o sus credenciales de git) y otro de solo lectura para las
+réplicas; `git clone <url> <carpeta>` en la PC principal y
+`REPLICA_PUBLISH_DIR=<carpeta>` en su `.env`. Antes de repartir el zip,
+conviene probar desde una máquina de la red que `github.com` responde.
 
 ### Benchmark y refresco de métricas en paralelo
 

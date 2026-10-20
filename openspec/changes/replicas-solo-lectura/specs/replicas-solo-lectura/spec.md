@@ -26,7 +26,7 @@ El server MUST arrancar en el modo que indique `APP_MODE`: `principal` (default,
 
 ### Requirement: REQ-REP-02 — Contenido del snapshot
 
-Con `REPLICA_PUBLISH_DIR` configurado, al cerrar cada ciclo la principal MUST dejar en esa carpeta: `monitoring.db` (copia consistente de la base, sin filas en `magic_links`), `snapshot.json` con `publishedAt`, `runId` y `appVersion`, `config/monitoring.json`, `config/monitoring-x.json` y `config/account-types.json` si existen, y `media/` como espejo de `data/media/`. Sin `REPLICA_PUBLISH_DIR` MUST NOT hacer nada.
+Con `REPLICA_PUBLISH_DIR` configurado, al cerrar cada ciclo la principal MUST dejar en esa carpeta: `monitoring.db` (copia consistente de la base, sin filas en `magic_links`), `snapshot.json` con `publishedAt`, `runId` y `appVersion`, `config/monitoring.json` y `media/` como espejo de `data/media/`. Sin `REPLICA_PUBLISH_DIR` MUST NOT hacer nada.
 
 #### Scenario: Login fuera del snapshot
 
