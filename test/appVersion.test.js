@@ -44,6 +44,12 @@ test('sin build-info.json ni git: null', () => {
   assert.equal(getAppVersion({ rootDir: root, execFileSyncFn }), null);
 });
 
+test('build-info.json con BOM (lo escribe PowerShell 5.1) se lee igual', () => {
+  const root = tmpRoot();
+  fs.writeFileSync(path.join(root, 'build-info.json'), '\uFEFF' + JSON.stringify({ commit: 'bom1234' }));
+  assert.equal(getAppVersion({ rootDir: root, execFileSyncFn: () => 'git9999' }), 'bom1234');
+});
+
 test('build-info.json roto cae a git', () => {
   const root = tmpRoot();
   fs.writeFileSync(path.join(root, 'build-info.json'), '{ esto no es json');

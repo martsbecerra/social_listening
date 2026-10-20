@@ -65,11 +65,12 @@ $tar = Join-Path $dist 'app.tar'
 git -C $root archive --format=tar -o $tar HEAD
 tar -xf $tar -C $stage
 Remove-Item $tar
-foreach ($dir in 'test', 'openspec', 'design', 'installer', '.cursor') {
+foreach ($dir in 'test', 'openspec', 'design', 'installer', '.cursor', '.claude', '.pr-body.md') {
   $p = Join-Path $stage $dir
   if (Test-Path $p) { Remove-Item -Recurse -Force $p }
 }
-@{ commit = $commit } | ConvertTo-Json | Set-Content -Encoding UTF8 (Join-Path $stage 'build-info.json')
+$utf8 = New-Object System.Text.UTF8Encoding($false)
+[IO.File]::WriteAllText((Join-Path $stage 'build-info.json'), (@{ commit = $commit } | ConvertTo-Json), $utf8)
 
 # Node portable: queda en node\ y es el que usan npm ci y el lanzador.
 $nodeName = "node-v$NodeVersion-win-x64"
@@ -96,14 +97,14 @@ try {
 }
 
 # .env de réplica: sin secretos. DATA_REPO_TOKEN lo completa instalar.ps1.
-@(
+[IO.File]::WriteAllLines((Join-Path $stage '.env.replica'), [string[]]@(
   '# Réplica de solo lectura (lo armó installer\armar-instalador.ps1).',
   'APP_MODE=replica',
   "PORT=$Port",
   "REPLICA_REPO_URL=$RepoUrl",
   'REPLICA_POLL_MINUTES=10',
   'DATA_REPO_TOKEN='
-) | Set-Content -Encoding UTF8 (Join-Path $stage '.env.replica')
+), $utf8)
 
 Copy-Item (Join-Path $PSScriptRoot 'instalar.ps1') $stage
 Copy-Item (Join-Path $PSScriptRoot 'iniciar-replica.bat') $stage

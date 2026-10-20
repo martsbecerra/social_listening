@@ -37,9 +37,9 @@ function Read-EnvValue([string]$file, [string]$name) {
 }
 
 function Set-EnvValue([string]$file, [string]$name, [string]$value) {
-  $lines = @(Get-Content $file | Where-Object { $_ -notmatch "^$name=" })
+  $lines = @(Get-Content -Encoding UTF8 $file | Where-Object { $_ -notmatch "^$name=" })
   $lines += "$name=$value"
-  Set-Content -Path $file -Value $lines -Encoding UTF8
+  [IO.File]::WriteAllLines($file, [string[]]$lines, (New-Object System.Text.UTF8Encoding($false)))
 }
 
 # Una copia que ya corre tiene node.exe tomado: hay que pararla (el bucle

@@ -17,7 +17,8 @@ const ROOT_DIR = path.join(__dirname, '..');
 
 function fromBuildInfo(rootDir) {
   try {
-    const info = JSON.parse(fs.readFileSync(path.join(rootDir, 'build-info.json'), 'utf8'));
+    const raw = fs.readFileSync(path.join(rootDir, 'build-info.json'), 'utf8').replace(/^\uFEFF/, '');
+    const info = JSON.parse(raw);
     const commit = String((info && info.commit) || '').trim();
     return commit || null;
   } catch (err) {
