@@ -857,6 +857,10 @@ function updateCounts() {
 //   { goToId }     hay que mostrar ese posteo (tarjetas de "Se despegaron").
 //                  La vista que esté activa devuelve true y se hace cargo;
 //                  si ninguna lo hace, lo muestra la tabla.
+//   { run: 'start' }           arrancó "Actualizar ahora".
+//   { run: 'end', newIds }     terminó (bien o mal); newIds, los posteos que
+//                  no estaban antes. Son para el radar de instagram.html
+//                  (monitoringRadar.js); el feed los ignora.
 const monitoringViewListeners = [];
 
 function notifyMonitoringViews(change) {
@@ -1287,6 +1291,7 @@ function ensureMonitoringTable(posts) {
   monitoringTable.on('rowClick', (e, row) => toggleRowExpansion(row));
 }
 
+// @returns {Promise<object[]|null>} los posteos que llegaron, o null si falló.
 async function loadPosts() {
   try {
     const resp = await fetch(withPlataforma(`/api/monitoring/posts?page=1&pageSize=${FETCH_ALL_PAGE_SIZE}`));
@@ -1298,10 +1303,12 @@ async function loadPosts() {
     );
     ensureMonitoringTable(posts);
     renderHighlightCards(posts);
+    return posts;
   } catch (err) {
     monitoringLoadErrorEl.textContent = 'No se pudo cargar la tabla. Reiniciá el servidor (para que tome el código nuevo) y recargá la página.';
     monitoringLoadErrorEl.classList.remove('hidden');
     console.error('Error cargando posteos detectados:', err);
+    return null;
   }
 }
 
@@ -1478,6 +1485,11 @@ async function finishMonitorLoading(ok, text) {
 async function runNow() {
   runNowBtn.disabled = true;
   startMonitorLoading();
+  // Para el radar de instagram.html (monitoringRadar.js): barre mientras
+  // corre y, al terminar, hace entrar con ondas los posteos que no estaban.
+  const idsBefore = new Set(monitoringTable ? monitoringTable.getData().map((post) => post.id) : []);
+  notifyMonitoringViews({ run: 'start' });
+  let newIds = [];
 
   try {
     const resp = await fetch(withPlataforma('/api/monitoring/run-now'), {
@@ -1490,12 +1502,14 @@ async function runNow() {
     if (!resp.ok) throw new Error(data.error || 'Ocurrió un error inesperado.');
 
     await finishMonitorLoading(true, monitorDoneText(data));
-    await loadPosts();
+    const posts = await loadPosts();
+    if (posts) newIds = posts.filter((post) => !idsBefore.has(post.id)).map((post) => post.id);
     if (monitoringTable) monitoringTable.setPage(1);
   } catch (err) {
     await finishMonitorLoading(false, `Error: ${err.message}`);
   } finally {
     runNowBtn.disabled = false;
+    notifyMonitoringViews({ run: 'end', newIds });
   }
 }
 

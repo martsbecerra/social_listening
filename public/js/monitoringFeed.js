@@ -578,6 +578,9 @@ function feedGoToCard(id) {
 
 // Aviso de monitoring.js (ver monitoringViewListeners).
 function onMonitoringChange(change) {
+  // Los avisos de "Actualizar ahora" son para el radar: el feed se redibuja
+  // con el aviso de los datos nuevos, que llega aparte.
+  if (change && change.run) return false;
   if (change && change.goToId !== undefined) return feedGoToCard(change.goToId);
   if (change && change.ignoredId !== undefined) {
     removeFeedCard(change.ignoredId);
