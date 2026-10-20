@@ -1215,7 +1215,10 @@ Para que varias personas de una red que no deja instalar túneles ni
 servidores usen la app, cada una corre en su máquina una **copia de solo
 lectura** que se trae los datos de un repo privado de GitHub. La PC
 principal (la que corre el monitoreo) publica ahí después de cada ciclo.
-SDD en `openspec/changes/replicas-solo-lectura/`.
+Documentación completa en [`docs/replicas/`](docs/replicas/README.md) y
+guía de instalación paso a paso (GitHub, PC principal y cada máquina) en
+[`docs/replicas/instalacion.md`](docs/replicas/instalacion.md). SDD en
+`openspec/changes/replicas-solo-lectura/`.
 
 - **Publicar (PC principal).** Con `REPLICA_PUBLISH_DIR` apuntando a un
   clon del repo de datos, al cerrar cada ciclo `src/replicaPublish.js`
