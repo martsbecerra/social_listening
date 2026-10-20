@@ -119,16 +119,19 @@ function renderTagList(listEl, items, onRemove, extraClass) {
 }
 
 // Lista con vista previa + "Ver todas (N)" + listado completo en un modal.
-// El mismo componente para cuentas, palabras clave y búsquedas.
+// El mismo componente para cuentas, palabras clave y búsquedas. En el panel
+// de fuentes de instagram.html el contenedor lleva data-full: ahí la lista
+// va completa y "Ver todas" no hace falta.
 function renderPreviewLists({ previewEl, fullEl, viewAllBtn, items, onRemove, extraClass }) {
-  const preview = items.slice(0, KEYWORDS_PREVIEW_COUNT);
+  const full = previewEl.hasAttribute('data-full');
+  const preview = full ? items : items.slice(0, KEYWORDS_PREVIEW_COUNT);
   renderTagList(previewEl, preview, onRemove, extraClass);
   renderTagList(fullEl, items, onRemove, extraClass);
 
   // renderTagList reemplaza todo el contenido del contenedor, así que el
   // botón "Ver todas" (que vive ahí adentro para quedar en la misma fila
   // que los chips) hay que volver a engancharlo después.
-  if (items.length > KEYWORDS_PREVIEW_COUNT) {
+  if (!full && items.length > KEYWORDS_PREVIEW_COUNT) {
     viewAllBtn.textContent = `Ver todas (${items.length})`;
     viewAllBtn.classList.remove('hidden');
   } else {
@@ -137,7 +140,16 @@ function renderPreviewLists({ previewEl, fullEl, viewAllBtn, items, onRemove, ex
   previewEl.appendChild(viewAllBtn);
 }
 
+// Contadores de las fuentes en el riel de instagram.html
+// ([data-src-count]); en x.html no hay ninguno.
+function updateSourceCount(kind, count) {
+  document.querySelectorAll(`[data-src-count="${kind}"]`).forEach((el) => {
+    el.textContent = String(count);
+  });
+}
+
 function renderAccountLists(accounts) {
+  updateSourceCount('accounts', accounts.length);
   renderPreviewLists({
     previewEl: accountListPreviewEl,
     fullEl: accountListFullEl,
@@ -148,6 +160,7 @@ function renderAccountLists(accounts) {
 }
 
 function renderKeywordLists(keywords) {
+  updateSourceCount('keywords', keywords.length);
   renderPreviewLists({
     previewEl: keywordListPreviewEl,
     fullEl: keywordListFullEl,
@@ -159,6 +172,7 @@ function renderKeywordLists(keywords) {
 }
 
 function renderSearchLists(searches) {
+  updateSourceCount('searches', searches.length);
   renderPreviewLists({
     previewEl: searchListPreviewEl,
     fullEl: searchListFullEl,

@@ -81,6 +81,29 @@
           <path d="m20 20-4.8-4.8" />
         </svg>Análisis
       </button>
+
+      <!-- Fuentes del monitoreo: abren el panel de abajo (rail.js). Los
+           contadores los actualiza monitoring.js con cada lista. -->
+      <div class="rail-sep" aria-hidden="true"></div>
+      <span class="rail-label">Fuentes</span>
+      <button class="rail-btn rail-src" type="button" data-src="busquedas" aria-expanded="false" aria-controls="srcPanel" title="Búsquedas por palabra clave">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+          <circle cx="12" cy="13" r="2.2" fill="currentColor" stroke="none" />
+          <path d="M7.8 17.2a6 6 0 0 1 0-8.4M16.2 8.8a6 6 0 0 1 0 8.4" />
+          <path d="M5 20a10 10 0 0 1 0-14M19 6a10 10 0 0 1 0 14" />
+        </svg>Búsquedas<span class="n" data-src-count="searches">–</span>
+      </button>
+      <button class="rail-btn rail-src guide" type="button" data-src="cuentas" aria-expanded="false" aria-controls="srcPanel" title="Cuentas trackeadas">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="4" />
+          <path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8" />
+        </svg>Cuentas<span class="n" data-src-count="accounts">–</span>
+      </button>
+      <button class="rail-btn rail-src guide" type="button" data-src="palabras" aria-expanded="false" aria-controls="srcPanel" title="Palabras clave y hashtags">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" aria-hidden="true">
+          <path d="M4 9h16M4 15h16M10 3 8 21M16 3l-2 18" />
+        </svg>Palabras<span class="n" data-src-count="keywords">–</span>
+      </button>
       <span class="rail-foot">DGAYD <span id="footerYear">2026</span></span>
     </nav>
 
@@ -147,47 +170,6 @@
       <p class="tag panel-eyebrow">Monitoreo</p>
       <h1 class="display">Monitoreo en vivo</h1>
       <p class="sub">Detección automática de menciones cada 4 horas.</p>
-
-      <!-- Config: visible, en dos columnas compactas (cuentas, keywords) -->
-      <div class="card config">
-        <div>
-          <h3 class="tag">Cuentas trackeadas</h3>
-          <div class="add-row">
-            <input type="text" id="newAccount" placeholder="usuario (sin @)" autocomplete="off" />
-            <button id="addAccountBtn" class="btn-ghost">Agregar</button>
-          </div>
-          <p id="accountError" class="error hidden" style="margin-top:8px;"></p>
-          <div id="accountListPreview" class="chips">
-            <button id="viewAllAccountsBtn" class="chip-more hidden"></button>
-          </div>
-        </div>
-        <div>
-          <h3 class="tag">Palabras clave / hashtags</h3>
-          <div class="add-row">
-            <input type="text" id="newKeyword" placeholder="Jorge Macri o #JorgeMacri" autocomplete="off" />
-            <button id="addKeywordBtn" class="btn-ghost">Agregar</button>
-          </div>
-          <p id="keywordError" class="error hidden" style="margin-top:8px;"></p>
-          <div id="keywordListPreview" class="chips">
-            <button id="viewAllKeywordsBtn" class="chip-more hidden"></button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Búsquedas por palabra clave: fila aparte, a todo el ancho -->
-      <div class="card config-full">
-        <div>
-          <h3 class="tag">Búsquedas por palabra clave</h3>
-          <div class="add-row">
-            <input type="text" id="newSearch" placeholder="jorge macri" autocomplete="off" />
-            <button id="addSearchBtn" class="btn-ghost">Agregar</button>
-          </div>
-          <p id="searchError" class="error hidden" style="margin-top:8px;"></p>
-          <div id="searchListPreview" class="chips">
-            <button id="viewAllSearchesBtn" class="chip-more hidden"></button>
-          </div>
-        </div>
-      </div>
 
       <!-- Barra fina de acción -->
       <div class="runbar">
@@ -359,6 +341,57 @@
       <footer id="siteFooter"></footer>
     </div>
   </div>
+
+  <!-- Fuentes del monitoreo, en un panel que sale del riel (rail.js lo abre
+       y lo cierra). Mismos ids y misma lógica de siempre (monitoring.js);
+       con data-full las listas van completas, sin "Ver todas". -->
+  <div class="src-backdrop" id="srcBackdrop"></div>
+  <aside class="src-panel" id="srcPanel" aria-label="Fuentes" aria-hidden="true" inert>
+    <div class="src-head">
+      <h2>Fuentes</h2>
+      <button class="src-close" id="srcClose" type="button" aria-label="Cerrar">×</button>
+    </div>
+    <div class="src-body">
+      <div class="src-group" id="srcBusquedas">
+        <h3>Búsquedas por palabra clave</h3>
+        <p>Es lo único que trae publicaciones nuevas. Un término de poco volumen puede traer una viral: antes de sacar uno, pensalo dos veces.</p>
+        <div class="add-row">
+          <input type="text" id="newSearch" placeholder="Agregar un término" autocomplete="off" aria-label="Agregar una búsqueda" />
+          <button id="addSearchBtn" class="btn-ghost" type="button">Agregar</button>
+        </div>
+        <p id="searchError" class="error hidden"></p>
+        <div id="searchListPreview" class="chips" data-full>
+          <button id="viewAllSearchesBtn" class="chip-more hidden"></button>
+        </div>
+      </div>
+      <div class="src-group guide">
+        <h3>Guía para el clasificador</h3>
+        <p>Estas listas no buscan nada. Le dan contexto al modelo para decidir si un posteo es relevante.</p>
+        <div class="sub" id="srcCuentas">
+          <h4>Cuentas trackeadas</h4>
+          <div class="add-row">
+            <input type="text" id="newAccount" placeholder="usuario, sin @" autocomplete="off" aria-label="Agregar una cuenta" />
+            <button id="addAccountBtn" class="btn-ghost" type="button">Agregar</button>
+          </div>
+          <p id="accountError" class="error hidden"></p>
+          <div id="accountListPreview" class="chips" data-full>
+            <button id="viewAllAccountsBtn" class="chip-more hidden"></button>
+          </div>
+        </div>
+        <div class="sub" id="srcPalabras">
+          <h4>Palabras clave y hashtags</h4>
+          <div class="add-row">
+            <input type="text" id="newKeyword" placeholder="Jorge Macri o #JorgeMacri" autocomplete="off" aria-label="Agregar una palabra clave" />
+            <button id="addKeywordBtn" class="btn-ghost" type="button">Agregar</button>
+          </div>
+          <p id="keywordError" class="error hidden"></p>
+          <div id="keywordListPreview" class="chips" data-full>
+            <button id="viewAllKeywordsBtn" class="chip-more hidden"></button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </aside>
 
   <!-- Popup de confirmación para ignorar un posteo de la tabla -->
   <div id="ignoreModal" class="modal-overlay hidden">
