@@ -19,7 +19,7 @@ process.env.MONITORING_X_CONFIG_PATH = path.join(tmp, 'monitoring-x.json');
 const { describe, test } = require('node:test');
 const assert = require('node:assert/strict');
 
-const { getCronExpression, estimateRunsPerDay, getNextRunAt, cronPlatforms } = require('../src/scheduler');
+const { getCronExpression, estimateRunsPerDay, getNextRunAt, getRunHours, cronPlatforms } = require('../src/scheduler');
 
 /** Fecha local del mismo día (o del siguiente) a la hora dada. */
 function localAt(hour, minute = 0, dayOffset = 0) {
@@ -47,6 +47,20 @@ describe('MONITOR_CRON', { concurrency: false }, () => {
     assert.deepEqual(getNextRunAt(cron, localAt(20, 0)), localAt(8, 0, 1), 'a las 20 en punto ya disparó: la próxima es a las 8 del día siguiente');
     assert.deepEqual(getNextRunAt(cron, localAt(23, 59)), localAt(8, 0, 1));
     assert.deepEqual(getNextRunAt(cron, localAt(3, 0)), localAt(8));
+  });
+
+  test('horas de corrida del día (la franja del Monitoreo y el pie las marcan sin inventarlas)', () => {
+    assert.deepEqual(getRunHours(), [8, 12, 16, 20], 'el default');
+    assert.deepEqual(getRunHours('0 */4 * * *'), [0, 4, 8, 12, 16, 20]);
+    assert.deepEqual(getRunHours('0 * * * *'), Array.from({ length: 24 }, (_, i) => i));
+    assert.deepEqual(getRunHours('30 18,9,9 * * *'), [9, 18], 'ordenadas y sin repetir');
+    assert.deepEqual(getRunHours('0 99 * * *'), [0], 'una hora imposible no se muestra');
+    process.env.MONITOR_CRON = '0 7,19 * * *';
+    try {
+      assert.deepEqual(getRunHours(), [7, 19], 'sin argumento, la de MONITOR_CRON');
+    } finally {
+      delete process.env.MONITOR_CRON;
+    }
   });
 });
 

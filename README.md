@@ -90,11 +90,13 @@ social_listening_app/
 │   ├── index.html            # Login (pide un magic link por email).
 │   ├── login-verify.html     # Confirma el link (POST, un solo uso).
 │   ├── dashboard.html        # Selector de red social.
-│   ├── instagram.html        # App Instagram: análisis + monitoreo + mapa de reclamos (tabs).
+│   ├── instagram.html        # App Instagram: monitoreo + mapa de reclamos + análisis (riel lateral).
 │   ├── x.html                # App X: análisis (Grok) + monitoreo + mapa de reclamos.
 │   ├── css/styles.css        # Estilos (paleta oscura corporativa).
 │   └── js/
-│       ├── main.js           # Tabs + dropdown de usuario (sesión / logout).
+│       ├── main.js           # Solapas ([data-tab], hash) + dropdown de usuario (sesión / logout).
+│       ├── rail.js           # Riel de Instagram: panel de fuentes. Solo Instagram.
+│       ├── footer.js         # Arma el pie de las páginas con sesión.
 │       ├── login.js          # Pedido del magic link.
 │       ├── analysis.js       # Lógica de "Análisis de publicación" (Instagram).
 │       ├── x-analysis.js     # Análisis de publicación de X (`/api/x/analyze`).
@@ -102,6 +104,7 @@ social_listening_app/
 │       ├── monitoring.js     # Monitoreo en vivo (parametrizado por data-platform).
 │       ├── monitoringFeed.js # Vista Feed del Monitoreo (tarjetas). Solo Instagram.
 │       ├── monitoringFeedPopup.js # Pop-up del posteo, desde el feed. Solo Instagram.
+│       ├── monitoringRadar.js # Franja del Monitoreo: estado y radar del día. Solo Instagram.
 │       └── claimsMap.js      # Mapa de reclamos (Leaflet, filtrado por plataforma).
 ├── scripts/
 │   ├── import-reclamos.js       # Importador genérico de Excel/CSV (solo CLI).
@@ -1012,20 +1015,69 @@ posteos").
   `test/refreshPorUrl.test.js`, `test/refreshPorUrlLotes.test.js` y
   `test/metricasConservadas.test.js`.
 
+### Riel, franja y radar de Instagram (octubre 2026)
+
+Fase 1 del rediseño (maqueta `design/riel-radar-v3.html`, SDD en
+`openspec/changes/riel-y-radar/`). Solo `instagram.html`; `x.html` no
+cambia, salvo el pie.
+
+- **Riel lateral** en lugar de las solapas: Monitoreo (por defecto),
+  Estadísticas (atenuado y deshabilitado, "Pronto", hasta que exista su
+  pantalla), Mapa y Análisis. La solapa abierta queda en el hash
+  (`#tab-monitoring`, etc.) y los enlaces del pie la cambian sin recargar.
+- **Fuentes** (búsquedas, cuentas, palabras) salen de arriba del
+  Monitoreo: se abren en un panel desde los botones con contador del riel
+  o desde el pie, con las listas completas. Arriba las búsquedas, lo único
+  que trae publicaciones nuevas; abajo la "Guía para el clasificador"
+  (cuentas y palabras no buscan: le dan contexto al modelo). Agregar,
+  quitar y los errores funcionan igual que antes.
+- **La franja oscura** del Monitoreo: el estado de la escucha ("Escuchando.
+  Última corrida a las HH:MM, la próxima a las HH:MM.", con
+  `GET /api/monitoring/status`, que ahora trae también `lastRunAt`, la
+  última corrida guardada en `monitoring_runs` de esa red, y `runHours`, las
+  horas de `MONITOR_CRON`), "Actualizar ahora" y su recuadro de progreso de
+  siempre, en oscuro y con el porcentaje grande.
+- **El radar** (`public/js/monitoringRadar.js`): las publicaciones de hoy
+  (hora de Argentina) que pasan los filtros, en un canvas. Cada una es un
+  pulso: a la izquierda o a la derecha según la hora de publicación, más
+  arriba cuanto más se despegó de lo habitual de su cuenta (la razón con
+  colchón del alcance, en escala logarítmica de 0,6 a 3, con la línea de
+  "alto" en 1,5), del color de su sentimiento y más grande con más
+  comentarios. Los de alcance alto laten; los de una cuenta sin mediana van
+  huecos sobre "lo habitual". La línea de "ahora" es la hora real y las
+  corridas del día se marcan debajo ("corrida" las que pasaron, "próxima"
+  las que faltan). Con el mouse sobre un pulso se ve el detalle y se
+  resalta su tira, tarjeta o fila (y al revés); un clic abre el pop-up del
+  posteo. "Actualizar ahora" barre el radar y los posteos nuevos entran con
+  ondas. Sin publicaciones de hoy, la franja lo dice. Con
+  `prefers-reduced-motion` no hay latido, barrido ni ondas, y la animación
+  se frena sola con la franja fuera de la vista.
+- **"Se despegaron"** en tiras: la razón grande con su métrica, el título,
+  la cuenta y la hora, el valor contra la mediana y el selector de
+  sentimiento. Hasta 4, como siempre.
+- **"Publicaciones detectadas"** con "N de M"; Feed | Tabla, filtros,
+  fechas, orden, buscador y Limpiar en una fila. El Feed es la vista por
+  defecto.
+- **Medidor de alcance** de cinco barras en el pie de la tarjeta y en una
+  columna nueva "Alcance" de la tabla.
+- **El pie** de Instagram, X e inicio lo arma `public/js/footer.js`: DGAYD,
+  las corridas del día y las columnas Secciones, Fuentes, Plataformas y
+  Cuenta.
+
 ### Vista Feed del Monitoreo de Instagram (octubre 2026)
 
-La solapa "Monitoreo en vivo" de Instagram se puede ver como **Tabla** (la
-de siempre) o como **Feed**: una tarjeta por publicación, con la cuenta, la
-foto, el título, likes, comentarios, el sentimiento y una etiqueta de
-alcance. El texto del posteo no va en la tarjeta: se lee entero en el
+La solapa "Monitoreo en vivo" de Instagram se puede ver como **Feed** (una
+tarjeta por publicación, con la cuenta, la foto, el título, likes,
+comentarios, el sentimiento y el medidor de alcance) o como **Tabla** (la
+de siempre). El texto del posteo no va en la tarjeta: se lee entero en el
 pop-up. El interruptor está arriba de los resultados y recuerda la última
-vista elegida en ese navegador.
+vista elegida en ese navegador; sin nada guardado, el Feed.
 
 - **Mismos datos y mismos filtros.** El feed no pide nada al servidor:
   dibuja los posteos que la tabla ya trajo y ya filtró
   (`postMatchesFilters` en `public/js/monitoring.js`). Sentimiento, Alcance,
-  Cuenta, Desde / Hasta, el buscador y el contador "Mostrando N de M" valen
-  para las dos vistas. Si se filtra, se ordena o se cambia de vista con la
+  Cuenta, Desde / Hasta, el buscador y el contador "N de M" valen para las
+  dos vistas (y para el radar). Si se filtra, se ordena o se cambia de vista con la
   página bajada, los resultados se muestran desde el principio.
 - **Alcance (alto / medio / bajo).** Sale del benchmark que calcula el
   backend para likes y para comentarios, con la regla del colchón (ver
@@ -1034,8 +1086,10 @@ vista elegida en ese navegador.
   normal de su cuenta. Vale el mejor de los dos: alto si alguno da alto,
   bajo solo si los dos dan bajo, medio en el resto. Si una métrica no tiene
   referencia (likes ocultos, cuenta con pocos posteos) decide la otra; si
-  ninguna la tiene, el posteo no lleva etiqueta y solo aparece con el
-  filtro "Alcance" en blanco. La tarjeta muestra la razón ("1,10×") al lado
+  ninguna la tiene, el medidor muestra "—" y el posteo solo aparece con el
+  filtro "Alcance" en blanco. El nivel se ve con un medidor de cinco barras
+  (`buildReachMeter`): en alto laten las cinco, en medio respira la tercera,
+  en bajo queda quieto. La tarjeta muestra la razón ("1,10×") al lado
   de la métrica que decidió la etiqueta, con dos decimales cortados (no
   redondeados), para que el número nunca quede del otro lado del corte que
   su etiqueta.
@@ -1051,8 +1105,9 @@ vista elegida en ese navegador.
   las métricas ("Métricas al 08/10/2026 · 23:48"). Es la última vez que se
   refrescaron likes y comentarios (`metrics_updated_at`) o, si el posteo
   nunca se refrescó, la fecha en que se detectó. Con más de 3 días sale en
-  naranja. En el pie, el motivo de detección y, debajo, el
-  selector de sentimiento y "Abrir ↗" (el posteo en Instagram). Al pasar el
+  naranja. En el pie, el motivo de detección y "Abrir ↗" (el posteo en
+  Instagram) y, debajo, el selector de sentimiento y el medidor de alcance.
+  Al pasar el
   mouse la tarjeta sube, toma el borde del color de su sentimiento y la
   foto se acerca apenas; con `prefers-reduced-motion` no se mueve nada.
 - **Pop-up del posteo.** Un clic en cualquier parte de la tarjeta lo abre;

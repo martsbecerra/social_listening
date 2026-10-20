@@ -1,17 +1,42 @@
 // Cambio de solapas (tabs), dropdown del header y sesión.
 
-document.querySelectorAll('.tab-btn').forEach((btn) => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.tab-btn').forEach((b) => b.classList.remove('active'));
-    document.querySelectorAll('.tab-panel').forEach((p) => p.classList.add('hidden'));
+// Solapas: cada botón con data-tab muestra su .tab-panel (#tab-<nombre>) y
+// esconde los demás. Son los botones del riel en instagram.html y los de la
+// barra de solapas en x.html. La solapa abierta queda en el hash
+// (#tab-<nombre>, sin sumar pasos al historial), y un cambio de hash abre
+// esa solapa sin recargar: así navegan los enlaces del pie. Un botón con
+// aria-disabled="true" (Estadísticas, hasta que exista) no abre nada.
+function openTab(name, { updateHash = true } = {}) {
+  const panel = document.getElementById(`tab-${name}`);
+  const btn = document.querySelector(`[data-tab="${name}"]`);
+  if (!panel || !btn || btn.getAttribute('aria-disabled') === 'true') return false;
 
-    btn.classList.add('active');
-    document.getElementById(`tab-${btn.dataset.tab}`).classList.remove('hidden');
-
-    if (btn.dataset.tab === 'claims-map' && typeof window.refreshClaimsMap === 'function') {
-      window.refreshClaimsMap();
-    }
+  document.querySelectorAll('[data-tab]').forEach((b) => {
+    const on = b === btn;
+    b.classList.toggle('active', on);
+    if (on) b.setAttribute('aria-current', 'page');
+    else b.removeAttribute('aria-current');
   });
+  document.querySelectorAll('.tab-panel').forEach((p) => p.classList.toggle('hidden', p !== panel));
+  if (updateHash && location.hash !== `#tab-${name}`) {
+    history.replaceState(null, '', `#tab-${name}`);
+  }
+
+  if (name === 'claims-map' && typeof window.refreshClaimsMap === 'function') {
+    window.refreshClaimsMap();
+  }
+  return true;
+}
+
+document.querySelectorAll('[data-tab]').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    // En el riel la página arranca de nuevo arriba, como en la maqueta.
+    if (openTab(btn.dataset.tab) && btn.classList.contains('rail-btn')) window.scrollTo(0, 0);
+  });
+});
+
+window.addEventListener('hashchange', () => {
+  if (location.hash.startsWith('#tab-')) openTab(location.hash.slice('#tab-'.length), { updateHash: false });
 });
 
 document.querySelectorAll('.user-btn').forEach((btn) => {
@@ -66,37 +91,41 @@ async function initAuthHeader() {
     if (emailEl) emailEl.textContent = email;
     if (avatarEl) avatarEl.textContent = initialsFromEmail(email);
     if (nameEl) nameEl.textContent = displayNameFromEmail(email);
+    // El nombre en la columna "Cuenta" del pie (lo arma footer.js).
+    document.querySelectorAll('[data-user-name]').forEach((el) => {
+      el.textContent = displayNameFromEmail(email);
+    });
   } catch {
     window.location.replace('/');
-    return;
-  }
-
-  if (logoutBtn) {
-    logoutBtn.addEventListener('click', async () => {
-      logoutBtn.disabled = true;
-      try {
-        await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
-      } finally {
-        window.location.replace('/');
-      }
-    });
   }
 }
+
+// "Cerrar sesión" del menú del usuario y del pie. Delegado en el documento:
+// el pie lo arma footer.js, que corre después que este archivo.
+document.addEventListener('click', async (e) => {
+  const btn = e.target.closest('.user-dropdown .logout-btn, [data-logout]');
+  if (!btn) return;
+  btn.disabled = true;
+  try {
+    await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
+  } finally {
+    window.location.replace('/');
+  }
+});
 
 initAuthHeader();
 
 // Atajos del pie de página: si la URL trae #tab-analysis / #tab-monitoring /
-// #tab-claims-map, abre esa solapa al cargar. Dispara el mismo click que ya
-// usa el usuario — no es un camino de navegación nuevo.
+// #tab-claims-map, abre esa solapa al cargar (sin hash, queda la que el HTML
+// marca activa: Monitoreo en instagram.html).
 //
 // Se difiere a DOMContentLoaded porque main.js corre ANTES que claimsMap.js
 // en el orden de scripts: en este momento window.refreshClaimsMap todavía no
-// existe, y el click directo abriría la solapa del mapa sin inicializarlo
-// (el guard del handler lo saltea en silencio). DOMContentLoaded dispara
-// recién cuando todos los scripts clásicos del final del body terminaron.
+// existe, y abrir la solapa del mapa ahora la dejaría sin inicializar.
+// DOMContentLoaded dispara recién cuando todos los scripts clásicos del final
+// del body terminaron.
 document.addEventListener('DOMContentLoaded', () => {
   if (location.hash.startsWith('#tab-')) {
-    const targetTab = location.hash.slice('#tab-'.length);
-    document.querySelector(`.tab-btn[data-tab="${targetTab}"]`)?.click();
+    openTab(location.hash.slice('#tab-'.length), { updateHash: false });
   }
 });

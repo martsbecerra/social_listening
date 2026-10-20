@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link
-    href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=Instrument+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap"
+    href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700;12..96,800&family=Instrument+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap"
     rel="stylesheet"
   />
   <!-- Tabulator: tabla de "Monitoreo en vivo" (orden/filtro/paginación del
@@ -52,31 +52,64 @@
     </div>
   </header>
 
-  <nav class="tabs">
-    <div class="tabs-group">
-      <button class="tab-btn active" data-tab="analysis">
-        <svg class="glyph glyph-an" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1"
-          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M3 20h18" stroke-width="1.5" opacity=".3" />
-          <path class="trend" d="M4 16.5 9 12 13 14.5 20 6" />
-          <circle class="head" cx="20" cy="6" r="2.2" fill="currentColor" stroke="none" />
-        </svg>
-        Análisis de publicación
+  <!-- Riel a la izquierda (secciones y, debajo, las fuentes del monitoreo) y
+       las solapas a la derecha, con el pie al final. La columna del riel
+       queda oscura hasta el final de la página (fondo de .shell). Diseño de
+       design/riel-radar-v3.html. -->
+  <div class="shell">
+    <nav class="rail" aria-label="Secciones y fuentes">
+      <button class="rail-btn active" type="button" data-tab="monitoring" aria-current="page">
+        <div class="meter" data-meter="5"></div>Monitoreo
       </button>
-      <button class="tab-btn" data-tab="monitoring"><div class="meter" data-meter="4"></div>Monitoreo en vivo</button>
-      <button class="tab-btn" data-tab="claims-map">
-        <svg class="glyph glyph-mp" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true">
-          <circle class="ping" cx="12" cy="10" r="7" stroke-width="1.5" />
+      <!-- Deshabilitado hasta que exista la pantalla (fase 3 del rediseño). -->
+      <button class="rail-btn" type="button" data-tab="stats" aria-disabled="true" title="Pronto">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M3 20h18" stroke-width="1.5" opacity=".35" />
+          <path d="M4 16.5 9 12 13 14.5 20 6" />
+          <circle cx="20" cy="6" r="2.2" fill="currentColor" stroke="none" />
+        </svg>Estadísticas
+      </button>
+      <button class="rail-btn" type="button" data-tab="claims-map">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true">
           <path d="M12 21s6-5.7 6-10a6 6 0 1 0-12 0c0 4.3 6 10 6 10Z" />
           <circle cx="12" cy="10.4" r="2.1" fill="currentColor" stroke="none" />
-        </svg>
-        Mapa de reclamos
+        </svg>Mapa
       </button>
-    </div>
-  </nav>
+      <button class="rail-btn" type="button" data-tab="analysis">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
+          <circle cx="10.5" cy="10.5" r="6.5" />
+          <path d="m20 20-4.8-4.8" />
+        </svg>Análisis
+      </button>
 
+      <!-- Fuentes del monitoreo: abren el panel de abajo (rail.js). Los
+           contadores los actualiza monitoring.js con cada lista. -->
+      <div class="rail-sep" aria-hidden="true"></div>
+      <span class="rail-label">Fuentes</span>
+      <button class="rail-btn rail-src" type="button" data-src="busquedas" aria-expanded="false" aria-controls="srcPanel" title="Búsquedas por palabra clave">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+          <circle cx="12" cy="13" r="2.2" fill="currentColor" stroke="none" />
+          <path d="M7.8 17.2a6 6 0 0 1 0-8.4M16.2 8.8a6 6 0 0 1 0 8.4" />
+          <path d="M5 20a10 10 0 0 1 0-14M19 6a10 10 0 0 1 0 14" />
+        </svg>Búsquedas<span class="n" data-src-count="searches">–</span>
+      </button>
+      <button class="rail-btn rail-src guide" type="button" data-src="cuentas" aria-expanded="false" aria-controls="srcPanel" title="Cuentas trackeadas">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="4" />
+          <path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8" />
+        </svg>Cuentas<span class="n" data-src-count="accounts">–</span>
+      </button>
+      <button class="rail-btn rail-src guide" type="button" data-src="palabras" aria-expanded="false" aria-controls="srcPanel" title="Palabras clave y hashtags">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" aria-hidden="true">
+          <path d="M4 9h16M4 15h16M10 3 8 21M16 3l-2 18" />
+        </svg>Palabras<span class="n" data-src-count="keywords">–</span>
+      </button>
+      <span class="rail-foot">DGAYD <span id="footerYear">2026</span></span>
+    </nav>
+
+    <div class="shell-main">
   <!-- ===================== Solapa: Análisis de publicación ===================== -->
-  <section id="tab-analysis" class="tab-panel">
+  <section id="tab-analysis" class="tab-panel hidden">
     <div class="container">
       <p class="tag panel-eyebrow">Análisis</p>
       <h1 class="display">Análisis de sentimiento en Instagram</h1>
@@ -132,106 +165,95 @@
   </section>
 
   <!-- ===================== Solapa: Monitoreo en vivo ===================== -->
-  <section id="tab-monitoring" class="tab-panel hidden">
-    <div class="container-wide">
-      <p class="tag panel-eyebrow">Monitoreo</p>
-      <h1 class="display">Monitoreo en vivo</h1>
-      <p class="sub">Detección automática de menciones cada 4 horas.</p>
-
-      <!-- Config: visible, en dos columnas compactas (cuentas, keywords) -->
-      <div class="card config">
-        <div>
-          <h3 class="tag">Cuentas trackeadas</h3>
-          <div class="add-row">
-            <input type="text" id="newAccount" placeholder="usuario (sin @)" autocomplete="off" />
-            <button id="addAccountBtn" class="btn-ghost">Agregar</button>
+  <section id="tab-monitoring" class="tab-panel">
+    <!-- La franja oscura: el día en una línea de tiempo (el radar,
+         public/js/monitoringRadar.js), el estado real de la escucha y
+         "Actualizar ahora" con su recuadro de progreso. -->
+    <section class="sky" aria-label="El día en la línea de tiempo">
+      <div class="sky-in">
+        <div class="sky-head">
+          <div>
+            <h1>Monitoreo en vivo</h1>
+            <p class="sky-status">
+              <span class="dot" aria-hidden="true"></span>
+              <span id="radarStatus"><b>Escuchando.</b></span>
+            </p>
           </div>
-          <p id="accountError" class="error hidden" style="margin-top:8px;"></p>
-          <div id="accountListPreview" class="chips">
-            <button id="viewAllAccountsBtn" class="chip-more hidden"></button>
+          <button id="runNowBtn" class="sky-run" type="button"><div class="meter" data-meter="5"></div>Actualizar ahora</button>
+        </div>
+
+        <div class="radar" id="radar">
+          <canvas id="radarCanvas" role="img" aria-label="Publicaciones de hoy por hora y alcance"></canvas>
+          <div class="radar-tip" id="radarTip" aria-hidden="true"></div>
+          <p class="radar-empty hidden" id="radarEmpty"></p>
+        </div>
+        <div class="sky-legend">
+          <ul>
+            <li class="pos"><i></i>Positivo</li>
+            <li class="neu"><i></i>Neutral</li>
+            <li class="neg"><i></i>Negativo</li>
+            <li class="size"><i></i><i></i>Más grande, más comentarios</li>
+            <li>Más arriba, más se despegó de lo habitual de su cuenta</li>
+          </ul>
+          <span class="now">Ahora: <b id="radarNow">–</b></span>
+        </div>
+
+        <!-- Progreso de "Actualizar ahora": arriba, qué se está haciendo, su
+             contador y el porcentaje; la barra a todo el ancho; debajo, las
+             últimas líneas del ciclo (las arma el backend,
+             src/monitoringProgress.js). Al terminar queda a la vista con el
+             resultado, hasta "Ocultar". -->
+        <div id="monitoringStatusCard" class="sky-run-card hidden">
+          <div id="monitoringProgress" class="run-progress">
+            <div class="run-progress-head" role="status" aria-live="polite">
+              <span id="monitoringStatusIcon" class="spinner"></span>
+              <span class="run-progress-text">
+                <span id="monitoringStatusText" class="run-progress-title">Buscando posteos nuevos…</span>
+                <span id="monitoringStatusCount" class="run-progress-count"></span>
+              </span>
+              <span id="monitoringProgressPct" class="run-progress-pct" aria-hidden="true">0%</span>
+              <button type="button" id="monitoringProgressHide" class="run-progress-hide hidden">Ocultar</button>
+            </div>
+            <div class="progress-track">
+              <div id="monitoringProgressFill" class="progress-fill"></div>
+            </div>
+            <ol id="monitoringProgressList" class="run-progress-list" aria-label="Últimos pasos"></ol>
           </div>
         </div>
-        <div>
-          <h3 class="tag">Palabras clave / hashtags</h3>
-          <div class="add-row">
-            <input type="text" id="newKeyword" placeholder="Jorge Macri o #JorgeMacri" autocomplete="off" />
-            <button id="addKeywordBtn" class="btn-ghost">Agregar</button>
-          </div>
-          <p id="keywordError" class="error hidden" style="margin-top:8px;"></p>
-          <div id="keywordListPreview" class="chips">
-            <button id="viewAllKeywordsBtn" class="chip-more hidden"></button>
-          </div>
-        </div>
       </div>
+    </section>
 
-      <!-- Búsquedas por palabra clave: fila aparte, a todo el ancho -->
-      <div class="card config-full">
-        <div>
-          <h3 class="tag">Búsquedas por palabra clave</h3>
-          <div class="add-row">
-            <input type="text" id="newSearch" placeholder="jorge macri" autocomplete="off" />
-            <button id="addSearchBtn" class="btn-ghost">Agregar</button>
-          </div>
-          <p id="searchError" class="error hidden" style="margin-top:8px;"></p>
-          <div id="searchListPreview" class="chips">
-            <button id="viewAllSearchesBtn" class="chip-more hidden"></button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Barra fina de acción -->
-      <div class="runbar">
-        <button id="runNowBtn" class="btn">Actualizar ahora</button>
-        <span class="live">
-          <div class="meter" data-meter="7"></div>
-          <span><b>Escuchando</b> · <span id="monitoringNextRun">próxima corrida –</span></span>
-        </span>
-      </div>
-
-      <!-- Progreso de "Actualizar ahora": arriba, qué se está haciendo y su
-           contador; la barra a todo el ancho; debajo, las últimas líneas del
-           ciclo (las arma el backend, src/monitoringProgress.js). Al terminar
-           queda a la vista con el resultado, hasta "Ocultar". -->
-      <div id="monitoringStatusCard" class="card hidden">
-        <div id="monitoringProgress" class="run-progress">
-          <div class="run-progress-head" role="status" aria-live="polite">
-            <span id="monitoringStatusIcon" class="spinner"></span>
-            <span class="run-progress-text">
-              <span id="monitoringStatusText" class="run-progress-title">Buscando posteos nuevos…</span>
-              <span id="monitoringStatusCount" class="run-progress-count"></span>
-            </span>
-            <button type="button" id="monitoringProgressHide" class="run-progress-hide hidden">Ocultar</button>
-          </div>
-          <div class="progress-track">
-            <div id="monitoringProgressFill" class="progress-fill"></div>
-          </div>
-          <ol id="monitoringProgressList" class="run-progress-list" aria-label="Últimos pasos"></ol>
-        </div>
-      </div>
-
+    <!-- De la franja para abajo, la página es clara. -->
+    <div class="mon-page">
       <p id="monitoringLoadError" class="error hidden"></p>
 
-      <!-- Tarjetas destacadas -->
-      <div id="monitoringHighlightsSection" class="hidden">
-        <div class="sec-head">
+      <!-- "Se despegaron": tiras de los posteos con alcance alto (las arma
+           renderHighlightCards en monitoring.js). -->
+      <section id="monitoringHighlightsSection" class="hidden">
+        <div class="sec-head hl-head">
           <h2>Se despegaron</h2>
-          <span>Posteos con alcance alto: muy por encima de lo normal de su propia cuenta</span>
+          <span class="hl-count" id="highlightsCount"></span>
+          <span class="hl-sub">Mejor que lo habitual de su propia cuenta. Pasá el mouse para verlas en el radar.</span>
         </div>
-        <div class="cards" id="cards"></div>
+        <div class="hl-tops" id="cards"></div>
+      </section>
+
+      <div class="list-head">
+        <h2>Publicaciones detectadas</h2>
+        <span class="list-count"><b id="n">0</b> de <b id="m">0</b></span>
       </div>
 
-      <!-- Filtros -->
+      <!-- Vista, filtros, orden del feed y buscador, en una fila (baja entera
+           si no entra). -->
       <div class="filters">
         <div class="frow">
-          <!-- Vista de los resultados: la tabla de siempre o el feed de
-               tarjetas (public/js/monitoringFeed.js, solo en Instagram). Se
-               recuerda la última elegida. -->
+          <!-- Vista de los resultados: el feed de tarjetas
+               (public/js/monitoringFeed.js, solo en Instagram) o la tabla de
+               siempre. Se recuerda la última elegida; si no hay, el feed. -->
           <div class="view-seg" id="viewSeg" role="group" aria-label="Vista de los resultados">
-            <button type="button" data-view="tabla" class="on" aria-pressed="true">Tabla</button>
-            <button type="button" data-view="feed" aria-pressed="false">Feed</button>
+            <button type="button" data-view="feed" class="on" aria-pressed="true">Feed</button>
+            <button type="button" data-view="tabla" aria-pressed="false">Tabla</button>
           </div>
-
-          <span class="frow-lbl tag">Filtrar</span>
 
           <select id="fSent" aria-label="Filtrar por sentimiento">
             <option value="">Sentimiento</option>
@@ -275,12 +297,10 @@
             <option value="likes">Más likes</option>
           </select>
 
-          <!-- Buscador, contador y "Limpiar" van agrupados: si no entran en
-               el primer renglón de la barra, bajan los tres juntos. -->
+          <!-- Buscador y "Limpiar" van juntos: si no entran en el renglón de
+               la barra, bajan los dos. -->
           <div class="frow-end">
-            <input type="search" id="q" placeholder="Buscar título, cuenta o texto del posteo..." />
-
-            <span class="f-count">Mostrando <b id="n">0</b> de <b id="m">0</b> posteos</span>
+            <input type="search" id="q" placeholder="Buscar título, cuenta o texto" aria-label="Buscar título, cuenta o texto del posteo" />
             <button class="f-clear" id="clear" type="button" disabled>Limpiar</button>
           </div>
         </div>
@@ -343,6 +363,63 @@
       </div>
     </div>
   </section>
+
+      <!-- Pie: lo arma public/js/footer.js (dentro de la columna derecha, así
+           el riel sigue oscuro hasta el final) -->
+      <footer id="siteFooter"></footer>
+    </div>
+  </div>
+
+  <!-- Fuentes del monitoreo, en un panel que sale del riel (rail.js lo abre
+       y lo cierra). Mismos ids y misma lógica de siempre (monitoring.js);
+       con data-full las listas van completas, sin "Ver todas". -->
+  <div class="src-backdrop" id="srcBackdrop"></div>
+  <aside class="src-panel" id="srcPanel" aria-label="Fuentes" aria-hidden="true" inert>
+    <div class="src-head">
+      <h2>Fuentes</h2>
+      <button class="src-close" id="srcClose" type="button" aria-label="Cerrar">×</button>
+    </div>
+    <div class="src-body">
+      <div class="src-group" id="srcBusquedas">
+        <h3>Búsquedas por palabra clave</h3>
+        <p>Es lo único que trae publicaciones nuevas. Un término de poco volumen puede traer una viral: antes de sacar uno, pensalo dos veces.</p>
+        <div class="add-row">
+          <input type="text" id="newSearch" placeholder="Agregar un término" autocomplete="off" aria-label="Agregar una búsqueda" />
+          <button id="addSearchBtn" class="btn-ghost" type="button">Agregar</button>
+        </div>
+        <p id="searchError" class="error hidden"></p>
+        <div id="searchListPreview" class="chips" data-full>
+          <button id="viewAllSearchesBtn" class="chip-more hidden"></button>
+        </div>
+      </div>
+      <div class="src-group guide">
+        <h3>Guía para el clasificador</h3>
+        <p>Estas listas no buscan nada. Le dan contexto al modelo para decidir si un posteo es relevante.</p>
+        <div class="sub" id="srcCuentas">
+          <h4>Cuentas trackeadas</h4>
+          <div class="add-row">
+            <input type="text" id="newAccount" placeholder="usuario, sin @" autocomplete="off" aria-label="Agregar una cuenta" />
+            <button id="addAccountBtn" class="btn-ghost" type="button">Agregar</button>
+          </div>
+          <p id="accountError" class="error hidden"></p>
+          <div id="accountListPreview" class="chips" data-full>
+            <button id="viewAllAccountsBtn" class="chip-more hidden"></button>
+          </div>
+        </div>
+        <div class="sub" id="srcPalabras">
+          <h4>Palabras clave y hashtags</h4>
+          <div class="add-row">
+            <input type="text" id="newKeyword" placeholder="Jorge Macri o #JorgeMacri" autocomplete="off" aria-label="Agregar una palabra clave" />
+            <button id="addKeywordBtn" class="btn-ghost" type="button">Agregar</button>
+          </div>
+          <p id="keywordError" class="error hidden"></p>
+          <div id="keywordListPreview" class="chips" data-full>
+            <button id="viewAllKeywordsBtn" class="chip-more hidden"></button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </aside>
 
   <!-- Popup de confirmación para ignorar un posteo de la tabla -->
   <div id="ignoreModal" class="modal-overlay hidden">
@@ -411,49 +488,9 @@
     <button type="button" class="feed-pop-nav next" id="feedPopNext" aria-label="Posteo siguiente">›</button>
   </dialog>
 
-  <footer class="foot">
-    <div class="foot-in">
-      <div class="foot-grid">
-        <div>
-          <a class="brand" href="dashboard.html">
-            <div class="meter" data-meter="5"></div>
-            <span class="brand-name"><span>social</span> <b>listening</b></span>
-          </a>
-          <p class="foot-lead">Una herramienta de <b>DGAND</b> para escuchar lo que se dice en redes, medir cómo se dice y convertir los reclamos en un punto del mapa.</p>
-        </div>
-
-        <div>
-          <h4 class="tag">Qué escuchamos</h4>
-          <div class="stat-row">
-            <span class="stat"><b id="footerPlataformas">–</b> plataformas</span>
-            <span class="stat"><b id="footerCorridas">–</b> corridas por día</span>
-            <span class="stat"><b id="footerTematicas">–</b> temáticas de reclamo</span>
-          </div>
-        </div>
-
-        <div>
-          <h4 class="tag">Atajos</h4>
-          <nav class="foot-links">
-            <a href="instagram.html#tab-analysis">Análisis de publicación</a>
-            <a href="instagram.html#tab-monitoring">Monitoreo en vivo</a>
-            <a href="instagram.html#tab-claims-map">Mapa de reclamos</a>
-          </nav>
-        </div>
-      </div>
-
-      <div class="foot-rule"></div>
-      <div class="foot-base">
-        <span class="pulse-line" id="footerPulse">
-          <span class="pulse-dot"></span>
-          <span id="footerPulseText">Escuchando</span>
-        </span>
-        <span class="tag">DGAND · <span id="footerYear"></span></span>
-      </div>
-    </div>
-  </footer>
-
   <script src="js/meter.js"></script>
   <script src="js/main.js"></script>
+  <script src="js/rail.js"></script>
   <script src="js/temasEditor.js"></script>
   <script src="js/analysis.js"></script>
   <script src="https://unpkg.com/tabulator-tables@6.3.0/dist/js/tabulator.min.js"></script>
@@ -461,6 +498,7 @@
   <script src="js/monitoring.js?v=plat"></script>
   <script src="js/monitoringFeed.js"></script>
   <script src="js/monitoringFeedPopup.js"></script>
+  <script src="js/monitoringRadar.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="js/claimsMap.js"></script>
   <script src="js/footer.js"></script>

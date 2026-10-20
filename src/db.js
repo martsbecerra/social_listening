@@ -748,6 +748,16 @@ const finishMonitoringRunStmt = db.prepare(`
   WHERE id = @id
 `);
 const getMonitoringRunStmt = db.prepare('SELECT * FROM monitoring_runs WHERE id = ?');
+// Fin de la última corrida terminada de una plataforma. La columna
+// plataforma dice qué corrió el ciclo: una sola ("instagram"), varias
+// separadas por coma ("instagram,x", el cron) o "todas".
+const getLastFinishedRunAtStmt = db.prepare(`
+  SELECT finished_at FROM monitoring_runs
+  WHERE finished_at IS NOT NULL
+    AND (plataforma = 'todas' OR (',' || plataforma || ',') LIKE ('%,' || ? || ',%'))
+  ORDER BY finished_at DESC
+  LIMIT 1
+`);
 // Conciliación del costo real (apifyCost.reconcileRealCosts): llamadas con
 // run de Apify conocido y sin usd_real todavía, en una ventana de antigüedad.
 const listApifyCallsPendingRealCostStmt = db.prepare(`
@@ -1531,6 +1541,19 @@ function getMonitoringRun(id) {
   };
 }
 
+/**
+ * Cuándo terminó la última corrida de esa plataforma (sola o junto con
+ * otras), para la línea "Última corrida a las HH:MM" del Monitoreo. Sale de
+ * monitoring_runs: sobrevive a un reinicio, a diferencia de la hora en
+ * memoria del scheduler.
+ * @returns {string|null} ISO, o null si nunca terminó ninguna.
+ */
+function getLastFinishedRunAt(plataforma) {
+  requirePlataforma(plataforma, 'getLastFinishedRunAt');
+  const row = getLastFinishedRunAtStmt.get(plataforma);
+  return row ? row.finished_at : null;
+}
+
 /** @returns {{id: number, runId: number|null, apifyRunId: string, usd: number, at: string}[]} llamadas con run conocido y sin costo real, con `at` entre newerThanIso y olderThanIso. */
 function listApifyCallsPendingRealCost({ olderThanIso, newerThanIso, limit = 100 }) {
   return listApifyCallsPendingRealCostStmt.all({ olderThanIso, newerThanIso, limit: Math.max(1, Math.floor(Number(limit)) || 100) });
@@ -1857,6 +1880,7 @@ module.exports = {
   startMonitoringRun,
   finishMonitoringRun,
   getMonitoringRun,
+  getLastFinishedRunAt,
   sumApifyCallsSince,
   listApifyCallsPendingRealCost,
   setApifyCallRealCost,

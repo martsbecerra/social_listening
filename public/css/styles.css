@@ -183,111 +183,92 @@ a {
   background: repeating-linear-gradient(90deg, rgba(6, 56, 46, 0.022) 0 1px, transparent 1px 5px);
   mask-image: linear-gradient(to right, transparent, #000 45%, transparent);
 }
-.foot-in {
+/* Pie de las páginas con sesión: lo arma footer.js en #siteFooter (diseño
+   de design/riel-radar-v3.html). La marca y una frase, y cuatro columnas
+   de enlaces: Secciones, Fuentes, Plataformas y Cuenta. */
+.foot-site .foot-in {
   position: relative;
   z-index: 2;
-  max-width: 1080px;
+  max-width: 1220px;
   margin: 0 auto;
-  padding: 38px clamp(18px, 4vw, 40px) 28px;
-}
-.foot-grid {
+  padding: 38px clamp(18px, 3vw, 40px) 26px;
   display: grid;
-  grid-template-columns: minmax(0, 1.5fr) repeat(2, minmax(0, 1fr));
-  gap: 32px;
-}
-.foot h4 {
-  color: var(--jade-700);
-  margin-bottom: 12px;
-}
-.foot-lead {
-  margin-top: 14px;
+  grid-template-columns: minmax(0, 1.6fr) repeat(4, minmax(0, 1fr));
+  gap: 28px;
   font-size: 13.5px;
   color: var(--clay-700);
+}
+.foot-site .brand .meter {
+  --bar-color: var(--jade-500);
+}
+.foot-site p {
+  margin: 14px 0 0;
   max-width: 38ch;
   line-height: 1.6;
 }
-.foot-lead b {
-  color: var(--jade-900);
-  font-weight: 600;
-}
-.stat-row {
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-}
-.stat {
-  display: flex;
-  align-items: baseline;
-  gap: 9px;
-  font-size: 13px;
+.foot-site .foot-meta {
+  margin-top: 10px;
+  font-size: 12.5px;
   color: var(--clay-500);
 }
-.stat b {
-  font-family: "DM Mono", monospace;
+.foot-site h4 {
+  margin: 0 0 12px;
+  font-family: "Bricolage Grotesque", sans-serif;
   font-size: 15px;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--jade-900);
 }
-.foot-links {
+.foot-site ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  font-size: 13.5px;
 }
-.foot-links a {
-  color: var(--clay-700);
+.foot-site a {
+  color: inherit;
   text-decoration: none;
-  width: fit-content;
-  transition: color 0.16s;
 }
-.foot-links a:hover {
+.foot-site a:hover {
   color: var(--jade-700);
   text-decoration: underline;
   text-underline-offset: 3px;
 }
-.foot-rule {
-  margin: 26px 0 0;
-  height: 1px;
-  background: linear-gradient(90deg, var(--jade-150), transparent);
+/* Estadísticas, hasta que exista su pantalla (igual que en el riel). */
+.foot-site .foot-off {
+  opacity: 0.55;
+  cursor: default;
 }
-.foot-base {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
-  padding-top: 16px;
-  color: var(--clay-500);
+.foot-site .foot-logout,
+.foot-site .foot-logout:hover:not(:disabled) {
+  margin: 0;
+  width: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  transform: none;
+  filter: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
-.pulse-line {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12.5px;
-  color: var(--clay-500);
+.foot-site .foot-logout:hover:not(:disabled) {
+  color: var(--jade-700);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
-.pulse-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 99px;
-  background: var(--jade-400);
-  animation: blink 2.2s ease-in-out infinite;
-}
-@keyframes blink {
-  0%,
-  100% {
-    opacity: 0.35;
-    transform: scale(0.85);
-  }
-  50% {
-    opacity: 1;
-    transform: scale(1);
+@media (max-width: 1150px) {
+  .foot-site .foot-in {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
-@media (max-width: 760px) {
-  .foot-grid {
+@media (max-width: 900px) {
+  .foot-site .foot-in {
     grid-template-columns: 1fr;
-    gap: 24px;
+    gap: 22px;
   }
 }
 
@@ -1430,85 +1411,6 @@ pre.report a:hover {
   gap: 13px;
   margin-bottom: 30px;
 }
-.hl {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 15px 16px 15px 19px;
-  cursor: pointer;
-  text-align: left;
-  background: #fff;
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--clay-200);
-  border-radius: 12px;
-  box-shadow: var(--shadow-sm);
-  transition:
-    transform 0.18s cubic-bezier(0.2, 0.7, 0.3, 1),
-    box-shadow 0.2s,
-    border-color 0.2s;
-  width: 100%;
-  margin: 0;
-}
-.hl:hover,
-.hl:focus-visible {
-  transform: translateY(-3px);
-  box-shadow: var(--shadow-md);
-}
-.hl.pos {
-  border-left-color: var(--jade-400);
-}
-.hl.neu {
-  border-left-color: var(--amber-700);
-}
-.hl.neg {
-  border-left-color: var(--coral-500);
-}
-.hl-top {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-}
-.hl-acc {
-  font-size: 13.5px;
-  font-weight: 600;
-  color: var(--jade-900);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.hl-plat {
-  font-family: "DM Mono", monospace;
-  font-size: 9.5px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--clay-500);
-  flex: none;
-}
-.hl-title {
-  font-size: 13.5px;
-  line-height: 1.45;
-  color: var(--clay-900);
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.hl-metric {
-  margin-top: auto;
-  padding-top: 8px;
-  border-top: 1px solid var(--line);
-  font-size: 12.5px;
-  color: var(--clay-500);
-}
-.hl-metric b {
-  font-family: "DM Mono", monospace;
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--jade-700);
-}
-
 /* Filtros: sticky debajo de .topbar + .tabs (que ya son sticky top:0 en la
    app — la referencia es un archivo suelto sin esa cabecera, ahí sí puede
    ir top:0). Alto real medido en el navegador: topbar + tabs. */
@@ -2338,18 +2240,6 @@ pre.report a:hover {
 }
 .feed-badge.type {
   left: 8px;
-}
-.feed-badge.reach {
-  right: 8px;
-}
-.feed-badge.reach.alto {
-  background: var(--coral-500);
-}
-.feed-badge.reach.medio {
-  background: var(--amber-700);
-}
-.feed-badge.reach.bajo {
-  background: rgba(3, 42, 35, 0.55);
 }
 /* Sin imagen para mostrar, el mismo cuadrado, rayado y con su texto: "Sin
    foto" (el posteo todavía no tiene) o "Imagen no disponible" (la descarga
@@ -4018,5 +3908,1047 @@ html.feed-pop-lock body {
   .glyph-mp .ping {
     opacity: 0.35;
     transform: scale(1);
+  }
+}
+
+/* ══════════════════════════════════════════════════════════
+   RIEL Y RADAR — instagram.html (design/riel-radar-v3.html)
+   El riel lateral oscuro reemplaza a las solapas; el Monitoreo arranca con
+   una franja oscura (el radar del día) y de ahí para abajo la página es
+   clara. Las clases de la maqueta que ya existían con otro estilo (.status,
+   .chip, .add-row, .btn-ghost, .btn, .sec-head) van con alcance (.sky …,
+   .src-panel …) o con nombre propio. Los botones nuevos anulan el estilo
+   global de <button> (ancho completo, degradé, sombra).
+   ══════════════════════════════════════════════════════════ */
+:root {
+  --jade-200: #9fe0c4;
+  --clay-300: #d9c5b2;
+  --coral-400: #e07a58;
+  --coral-300: #f0a080;
+  --line-strong: #c9d6cf;
+  --sky-text: #e8f1ec;
+  --sky-text-2: #a9c2b7;
+  --sky-text-3: #6f8f84;
+  --sky-line: rgba(255, 255, 255, 0.08);
+  --sky-line-2: rgba(255, 255, 255, 0.14);
+  --ease-out: cubic-bezier(0.22, 0.8, 0.3, 1);
+  /* Alto de la cabecera (rail.js lo mide de verdad) y ancho del riel. */
+  --top: 67px;
+  --rail: 76px;
+}
+
+/* ---------- Riel ---------- */
+.shell {
+  flex: 1 0 auto;
+  display: grid;
+  grid-template-columns: var(--rail) minmax(0, 1fr);
+  /* La columna del riel queda oscura hasta el final de la página, aunque
+     el riel (sticky) mida lo que la ventana. */
+  background: linear-gradient(90deg, var(--jade-950) 0 var(--rail), transparent var(--rail));
+}
+.shell-main {
+  position: relative; /* contiene a #tab-monitoring cuando está "oculto" */
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.shell-main > .foot {
+  margin-top: auto;
+}
+.rail {
+  position: sticky;
+  top: var(--top);
+  align-self: start;
+  height: calc(100vh - var(--top));
+  z-index: 28;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 14px 0 16px;
+  background: var(--jade-950);
+  color: var(--sky-text);
+  border-right: 1px solid var(--sky-line);
+}
+.rail-btn,
+.rail-btn:hover:not(:disabled) {
+  position: relative;
+  width: 62px;
+  margin: 0;
+  padding: 10px 0 8px;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  box-shadow: none;
+  transform: none;
+  filter: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.1;
+  color: var(--sky-text-3);
+  transition: color 0.15s, background 0.15s;
+}
+.rail-btn svg {
+  width: 20px;
+  height: 20px;
+}
+.rail-btn:hover:not(:disabled) {
+  color: var(--sky-text);
+  background: rgba(255, 255, 255, 0.07);
+}
+.rail-btn.active {
+  color: var(--jade-200);
+}
+.rail-btn.active::before {
+  content: "";
+  position: absolute;
+  left: -7px;
+  top: 12px;
+  bottom: 12px;
+  width: 3px;
+  border-radius: 3px;
+  background: var(--jade-300);
+}
+.rail-btn .meter {
+  --meter-h: 18px;
+  --bar-w: 2.5px;
+  --bar-gap: 2px;
+  --bar-color: var(--jade-300);
+}
+.rail-btn:not(.active) .meter i {
+  animation: none;
+  transform: scaleY(0.2);
+  background: var(--sky-text-3);
+}
+/* Estadísticas, hasta que exista su pantalla. */
+.rail-btn[aria-disabled="true"],
+.rail-btn[aria-disabled="true"]:hover:not(:disabled) {
+  opacity: 0.4;
+  cursor: default;
+  color: var(--sky-text-3);
+  background: none;
+}
+.rail-foot {
+  margin-top: auto;
+  font-family: "DM Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--sky-text-3);
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+}
+@media (max-width: 900px) {
+  :root {
+    --rail: 62px;
+  }
+  .rail-btn,
+  .rail-btn:hover:not(:disabled) {
+    width: 54px;
+    font-size: 9px;
+  }
+}
+
+/* ---------- Fuentes en el riel ---------- */
+.rail {
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.rail::-webkit-scrollbar {
+  display: none;
+}
+.rail-sep {
+  width: 36px;
+  height: 1px;
+  margin: 10px 0;
+  background: var(--sky-line-2);
+  flex: none;
+}
+.rail-label {
+  margin-bottom: 2px;
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  color: var(--sky-text-3);
+}
+.rail-src .n {
+  position: absolute;
+  top: 3px;
+  right: 5px;
+  min-width: 18px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: var(--jade-300);
+  color: var(--jade-950);
+  font-family: "DM Mono", monospace;
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1.4;
+  text-align: center;
+}
+.rail-src.guide .n {
+  background: var(--clay-300);
+}
+.rail-src[aria-expanded="true"],
+.rail-src[aria-expanded="true"]:hover:not(:disabled) {
+  color: var(--jade-200);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+/* ---------- Panel de fuentes (sale del riel) ---------- */
+.src-backdrop {
+  position: fixed;
+  inset: var(--top) 0 0 var(--rail);
+  /* Por encima de la barra de filtros (sticky, z-index 30). */
+  z-index: 40;
+  background: rgba(3, 42, 35, 0.35);
+  backdrop-filter: blur(2px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s;
+}
+.src-backdrop.on {
+  opacity: 1;
+  pointer-events: auto;
+}
+.src-panel {
+  position: fixed;
+  top: var(--top);
+  bottom: 0;
+  left: var(--rail);
+  width: min(500px, calc(100vw - var(--rail)));
+  z-index: 41;
+  display: flex;
+  flex-direction: column;
+  background: #04312a;
+  color: var(--sky-text);
+  border-right: 1px solid var(--sky-line-2);
+  box-shadow: 30px 0 60px rgba(0, 0, 0, 0.35);
+  transform: translateX(calc(-100% - var(--rail) - 40px));
+  visibility: hidden;
+  transition: transform 0.42s var(--ease-out), visibility 0s linear 0.42s;
+}
+.src-panel.on {
+  transform: none;
+  visibility: visible;
+  transition: transform 0.42s var(--ease-out), visibility 0s;
+}
+.src-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 26px 14px;
+  border-bottom: 1px solid var(--sky-line);
+}
+.src-head h2 {
+  margin: 0;
+  font-family: "Bricolage Grotesque", sans-serif;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #fff;
+}
+.src-close,
+.src-close:hover:not(:disabled) {
+  width: 34px;
+  height: 34px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: none;
+  transform: none;
+  filter: none;
+  color: var(--sky-text);
+  font-size: 18px;
+  line-height: 1;
+}
+.src-close:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.14);
+}
+.src-body {
+  overflow: auto;
+  padding: 20px 26px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+.src-group {
+  scroll-margin-top: 12px;
+}
+.src-group h3 {
+  margin: 0 0 4px;
+  font-family: "Bricolage Grotesque", sans-serif;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: #fff;
+}
+.src-group p {
+  margin: 0 0 12px;
+  max-width: 60ch;
+  font-size: 13px;
+  color: var(--sky-text-2);
+}
+.src-group.guide {
+  padding: 16px 18px;
+  border-radius: 14px;
+  background: rgba(222, 211, 198, 0.06);
+  border: 1px solid rgba(222, 211, 198, 0.12);
+}
+.src-group.guide h3 {
+  font-size: 14.5px;
+  color: var(--clay-300);
+}
+.src-group .sub {
+  margin-top: 12px;
+  scroll-margin-top: 12px;
+}
+.src-group .sub h4 {
+  margin: 0 0 8px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--sky-text);
+}
+.src-panel .add-row {
+  gap: 8px;
+  margin-bottom: 10px;
+  max-width: 520px;
+}
+.src-panel .add-row input,
+.src-panel .add-row input:focus {
+  padding: 8px 12px;
+  border-radius: 9px;
+  border: 1px solid var(--sky-line-2);
+  background: rgba(0, 0, 0, 0.2);
+  color: var(--sky-text);
+  font-size: 13.5px;
+}
+.src-panel .add-row input::placeholder {
+  color: var(--sky-text-3);
+}
+.src-panel .add-row input:focus {
+  border-color: var(--jade-300);
+  box-shadow: 0 0 0 3px rgba(99, 199, 162, 0.2);
+}
+.src-panel .btn-ghost,
+.src-panel .btn-ghost:hover:not(:disabled) {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 13px;
+  border: 1px solid var(--sky-line-2);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: none;
+  transform: none;
+  filter: none;
+  color: var(--sky-text);
+  font-size: 13px;
+  font-weight: 600;
+  transition: border-color 0.15s, background 0.15s;
+}
+.src-panel .btn-ghost:hover:not(:disabled) {
+  border-color: var(--jade-300);
+  background: rgba(99, 199, 162, 0.12);
+}
+.src-panel .error {
+  margin: 0 0 10px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--coral-300);
+  background: rgba(196, 82, 44, 0.14);
+  border-color: rgba(240, 160, 128, 0.35);
+}
+.src-panel .chips {
+  margin-top: 0;
+}
+.src-panel .chip,
+.src-panel .chip.kw {
+  gap: 6px;
+  padding: 3px 7px 3px 9px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(99, 199, 162, 0.14);
+  color: var(--jade-200);
+  font-weight: 500;
+  line-height: 1.3;
+}
+.src-panel .guide .chip,
+.src-panel .guide .chip.kw {
+  background: rgba(222, 211, 198, 0.1);
+  color: var(--clay-300);
+}
+.src-panel .chip button {
+  color: inherit;
+  opacity: 0.6;
+}
+.src-panel .chip button:hover {
+  opacity: 1;
+  background: rgba(240, 160, 128, 0.18);
+  color: var(--coral-300);
+}
+.src-panel .muted {
+  font-size: 12.5px;
+  color: var(--sky-text-3);
+}
+
+/* ---------- Monitoreo: la franja oscura del radar ---------- */
+#tab-monitoring.tab-panel {
+  padding: 0;
+  align-items: stretch;
+}
+.sky {
+  position: relative;
+  color: var(--sky-text);
+  background:
+    radial-gradient(60% 120% at 50% 0%, #0a4a3c 0%, transparent 60%),
+    linear-gradient(180deg, var(--jade-950) 0%, #021e19 100%);
+  border-bottom: 1px solid var(--jade-150);
+}
+.sky-in {
+  max-width: 1220px;
+  margin: 0 auto;
+  padding: 30px clamp(18px, 3vw, 40px) 22px;
+}
+.sky-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.sky-head h1 {
+  margin: 0;
+  font-family: "Bricolage Grotesque", sans-serif;
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  color: #fff;
+}
+.sky-status {
+  margin: 10px 0 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: var(--sky-text-2);
+}
+.sky-status .dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 99px;
+  background: var(--jade-300);
+  animation: skyRing 2.4s ease-out infinite;
+}
+@keyframes skyRing {
+  0% {
+    box-shadow: 0 0 0 0 rgba(99, 199, 162, 0.55);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(99, 199, 162, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(99, 199, 162, 0);
+  }
+}
+.sky-status b {
+  color: #fff;
+  font-weight: 600;
+}
+.sky-run {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  width: auto;
+  margin: 0;
+  padding: 12px 18px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--jade-300);
+  box-shadow: none;
+  color: var(--jade-950);
+  font-size: 14.5px;
+  font-weight: 700;
+  transition: transform 0.18s var(--ease-out), background 0.18s, box-shadow 0.2s;
+}
+.sky-run:hover:not(:disabled) {
+  background: var(--jade-200);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 30px rgba(99, 199, 162, 0.25);
+  filter: none;
+}
+.sky-run:disabled {
+  opacity: 0.75;
+  cursor: progress;
+}
+.sky-run .meter {
+  --meter-h: 15px;
+  --bar-w: 2.5px;
+  --bar-gap: 2px;
+  --bar-color: var(--jade-950);
+}
+.radar {
+  position: relative;
+  margin-top: 22px;
+  height: 250px;
+}
+.radar canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: crosshair;
+}
+.radar.no-canvas canvas {
+  display: none;
+}
+/* Sin posteos de hoy (o sin canvas): el texto, nunca un recuadro negro. */
+.radar-empty {
+  position: absolute;
+  left: 50%;
+  top: 42%;
+  transform: translate(-50%, -50%);
+  width: min(460px, 90%);
+  margin: 0;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: rgba(2, 30, 25, 0.72);
+  border: 1px solid var(--sky-line-2);
+  color: var(--sky-text-2);
+  font-size: 14px;
+  text-align: center;
+  pointer-events: none;
+}
+.radar-tip {
+  position: absolute;
+  z-index: 5;
+  min-width: 220px;
+  max-width: 300px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #fff;
+  color: var(--clay-900);
+  box-shadow: var(--shadow-lg);
+  font-size: 12.5px;
+  line-height: 1.4;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, 8px);
+  transition: opacity 0.15s, transform 0.15s;
+}
+.radar-tip.on {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+.radar-tip b {
+  font-weight: 600;
+  color: var(--jade-900);
+}
+.radar-tip .t {
+  display: block;
+  margin: 3px 0 5px;
+  font-family: "Bricolage Grotesque", sans-serif;
+  font-weight: 600;
+  font-size: 13.5px;
+  line-height: 1.25;
+  color: var(--clay-900);
+}
+.radar-tip .m {
+  color: var(--clay-700);
+}
+.sky-legend {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  font-size: 12.5px;
+  color: var(--sky-text-2);
+}
+.sky-legend ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.sky-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.sky-legend i {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 99px;
+}
+.sky-legend .pos i {
+  background: var(--jade-300);
+}
+.sky-legend .neu i {
+  background: var(--clay-300);
+}
+.sky-legend .neg i {
+  background: var(--coral-400);
+}
+.sky-legend .size i {
+  width: 5px;
+  height: 5px;
+  margin-right: 4px;
+  box-shadow: 0 0 0 2px #0a4a3c, 0 0 0 3px rgba(255, 255, 255, 0.35);
+}
+.sky-legend .size i + i {
+  width: 11px;
+  height: 11px;
+}
+.sky-legend .now b {
+  font-family: "DM Mono", monospace;
+  font-weight: 500;
+  color: var(--jade-200);
+}
+
+/* El recuadro de progreso de "Actualizar ahora", en oscuro dentro de la
+   franja. Mismos ids y mismo comportamiento que antes (monitoring.js). */
+.sky-run-card {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+.sky .run-progress {
+  color: var(--sky-text-2);
+}
+.sky .run-progress-title {
+  color: #fff;
+}
+.sky .run-progress-count {
+  color: var(--sky-text-2);
+  font-family: "DM Mono", monospace;
+  font-size: 12.5px;
+}
+.sky .run-progress-head {
+  align-items: center;
+}
+.sky .run-progress-head .spinner {
+  border-color: rgba(255, 255, 255, 0.15);
+  border-top-color: var(--jade-300);
+  margin: 0;
+}
+.run-progress-pct {
+  flex: none;
+  margin-left: auto;
+  font-family: "Bricolage Grotesque", sans-serif;
+  font-weight: 700;
+  font-size: 28px;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  color: var(--jade-200);
+  font-variant-numeric: tabular-nums;
+}
+.sky .run-progress-hide,
+.sky .run-progress-hide:hover:not(:disabled) {
+  margin-left: 14px;
+  border-color: var(--sky-line-2);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--sky-text-2);
+}
+.sky .run-progress-hide:hover:not(:disabled) {
+  border-color: var(--jade-300);
+  color: #fff;
+}
+.sky .progress-track {
+  height: 3px;
+  margin-top: 10px;
+  border: 0;
+  background: rgba(255, 255, 255, 0.1);
+}
+.sky .progress-fill {
+  background: var(--jade-300);
+  box-shadow: 0 0 10px rgba(99, 199, 162, 0.7);
+  transition: width 0.5s var(--ease-out);
+}
+.sky .progress-fill::after {
+  display: none;
+}
+.sky .run-progress.failed .progress-fill {
+  background: var(--coral-400);
+  box-shadow: none;
+}
+.sky .run-progress-mark {
+  background: var(--jade-300);
+  color: var(--jade-950);
+}
+.sky .run-progress-mark.err {
+  background: var(--coral-400);
+  color: #fff;
+}
+.sky .run-progress-list {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  font-size: 12.5px;
+}
+.sky .run-progress-list li {
+  color: var(--sky-text-2);
+  max-width: 100%;
+}
+.sky .run-progress-list .t {
+  color: var(--sky-text);
+}
+.sky .run-progress-list li.run .t {
+  color: var(--jade-200);
+}
+.sky .run-progress-list li.ok .i {
+  color: var(--jade-300);
+}
+.sky .run-progress-list li.err .i,
+.sky .run-progress-list li.err .d {
+  color: var(--coral-300);
+}
+.sky .run-progress-list li.run .i {
+  border-color: rgba(255, 255, 255, 0.15);
+  border-top-color: var(--jade-300);
+}
+
+/* De la franja para abajo, claro. */
+.mon-page {
+  width: 100%;
+  max-width: 1220px;
+  margin: 0 auto;
+  /* Aire debajo para que el desplegable de "Filas por página" abra hacia
+     abajo (ver #tab-monitoring.tab-panel más arriba). */
+  padding: 30px clamp(18px, 3vw, 40px) 260px;
+}
+@media (max-width: 900px) {
+  .radar {
+    height: 210px;
+  }
+  .sky-head h1 {
+    font-size: 28px;
+  }
+}
+
+/* ---------- Monitoreo: "Se despegaron" en tiras ---------- */
+.hl-head {
+  align-items: baseline;
+}
+.hl-head h2 {
+  font-size: 24px;
+  font-weight: 700;
+}
+.hl-head .hl-count {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--jade-50);
+  color: var(--jade-500);
+  font-family: "DM Mono", monospace;
+  font-size: 13.5px;
+}
+.hl-head .hl-count:empty {
+  display: none;
+}
+/* Hasta 4 tiras: de a dos por renglón en escritorio (2 x 2), una en celular. */
+.hl-tops {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+  gap: 14px;
+}
+.hl-strip {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 2px 16px;
+  align-items: center;
+  padding: 14px 18px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: #fff;
+  cursor: pointer;
+  transition: border-color 0.2s, box-shadow 0.25s, transform 0.25s var(--ease-out);
+}
+.hl-strip:hover,
+.hl-strip.hot {
+  border-color: var(--jade-400);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+.hl-strip.neg:hover,
+.hl-strip.neg.hot {
+  border-color: var(--coral-500);
+}
+.hl-strip:focus-visible {
+  outline: 3px solid var(--jade-400);
+  outline-offset: 2px;
+}
+.hl-strip-ratio {
+  grid-row: 1 / span 2;
+  font-family: "Bricolage Grotesque", sans-serif;
+  font-weight: 800;
+  font-size: 38px;
+  line-height: 0.9;
+  letter-spacing: -0.04em;
+  color: var(--jade-900);
+  font-variant-numeric: tabular-nums;
+}
+.hl-strip.neg .hl-strip-ratio {
+  color: var(--coral-700);
+}
+.hl-strip-ratio small {
+  display: block;
+  margin-top: 5px;
+  font-family: "Instrument Sans", sans-serif;
+  font-weight: 500;
+  font-size: 11.5px;
+  letter-spacing: 0;
+  color: var(--clay-500);
+}
+.hl-strip-title {
+  margin: 0;
+  font-family: "Bricolage Grotesque", sans-serif;
+  font-size: 16.5px;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  color: var(--jade-950);
+}
+.hl-strip-who {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  font-size: 12.5px;
+  color: var(--clay-500);
+}
+.hl-strip-who b {
+  font-weight: 600;
+  color: var(--clay-900);
+}
+.hl-strip-who .mono {
+  font-variant-numeric: tabular-nums;
+}
+.hl-strip-who .sentiment-select {
+  margin-left: auto;
+}
+
+/* ---------- Monitoreo: la lista ---------- */
+.list-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 40px 0 14px;
+}
+.list-head h2 {
+  margin: 0;
+  font-family: "Bricolage Grotesque", sans-serif;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--jade-950);
+}
+.list-count {
+  font-family: "DM Mono", monospace;
+  font-size: 13.5px;
+  color: var(--clay-500);
+}
+.list-count b {
+  font-weight: 500;
+  color: var(--jade-900);
+}
+/* La barra de filtros queda pegada justo debajo de la cabecera (su alto lo
+   mide rail.js). */
+.mon-page .filters {
+  top: var(--top);
+}
+
+/* ---------- El medidor de alcance ---------- */
+.reach-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  color: var(--clay-700);
+  white-space: nowrap;
+}
+.reach-meter {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 16px;
+}
+.reach-meter i {
+  width: 4px;
+  border-radius: 2px;
+  background: var(--line-strong);
+  transform-origin: bottom;
+}
+.reach-meter i:nth-child(1) {
+  height: 4px;
+}
+.reach-meter i:nth-child(2) {
+  height: 7px;
+}
+.reach-meter i:nth-child(3) {
+  height: 10px;
+}
+.reach-meter i:nth-child(4) {
+  height: 13px;
+}
+.reach-meter i:nth-child(5) {
+  height: 16px;
+}
+.reach-meter.bajo i:nth-child(1) {
+  background: var(--clay-500);
+}
+.reach-meter.medio i:nth-child(-n + 3) {
+  background: var(--jade-400);
+}
+.reach-meter.medio i:nth-child(3) {
+  animation: reachGlow 2.4s ease-in-out infinite;
+}
+.reach-meter.alto i {
+  background: var(--jade-500);
+  box-shadow: 0 0 6px rgba(42, 165, 124, 0.5);
+  animation: reachBeat var(--d, 1.3s) var(--dl, 0s) ease-in-out infinite;
+}
+.reach-meter.alto i:nth-child(1) {
+  --dl: -0.1s;
+  --d: 1.5s;
+}
+.reach-meter.alto i:nth-child(2) {
+  --dl: -0.5s;
+  --d: 1.2s;
+}
+.reach-meter.alto i:nth-child(3) {
+  --dl: -0.9s;
+  --d: 1.4s;
+}
+.reach-meter.alto i:nth-child(4) {
+  --dl: -0.3s;
+  --d: 1.1s;
+}
+.reach-meter.alto i:nth-child(5) {
+  --dl: -0.7s;
+  --d: 1.3s;
+}
+@keyframes reachBeat {
+  0%,
+  100% {
+    transform: scaleY(0.62);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+@keyframes reachGlow {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Pie de la tarjeta del feed: arriba el motivo y "Abrir ↗"; abajo el
+   sentimiento y el medidor. Dos renglones, como antes: el medidor no le suma
+   alto a la tarjeta (medido en la de 240 px). */
+.feed-foot {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+.feed-foot .feed-why {
+  grid-column: 1;
+  grid-row: 1;
+}
+.feed-foot a {
+  grid-column: 2;
+  grid-row: 1;
+  justify-self: end;
+}
+.feed-foot .sentiment-select {
+  grid-column: 1;
+  grid-row: 2;
+  justify-self: start;
+}
+.feed-foot .reach-cell {
+  grid-column: 2;
+  grid-row: 2;
+  justify-self: end;
+}
+
+/* El radar resalta la tarjeta o la fila del pulso que tiene el mouse. */
+.feed-card.hot {
+  border-color: var(--edge, var(--jade-400));
+  box-shadow:
+    0 0 0 1px var(--edge, var(--jade-400)),
+    0 22px 38px -16px rgba(3, 42, 35, 0.5),
+    0 8px 16px -8px rgba(3, 42, 35, 0.25);
+}
+.tabulator-row.hot,
+.tabulator-row.hot .tabulator-cell {
+  background: var(--jade-50);
+}
+@media (max-width: 900px) {
+  .hl-tops {
+    grid-template-columns: 1fr;
+  }
+  .hl-strip-ratio {
+    font-size: 32px;
+  }
+}
+
+/* La fila de herramientas: el buscador ocupa lo que sobra y no fuerza un
+   renglón aparte si hay lugar. */
+.mon-page .frow-end {
+  flex: 1 1 260px;
+}
+.mon-page .filters input[type="search"] {
+  min-width: 180px;
+}
+
+/* En una pantalla angosta la fila de herramientas ocupa media pantalla:
+   pegada arriba taparía las tarjetas. Ahí queda en su lugar, como en la
+   maqueta (en escritorio sigue pegada debajo de la cabecera). */
+@media (max-width: 900px) {
+  .mon-page .filters {
+    position: static;
+  }
+}
+
+/* En una pantalla angosta el botón de usuario muestra solo las iniciales:
+   con el nombre completo la cabecera no entraba en 375 px y la página se
+   desplazaba de costado. El nombre sigue en el botón para los lectores de
+   pantalla. */
+@media (max-width: 540px) {
+  .user-btn {
+    padding: 4px;
+  }
+  .user-btn .avatar {
+    width: 30px;
+    height: 30px;
+    font-size: 11.5px;
+  }
+  .user-btn .user-name {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 }
