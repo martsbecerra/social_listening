@@ -16,16 +16,22 @@ require('dotenv').config();
 // tiran al cargar si el valor no es válido, y el arranque tiene que abortar
 // con un mensaje claro en vez de un stack trace. abortarArranque está más
 // abajo (función hoisted).
+// APP_MODE (principal | replica, ver src/appMode.js) también: en réplica el
+// server no exige claves, no corre el scheduler y es de solo lectura.
 const { resolveIgActor } = require('./src/platforms/igActor');
 const { resolveRefreshMode } = require('./src/refreshMode');
 const { resolveReachRule, describeReachRule } = require('./src/reachRule');
+const { resolveAppMode } = require('./src/appMode');
+let APP_MODE = 'principal';
 try {
   resolveIgActor();
   resolveRefreshMode();
   resolveReachRule();
+  APP_MODE = resolveAppMode();
 } catch (err) {
   abortarArranque([err.message]);
 }
+const IS_REPLICA = APP_MODE === 'replica';
 
 const express = require('express');
 const path = require('path');
@@ -73,6 +79,11 @@ const {
   RESEND_COOLDOWN_MS,
 } = require('./src/auth/rateLimit');
 const { createAuthGate } = require('./src/auth/gate');
+const { createReplicaGuard } = require('./src/replicaGuard');
+const replicaRoutes = require('./src/replicaRoutes');
+const { replicaInfoPath, replicaOptionsFromEnv } = require('./src/replicaSync');
+const { createReplicaPoller, pollIntervalMs } = require('./src/replicaPoller');
+const { getAppVersion } = require('./src/appVersion');
 
 const app = express();
 
@@ -109,8 +120,12 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
 // El gate va ANTES de los estáticos: si no, dashboard.html se sirve sin cookie.
-app.use(createAuthGate());
+// En una réplica no hay login: el guard la deja solo local y de solo lectura.
+app.use(IS_REPLICA ? createReplicaGuard({ getPort: () => PORT }) : createAuthGate());
 app.use(express.static(path.join(__dirname, 'public')));
+
+// Modo de la app para el frontend (src/replicaRoutes.js).
+replicaRoutes.register(app, { mode: APP_MODE, infoPath: replicaInfoPath(db.DB_PATH), appVersion: getAppVersion() });
 
 // --------------------------------------------------------------------------
 // Chequeo inicial. Antes era un console.warn y el server levantaba igual: la
@@ -687,7 +702,7 @@ app.patch('/api/reclamos/:id', (req, res) => {
 // Arrancamos el servidor.
 // --------------------------------------------------------------------------
 const PORT = process.env.PORT || 3000;
-checkEnv();
+if (!IS_REPLICA) checkEnv();
 try {
   const seed = seedXInfluencersIfEmpty();
   if (seed.seeded) {
@@ -696,8 +711,23 @@ try {
 } catch (err) {
   console.warn('[x] no se pudo cargar el padrón ANTIK-PRO:', err.message);
 }
-startScheduler();
-const server = app.listen(PORT, () => {
+
+// Réplica de solo lectura (openspec/changes/replicas-solo-lectura): sin
+// scheduler ni keep-awake, solo en 127.0.0.1, y un sondeo que reinicia la
+// app (código 75) cuando la PC principal publica datos nuevos.
+function startReplica() {
+  const server = app.listen(PORT, '127.0.0.1', () => {
+    const replica = replicaOptionsFromEnv();
+    console.log(`\n✅ Servidor listo en http://localhost:${PORT}`);
+    console.log('   Modo: réplica de solo lectura (APP_MODE=replica). Sin monitoreo, sin login, solo esta máquina.');
+    console.log(`   Datos: ${replica.dataDir} · se revisa si hay nuevos cada ${pollIntervalMs() / 60000} min\n`);
+    createReplicaPoller({ dataDir: replica.dataDir, git: replica.git, intervalMs: pollIntervalMs() }).start();
+  });
+  return server;
+}
+
+if (!IS_REPLICA) startScheduler();
+const server = IS_REPLICA ? startReplica() : app.listen(PORT, () => {
   const provider = getLlmProvider();
   console.log(`\n✅ Servidor listo en http://localhost:${PORT}`);
   console.log(`   Proveedor LLM: ${getProviderLabel(provider)} (${provider})`);
