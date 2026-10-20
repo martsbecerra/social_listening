@@ -135,6 +135,16 @@ function parseHourField(hourField) {
 }
 
 /**
+ * Horas del día (0-23, ordenadas y sin repetir) en las que dispara el cron,
+ * para que la pantalla marque las corridas sin inventarlas (la franja del
+ * Monitoreo, el pie). Mismos formatos que getNextRunAt.
+ */
+function getRunHours(cronExpression = getCronExpression()) {
+  const hourField = String(cronExpression || '').trim().split(/\s+/)[1] || '*';
+  return [...new Set(parseHourField(hourField))];
+}
+
+/**
  * Próxima vez que va a disparar el cron, a partir de "from" (por defecto,
  * ahora). Mismo formato de MONITOR_CRON que ya soporta el resto de este
  * archivo — no depende de una librería de parseo de cron aparte.
@@ -388,6 +398,7 @@ module.exports = {
   getLastRunAt,
   estimateRunsPerDay,
   getNextRunAt,
+  getRunHours,
   cronPlatforms,
   DEFAULT_CRON_PLATFORMS,
 };

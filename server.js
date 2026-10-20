@@ -49,7 +49,7 @@ const {
 const db = require('./src/db');
 const monitor = require('./src/monitor');
 const { listPlatformIds, getPlatform } = require('./src/platforms');
-const { startScheduler, runCycle, getCronExpression, getLastRunAt, estimateRunsPerDay, getNextRunAt } = require('./src/scheduler');
+const { startScheduler, runCycle, getCronExpression, getLastRunAt, estimateRunsPerDay, getNextRunAt, getRunHours } = require('./src/scheduler');
 const monitoringProgress = require('./src/monitoringProgress');
 const { startKeepAwake, stopKeepAwake } = require('./src/keepAwake');
 const { processPendingReclamosInBackground } = require('./src/geoWorker');
@@ -503,10 +503,24 @@ app.get('/api/monitoring/config', (req, res) => {
   res.json(monitor.loadConfig(monitoringPlataforma(req)));
 });
 
-// Para la barra de acción de "Monitoreo en vivo" ("Escuchando · próxima
-// corrida HH:MM") — la hora sale de la expresión cron real, no está fija.
+// Estado de la escucha para "Monitoreo en vivo": la próxima corrida y las
+// horas de corrida del día salen de la expresión cron real (nada fijo en el
+// cliente); la última corrida, de monitoring_runs para la plataforma pedida
+// (sobrevive a un reinicio). Sin plataforma, la última que vio el scheduler
+// desde que arrancó, de cualquier red.
 app.get('/api/monitoring/status', (req, res) => {
-  res.json({ nextRunAt: getNextRunAt(getCronExpression()).toISOString() });
+  const plataforma = monitoringPlataforma(req);
+  let lastRunAt = null;
+  try {
+    lastRunAt = plataforma ? db.getLastFinishedRunAt(plataforma) : getLastRunAt();
+  } catch (err) {
+    console.error('Error leyendo la última corrida:', err.message);
+  }
+  res.json({
+    nextRunAt: getNextRunAt(getCronExpression()).toISOString(),
+    lastRunAt,
+    runHours: getRunHours(),
+  });
 });
 
 // Progreso real del ciclo en curso (fase + contador + porcentaje + las
@@ -538,6 +552,8 @@ app.get('/api/footer-stats', (req, res) => {
   res.json({
     plataformaCount: PLATAFORMAS_SOPORTADAS.length,
     corridasPorDia: estimateRunsPerDay(getCronExpression()),
+    // Las horas, para "4 corridas por día, a las 8, 12, 16 y 20".
+    runHours: getRunHours(),
     categoriaCount: CATEGORIAS_RECLAMO.length,
     lastRunAt: getLastRunAt(),
   });
