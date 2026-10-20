@@ -45,7 +45,7 @@ flowchart LR
 
 | Archivo | Qué es |
 |---|---|
-| `monitoring.db` | Copia de la base del monitoreo, sin la tabla `magic_links` (los links de login) |
+| `monitoring.db.gz` | Copia comprimida de la base, solo con lo que muestran las pantallas: posteos, medianas de cada cuenta y reclamos |
 | `config/monitoring.json` | Cuentas, keywords y búsquedas configuradas |
 | `media/` | Fotos de los posteos (miniatura y grande), en espejo de `data/media/` |
 | `snapshot.json` | Fecha de publicación, número de ciclo y versión del código |
@@ -55,10 +55,20 @@ habilitados ni ningún dato del login. La base se copia con `VACUUM INTO`
 desde una conexión de solo lectura, así que la copia es consistente aunque el
 monitoreo esté escribiendo.
 
+El resto de las tablas viaja vacío: el registro de llamadas a Apify, las
+corridas, los posteos ya vistos, el caché de direcciones, el historial de
+seguidores y los links de login. La lista es de lo que entra, no de lo que
+sale: una tabla nueva viaja vacía hasta que se la sume a propósito en
+`PUBLISHED_TABLES` (`src/replicaPublish.js`). Después la base se comprime
+con gzip. Como git no puede guardar diferencias de un archivo comprimido,
+cada snapshot sube la base entera. No suma peso en GitHub, porque la rama
+tiene un solo commit que se reemplaza cada vez.
+
 ## Qué puede y qué no puede hacer una réplica
 
 Puede ver todo lo que se lee: Monitoreo en vivo (tabla, feed y pop-up), "Se
-despegaron", el mapa de reclamos y los costos.
+despegaron" y el mapa de reclamos. El gasto en Apify no se ve en una copia:
+ninguna pantalla lo muestra y su registro no viaja.
 
 No puede escribir ni gastar:
 

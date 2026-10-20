@@ -140,7 +140,7 @@ En la consola de la app, al final del ciclo, tiene que aparecer:
 ```
 
 Y en GitHub, el repo de datos tiene que mostrar la rama `snapshot` con un
-solo commit y los archivos `monitoring.db`, `snapshot.json`, `config/` y
+solo commit y los archivos `monitoring.db.gz`, `snapshot.json`, `config/` y
 `media/`.
 
 Si en cambio aparece `[réplica] no se pudo publicar: ...`, ver

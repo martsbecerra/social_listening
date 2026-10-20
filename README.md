@@ -1222,8 +1222,9 @@ guía de instalación paso a paso (GitHub, PC principal y cada máquina) en
 
 - **Publicar (PC principal).** Con `REPLICA_PUBLISH_DIR` apuntando a un
   clon del repo de datos, al cerrar cada ciclo `src/replicaPublish.js`
-  deja en esa carpeta la base (copiada con `VACUUM INTO`, sin
-  `magic_links`), `config/monitoring.json`, las fotos (`media/`, en
+  deja en esa carpeta la base (copiada con `VACUUM INTO`, con datos solo
+  en posteos, medianas y reclamos, y comprimida: `monitoring.db.gz`),
+  `config/monitoring.json`, las fotos (`media/`, en
   espejo de `data/media/`) y `snapshot.json` (`publishedAt`, `runId`,
   `appVersion`), y lo sube como UN commit en la rama `snapshot` con
   `push --force`: GitHub guarda solo la foto actual. Usa el git del

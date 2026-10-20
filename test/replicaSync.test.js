@@ -10,6 +10,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const zlib = require('zlib');
 const { DatabaseSync } = require('node:sqlite');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -36,8 +37,13 @@ function idsIn(file) {
 }
 
 /** Un snapshot como el que publica la principal. */
-function writeSnapshot(dir, { ids = ['1', '2'], fotos = { 'instagram/1_thumb.jpg': 'f1' }, publishedAt = '2026-10-20T14:40:00.000Z' } = {}) {
-  makeDb(path.join(dir, 'monitoring.db'), ids);
+function writeSnapshot(dir, { ids = ['1', '2'], fotos = { 'instagram/1_thumb.jpg': 'f1' }, publishedAt = '2026-10-20T14:40:00.000Z', comprimida = true } = {}) {
+  const plain = path.join(dir, 'monitoring.db');
+  makeDb(plain, ids);
+  if (comprimida) {
+    fs.writeFileSync(`${plain}.gz`, zlib.gzipSync(fs.readFileSync(plain)));
+    fs.rmSync(plain);
+  }
   for (const [rel, content] of Object.entries(fotos)) {
     fs.mkdirSync(path.dirname(path.join(dir, 'media', rel)), { recursive: true });
     fs.writeFileSync(path.join(dir, 'media', rel), content);
@@ -156,19 +162,33 @@ test('reemplaza la base anterior y borra su -wal y -shm', () => {
   assert.ok(!fs.existsSync(`${f.dbPath}.nuevo`));
 });
 
-test('una base dañada no reemplaza la actual', () => {
+for (const [caso, contenido] of [
+  ['un .gz que no descomprime', Buffer.from('esto no es gzip')],
+  ['un .gz que no trae una base sqlite', zlib.gzipSync(Buffer.from('esto no es una base sqlite'))],
+]) {
+  test(`una base dañada no reemplaza la actual (${caso})`, () => {
+    const f = fixture();
+    makeDb(f.dbPath, ['bueno']);
+    writeSnapshot(f.dataDir);
+    fs.writeFileSync(path.join(f.dataDir, 'monitoring.db.gz'), contenido);
+    const errores = [];
+
+    const result = applySnapshot({ ...applyOptions(f), error: (m) => errores.push(m) });
+
+    assert.equal(result.applied, false);
+    assert.equal(result.reason, 'base-dañada');
+    assert.deepEqual(idsIn(f.dbPath), ['bueno']);
+    assert.ok(!fs.existsSync(`${f.dbPath}.nuevo`));
+    assert.match(errores.join('\n'), /\[réplica\]/);
+  });
+}
+
+test('un snapshot del formato anterior (monitoring.db sin comprimir) se aplica igual', () => {
   const f = fixture();
-  makeDb(f.dbPath, ['bueno']);
-  writeSnapshot(f.dataDir);
-  fs.writeFileSync(path.join(f.dataDir, 'monitoring.db'), 'esto no es una base sqlite');
-  const errores = [];
-
-  const result = applySnapshot({ ...applyOptions(f), error: (m) => errores.push(m) });
-
-  assert.equal(result.applied, false);
-  assert.deepEqual(idsIn(f.dbPath), ['bueno']);
-  assert.ok(!fs.existsSync(`${f.dbPath}.nuevo`));
-  assert.match(errores.join('\n'), /\[réplica\]/);
+  writeSnapshot(f.dataDir, { ids: ['viejo-formato'], comprimida: false });
+  const result = applySnapshot(applyOptions(f));
+  assert.equal(result.applied, true);
+  assert.deepEqual(idsIn(f.dbPath), ['viejo-formato']);
 });
 
 test('media en espejo: borra las fotos que ya no están en el snapshot', () => {

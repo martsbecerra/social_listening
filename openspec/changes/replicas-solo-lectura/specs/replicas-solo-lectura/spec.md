@@ -26,13 +26,19 @@ El server MUST arrancar en el modo que indique `APP_MODE`: `principal` (default,
 
 ### Requirement: REQ-REP-02 — Contenido del snapshot
 
-Con `REPLICA_PUBLISH_DIR` configurado, al cerrar cada ciclo la principal MUST dejar en esa carpeta: `monitoring.db` (copia consistente de la base, sin filas en `magic_links`), `snapshot.json` con `publishedAt`, `runId` y `appVersion`, `config/monitoring.json` y `media/` como espejo de `data/media/`. Sin `REPLICA_PUBLISH_DIR` MUST NOT hacer nada.
+Con `REPLICA_PUBLISH_DIR` configurado, al cerrar cada ciclo la principal MUST dejar en esa carpeta: `monitoring.db.gz` (copia consistente de la base comprimida con gzip, con filas solo en `detected_posts`, `account_stats` y `reclamos`: toda otra tabla, `magic_links` incluida, MUST viajar vacía), `snapshot.json` con `publishedAt`, `runId` y `appVersion`, `config/monitoring.json` y `media/` como espejo de `data/media/`. Sin `REPLICA_PUBLISH_DIR` MUST NOT hacer nada.
 
 #### Scenario: Login fuera del snapshot
 
 - GIVEN una base con posteos y un magic link pendiente
 - WHEN se publica
 - THEN la copia tiene los posteos y `magic_links` vacía
+
+#### Scenario: Solo lo que la réplica muestra
+
+- GIVEN una base con posteos, medianas, reclamos, llamadas a Apify y una tabla que no está en la lista
+- WHEN se publica
+- THEN la copia tiene posteos, medianas y reclamos, y las otras tablas vacías
 
 #### Scenario: Foto borrada
 
@@ -92,7 +98,7 @@ En `replica`, el server MUST escuchar solo en `127.0.0.1`, MUST rechazar con 421
 
 ### Requirement: REQ-REP-06 — Sincronización
 
-Antes de cada arranque de la réplica MUST traerse el último snapshot (clon superficial la primera vez, fetch superficial y reset después) y aplicarlo: la base nueva MUST pasar `PRAGMA integrity_check` antes de reemplazar la actual, el reemplazo MUST ser por renombre y MUST borrar el `-wal` y el `-shm` anteriores; `media/` MUST quedar en espejo y la config copiada. Si git falla, MUST aplicar lo que ya tenga el clon local y arrancar igual. Una base que no pasa el chequeo MUST NOT reemplazar la actual.
+Antes de cada arranque de la réplica MUST traerse el último snapshot (clon superficial la primera vez, fetch superficial y reset después) y aplicarlo: la base nueva (`monitoring.db.gz`, o `monitoring.db` sin comprimir en un snapshot del formato anterior) MUST descomprimirse y pasar `PRAGMA integrity_check` antes de reemplazar la actual, el reemplazo MUST ser por renombre y MUST borrar el `-wal` y el `-shm` anteriores; `media/` MUST quedar en espejo y la config copiada. Si git falla, MUST aplicar lo que ya tenga el clon local y arrancar igual. Una base que no pasa el chequeo MUST NOT reemplazar la actual.
 
 #### Scenario: Sin red
 
@@ -102,7 +108,7 @@ Antes de cada arranque de la réplica MUST traerse el último snapshot (clon sup
 
 #### Scenario: Base dañada
 
-- GIVEN un snapshot con un `monitoring.db` que no es una base SQLite válida
+- GIVEN un snapshot con un `monitoring.db.gz` que no descomprime o no trae una base SQLite válida
 - WHEN corre la sincronización
 - THEN la base local queda como estaba
 

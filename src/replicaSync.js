@@ -11,7 +11,9 @@
 // con force-push: no hay historia que combinar). Sin red, sigue con lo que
 // ya tiene el clon.
 //
-// Aplicar: la base nueva se copia al lado como monitoring.db.nuevo, tiene que
+// Aplicar: la base nueva (monitoring.db.gz; un snapshot del formato anterior
+// trae monitoring.db sin comprimir) se descomprime al lado como
+// monitoring.db.nuevo, tiene que
 // pasar PRAGMA integrity_check, y recién ahí se borran el -wal y el -shm
 // viejos y se renombra sobre monitoring.db. Una base dañada no reemplaza la
 // que había. Las fotos quedan en espejo, la config se copia y snapshot.json
@@ -20,6 +22,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const zlib = require('zlib');
 const { DatabaseSync } = require('node:sqlite');
 const { mirrorDir, copyFileAtomic } = require('./replicaFiles');
 
@@ -64,17 +67,31 @@ function checkIntegrity(file) {
   }
 }
 
+/** Deja la base del snapshot en `incoming`. false si el .gz no descomprime. */
+function extractDatabase(snapshotDir, incoming) {
+  const compressed = path.join(snapshotDir, 'monitoring.db.gz');
+  if (!fs.existsSync(compressed)) {
+    fs.copyFileSync(path.join(snapshotDir, 'monitoring.db'), incoming);
+    return true;
+  }
+  try {
+    fs.writeFileSync(incoming, zlib.gunzipSync(fs.readFileSync(compressed)));
+    return true;
+  } catch (err) {
+    return false;
+  }
+}
+
 function applySnapshot({ snapshotDir, dbPath, mediaDir, configPath, infoPath, log = console.log, error = console.error }) {
-  const source = path.join(snapshotDir, 'monitoring.db');
-  if (!fs.existsSync(source)) {
+  const hasDatabase = ['monitoring.db.gz', 'monitoring.db'].some((name) => fs.existsSync(path.join(snapshotDir, name)));
+  if (!hasDatabase) {
     error('[réplica] todavía no hay datos descargados: la app arranca vacía.');
     return { applied: false, reason: 'sin-snapshot' };
   }
 
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
   const incoming = `${dbPath}.nuevo`;
-  fs.copyFileSync(source, incoming);
-  if (!checkIntegrity(incoming)) {
+  if (!extractDatabase(snapshotDir, incoming) || !checkIntegrity(incoming)) {
     fs.rmSync(incoming, { force: true });
     error('[réplica] la base descargada está dañada: se deja la que había.');
     return { applied: false, reason: 'base-dañada' };

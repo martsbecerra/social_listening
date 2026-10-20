@@ -560,10 +560,15 @@ datos de un repo privado de GitHub. SDD en
  rutas a esa lista que toquen los datos.
 - Publicación (`src/replicaPublish.js`, desde el `finally` del ciclo en
  `scheduler.js`): solo con `REPLICA_PUBLISH_DIR`. Base con `VACUUM INTO`
- desde una conexión de solo lectura y SIN `magic_links`, más
- `config/monitoring.json`, `media/` en espejo y `snapshot.json`. Un commit
- en la rama `snapshot` (amend) y `push --force`. Nunca tira. Lo que se
- sume al snapshot no puede llevar datos del login ni secretos.
+ desde una conexión de solo lectura, con datos SOLO en las tablas de
+ `PUBLISHED_TABLES` (`detected_posts`, `account_stats`, `reclamos`; el
+ resto, `magic_links` incluida, viaja vacío) y comprimida
+ (`monitoring.db.gz`; la réplica acepta también el `monitoring.db` del
+ formato anterior), más `config/monitoring.json`, `media/` en espejo y
+ `snapshot.json`. Un commit en la rama `snapshot` (amend) y
+ `push --force`. Nunca tira. Una pantalla de la réplica que lea otra tabla
+ necesita sumarla a `PUBLISHED_TABLES`, y lo que se sume no puede llevar
+ datos del login ni secretos.
 - Réplica: `src/replicaPoller.js` (`git ls-remote` cada
  `REPLICA_POLL_MINUTES`, sale con 75 si cambió; sin clon consulta
  `REPLICA_REPO_URL`), `scripts/replica-sync.js`

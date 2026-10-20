@@ -8,6 +8,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const zlib = require('zlib');
 const { DatabaseSync } = require('node:sqlite');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -21,9 +22,19 @@ function fixture() {
   db.exec('PRAGMA journal_mode = WAL');
   db.exec('CREATE TABLE detected_posts (id TEXT PRIMARY KEY, caption TEXT)');
   db.exec('CREATE TABLE magic_links (token_hash TEXT, email TEXT)');
+  db.exec('CREATE TABLE account_stats (account TEXT, median_likes REAL)');
+  db.exec('CREATE TABLE reclamos (id INTEGER PRIMARY KEY, texto TEXT)');
+  db.exec('CREATE TABLE apify_calls (id INTEGER PRIMARY KEY, usd REAL)');
+  db.exec('CREATE TABLE search_seen (post_id TEXT)');
+  db.exec('CREATE TABLE tabla_nueva_de_la_principal (dato TEXT)');
   db.prepare('INSERT INTO detected_posts VALUES (?, ?)').run('1', 'Jorge Macri inauguró');
   db.prepare('INSERT INTO detected_posts VALUES (?, ?)').run('2', 'Bache en Flores');
   db.prepare('INSERT INTO magic_links VALUES (?, ?)').run('hash', 'alguien@org.gob.ar');
+  db.prepare('INSERT INTO account_stats VALUES (?, ?)').run('perfilcom', 120);
+  db.prepare('INSERT INTO reclamos (texto) VALUES (?)').run('Bache en Avellaneda 1200');
+  db.prepare('INSERT INTO apify_calls (usd) VALUES (?)').run(0.015);
+  db.prepare('INSERT INTO search_seen VALUES (?)').run('9');
+  db.prepare('INSERT INTO tabla_nueva_de_la_principal VALUES (?)').run('algo');
 
   const mediaDir = path.join(root, 'media');
   fs.mkdirSync(path.join(mediaDir, 'instagram'), { recursive: true });
@@ -51,8 +62,11 @@ function snapshotOptions(f, extra = {}) {
   };
 }
 
+/** La base publicada, descomprimida en un temporal. */
 function readCopy(publishDir, sql) {
-  const copy = new DatabaseSync(path.join(publishDir, 'monitoring.db'), { readOnly: true });
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'sl-publish-copia-')), 'monitoring.db');
+  fs.writeFileSync(file, zlib.gunzipSync(fs.readFileSync(path.join(publishDir, 'monitoring.db.gz'))));
+  const copy = new DatabaseSync(file, { readOnly: true });
   try {
     return copy.prepare(sql).all();
   } finally {
@@ -83,6 +97,29 @@ test('la copia de la base tiene los posteos y no tiene magic_links', () => {
   assert.equal(readCopy(f.publishDir, 'SELECT COUNT(*) AS n FROM magic_links')[0].n, 0);
   // La base original no se toca.
   assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM magic_links').get().n, 1);
+});
+
+test('solo viajan los datos que la copia muestra: posteos, medianas y reclamos', () => {
+  const f = fixture();
+  buildSnapshot(snapshotOptions(f));
+  const count = (table) => readCopy(f.publishDir, `SELECT COUNT(*) AS n FROM ${table}`)[0].n;
+  assert.equal(count('detected_posts'), 2);
+  assert.equal(count('account_stats'), 1);
+  assert.equal(count('reclamos'), 1);
+  // Lo demás viaja con su estructura, vacío. Una tabla nueva también: nada
+  // entra al snapshot sin agregarlo a la lista a propósito.
+  for (const table of ['magic_links', 'apify_calls', 'search_seen', 'tabla_nueva_de_la_principal']) {
+    assert.equal(count(table), 0, table);
+  }
+});
+
+test('la base va comprimida (monitoring.db.gz) y se borra la sin comprimir de un snapshot anterior', () => {
+  const f = fixture();
+  fs.writeFileSync(path.join(f.publishDir, 'monitoring.db'), 'formato viejo');
+  buildSnapshot(snapshotOptions(f));
+  assert.ok(fs.existsSync(path.join(f.publishDir, 'monitoring.db.gz')));
+  assert.equal(fs.existsSync(path.join(f.publishDir, 'monitoring.db')), false);
+  assert.deepEqual(fs.readdirSync(f.publishDir).filter((n) => n.endsWith('.tmp')), []);
 });
 
 test('la copia incluye lo escrito en el WAL que todavía no pasó al archivo', () => {
@@ -118,7 +155,7 @@ test('media queda en espejo: copia las nuevas y borra las que ya no están', () 
 test('sin carpeta de media publica igual, con media vacía', () => {
   const f = fixture();
   buildSnapshot(snapshotOptions(f, { mediaDir: path.join(f.root, 'no-existe') }));
-  assert.ok(fs.existsSync(path.join(f.publishDir, 'monitoring.db')));
+  assert.ok(fs.existsSync(path.join(f.publishDir, 'monitoring.db.gz')));
 });
 
 test('no pisa .git de la carpeta de publicación', () => {

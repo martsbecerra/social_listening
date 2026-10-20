@@ -48,11 +48,27 @@ flowchart LR
   una copia inconsistente. `VACUUM INTO` escribe una copia consistente y
   compacta, y funciona sobre una conexión `readOnly`, así que la
   publicación no comparte la conexión de `src/db.js` ni la bloquea. Sobre
-  la copia: `DELETE FROM magic_links` y `VACUUM`. `magic_links` es lo único
-  con datos del login (hashes de tokens y mails); las sesiones viven en
-  cookies firmadas, no en la base. `src/db.js` exporta `DB_PATH` para que
-  la publicación lea la misma base que la app (incluido
-  `MONITORING_DB_PATH` en tests).
+  la copia se vacían todas las tablas salvo `detected_posts`,
+  `account_stats` y `reclamos` (lo único que leen las pantallas de la
+  réplica), después `VACUUM` y gzip a `monitoring.db.gz`. Es una lista de
+  lo que entra, no de lo que sale: `magic_links` (lo único con datos del
+  login; las sesiones viven en cookies firmadas) queda afuera, y una tabla
+  nueva también, hasta sumarla a propósito. Lo que se vacía solo lo usa la
+  principal para trabajar: `apify_calls` y `monitoring_runs` (la ruta de
+  costos existe pero ninguna pantalla la pide), `search_seen`,
+  `refresh_state`, `geocode_cache`, `account_followers` (los seguidores que
+  se muestran están en `detected_posts`) y `x_influencers` (se vuelve a
+  sembrar del CSV al arrancar). `src/db.js` exporta `DB_PATH` para que la
+  publicación lea la misma base que la app (incluido `MONITORING_DB_PATH`
+  en tests).
+
+- **Base comprimida.** gzip achica una base SQLite de texto varias veces y
+  la réplica la descomprime antes del `integrity_check`. El costo: git no
+  puede guardar diferencias de un `.gz`, cada snapshot sube el archivo
+  entero; da igual porque la rama es un único commit con force-push (no
+  hay historia que crezca) y la réplica baja con `--depth 1`. La réplica
+  acepta también `monitoring.db` sin comprimir, para seguir andando si se
+  actualiza antes que la principal.
 
 - **Contenido del snapshot.**
 

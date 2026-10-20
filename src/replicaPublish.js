@@ -5,7 +5,8 @@
 // REPLICA_PUBLISH_DIR apunta a un clon del repo privado de datos (ver
 // openspec/changes/replicas-solo-lectura). Deja en esa carpeta:
 //
-//   monitoring.db            copia consistente, sin magic_links
+//   monitoring.db.gz         copia consistente y comprimida, con datos solo
+//                            en las tablas de PUBLISHED_TABLES
 //   snapshot.json            { publishedAt, runId, appVersion }
 //   config/monitoring.json   cuentas, keywords y búsquedas
 //   media/                   espejo de data/media (fotos de los posteos)
@@ -14,12 +15,12 @@
 // push --force: GitHub guarda solo la foto actual y git sube solo las fotos
 // nuevas. La base se copia con VACUUM INTO desde una conexión propia en solo
 // lectura (está en WAL: copiar el archivo en caliente puede dar una copia
-// inconsistente). magic_links es lo único con datos del login (las sesiones
-// son cookies firmadas). Nunca tira: un fallo se loguea y el ciclo sigue.
+// inconsistente). Nunca tira: un fallo se loguea y el ciclo sigue.
 // ==========================================================================
 
 const fs = require('fs');
 const path = require('path');
+const zlib = require('zlib');
 const { DatabaseSync } = require('node:sqlite');
 const { mirrorDir, writeFileAtomic, copyFileAtomic } = require('./replicaFiles');
 
@@ -30,25 +31,42 @@ function sqlString(value) {
   return `'${String(value).replace(/'/g, "''")}'`;
 }
 
+// Las únicas tablas que viajan con datos: lo que leen las pantallas de la
+// réplica (posteos, medianas del alcance, reclamos). El resto va con su
+// estructura y vacío; una tabla nueva queda afuera hasta sumarla acá, así
+// que no puede llevar datos del login ni secretos sin decidirlo.
+const PUBLISHED_TABLES = new Set(['detected_posts', 'account_stats', 'reclamos']);
+
+function quoteIdentifier(name) {
+  return `"${String(name).replace(/"/g, '""')}"`;
+}
+
 function copyDatabase(dbPath, destPath) {
   const tmp = `${destPath}.tmp`;
+  const tmpDb = `${destPath}.db.tmp`;
   fs.rmSync(tmp, { force: true });
+  fs.rmSync(tmpDb, { force: true });
   const source = new DatabaseSync(dbPath, { readOnly: true });
   try {
-    source.exec(`VACUUM INTO ${sqlString(tmp)}`);
+    source.exec(`VACUUM INTO ${sqlString(tmpDb)}`);
   } finally {
     source.close();
   }
-  const copy = new DatabaseSync(tmp);
+  const copy = new DatabaseSync(tmpDb);
   try {
-    const hasMagicLinks = copy
-      .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'magic_links'")
-      .get();
-    if (hasMagicLinks) copy.exec('DELETE FROM magic_links');
+    const tables = copy
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
+      .all()
+      .map((row) => row.name);
+    for (const table of tables) {
+      if (!PUBLISHED_TABLES.has(table)) copy.exec(`DELETE FROM ${quoteIdentifier(table)}`);
+    }
     copy.exec('VACUUM');
   } finally {
     copy.close();
   }
+  fs.writeFileSync(tmp, zlib.gzipSync(fs.readFileSync(tmpDb), { level: 9 }));
+  fs.rmSync(tmpDb, { force: true });
   fs.renameSync(tmp, destPath);
 }
 
@@ -57,7 +75,8 @@ function copyDatabase(dbPath, destPath) {
  * publishSnapshot). No toca .git ni nada fuera de lo que publica.
  */
 function buildSnapshot({ publishDir, dbPath, mediaDir, configPath, runId = null, appVersion = null, now = new Date() }) {
-  copyDatabase(dbPath, path.join(publishDir, 'monitoring.db'));
+  copyDatabase(dbPath, path.join(publishDir, 'monitoring.db.gz'));
+  fs.rmSync(path.join(publishDir, 'monitoring.db'), { force: true });
   if (configPath && fs.existsSync(configPath)) {
     copyFileAtomic(configPath, path.join(publishDir, 'config', 'monitoring.json'));
   }
