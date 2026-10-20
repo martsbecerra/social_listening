@@ -4043,6 +4043,70 @@ html.feed-pop-lock body {
 .readonly-bar-update {
   font-weight: 600;
 }
+.readonly-bar-btn {
+  margin: 0 0 0 12px;
+  padding: 3px 10px;
+  width: auto;
+  font: inherit;
+  font-weight: 600;
+  color: var(--amber-700);
+  background: #fff;
+  border: 1px solid var(--clay-200);
+  border-radius: 7px;
+  cursor: pointer;
+}
+.readonly-bar-btn:hover:not(:disabled) {
+  background: var(--clay-100);
+}
+.readonly-bar-btn:disabled {
+  cursor: default;
+  opacity: 0.75;
+}
+/* Modal del token de lectura (la primera vez que se abre la copia). */
+.replica-token {
+  width: min(460px, calc(100vw - 32px));
+  padding: 0;
+  border: 0;
+  border-radius: 14px;
+  box-shadow: var(--shadow-lg);
+  color: var(--clay-900);
+}
+.replica-token::backdrop {
+  background: rgba(3, 42, 35, 0.55);
+}
+.replica-token-box {
+  display: grid;
+  gap: 10px;
+  padding: 22px 24px;
+}
+.replica-token-box h2 {
+  margin: 0;
+  font-size: 18px;
+}
+.replica-token-box p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--clay-700);
+}
+.replica-token-box label {
+  font-size: 13px;
+  font-weight: 600;
+}
+.replica-token-box input {
+  padding: 9px 11px;
+  font: inherit;
+  border: 1px solid var(--clay-200);
+  border-radius: 9px;
+}
+.replica-token-box .replica-token-error {
+  color: var(--coral-700);
+}
+.replica-token-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 6px;
+}
 [data-readonly] .tab-btn[data-tab="analysis"],
 [data-readonly] #tab-analysis,
 [data-readonly] .foot-links a[href$="#tab-analysis"],

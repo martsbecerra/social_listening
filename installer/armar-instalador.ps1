@@ -10,7 +10,7 @@
 # archive: nada sin versionar, ni .env ni data\), sin test\, openspec\ ni
 # design\; las dependencias de producción (npm ci --omit=dev);
 # build-info.json con el commit; un .env de réplica SIN secretos (el token
-# lo pide instalar.ps1 en cada máquina); instalar.ps1 e
+# lo pide la app en el navegador la primera vez); instalar.ps1 e
 # iniciar-replica.bat.
 #
 # Uso, desde la raíz del repo:

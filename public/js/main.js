@@ -134,19 +134,160 @@ async function initReadOnlyMode() {
     .forEach((select) => (select.disabled = true));
   const bar = document.createElement('div');
   bar.className = 'readonly-bar';
-  bar.setAttribute('role', 'status');
+  const text = document.createElement('span');
+  text.setAttribute('role', 'status');
   const fecha = mode.dataAsOf ? formatReadOnlyDate(mode.dataAsOf) : null;
-  bar.textContent = `Copia de solo lectura · ${fecha ? `Datos al ${fecha}` : 'Todavía no hay datos descargados'}`;
+  text.textContent = `Copia de solo lectura · ${fecha ? `Datos al ${fecha}` : 'Todavía no hay datos descargados'}`;
+  bar.append(text);
   if (mode.newerAppAvailable) {
     const aviso = document.createElement('span');
     aviso.className = 'readonly-bar-update';
     aviso.textContent = 'Hay una versión nueva de la app: pedí el instalador actualizado';
     bar.append(' · ', aviso);
   }
+  const action = document.createElement('button');
+  action.type = 'button';
+  action.className = 'readonly-bar-btn';
+  bar.append(action);
   document.body.prepend(bar);
+
+  if (mode.needsToken) {
+    action.textContent = 'Cargar token';
+    action.addEventListener('click', () => openReplicaTokenDialog(mode, text));
+    openReplicaTokenDialog(mode, text);
+  } else {
+    action.textContent = 'Buscar datos nuevos';
+    action.addEventListener('click', () => refreshReplicaData(mode, text, action));
+  }
 
   leaveAnalysisTab();
   document.addEventListener('DOMContentLoaded', leaveAnalysisTab);
+}
+
+// Las dos acciones de la copia (POST /api/replica/refresh y
+// /api/replica/token) terminan en un reinicio: la app sale, el lanzador baja
+// el snapshot y la vuelve a levantar. Mientras tanto la página espera a que
+// responda un arranque nuevo (otro bootId) y se recarga.
+const REPLICA_WAIT_EVERY_MS = 2000;
+const REPLICA_WAIT_MAX_MS = 10 * 60 * 1000;
+
+async function replicaPost(url, body) {
+  const res = await fetch(url, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body || {}),
+  });
+  const data = await res.json().catch(() => ({}));
+  return { status: res.status, data };
+}
+
+async function waitForReplicaRestart(previousBootId, statusEl) {
+  const started = Date.now();
+  while (Date.now() - started < REPLICA_WAIT_MAX_MS) {
+    await new Promise((resolve) => setTimeout(resolve, REPLICA_WAIT_EVERY_MS));
+    try {
+      const res = await fetch('/api/app/mode', { credentials: 'same-origin', cache: 'no-store' });
+      if (res.ok && (await res.json()).bootId !== previousBootId) {
+        window.location.reload();
+        return;
+      }
+    } catch {
+      // Todavía reiniciando: la app no responde mientras baja el snapshot.
+    }
+  }
+  statusEl.textContent = 'La copia tarda más de lo normal en volver. Probá recargar la página en un rato.';
+}
+
+async function refreshReplicaData(mode, statusEl, button) {
+  button.disabled = true;
+  button.textContent = 'Buscando…';
+  try {
+    const { status, data } = await replicaPost('/api/replica/refresh');
+    if (status === 202) {
+      button.hidden = true;
+      statusEl.textContent = 'Bajando los datos nuevos… La página se recarga sola cuando estén.';
+      await waitForReplicaRestart(mode.bootId, statusEl);
+      return;
+    }
+    if (status === 200) {
+      button.textContent = 'Ya tenés los datos más nuevos';
+      setTimeout(() => {
+        button.textContent = 'Buscar datos nuevos';
+        button.disabled = false;
+      }, 4000);
+      return;
+    }
+    statusEl.textContent = data.error || 'No se pudo buscar datos nuevos.';
+  } catch {
+    statusEl.textContent = 'No se pudo buscar datos nuevos.';
+  }
+  button.textContent = 'Buscar datos nuevos';
+  button.disabled = false;
+}
+
+function openReplicaTokenDialog(mode, statusEl) {
+  let dialog = document.querySelector('.replica-token');
+  if (!dialog) {
+    dialog = document.createElement('dialog');
+    dialog.className = 'replica-token';
+    dialog.setAttribute('aria-labelledby', 'replica-token-title');
+    dialog.innerHTML = `
+      <form class="replica-token-box" method="dialog" novalidate>
+        <h2 id="replica-token-title">Falta el token de lectura</h2>
+        <p>Para bajar los datos del monitoreo, esta copia necesita el token de
+          lectura del repo de datos. Pedíselo a quien administra la app y pegalo acá.
+          Se guarda solo en esta computadora.</p>
+        <label for="replica-token-input">Token</label>
+        <input id="replica-token-input" type="password" autocomplete="off" spellcheck="false" required />
+        <p class="replica-token-error" role="alert" hidden></p>
+        <div class="replica-token-actions">
+          <button type="button" class="btn-ghost" data-action="later">Ahora no</button>
+          <button type="submit" class="btn">Guardar</button>
+        </div>
+      </form>`;
+    document.body.append(dialog);
+  }
+  const form = dialog.querySelector('form');
+  const input = dialog.querySelector('input');
+  const errorEl = dialog.querySelector('.replica-token-error');
+  const submit = dialog.querySelector('button[type="submit"]');
+  const later = dialog.querySelector('[data-action="later"]');
+
+  later.onclick = () => dialog.close();
+  form.onsubmit = async (event) => {
+    event.preventDefault();
+    errorEl.hidden = true;
+    const token = input.value.trim();
+    if (!token) {
+      errorEl.textContent = 'Pegá el token antes de guardar.';
+      errorEl.hidden = false;
+      return;
+    }
+    submit.disabled = true;
+    submit.textContent = 'Probando…';
+    try {
+      const { status, data } = await replicaPost('/api/replica/token', { token });
+      if (status === 200) {
+        input.value = '';
+        dialog.close();
+        const barButton = document.querySelector('.readonly-bar-btn');
+        if (barButton) barButton.hidden = true;
+        statusEl.textContent = 'Token guardado. Bajando los datos… La primera vez puede tardar unos minutos.';
+        await waitForReplicaRestart(mode.bootId, statusEl);
+        return;
+      }
+      errorEl.textContent = data.error || 'No se pudo guardar el token.';
+    } catch {
+      errorEl.textContent = 'No se pudo guardar el token.';
+    }
+    errorEl.hidden = false;
+    submit.disabled = false;
+    submit.textContent = 'Guardar';
+  };
+
+  if (!dialog.open) dialog.showModal();
+  input.focus();
 }
 
 initReadOnlyMode();

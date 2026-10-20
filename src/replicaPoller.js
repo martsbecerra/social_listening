@@ -9,7 +9,13 @@
 // comparten muchos módulos, así que reiniciar es más simple y más seguro que
 // reabrirla en caliente. Un error al consultar (sin red) se loguea y se
 // reintenta en la vuelta siguiente: nunca termina el proceso por eso.
+// Sin clon todavía (la réplica arrancó sin datos) se consulta la URL del
+// repo: si ya hay snapshot, es nuevo. checkForUpdate hace la misma consulta
+// sin salir (el botón "Buscar datos nuevos" responde antes de reiniciar).
 // ==========================================================================
+
+const fs = require('fs');
+const path = require('path');
 
 const RESTART_EXIT_CODE = 75;
 const DEFAULT_POLL_MINUTES = 10;
@@ -23,11 +29,12 @@ function pollIntervalMs(env = process.env) {
 }
 
 /**
- * @param {{ dataDir: string, git: { run: Function }, intervalMs?: number, exit?: Function,
+ * @param {{ dataDir: string, repoUrl?: string, git: { run: Function }, intervalMs?: number, exit?: Function,
  *   log?: Function, error?: Function, setIntervalFn?: Function, clearIntervalFn?: Function }} options
  */
 function createReplicaPoller({
   dataDir,
+  repoUrl = '',
   git,
   intervalMs = DEFAULT_POLL_MINUTES * MINUTE_MS,
   exit = (code) => process.exit(code),
@@ -48,20 +55,31 @@ function createReplicaPoller({
   }
 
   /** @returns {Promise<'same'|'new'|'error'>} */
-  async function checkOnce() {
+  async function checkForUpdate() {
+    const hasClone = fs.existsSync(path.join(dataDir, '.git'));
     let remote;
     try {
-      const out = await git.run(['ls-remote', 'origin', 'refs/heads/snapshot'], { cwd: dataDir });
+      const out = hasClone
+        ? await git.run(['ls-remote', 'origin', 'refs/heads/snapshot'], { cwd: dataDir })
+        : await git.run(['ls-remote', repoUrl, 'refs/heads/snapshot']);
       remote = out.trim().split(/\s+/)[0] || null;
     } catch (err) {
       error(`[réplica] no se pudo consultar si hay datos nuevos: ${err.message}`);
       return 'error';
     }
     if (!remote) return 'same';
-    if (remote === (await localHead())) return 'same';
-    log('[réplica] hay datos nuevos: se reinicia la app para cargarlos.');
-    exit(RESTART_EXIT_CODE);
+    if (hasClone && remote === (await localHead())) return 'same';
     return 'new';
+  }
+
+  /** @returns {Promise<'same'|'new'|'error'>} */
+  async function checkOnce() {
+    const result = await checkForUpdate();
+    if (result === 'new') {
+      log('[réplica] hay datos nuevos: se reinicia la app para cargarlos.');
+      exit(RESTART_EXIT_CODE);
+    }
+    return result;
   }
 
   function start() {
@@ -84,7 +102,7 @@ function createReplicaPoller({
     timer = null;
   }
 
-  return { checkOnce, start, stop };
+  return { checkForUpdate, checkOnce, start, stop };
 }
 
 module.exports = { createReplicaPoller, pollIntervalMs, RESTART_EXIT_CODE };

@@ -5,8 +5,9 @@
 #   - copia la app a %LOCALAPPDATA%\SocialListening (sin permisos de
 #     administrador). En una actualización conserva el .env, los datos
 #     (data\, replica-datos\) y los logs.
-#   - la primera vez pide el token de lectura del repo de datos y lo guarda
-#     SOLO en el .env de esta máquina.
+#   - el token de lectura del repo de datos NO lo pide acá: la app lo pide
+#     en el navegador la primera vez que se abre y lo guarda SOLO en el .env
+#     de esta máquina. Una actualización conserva el que ya estaba.
 #   - crea un acceso directo en el escritorio (abre la app en el navegador)
 #     y otro en Inicio (la copia arranca sola al iniciar sesión).
 #   - arranca la copia y abre el navegador.
@@ -75,16 +76,6 @@ if (-not (Test-Path $envFile)) {
     $nuevo = Read-EnvValue $plantilla $name
     if ($nuevo) { Set-EnvValue $envFile $name $nuevo }
   }
-}
-
-if (-not (Read-EnvValue $envFile 'DATA_REPO_TOKEN')) {
-  Write-Host ''
-  Write-Host 'Pegá el token de lectura del repo de datos (no se muestra al escribirlo).'
-  Write-Host 'Si todavía no lo tenés, apretá Enter: la copia arranca sin datos y'
-  Write-Host 'el token se puede cargar después volviendo a correr este instalador.'
-  $seguro = Read-Host 'Token' -AsSecureString
-  $token = [System.Net.NetworkCredential]::new('', $seguro).Password.Trim()
-  if ($token) { Set-EnvValue $envFile 'DATA_REPO_TOKEN' $token }
 }
 
 $port = Read-EnvValue $envFile 'PORT'

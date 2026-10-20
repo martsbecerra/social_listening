@@ -68,11 +68,25 @@ No puede escribir ni gastar:
   estado de los reclamos.
 - No tiene login: se entra directo, pero solo desde la misma máquina.
 
+Lo único que sí puede hacer es cuidarse a sí misma:
+
+- **Buscar datos nuevos** (botón de la franja): si la PC principal publicó
+  algo que la copia no tiene, la app se reinicia, baja el snapshot y la
+  página se recarga sola. Si ya está al día, lo dice.
+- **Cargar el token de lectura** (modal): aparece la primera vez que se abre
+  la copia, mientras no haya token. El token se prueba contra el repo de
+  datos antes de guardarlo en el `.env` local; si no sirve, el modal dice
+  por qué (sin acceso, vencido, sin conexión).
+
 La barrera real está en el servidor (`src/replicaGuard.js`):
 
 - Todo pedido que no sea GET o HEAD recibe **403** "Esta copia es de solo
   lectura.". La regla va por método y no por ruta, así que una ruta nueva que
-  escriba queda cubierta sola.
+  escriba queda cubierta sola. Las únicas excepciones son
+  `POST /api/replica/refresh` y `POST /api/replica/token` (las dos de arriba),
+  y solo si el pedido viene de la propia página de la app (`Origin`
+  `http://localhost:<puerto>`): una página web cualquiera abierta en el mismo
+  navegador no puede dispararlas.
 - La app escucha solo en `127.0.0.1`, y un `Host` que no sea `localhost` con
   el puerto recibe **421**. Eso impide que otra máquina de la red, o una
   página web maliciosa, lea los datos.
@@ -87,8 +101,9 @@ agrega "Hay una versión nueva de la app: pedí el instalador actualizado".
 - **Token de escritura** (solo en la PC principal): lo usa git para subir el
   snapshot. Queda en el administrador de credenciales de Windows, no en el
   repo de la app ni en el `.env`.
-- **Token de lectura** (en cada réplica): queda solo en el `.env` local de
-  cada máquina (`%LOCALAPPDATA%\SocialListening\.env`). Se le pasa a git por
+- **Token de lectura** (en cada réplica): se pega en el modal y queda solo en
+  el `.env` local de cada máquina (`%LOCALAPPDATA%\SocialListening\.env`);
+  nunca vuelve al navegador ni se escribe en un log. Se le pasa a git por
   variables de entorno (`http.extraHeader`), nunca en la URL, y se borra de
   cualquier mensaje de error antes de loguearlo.
 - Quien tenga el token de lectura puede bajar la base completa del monitoreo.
@@ -119,7 +134,8 @@ agrega "Hay una versión nueva de la app: pedí el instalador actualizado".
 | `src/replicaGuard.js` | Réplica: solo lectura, solo localhost, sin login |
 | `src/replicaSync.js`, `scripts/replica-sync.js` | Réplica: trae el snapshot y lo aplica |
 | `src/replicaPoller.js` | Réplica: detecta datos nuevos y sale con 75 |
-| `src/replicaRoutes.js` | `GET /api/app/mode` |
+| `src/replicaRoutes.js` | `GET /api/app/mode`, `POST /api/replica/refresh` y `POST /api/replica/token` |
+| `src/replicaToken.js` | Prueba el token contra el repo de datos y lo guarda en el `.env` |
 | `src/appVersion.js` | Versión del código (`build-info.json` o git) |
 | `installer/armar-instalador.ps1` | Arma el zip para repartir |
 | `installer/instalar.ps1` | Instala o actualiza una réplica |

@@ -66,6 +66,10 @@ before(async () => {
     SMTP_USER: '',
     SMTP_PASS: '',
     REPLICA_PUBLISH_DIR: '',
+    // Sin token ni repo: el modal se pide y POST /api/replica/token corta en
+    // "sin repo" antes de probar con git o de escribir el .env.
+    DATA_REPO_TOKEN: '',
+    REPLICA_REPO_URL: '',
   };
   child = spawn(process.execPath, ['server.js'], { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] });
   child.stdout.on('data', (c) => (output += c));
@@ -92,14 +96,35 @@ after(() => {
   if (child && child.exitCode === null) child.kill();
 });
 
-function pedir(method, p) {
+function pedir(method, p, { origin, body = '{}' } = {}) {
   return fetch(`http://localhost:${port}${p}`, {
     method,
-    headers: { 'Content-Type': 'application/json' },
-    body: method === 'GET' ? undefined : '{}',
+    headers: { 'Content-Type': 'application/json', ...(origin ? { Origin: origin.replace('PORT', port) } : {}) },
+    body: method === 'GET' ? undefined : body,
     redirect: 'manual',
   });
 }
+
+test('sin token de lectura: /api/app/mode pide el modal', async () => {
+  const body = await (await pedir('GET', '/api/app/mode')).json();
+  assert.equal(body.needsToken, true);
+});
+
+test('"Buscar datos nuevos" desde la app llega a la ruta (sin token: 409)', async () => {
+  const res = await pedir('POST', '/api/replica/refresh', { origin: 'http://localhost:PORT' });
+  assert.equal(res.status, 409);
+});
+
+test('guardar el token: sin Origin de la app, 403; con él, llega a la ruta y no toca el .env', async () => {
+  const envPath = path.join(ROOT, '.env');
+  const antes = fs.existsSync(envPath) ? fs.readFileSync(envPath) : null;
+  const body = JSON.stringify({ token: 'abc' });
+  assert.equal((await pedir('POST', '/api/replica/token', { body })).status, 403);
+  const res = await pedir('POST', '/api/replica/token', { origin: 'http://localhost:PORT', body });
+  assert.equal(res.status, 409);
+  assert.match((await res.json()).error, /REPLICA_REPO_URL/);
+  assert.deepEqual(fs.existsSync(envPath) ? fs.readFileSync(envPath) : null, antes);
+});
 
 test('arranca sin claves y dice que es una réplica', () => {
   assert.match(output, /Servidor listo/);

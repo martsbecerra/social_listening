@@ -9,9 +9,13 @@ Instalar
 --------
 1. Descomprimí el zip en cualquier carpeta.
 2. Clic derecho en "instalar.ps1" > "Ejecutar con PowerShell".
-3. Cuando lo pida, pegá el token de lectura que te pasaron y apretá Enter.
-4. Se abre el navegador con la app. Después, usá el acceso directo
-   "Social Listening" del escritorio.
+3. Se abre el navegador con la app y una ventana que pide el token de
+   lectura: pegá el que te pasaron y apretá "Guardar". La primera descarga
+   de datos puede tardar unos minutos; la página se recarga sola.
+4. Después, usá el acceso directo "Social Listening" del escritorio.
+
+Para traer los datos más nuevos sin esperar, apretá "Buscar datos nuevos"
+en la franja amarilla de arriba.
 
 La copia arranca sola cada vez que iniciás sesión en Windows (una ventana
 minimizada que dice "Social Listening (copia de solo lectura)"). Si la

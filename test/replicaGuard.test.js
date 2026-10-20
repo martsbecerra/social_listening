@@ -28,7 +28,7 @@ let server;
 let port;
 const llegadas = [];
 
-function pedir(method, rawPath, { host } = {}) {
+function pedir(method, rawPath, { host, origin } = {}) {
   const conCuerpo = !['GET', 'HEAD'].includes(method);
   return new Promise((resolve, reject) => {
     const req = http.request(
@@ -41,6 +41,7 @@ function pedir(method, rawPath, { host } = {}) {
         setHost: false,
         headers: {
           ...(host === null ? {} : { Host: host === undefined ? `localhost:${port}` : host }),
+          ...(origin === undefined ? {} : { Origin: origin.replace('PORT', port) }),
           ...(conCuerpo ? { 'Content-Type': 'application/json', 'Content-Length': 2 } : {}),
         },
       },
@@ -84,6 +85,9 @@ before(async () => {
   app.patch('/api/reclamos/:id', anotar('reclamo'));
   app.delete('/api/monitoring/searches/:search', anotar('borrar-busqueda'));
   app.post('/api/auth/magic-link', anotar('magic-link'));
+  app.post('/api/replica/refresh', anotar('buscar-datos'));
+  app.post('/api/replica/token', anotar('token'));
+  app.patch('/api/replica/token', anotar('token-patch'));
 
   await new Promise((resolve) => {
     server = app.listen(0, '127.0.0.1', resolve);
@@ -139,6 +143,39 @@ describe('solo lectura', { concurrency: false }, () => {
       const res = await pedir('GET', rawPath);
       assert.equal(res.status, 302);
       assert.equal(res.location, '/dashboard.html');
+    });
+  }
+});
+
+describe('acciones locales de la copia (buscar datos nuevos, token)', { concurrency: false }, () => {
+  for (const [rawPath, origin, handler] of [
+    ['/api/replica/refresh', 'http://localhost:PORT', 'buscar-datos'],
+    ['/api/replica/token', 'http://127.0.0.1:PORT', 'token'],
+  ]) {
+    test(`POST ${rawPath} desde la página de la app (Origin ${origin}) pasa`, async () => {
+      const res = await pedir('POST', rawPath, { origin });
+      assert.equal(res.status, 200);
+      assert.equal(JSON.parse(res.body).handler, handler);
+    });
+  }
+
+  for (const origin of [undefined, 'http://evil.example', 'http://localhost:1', 'null', 'https://localhost:PORT']) {
+    test(`POST /api/replica/token con Origin ${origin === undefined ? '(ninguno)' : origin} → 403`, async () => {
+      const res = await pedir('POST', '/api/replica/token', { origin });
+      assert.equal(res.status, 403);
+      assert.deepEqual(llegadas, []);
+    });
+  }
+
+  for (const [method, rawPath] of [
+    ['PATCH', '/api/replica/token'],
+    ['POST', '/api/replica/token/otro'],
+    ['POST', '/api/monitoring/run-now?plataforma=instagram'],
+  ]) {
+    test(`${method} ${rawPath} sigue en 403 aunque venga de la app`, async () => {
+      const res = await pedir(method, rawPath, { origin: 'http://localhost:PORT' });
+      assert.equal(res.status, 403);
+      assert.deepEqual(llegadas, []);
     });
   }
 });

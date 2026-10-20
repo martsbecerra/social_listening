@@ -208,22 +208,25 @@ powershell -ExecutionPolicy Bypass -File .\instalar.ps1
 El instalador:
 
 1. copia la app a `%LOCALAPPDATA%\SocialListening`;
-2. pide el token (paso 3.3);
-3. crea el acceso directo **Social Listening** en el escritorio;
-4. crea el arranque automático al iniciar sesión;
-5. arranca la copia, espera que baje los datos y abre el navegador.
+2. crea el acceso directo **Social Listening** en el escritorio;
+3. crea el arranque automático al iniciar sesión;
+4. arranca la copia y abre el navegador.
 
 ### 3.3 Pegar el token
 
-Cuando aparece `Token:`, pegar el token de lectura (clic derecho pega en la
-consola) y apretar Enter. No se ve mientras se escribe: es normal.
+La primera vez, la app se abre con una ventana **Falta el token de
+lectura**. Pegar ahí el token de lectura (Ctrl+V) y apretar **Guardar**.
 
-Queda guardado solo en `%LOCALAPPDATA%\SocialListening\.env`, en esa
-máquina.
+- La app lo prueba contra el repo de datos antes de guardarlo. Si no sirve,
+  lo dice en la misma ventana (sin acceso al repo, vencido o sin conexión) y
+  no guarda nada.
+- Si sirve, lo guarda solo en `%LOCALAPPDATA%\SocialListening\.env`, en esa
+  máquina, baja los datos y la página se recarga sola. La primera descarga
+  puede tardar unos minutos (trae todas las fotos).
 
-Si todavía no se tiene el token, apretar Enter sin nada: la copia se
-instala igual pero sin datos. Para cargarlo después, volver a correr
-`instalar.ps1`.
+Si todavía no se tiene el token, **Ahora no** cierra la ventana: la copia
+queda sin datos y el botón **Cargar token** de la franja de arriba la vuelve
+a abrir.
 
 ### 3.4 Comprobar
 
@@ -245,6 +248,9 @@ bajar el snapshot. Ver [problemas frecuentes](#5-problemas-frecuentes).
 - Para entrar, el acceso directo **Social Listening** del escritorio.
 - Los datos nuevos llegan solos, hasta 10 minutos después de cada ciclo de
   la PC principal. No hace falta hacer nada.
+- Para no esperar: **Buscar datos nuevos**, en la franja de arriba. Si hay
+  datos nuevos, la página muestra "Bajando los datos nuevos…" y se recarga
+  sola; si no, dice "Ya tenés los datos más nuevos".
 
 ---
 
@@ -271,11 +277,15 @@ cambio haya tocado la estructura de la base.
 Por ejemplo, si venció o se revocó:
 
 1. Abrir `%LOCALAPPDATA%\SocialListening\.env` con el Bloc de notas.
-2. Dejar la línea así, sin nada después del `=`: `DATA_REPO_TOKEN=`.
-3. Guardar y correr `instalar.ps1` de nuevo: pide el token.
+2. Dejar la línea así, sin nada después del `=`: `DATA_REPO_TOKEN=`, y
+   guardar.
+3. Cerrar la ventana "Social Listening (copia de solo lectura)" y volver a
+   correr `instalar.ps1` (o cerrar sesión y volver a entrar).
+4. Al abrir la app aparece de nuevo la ventana del token (3.3).
 
-O directamente reemplazar el valor en esa línea y reiniciar la sesión de
-Windows.
+Hoy el modal solo aparece cuando falta el token: con uno vencido, la copia
+sigue mostrando los últimos datos y "Buscar datos nuevos" responde que no se
+pudo consultar.
 
 ### 4.3 Renovar el token de lectura
 

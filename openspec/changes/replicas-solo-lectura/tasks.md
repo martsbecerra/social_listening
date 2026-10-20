@@ -40,3 +40,12 @@
 
 - [x] 6.1 `.env.example`, README, CLAUDE.md
 - [x] 6.2 Suite verde con `IG_ACTOR=apidojo` y `IG_ACTOR=apify`
+
+## Phase 7: acciones de la copia
+
+- [x] 7.1 `src/replicaPoller.js`: `checkForUpdate` sin salir; sin clon consulta `REPLICA_REPO_URL`
+- [x] 7.2 `src/replicaToken.js`: probar el token con `git ls-remote` y guardarlo en el `.env`
+- [x] 7.3 `src/replicaGuard.js`: `POST /api/replica/refresh` y `/api/replica/token` solo con `Origin` local
+- [x] 7.4 `src/replicaRoutes.js`: `needsToken`, `bootId` y las dos rutas (responden y después salen con 75)
+- [x] 7.5 Frontend: botón "Buscar datos nuevos", modal del token; el instalador ya no pide el token
+- [x] 7.6 Prueba en el navegador con una réplica de prueba y el lanzador (repo de datos local)

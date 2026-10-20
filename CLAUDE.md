@@ -550,7 +550,14 @@ datos de un repo privado de GitHub. SDD en
  copia es de solo lectura."), `Host` localhost con el puerto (si no, 421),
  `req.auth = { email: 'copia.local' }`. La barrera es el método, no la
  ruta: una ruta nueva que escribe queda cubierta sola; una que GASTA o
- escribe por GET no, así que eso no se hace.
+ escribe por GET no, así que eso no se hace. Única excepción: dos POST
+ de la copia misma, `/api/replica/refresh` ("Buscar datos nuevos") y
+ `/api/replica/token` (modal del token: lo prueba con `git ls-remote`
+ y lo escribe en el `.env`, `src/replicaToken.js`), y solo con `Origin`
+ `http://localhost:<puerto>` (sin eso, cualquier página abierta los
+ dispararía). Los dos responden y recién después salen con 75; la
+ página espera otro `bootId` en `/api/app/mode` y se recarga. No sumar
+ rutas a esa lista que toquen los datos.
 - Publicación (`src/replicaPublish.js`, desde el `finally` del ciclo en
  `scheduler.js`): solo con `REPLICA_PUBLISH_DIR`. Base con `VACUUM INTO`
  desde una conexión de solo lectura y SIN `magic_links`, más
@@ -558,7 +565,8 @@ datos de un repo privado de GitHub. SDD en
  en la rama `snapshot` (amend) y `push --force`. Nunca tira. Lo que se
  sume al snapshot no puede llevar datos del login ni secretos.
 - Réplica: `src/replicaPoller.js` (`git ls-remote` cada
- `REPLICA_POLL_MINUTES`, sale con 75 si cambió), `scripts/replica-sync.js`
+ `REPLICA_POLL_MINUTES`, sale con 75 si cambió; sin clon consulta
+ `REPLICA_REPO_URL`), `scripts/replica-sync.js`
  / `src/replicaSync.js` (clon o fetch `--depth 1`, `integrity_check`,
  reemplazo de la base, fotos y config; no carga `src/db.js`) y
  `installer/iniciar-replica.bat`, que los encadena. El token

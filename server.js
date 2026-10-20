@@ -82,8 +82,36 @@ const { createAuthGate } = require('./src/auth/gate');
 const { createReplicaGuard } = require('./src/replicaGuard');
 const replicaRoutes = require('./src/replicaRoutes');
 const { replicaInfoPath, replicaOptionsFromEnv } = require('./src/replicaSync');
-const { createReplicaPoller, pollIntervalMs } = require('./src/replicaPoller');
+const { createReplicaPoller, pollIntervalMs, RESTART_EXIT_CODE } = require('./src/replicaPoller');
+const { writeEnvValue, verifyToken } = require('./src/replicaToken');
 const { getAppVersion } = require('./src/appVersion');
+
+// Réplica: el sondeo de datos nuevos (también lo usa "Buscar datos nuevos")
+// y lo que necesitan las acciones de la copia (src/replicaRoutes.js). Para
+// cargar datos nuevos o un token, la réplica sale con 75 y el lanzador
+// (installer/iniciar-replica.bat) sincroniza y la vuelve a levantar.
+const replicaConfig = IS_REPLICA ? replicaOptionsFromEnv() : null;
+const replicaPoller = IS_REPLICA
+  ? createReplicaPoller({
+      dataDir: replicaConfig.dataDir,
+      repoUrl: replicaConfig.repoUrl,
+      git: replicaConfig.git,
+      intervalMs: pollIntervalMs(),
+    })
+  : null;
+const replicaActions = IS_REPLICA
+  ? {
+      hasToken: () => Boolean(String(process.env.DATA_REPO_TOKEN || '').trim()),
+      checkForUpdate: () => replicaPoller.checkForUpdate(),
+      verifyToken: (token) =>
+        verifyToken({ repoUrl: replicaConfig.repoUrl, token, gitPath: process.env.REPLICA_GIT || 'git' }),
+      saveToken: (token) => writeEnvValue(path.join(__dirname, '.env'), 'DATA_REPO_TOKEN', token),
+      restart: () => {
+        console.log('[réplica] se reinicia la app para bajar los datos.');
+        process.exit(RESTART_EXIT_CODE);
+      },
+    }
+  : null;
 
 const app = express();
 
@@ -125,7 +153,13 @@ app.use(IS_REPLICA ? createReplicaGuard({ getPort: () => PORT }) : createAuthGat
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Modo de la app para el frontend (src/replicaRoutes.js).
-replicaRoutes.register(app, { mode: APP_MODE, infoPath: replicaInfoPath(db.DB_PATH), appVersion: getAppVersion() });
+replicaRoutes.register(app, {
+  mode: APP_MODE,
+  infoPath: replicaInfoPath(db.DB_PATH),
+  appVersion: getAppVersion(),
+  replica: replicaActions,
+  bootId: `${process.pid}-${Date.now()}`,
+});
 
 // --------------------------------------------------------------------------
 // Chequeo inicial. Antes era un console.warn y el server levantaba igual: la
@@ -717,11 +751,13 @@ try {
 // app (código 75) cuando la PC principal publica datos nuevos.
 function startReplica() {
   const server = app.listen(PORT, '127.0.0.1', () => {
-    const replica = replicaOptionsFromEnv();
     console.log(`\n✅ Servidor listo en http://localhost:${PORT}`);
     console.log('   Modo: réplica de solo lectura (APP_MODE=replica). Sin monitoreo, sin login, solo esta máquina.');
-    console.log(`   Datos: ${replica.dataDir} · se revisa si hay nuevos cada ${pollIntervalMs() / 60000} min\n`);
-    createReplicaPoller({ dataDir: replica.dataDir, git: replica.git, intervalMs: pollIntervalMs() }).start();
+    if (!replicaActions.hasToken()) {
+      console.log('   Falta el token de lectura del repo de datos: la app lo pide al abrirla en el navegador.');
+    }
+    console.log(`   Datos: ${replicaConfig.dataDir} · se revisa si hay nuevos cada ${pollIntervalMs() / 60000} min\n`);
+    replicaPoller.start();
   });
   return server;
 }
