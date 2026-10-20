@@ -25,3 +25,7 @@ config/monitoring-x.json.migrado
 
 # Logs del arranque con reinicio automatico (scripts/iniciar-con-reinicio.bat)
 logs/
+
+# Réplicas de solo lectura: zip del instalador y clon del repo de datos
+dist/
+replica-datos/

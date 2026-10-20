@@ -1,0 +1,28 @@
+Social Listening - copia de solo lectura
+=======================================
+
+Esta carpeta instala en tu computadora una copia de la app que muestra los
+datos del monitoreo. Se actualiza sola cada vez que hay datos nuevos. No se
+puede cambiar nada desde acá: es solo para consultar.
+
+Instalar
+--------
+1. Descomprimí el zip en cualquier carpeta.
+2. Clic derecho en "instalar.ps1" > "Ejecutar con PowerShell".
+3. Cuando lo pida, pegá el token de lectura que te pasaron y apretá Enter.
+4. Se abre el navegador con la app. Después, usá el acceso directo
+   "Social Listening" del escritorio.
+
+La copia arranca sola cada vez que iniciás sesión en Windows (una ventana
+minimizada que dice "Social Listening (copia de solo lectura)"). Si la
+cerrás, el acceso directo del escritorio no va a abrir nada hasta que
+vuelvas a iniciar sesión o corras de nuevo instalar.ps1.
+
+Actualizar
+----------
+Cuando arriba de la app aparece "Hay una versión nueva de la app", pedí el
+zip nuevo y repetí los pasos 1 y 2. No hace falta volver a pegar el token.
+
+Si algo no anda
+---------------
+Los registros están en %LOCALAPPDATA%\SocialListening\logs.
