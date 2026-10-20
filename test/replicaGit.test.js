@@ -53,6 +53,33 @@ test('sin token no agrega header (la principal usa el git ya autenticado)', asyn
   assert.equal(env.GIT_TERMINAL_PROMPT, '0');
 });
 
+function gitConfigOf(env) {
+  const out = {};
+  for (let i = 0; i < Number(env.GIT_CONFIG_COUNT || 0); i++) out[env[`GIT_CONFIG_KEY_${i}`]] = env[`GIT_CONFIG_VALUE_${i}`];
+  return out;
+}
+
+test('sin credenciales de la máquina (réplica): sin credential helper ni ventana de login, con o sin token', async () => {
+  for (const token of [TOKEN, '']) {
+    const exec = fakeExecFile();
+    const git = createGitRunner({ token, machineCredentials: false, execFileFn: exec.fn });
+    await git.run(['ls-remote', 'origin', 'refs/heads/snapshot']);
+    const { env } = exec.calls[0].options;
+    // Un credential.helper vacío borra los configurados: un token rechazado
+    // corta con error en vez de abrir el login de Git Credential Manager.
+    assert.equal(gitConfigOf(env)['credential.helper'], '');
+    assert.equal(env.GCM_INTERACTIVE, 'never');
+    if (token) assert.equal(gitConfigOf(env)['http.extraHeader'], `Authorization: Basic ${BASIC}`);
+  }
+});
+
+test('por defecto usa las credenciales de la máquina (la principal publica con su git autenticado)', async () => {
+  const exec = fakeExecFile();
+  await createGitRunner({ execFileFn: exec.fn }).run(['push']);
+  const { env } = exec.calls[0].options;
+  assert.equal(gitConfigOf(env)['credential.helper'], undefined);
+});
+
 test('usa el ejecutable de gitPath (MinGit del instalador)', async () => {
   const exec = fakeExecFile();
   const git = createGitRunner({ gitPath: 'C:/app/mingit/cmd/git.exe', execFileFn: exec.fn });

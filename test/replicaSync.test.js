@@ -226,6 +226,18 @@ test('replicaOptionsFromEnv: rutas de la app y el snapshot.json al lado de la ba
   assert.equal(typeof options.git.run, 'function');
 });
 
+test('replicaOptionsFromEnv: git sin las credenciales de la máquina (un token rechazado no abre una ventana de login)', async () => {
+  // REPLICA_GIT apunta a node: el "git" imprime el entorno que recibió.
+  const options = replicaOptionsFromEnv({ ...process.env, REPLICA_GIT: process.execPath, DATA_REPO_TOKEN: 'tok' });
+  const out = await options.git.run([
+    '-e',
+    'const e = process.env; const c = {}; for (let i = 0; i < Number(e.GIT_CONFIG_COUNT || 0); i++) c[e["GIT_CONFIG_KEY_" + i]] = e["GIT_CONFIG_VALUE_" + i]; console.log(JSON.stringify({ c, gcm: e.GCM_INTERACTIVE }))',
+  ]);
+  const { c, gcm } = JSON.parse(out);
+  assert.equal(c['credential.helper'], '');
+  assert.equal(gcm, 'never');
+});
+
 // --------------------------------------------------------------------------
 // syncReplica: traer + aplicar
 // --------------------------------------------------------------------------

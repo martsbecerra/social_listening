@@ -12,10 +12,15 @@
 // Sin clon todavía (la réplica arrancó sin datos) se consulta la URL del
 // repo: si ya hay snapshot, es nuevo. checkForUpdate hace la misma consulta
 // sin salir (el botón "Buscar datos nuevos" responde antes de reiniciar).
+// Si el repo rechaza el token (venció o lo revocaron; un error que no es de
+// red), devuelve 'denied' y tokenRejected() queda en true hasta que una
+// consulta vuelva a andar: /api/app/mode lo avisa y el frontend abre el
+// modal para pegar uno nuevo.
 // ==========================================================================
 
 const fs = require('fs');
 const path = require('path');
+const { classifyGitError } = require('./replicaToken');
 
 const RESTART_EXIT_CODE = 75;
 const DEFAULT_POLL_MINUTES = 10;
@@ -45,6 +50,7 @@ function createReplicaPoller({
 }) {
   let timer = null;
   let checking = false;
+  let denied = false;
 
   async function localHead() {
     try {
@@ -54,9 +60,13 @@ function createReplicaPoller({
     }
   }
 
-  /** @returns {Promise<'same'|'new'|'error'>} */
+  /** @returns {Promise<'same'|'new'|'error'|'denied'>} 'denied': el repo no acepta el token. */
   async function checkForUpdate() {
     const hasClone = fs.existsSync(path.join(dataDir, '.git'));
+    if (!hasClone && !repoUrl) {
+      error('[réplica] falta REPLICA_REPO_URL: no hay dónde consultar si hay datos nuevos.');
+      return 'error';
+    }
     let remote;
     try {
       const out = hasClone
@@ -64,15 +74,21 @@ function createReplicaPoller({
         : await git.run(['ls-remote', repoUrl, 'refs/heads/snapshot']);
       remote = out.trim().split(/\s+/)[0] || null;
     } catch (err) {
+      if (classifyGitError(err.message) === 'acceso') {
+        denied = true;
+        error(`[réplica] el repo de datos no acepta el token de lectura (venció o lo revocaron): ${err.message}`);
+        return 'denied';
+      }
       error(`[réplica] no se pudo consultar si hay datos nuevos: ${err.message}`);
       return 'error';
     }
+    denied = false;
     if (!remote) return 'same';
     if (hasClone && remote === (await localHead())) return 'same';
     return 'new';
   }
 
-  /** @returns {Promise<'same'|'new'|'error'>} */
+  /** @returns {Promise<'same'|'new'|'error'|'denied'>} */
   async function checkOnce() {
     const result = await checkForUpdate();
     if (result === 'new') {
@@ -82,7 +98,12 @@ function createReplicaPoller({
     return result;
   }
 
-  function start() {
+  /**
+   * checkNow: una consulta apenas arranca, para saber enseguida si el token
+   * dejó de servir. No sale aunque haya datos nuevos: la sincronización
+   * recién corrió, y salir podría dejar la app reiniciándose en bucle.
+   */
+  async function start({ checkNow = false } = {}) {
     if (timer) return;
     timer = setIntervalFn(async () => {
       if (checking) return;
@@ -94,6 +115,7 @@ function createReplicaPoller({
       }
     }, intervalMs);
     if (timer && typeof timer.unref === 'function') timer.unref();
+    if (checkNow) await checkForUpdate();
   }
 
   function stop() {
@@ -102,7 +124,12 @@ function createReplicaPoller({
     timer = null;
   }
 
-  return { checkForUpdate, checkOnce, start, stop };
+  /** La última consulta falló porque el repo no acepta el token (hasta que una vuelva a andar). */
+  function tokenRejected() {
+    return denied;
+  }
+
+  return { checkForUpdate, checkOnce, start, stop, tokenRejected };
 }
 
 module.exports = { createReplicaPoller, pollIntervalMs, RESTART_EXIT_CODE };

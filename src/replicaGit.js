@@ -34,15 +34,27 @@ function redact(text, token) {
 }
 
 /**
- * @param {{ gitPath?: string, token?: string, execFileFn?: Function, env?: object }} [options]
+ * @param {{ gitPath?: string, token?: string, machineCredentials?: boolean, execFileFn?: Function, env?: object }} [options]
+ *   machineCredentials: false en la réplica. Vacía credential.helper y pone
+ *   GCM_INTERACTIVE=never: con un token rechazado, Git para Windows abre la
+ *   ventana de login de Git Credential Manager (GIT_TERMINAL_PROMPT no la
+ *   frena) y git queda colgado esperándola.
  *   execFileFn: para tests (misma firma que child_process.execFile).
  */
-function createGitRunner({ gitPath = 'git', token = '', execFileFn = execFile, env = process.env } = {}) {
+function createGitRunner({ gitPath = 'git', token = '', machineCredentials = true, execFileFn = execFile, env = process.env } = {}) {
   const childEnv = { ...env, GIT_TERMINAL_PROMPT: '0' };
-  if (token) {
-    childEnv.GIT_CONFIG_COUNT = '1';
-    childEnv.GIT_CONFIG_KEY_0 = 'http.extraHeader';
-    childEnv.GIT_CONFIG_VALUE_0 = `Authorization: Basic ${basicFor(token)}`;
+  const config = [];
+  if (token) config.push(['http.extraHeader', `Authorization: Basic ${basicFor(token)}`]);
+  if (!machineCredentials) {
+    config.push(['credential.helper', '']);
+    childEnv.GCM_INTERACTIVE = 'never';
+  }
+  if (config.length > 0) {
+    childEnv.GIT_CONFIG_COUNT = String(config.length);
+    config.forEach(([key, value], i) => {
+      childEnv[`GIT_CONFIG_KEY_${i}`] = key;
+      childEnv[`GIT_CONFIG_VALUE_${i}`] = value;
+    });
   }
 
   /**

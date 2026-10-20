@@ -24,20 +24,25 @@ const REPO_URL = 'https://github.com/ejemplo/datos.git';
 const REMOTO = 'aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111';
 const LOCAL = 'bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222';
 
+const SIN_RED = 'git ls-remote falló: | fatal: unable to access: Could not resolve host: github.com';
+const SIN_ACCESO = 'git ls-remote falló: | remote: Repository not found. fatal: Authentication failed';
+
 function fakeGit({ remote = REMOTO, local = LOCAL, failRemote = false } = {}) {
   const calls = [];
-  return {
+  const git = {
     calls,
+    failRemote,
     run: async (args) => {
       calls.push(args);
       if (args[0] === 'ls-remote') {
-        if (failRemote) throw new Error('git ls-remote falló: Could not resolve host');
+        if (git.failRemote) throw new Error(git.failRemote === true ? SIN_RED : git.failRemote);
         return remote ? `${remote}\trefs/heads/snapshot\n` : '';
       }
       if (args[0] === 'rev-parse') return `${local}\n`;
       throw new Error(`git ${args[0]} inesperado`);
     },
   };
+  return git;
 }
 
 function poller(git, extra = {}) {
@@ -81,6 +86,34 @@ test('sin red: lo loguea y sigue, sin salir', async () => {
   assert.equal(await p.checkOnce(), 'error');
   assert.deepEqual(exits, []);
   assert.match(errores.join('\n'), /\[réplica\]/);
+});
+
+test('sin acceso al repo (token vencido o revocado): "denied", sin salir, y lo recuerda hasta que vuelva a andar', async () => {
+  const git = fakeGit({ remote: LOCAL, local: LOCAL, failRemote: SIN_ACCESO });
+  const { p, exits, errores } = poller(git);
+  assert.equal(p.tokenRejected(), false);
+  assert.equal(await p.checkOnce(), 'denied');
+  assert.deepEqual(exits, []);
+  assert.equal(p.tokenRejected(), true);
+  assert.match(errores.join('\n'), /\[réplica\]/);
+
+  git.failRemote = false;
+  assert.equal(await p.checkForUpdate(), 'same');
+  assert.equal(p.tokenRejected(), false);
+});
+
+test('sin red no es token rechazado', async () => {
+  const { p } = poller(fakeGit({ failRemote: true }));
+  await p.checkForUpdate();
+  assert.equal(p.tokenRejected(), false);
+});
+
+test('sin clon y sin REPLICA_REPO_URL: "error" sin llamar a git', async () => {
+  const git = fakeGit();
+  const { p } = poller(git, { repoUrl: '', dataDir: path.join(os.tmpdir(), 'sl-poller-no-existe', 'c') });
+  assert.equal(await p.checkForUpdate(), 'error');
+  assert.deepEqual(git.calls, []);
+  assert.equal(p.tokenRejected(), false);
 });
 
 test('la rama remota no existe todavía: sigue', async () => {
@@ -128,6 +161,26 @@ test('start programa el sondeo con el intervalo y stop lo corta', () => {
   p.stop();
   assert.deepEqual(programados, [600000]);
   assert.deepEqual(cortados, ['timer']);
+});
+
+test('start con checkNow consulta enseguida, sin salir aunque haya datos nuevos (recién sincronizó)', async () => {
+  const git = fakeGit({ failRemote: SIN_ACCESO });
+  const { p, exits } = poller(git, { setIntervalFn: () => 'timer', clearIntervalFn: () => {} });
+  await p.start({ checkNow: true });
+  assert.equal(git.calls.filter((a) => a[0] === 'ls-remote').length, 1);
+  assert.equal(p.tokenRejected(), true);
+
+  const nuevo = poller(fakeGit(), { setIntervalFn: () => 'timer', clearIntervalFn: () => {} });
+  await nuevo.p.start({ checkNow: true });
+  assert.deepEqual(nuevo.exits, []);
+  assert.deepEqual(exits, []);
+});
+
+test('start sin checkNow no consulta hasta la primera vuelta', async () => {
+  const git = fakeGit();
+  const { p } = poller(git, { setIntervalFn: () => 'timer', clearIntervalFn: () => {} });
+  await p.start();
+  assert.deepEqual(git.calls, []);
 });
 
 test('pollIntervalMs: REPLICA_POLL_MINUTES, default 10, piso 1', () => {

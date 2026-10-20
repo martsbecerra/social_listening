@@ -141,3 +141,21 @@ El token de las réplicas (`DATA_REPO_TOKEN`) MUST pasarse a git solo por variab
 - GIVEN git falla y su stderr incluye el header de autenticación
 - WHEN se loguea el error
 - THEN el token aparece reemplazado
+
+---
+
+### Requirement: REQ-REP-10 — Token que deja de servir
+
+En `replica`, git MUST correr sin las credenciales guardadas en la máquina (sin `credential.helper`, sin ventana de login). Un error de git al consultar el repo de datos que no sea de red MUST contar como token rechazado: el sondeo MUST devolver `denied` sin salir, también en una consulta apenas arranca la app (con token); `GET /api/app/mode` MUST dar `tokenRejected: true` mientras haya token y ninguna consulta posterior haya andado; `POST /api/replica/refresh` MUST responder 401 con `tokenRejected: true`. El frontend MUST abrir el modal del token con el título "El token de lectura ya no sirve".
+
+#### Scenario: Token revocado
+
+- GIVEN una réplica con un token que GitHub ya no acepta
+- WHEN arranca la app
+- THEN git no abre ninguna ventana, `/api/app/mode` da `tokenRejected: true` y la página abre el modal
+
+#### Scenario: Sin red no es token rechazado
+
+- GIVEN una réplica sin conexión con GitHub
+- WHEN pasa el sondeo
+- THEN responde `error` y `tokenRejected` queda en false

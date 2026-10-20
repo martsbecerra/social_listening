@@ -102,6 +102,7 @@ const replicaPoller = IS_REPLICA
 const replicaActions = IS_REPLICA
   ? {
       hasToken: () => Boolean(String(process.env.DATA_REPO_TOKEN || '').trim()),
+      tokenRejected: () => replicaPoller.tokenRejected(),
       checkForUpdate: () => replicaPoller.checkForUpdate(),
       verifyToken: (token) =>
         verifyToken({ repoUrl: replicaConfig.repoUrl, token, gitPath: process.env.REPLICA_GIT || 'git' }),
@@ -757,7 +758,9 @@ function startReplica() {
       console.log('   Falta el token de lectura del repo de datos: la app lo pide al abrirla en el navegador.');
     }
     console.log(`   Datos: ${replicaConfig.dataDir} · se revisa si hay nuevos cada ${pollIntervalMs() / 60000} min\n`);
-    replicaPoller.start();
+    replicaPoller.start({ checkNow: replicaActions.hasToken() }).catch((err) => {
+      console.error(`[réplica] falló la consulta inicial al repo de datos: ${err.message}`);
+    });
   });
   return server;
 }

@@ -84,9 +84,17 @@ Lo único que sí puede hacer es cuidarse a sí misma:
   algo que la copia no tiene, la app se reinicia, baja el snapshot y la
   página se recarga sola. Si ya está al día, lo dice.
 - **Cargar el token de lectura** (modal): aparece la primera vez que se abre
-  la copia, mientras no haya token. El token se prueba contra el repo de
-  datos antes de guardarlo en el `.env` local; si no sirve, el modal dice
-  por qué (sin acceso, vencido, sin conexión).
+  la copia, mientras no haya token, y otra vez si el repo deja de aceptar el
+  guardado (venció o lo revocaron). La copia se entera al arrancar, en cada
+  sondeo y con "Buscar datos nuevos": un error de git que no es de red
+  cuenta como token rechazado (`src/replicaPoller.js`). El token se prueba
+  contra el repo de datos antes de guardarlo en el `.env` local; si no
+  sirve, el modal dice por qué (sin acceso, vencido, sin conexión).
+
+En la copia, git corre sin las credenciales guardadas en la máquina
+(`credential.helper` vacío y `GCM_INTERACTIVE=never`). Si no fuera así, con
+un token rechazado Git para Windows abriría la ventana de login de Git
+Credential Manager y git quedaría colgado esperándola.
 
 La barrera real está en el servidor (`src/replicaGuard.js`):
 

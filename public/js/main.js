@@ -151,13 +151,11 @@ async function initReadOnlyMode() {
   bar.append(action);
   document.body.prepend(bar);
 
-  if (mode.needsToken) {
-    action.textContent = 'Cargar token';
-    action.addEventListener('click', () => openReplicaTokenDialog(mode, text));
-    openReplicaTokenDialog(mode, text);
+  if (mode.needsToken || mode.tokenRejected) {
+    askForReplicaToken(mode, text, action, { rejected: Boolean(mode.tokenRejected) });
   } else {
     action.textContent = 'Buscar datos nuevos';
-    action.addEventListener('click', () => refreshReplicaData(mode, text, action));
+    action.onclick = () => refreshReplicaData(mode, text, action);
   }
 
   leaveAnalysisTab();
@@ -218,6 +216,11 @@ async function refreshReplicaData(mode, statusEl, button) {
       }, 4000);
       return;
     }
+    if (status === 401 && data.tokenRejected) {
+      button.disabled = false;
+      askForReplicaToken(mode, statusEl, button, { rejected: true });
+      return;
+    }
     statusEl.textContent = data.error || 'No se pudo buscar datos nuevos.';
   } catch {
     statusEl.textContent = 'No se pudo buscar datos nuevos.';
@@ -226,7 +229,29 @@ async function refreshReplicaData(mode, statusEl, button) {
   button.disabled = false;
 }
 
-function openReplicaTokenDialog(mode, statusEl) {
+/** El botón de la franja pasa a "Cargar token" y se abre el modal. */
+function askForReplicaToken(mode, statusEl, button, { rejected = false } = {}) {
+  button.textContent = 'Cargar token';
+  button.onclick = () => openReplicaTokenDialog(mode, statusEl, { rejected });
+  openReplicaTokenDialog(mode, statusEl, { rejected });
+}
+
+const REPLICA_TOKEN_COPY = {
+  missing: {
+    title: 'Falta el token de lectura',
+    intro:
+      'Para bajar los datos del monitoreo, esta copia necesita el token de lectura del repo de datos. ' +
+      'Pedíselo a quien administra la app y pegalo acá. Se guarda solo en esta computadora.',
+  },
+  rejected: {
+    title: 'El token de lectura ya no sirve',
+    intro:
+      'El repo de datos ya no acepta el token guardado en esta copia (venció o lo revocaron), así que no ' +
+      'se pueden bajar datos nuevos. Pedí uno nuevo a quien administra la app y pegalo acá: reemplaza al anterior.',
+  },
+};
+
+function openReplicaTokenDialog(mode, statusEl, { rejected = false } = {}) {
   let dialog = document.querySelector('.replica-token');
   if (!dialog) {
     dialog = document.createElement('dialog');
@@ -234,10 +259,8 @@ function openReplicaTokenDialog(mode, statusEl) {
     dialog.setAttribute('aria-labelledby', 'replica-token-title');
     dialog.innerHTML = `
       <form class="replica-token-box" method="dialog" novalidate>
-        <h2 id="replica-token-title">Falta el token de lectura</h2>
-        <p>Para bajar los datos del monitoreo, esta copia necesita el token de
-          lectura del repo de datos. Pedíselo a quien administra la app y pegalo acá.
-          Se guarda solo en esta computadora.</p>
+        <h2 id="replica-token-title"></h2>
+        <p class="replica-token-intro"></p>
         <label for="replica-token-input">Token</label>
         <input id="replica-token-input" type="password" autocomplete="off" spellcheck="false" required />
         <p class="replica-token-error" role="alert" hidden></p>
@@ -248,6 +271,9 @@ function openReplicaTokenDialog(mode, statusEl) {
       </form>`;
     document.body.append(dialog);
   }
+  const copy = rejected ? REPLICA_TOKEN_COPY.rejected : REPLICA_TOKEN_COPY.missing;
+  dialog.querySelector('#replica-token-title').textContent = copy.title;
+  dialog.querySelector('.replica-token-intro').textContent = copy.intro;
   const form = dialog.querySelector('form');
   const input = dialog.querySelector('input');
   const errorEl = dialog.querySelector('.replica-token-error');

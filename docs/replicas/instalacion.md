@@ -274,7 +274,17 @@ cambio haya tocado la estructura de la base.
 
 ### 4.2 Cambiar el token de una réplica
 
-Por ejemplo, si venció o se revocó:
+Cuando el token guardado deja de servir (venció o se revocó), la copia se da
+cuenta sola. Lo detecta al arrancar, en cada consulta de datos nuevos y al
+apretar **Buscar datos nuevos**. Entonces abre la ventana **El token de
+lectura ya no sirve**: se pega el nuevo y se aprieta **Guardar**, igual que
+en 3.3. El nuevo reemplaza al anterior en el `.env`. Mientras tanto, la copia
+sigue mostrando los últimos datos que bajó. No hace falta editar ningún
+archivo.
+
+Para cambiarlo antes de que deje de servir (por ejemplo, al renovarlo):
+**Cargar token** no aparece mientras el actual sirva. Hay que borrarlo a
+mano:
 
 1. Abrir `%LOCALAPPDATA%\SocialListening\.env` con el Bloc de notas.
 2. Dejar la línea así, sin nada después del `=`: `DATA_REPO_TOKEN=`, y
@@ -283,9 +293,8 @@ Por ejemplo, si venció o se revocó:
    correr `instalar.ps1` (o cerrar sesión y volver a entrar).
 4. Al abrir la app aparece de nuevo la ventana del token (3.3).
 
-Hoy el modal solo aparece cuando falta el token: con uno vencido, la copia
-sigue mostrando los últimos datos y "Buscar datos nuevos" responde que no se
-pudo consultar.
+Con **Regenerate token** (4.3) esto no hace falta: el token viejo deja de
+servir enseguida y cada copia pide el nuevo sola.
 
 ### 4.3 Renovar el token de lectura
 
@@ -331,14 +340,15 @@ en su consola o en `logs\` si se usa `scripts\iniciar-con-reinicio.bat`.
 
 | Síntoma | Causa probable | Qué hacer |
 |---|---|---|
-| "Todavía no hay datos descargados" y en el log `no se pudo traer el snapshot` | Sin token, token vencido o sin acceso a GitHub | Revisar el token (4.2) y la red (1.1) |
+| "Todavía no hay datos descargados" y en el log `no se pudo traer el snapshot` | Sin token, token vencido o sin acceso a GitHub | Con token vencido, la app pide uno nuevo sola (4.2); si no, revisar la red (1.1) |
+| Ventana **El token de lectura ya no sirve**; en el log `el repo de datos no acepta el token` | El token venció o se revocó | Pegar uno nuevo en esa ventana (4.2) |
 | Lo mismo, con `Remote branch snapshot not found` | La PC principal todavía no publicó | Esperar al próximo ciclo (2.5) |
 | `falta REPLICA_REPO_URL` | El `.env` perdió la URL | Correr `instalar.ps1` de nuevo |
 | El acceso directo abre una página que no carga | La ventana de la copia está cerrada | Cerrar sesión y volver a entrar, o correr `instalar.ps1` |
 | La app arranca y se cierra en loop, con `EADDRINUSE` | Otro programa usa el puerto 3000 | Armar el zip con otro `-Port` (2.6) y reinstalar |
 | La tabla o el mapa no aparecen, el resto sí | La red bloquea las CDN de Tabulator o Leaflet | Pedir que las habiliten; ver "Límites conocidos" en [README.md](README.md) |
 | "la base descargada está dañada" | Descarga cortada | Se arregla sola en la próxima publicación; mientras, se ve la base anterior |
-| Los datos no se actualizan aunque hubo ciclos | Token vencido, o la PC principal no publica | Revisar el log de la réplica y la línea `[réplica]` de la principal |
+| Los datos no se actualizan aunque hubo ciclos | La PC principal no publica, o la copia no llega a GitHub | Revisar la línea `[réplica]` de la principal y el log de la réplica |
 
 En el log de una réplica sana, cada arranque se ve así:
 

@@ -124,7 +124,12 @@ function replicaOptionsFromEnv(env = process.env) {
   return {
     dataDir: env.REPLICA_DATA_DIR || path.join(ROOT_DIR, 'replica-datos'),
     repoUrl: String(env.REPLICA_REPO_URL || '').trim(),
-    git: createGitRunner({ gitPath: env.REPLICA_GIT || 'git', token: String(env.DATA_REPO_TOKEN || '').trim() }),
+    git: createGitRunner({
+      gitPath: env.REPLICA_GIT || 'git',
+      token: String(env.DATA_REPO_TOKEN || '').trim(),
+      machineCredentials: false,
+      env,
+    }),
     dbPath,
     mediaDir: env.MONITORING_MEDIA_DIR || path.join(ROOT_DIR, 'data', 'media'),
     configPath: env.MONITORING_CONFIG_PATH || path.join(ROOT_DIR, 'config', 'monitoring.json'),

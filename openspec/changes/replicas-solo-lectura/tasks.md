@@ -54,3 +54,6 @@
 
 - [x] 8.1 `src/replicaPublish.js`: datos solo en `PUBLISHED_TABLES` y base en `monitoring.db.gz` (REQ-REP-02)
 - [x] 8.2 `src/replicaSync.js`: descomprime `monitoring.db.gz`; acepta `monitoring.db` del formato anterior (REQ-REP-06)
+- [x] 8.3 `src/replicaGit.js`: `machineCredentials: false` en la réplica, sin ventana de Git Credential Manager (REQ-REP-10)
+- [x] 8.4 Sondeo `denied` y `tokenRejected()`, consulta al arrancar, `tokenRejected` en `/api/app/mode`, refresh 401 (REQ-REP-10)
+- [x] 8.5 Frontend: el modal también con token rechazado; prueba en el navegador con un remoto que responde 401

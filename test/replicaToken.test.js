@@ -63,6 +63,7 @@ test('verifyToken prueba un ls-remote del repo de datos con ESE token', async ()
   assert.deepEqual(out, { ok: true });
   assert.equal(created[0].options.token, 'tok');
   assert.equal(created[0].options.gitPath, 'C:/mingit/git.exe');
+  assert.equal(created[0].options.machineCredentials, false);
   assert.deepEqual(created[0].calls, [['ls-remote', 'https://github.com/x/datos.git', 'refs/heads/snapshot']]);
 });
 

@@ -13,6 +13,11 @@ const { createGitRunner } = require('./replicaGit');
 
 const NETWORK_ERROR = /could not resolve host|unable to connect|failed to connect|timed out|connection (refused|reset)|network is unreachable|ETIMEDOUT|ENOTFOUND|ECONNRESET/i;
 
+/** Un error de git contra el repo de datos: sin conexión ('red') o sin acceso ('acceso'). */
+function classifyGitError(message) {
+  return NETWORK_ERROR.test(String(message)) ? 'red' : 'acceso';
+}
+
 /** Reemplaza (o agrega) NAME=value en un .env, sin tocar las demás líneas. */
 function writeEnvValue(envPath, name, value) {
   const current = fs.existsSync(envPath) ? fs.readFileSync(envPath, 'utf8').replace(/^\uFEFF/, '') : '';
@@ -31,13 +36,13 @@ function writeEnvValue(envPath, name, value) {
  */
 async function verifyToken({ repoUrl, token, gitPath = 'git', createGitRunnerFn = createGitRunner }) {
   if (!repoUrl) return { ok: false, reason: 'sin-repo' };
-  const git = createGitRunnerFn({ gitPath, token });
+  const git = createGitRunnerFn({ gitPath, token, machineCredentials: false });
   try {
     await git.run(['ls-remote', repoUrl, 'refs/heads/snapshot']);
     return { ok: true };
   } catch (err) {
-    return { ok: false, reason: NETWORK_ERROR.test(err.message) ? 'red' : 'acceso' };
+    return { ok: false, reason: classifyGitError(err.message) };
   }
 }
 
-module.exports = { writeEnvValue, verifyToken };
+module.exports = { writeEnvValue, verifyToken, classifyGitError };

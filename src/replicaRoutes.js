@@ -11,7 +11,9 @@
 // reinicio de la réplica. newerAppAvailable: la principal publicó con otro
 // código que el de esta réplica (hay que correr el instalador nuevo); solo
 // si las dos versiones se conocen. needsToken: falta DATA_REPO_TOKEN, el
-// frontend muestra el modal para pegarlo. bootId cambia con cada arranque:
+// frontend muestra el modal para pegarlo. tokenRejected: hay token pero el
+// repo ya no lo acepta (src/replicaPoller.js); el frontend muestra el mismo
+// modal para pegar uno nuevo. bootId cambia con cada arranque:
 // después de pedir un reinicio, la página espera a que cambie (sincronizar y
 // arrancar puede tardar menos que su intervalo de consulta).
 //
@@ -52,7 +54,8 @@ function respondThenRestart(res, status, body, restart) {
 /**
  * @param {import('express').Express} app
  * @param {{ mode: 'principal'|'replica', infoPath: string, appVersion: string|null,
- *   replica?: { hasToken: () => boolean, checkForUpdate: () => Promise<'same'|'new'|'error'>,
+ *   replica?: { hasToken: () => boolean, tokenRejected: () => boolean,
+ *     checkForUpdate: () => Promise<'same'|'new'|'error'|'denied'>,
  *     verifyToken: (token: string) => Promise<{ ok: boolean, reason?: string }>,
  *     saveToken: (token: string) => void, restart: () => void } }} options
  */
@@ -70,6 +73,7 @@ function register(app, { mode, infoPath, appVersion, replica, bootId = null }) {
       snapshotAppVersion,
       newerAppAvailable: Boolean(appVersion && snapshotAppVersion && appVersion !== snapshotAppVersion),
       needsToken: !replica.hasToken(),
+      tokenRejected: replica.hasToken() && replica.tokenRejected(),
       bootId,
     });
   });
@@ -83,6 +87,12 @@ function register(app, { mode, infoPath, appVersion, replica, bootId = null }) {
     const result = await replica.checkForUpdate();
     if (result === 'new') return respondThenRestart(res, 202, { status: 'actualizando' }, replica.restart);
     if (result === 'same') return res.json({ status: 'al-dia' });
+    if (result === 'denied') {
+      return res.status(401).json({
+        error: 'El token de lectura guardado ya no sirve (venció o lo revocaron). Pegá uno nuevo.',
+        tokenRejected: true,
+      });
+    }
     return res.status(502).json({ error: 'No se pudo consultar si hay datos nuevos (sin conexión con GitHub o sin acceso al repo de datos).' });
   });
 

@@ -576,7 +576,14 @@ datos de un repo privado de GitHub. SDD en
  reemplazo de la base, fotos y config; no carga `src/db.js`) y
  `installer/iniciar-replica.bat`, que los encadena. El token
  (`DATA_REPO_TOKEN`) va por entorno a git (`src/replicaGit.js`,
- `http.extraHeader`), nunca en la URL, y se borra de los errores.
+ `http.extraHeader`), nunca en la URL, y se borra de los errores. En la
+ réplica git corre con `machineCredentials: false` (`credential.helper`
+ vacío, `GCM_INTERACTIVE=never`): con un token rechazado, Git Credential
+ Manager abre su login y git queda colgado. Token rechazado = error de
+ git que no es de red (`classifyGitError`): el sondeo devuelve `denied`
+ (también en la consulta al arrancar, `start({ checkNow })`, que nunca
+ sale con 75), `/api/app/mode` da `tokenRejected` y el refresh 401; el
+ frontend vuelve a abrir el modal.
 - Frontend: `main.js` pregunta `GET /api/app/mode` y marca
  `<html data-readonly>`; el CSS esconde lo que escribe y los selectores
  (sentimiento, estado de reclamos) se dibujan `disabled`. Un control nuevo

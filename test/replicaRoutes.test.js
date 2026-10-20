@@ -19,6 +19,7 @@ function replicaStub(overrides = {}) {
   const restarted = new Promise((resolve) => (onRestart = resolve));
   const stub = {
     hasToken: () => true,
+    tokenRejected: () => false,
     checkForUpdate: async () => {
       calls.checkForUpdate++;
       return 'same';
@@ -102,8 +103,32 @@ test('réplica: fecha de los datos, ciclo y versiones', async () => {
     snapshotAppVersion: 'abc1234',
     newerAppAvailable: false,
     needsToken: false,
+    tokenRejected: false,
     bootId: 'b1',
   });
+});
+
+test('réplica con un token que el repo ya no acepta: tokenRejected (el frontend vuelve a mostrar el modal)', async () => {
+  const { stub } = replicaStub({ tokenRejected: () => true });
+  const { body } = await modeOf({ mode: 'replica', infoPath: infoFile(INFO), appVersion: null, replica: stub });
+  assert.equal(body.needsToken, false);
+  assert.equal(body.tokenRejected, true);
+});
+
+test('sin token no hay token rechazado: alcanza con needsToken', async () => {
+  const { stub } = replicaStub({ hasToken: () => false, tokenRejected: () => true });
+  const { body } = await modeOf({ mode: 'replica', infoPath: infoFile(INFO), appVersion: null, replica: stub });
+  assert.equal(body.needsToken, true);
+  assert.equal(body.tokenRejected, false);
+});
+
+test('buscar datos nuevos con un token que el repo ya no acepta → 401 tokenRejected, sin reiniciar', async () => {
+  const { stub, calls } = replicaStub({ checkForUpdate: async () => 'denied' });
+  const res = await post({ mode: 'replica', infoPath: infoFile(INFO), appVersion: null, replica: stub }, '/api/replica/refresh');
+  assert.equal(res.status, 401);
+  assert.equal(res.body.tokenRejected, true);
+  assert.match(res.body.error, /ya no sirve/);
+  assert.equal(calls.restart, 0);
 });
 
 test('réplica: bootId del arranque (la página sabe cuándo la app ya se reinició)', async () => {
