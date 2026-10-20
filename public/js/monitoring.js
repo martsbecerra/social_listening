@@ -1249,10 +1249,11 @@ const MONITORING_COLUMNS = [
   },
   {
     // El alcance contra lo habitual de su cuenta, con el medidor (solo
-    // Instagram: X no tiene benchmark; se saca más abajo).
+    // Instagram: X no tiene benchmark; se saca más abajo). 108 de ancho para
+    // que el encabezado entre entero con la flecha de orden.
     title: 'Alcance',
     field: 'benchmark',
-    width: 100,
+    width: 108,
     headerSortStartingDir: 'desc',
     sorter: (a, b, aRow, bRow) => reachSortValue(aRow.getData()) - reachSortValue(bRow.getData()),
     formatter: (cell) => buildReachMeter(postReach(cell.getRow().getData())),
