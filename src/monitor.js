@@ -1378,6 +1378,7 @@ async function backfillClassification(platformId) {
 }
 
 module.exports = {
+  CONFIG_PATH,
   runMonitoringCycle,
   backfillClassification,
   loadConfig,

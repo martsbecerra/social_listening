@@ -29,6 +29,7 @@ const { apifyLimiter } = require('./apify');
 const { imageLimiter } = require('./postImages');
 const postImageSync = require('./postImageSync');
 const progress = require('./monitoringProgress');
+const replicaPublish = require('./replicaPublish');
 
 // Corridas a las 8, 12, 16 y 20 (hora local del server): sin las de 0 y 4,
 // que costaban lo mismo y casi no traían nada. Configurable con MONITOR_CRON.
@@ -296,6 +297,9 @@ async function runCycleUnlocked(plataformas, trigger = 'manual') {
           (reconciled.pending + reconciled.failed > 0 ? `; ${reconciled.pending + reconciled.failed} siguen pendientes` : '')
       );
     }
+    // Snapshot para las réplicas de solo lectura, si REPLICA_PUBLISH_DIR
+    // está configurado (src/replicaPublish.js). Nunca tira.
+    await replicaPublish.publishFromEnv({ runId });
   }
 }
 

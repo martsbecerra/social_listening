@@ -1825,6 +1825,7 @@ function deleteUnusedMagicLinks(email) {
 }
 
 module.exports = {
+  DB_PATH,
   findExistingPostId,
   isKnownPost,
   saveDetectedPost,
