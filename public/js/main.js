@@ -66,22 +66,27 @@ async function initAuthHeader() {
     if (emailEl) emailEl.textContent = email;
     if (avatarEl) avatarEl.textContent = initialsFromEmail(email);
     if (nameEl) nameEl.textContent = displayNameFromEmail(email);
+    // El nombre en la columna "Cuenta" del pie (lo arma footer.js).
+    document.querySelectorAll('[data-user-name]').forEach((el) => {
+      el.textContent = displayNameFromEmail(email);
+    });
   } catch {
     window.location.replace('/');
-    return;
-  }
-
-  if (logoutBtn) {
-    logoutBtn.addEventListener('click', async () => {
-      logoutBtn.disabled = true;
-      try {
-        await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
-      } finally {
-        window.location.replace('/');
-      }
-    });
   }
 }
+
+// "Cerrar sesión" del menú del usuario y del pie. Delegado en el documento:
+// el pie lo arma footer.js, que corre después que este archivo.
+document.addEventListener('click', async (e) => {
+  const btn = e.target.closest('.user-dropdown .logout-btn, [data-logout]');
+  if (!btn) return;
+  btn.disabled = true;
+  try {
+    await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
+  } finally {
+    window.location.replace('/');
+  }
+});
 
 initAuthHeader();
 
