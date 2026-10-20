@@ -55,6 +55,8 @@ const monitoringNextRunEl = document.getElementById('monitoringNextRun');
 
 const highlightsSectionEl = document.getElementById('monitoringHighlightsSection');
 const cardsEl = document.getElementById('cards');
+// Cuántas tiras hay en "Se despegaron" (solo en instagram.html).
+const highlightsCountEl = document.getElementById('highlightsCount');
 
 const fSentEl = document.getElementById('fSent');
 // Filtro "Alcance": solo está en instagram.html (la etiqueta sale del
@@ -333,9 +335,6 @@ const SENTIMENT_OPTIONS = ['positivo', 'neutral', 'negativo'];
 // reintenta solo. Ver src/classifier.js.
 const SENTIMENT_UNSET = 'sin_clasificar';
 const SENTIMENT_UNSET_LABEL = 'Sin clasificar';
-// Igual que MK en la referencia: clase corta por sentimiento, para las
-// tarjetas destacadas y el borde de color.
-const SENTIMENT_SHORT = { positivo: 'pos', neutral: 'neu', negativo: 'neg' };
 
 function openIgnoreModal(id) {
   pendingIgnoreId = id;
@@ -680,52 +679,89 @@ function renderHighlightCards(posts) {
     .sort((a, b) => b.top.ratio - a.top.ratio)
     .slice(0, HIGHLIGHT_CARD_COUNT);
 
-  cardsEl.innerHTML = '';
+  cardsEl.replaceChildren();
+  if (highlightsCountEl) highlightsCountEl.textContent = String(scored.length);
   if (scored.length === 0) {
     highlightsSectionEl.classList.add('hidden');
     return;
   }
   highlightsSectionEl.classList.remove('hidden');
+  for (const { post, top } of scored) cardsEl.appendChild(buildHighlightStrip(post, top));
+}
 
-  for (const { post, top } of scored) {
-    const card = document.createElement('button');
-    card.type = 'button';
-    card.className = `hl ${SENTIMENT_SHORT[post.sentiment] || 'neu'}`;
-    card.dataset.go = post.id;
+// Hora del destacado, en hora de Argentina como el radar: "10:35" si es de
+// hoy, "14/10 10:35" si no.
+const HIGHLIGHT_TZ = 'America/Argentina/Buenos_Aires';
+const HIGHLIGHT_TIME = new Intl.DateTimeFormat('es-AR', { timeZone: HIGHLIGHT_TZ, hour: '2-digit', minute: '2-digit', hour12: false });
+const HIGHLIGHT_DATE = new Intl.DateTimeFormat('es-AR', { timeZone: HIGHLIGHT_TZ, day: '2-digit', month: '2-digit' });
+const HIGHLIGHT_DAY = new Intl.DateTimeFormat('en-CA', { timeZone: HIGHLIGHT_TZ });
 
-    const topRow = document.createElement('span');
-    topRow.className = 'hl-top';
-    const acc = document.createElement('span');
-    acc.className = 'hl-acc';
-    acc.textContent = post.account && post.account !== 'N/D' ? `@${post.account}` : 'N/D';
-    const plat = document.createElement('span');
-    plat.className = 'hl-plat';
-    plat.textContent = 'Instagram';
-    topRow.append(acc, plat);
+function highlightWhen(iso) {
+  const date = new Date(iso);
+  if (!iso || !Number.isFinite(date.getTime())) return '';
+  const time = HIGHLIGHT_TIME.format(date);
+  return HIGHLIGHT_DAY.format(date) === HIGHLIGHT_DAY.format(new Date()) ? time : `${HIGHLIGHT_DATE.format(date)} ${time}`;
+}
 
-    const title = document.createElement('span');
-    title.className = 'hl-title';
-    title.textContent = post.title || '(sin clasificar)';
+// Una tira (design/riel-radar-v3.html): la razón grande con su métrica, el
+// título, la cuenta y la hora, el valor contra la mediana y el selector de
+// sentimiento. La razón lleva colchón: no es "N veces lo habitual"; al lado
+// van el valor y la mediana reales de la métrica que lo destacó. Todo dato
+// del posteo entra por textContent. Las acciones (abrir, sentimiento) las
+// atiende el contenedor (ver más abajo).
+function buildHighlightStrip(post, top) {
+  const decisive = post.benchmark[top.metric];
+  const account = post.account && post.account !== 'N/D' ? `@${post.account}` : 'N/D';
 
-    const metric = document.createElement('span');
-    metric.className = 'hl-metric';
-    const b = document.createElement('b');
-    b.textContent = `${formatBenchmarkRatio(top.ratio)}x`;
-    metric.appendChild(b);
-    // La razón lleva colchón: ya no es "N veces lo habitual". Al lado van el
-    // valor y la mediana reales de la métrica que lo destacó.
-    const decisive = post.benchmark[top.metric];
-    metric.appendChild(
-      document.createTextNode(
-        ` en ${top.label}: ${formatBenchmarkNumber(decisive.value)}, contra una mediana de ${formatBenchmarkNumber(decisive.median)}`
-      )
-    );
-    metric.title = `Razón de alcance: ${benchmarkRatioBasis(decisive)}`;
+  const strip = document.createElement('article');
+  strip.className = post.sentiment === 'negativo' ? 'hl-strip neg' : 'hl-strip';
+  strip.dataset.postId = post.id;
+  strip.tabIndex = 0;
+  strip.setAttribute('aria-label', `Posteo de ${account}: abrir el detalle`);
 
-    card.append(topRow, title, metric);
-    card.addEventListener('click', () => openHighlight(post.id));
-    cardsEl.appendChild(card);
-  }
+  const ratio = document.createElement('div');
+  ratio.className = 'hl-strip-ratio';
+  ratio.textContent = `${formatBenchmarkRatio(top.ratio)}×`;
+  const ratioMetric = document.createElement('small');
+  ratioMetric.textContent = `en ${top.label}`;
+  ratio.appendChild(ratioMetric);
+  ratio.title = `Razón de alcance: ${benchmarkRatioBasis(decisive)}`;
+
+  const title = document.createElement('h3');
+  title.className = 'hl-strip-title';
+  title.textContent = post.title || '(sin clasificar)';
+
+  const who = document.createElement('div');
+  who.className = 'hl-strip-who';
+  const text = document.createElement('span');
+  const name = document.createElement('b');
+  name.textContent = account;
+  const value = document.createElement('span');
+  value.className = 'mono';
+  value.textContent = formatBenchmarkNumber(decisive.value);
+  const median = document.createElement('span');
+  median.className = 'mono';
+  median.textContent = formatBenchmarkNumber(decisive.median);
+  const when = highlightWhen(post.posted_at);
+  text.append(name, when ? `, ${when}, ` : ', ', value, ` ${top.label} contra `, median);
+  const sentiment = buildSentimentSelect(post.sentiment);
+  sentiment.setAttribute('aria-label', 'Sentimiento');
+  who.append(text, sentiment);
+
+  strip.append(ratio, title, who);
+  return strip;
+}
+
+// Corrige el sentimiento desde una tira: PATCH y color de la pastilla como en
+// la tabla, el dato de la fila de Tabulator, y aviso a las otras vistas (el
+// feed y el radar se redibujan con el color nuevo).
+function highlightSetSentiment(strip, select) {
+  const id = strip.dataset.postId;
+  const row = monitoringTable ? monitoringTable.getRow(id) : null;
+  updateSentiment(row ? row.getData().id : id, select.value, select);
+  strip.classList.toggle('neg', select.value === 'negativo');
+  if (row) row.update({ sentiment: select.value });
+  notifyMonitoringViews();
 }
 
 // Clic en un destacado: abre el pop-up de ese posteo, solo (sin anterior ni
@@ -810,6 +846,38 @@ function postReach(post) {
   }
   if (!best) return null;
   return { level: REACH_LEVELS[best.rank], by: best.by, label: best.label, ratio: best.ratio, metric: best.metric };
+}
+
+// El alcance a la vista: medidor de cinco barras con su nivel
+// (design/riel-radar-v3.html). En "alto" las cinco laten y brillan, en
+// "medio" la tercera respira, en "bajo" queda quieto (.reach-meter en
+// styles.css; en la maqueta se llama .reach, que acá ya es una etiqueta del
+// pop-up). Sin referencia: "—". Lo usan la columna "Alcance" de la tabla y el
+// pie de la tarjeta del feed. "reach" es lo que devuelve postReach.
+const REACH_TITLES = { alto: 'Alto', medio: 'Medio', bajo: 'Bajo' };
+
+function buildReachMeter(reach) {
+  const cell = document.createElement('span');
+  cell.className = 'reach-cell';
+  if (!reach) {
+    cell.textContent = '—';
+    cell.title = 'Sin referencia de su cuenta';
+    return cell;
+  }
+  const meter = document.createElement('span');
+  meter.className = `reach-meter ${reach.level}`;
+  meter.setAttribute('aria-hidden', 'true');
+  for (let i = 0; i < 5; i++) meter.appendChild(document.createElement('i'));
+  cell.append(meter, REACH_TITLES[reach.level]);
+  cell.title = `Alcance ${reach.level}: razón ${formatBenchmarkRatio(reach.ratio)} en ${reach.label} (${benchmarkRatioBasis(reach.metric)})`;
+  return cell;
+}
+
+// Para ordenar la columna "Alcance": primero el nivel, dentro de cada nivel
+// la razón; sin referencia, al final.
+function reachSortValue(post) {
+  const reach = postReach(post);
+  return reach ? REACH_LEVELS.indexOf(reach.level) * 1e6 + reach.ratio : -1;
 }
 
 // -------------------------------------------------------------------------
@@ -1071,6 +1139,10 @@ const MONITORING_COLUMNS = [
   {
     title: 'Cuenta',
     field: 'account',
+    // Cuenta y Título se reparten lo que dejan las columnas fijas. Con un
+    // ancho mínimo, en una pantalla angosta la tabla se desplaza de costado
+    // en vez de dejarlas sin texto.
+    minWidth: 120,
     formatter: (cell) => {
       const account = cell.getValue();
       if (!account || account === 'N/D') return 'N/D';
@@ -1102,6 +1174,7 @@ const MONITORING_COLUMNS = [
     // previa recortada con puntos suspensivos (mismo max-width que .c-title
     // en la referencia).
     widthGrow: 2,
+    minWidth: 200,
     formatter: (cell) => {
       const title = cell.getValue() || '(sin clasificar)';
       const span = document.createElement('span');
@@ -1175,6 +1248,16 @@ const MONITORING_COLUMNS = [
     formatter: (cell) => `<span class="c-num">${formatCount(cell.getValue())}</span>`,
   },
   {
+    // El alcance contra lo habitual de su cuenta, con el medidor (solo
+    // Instagram: X no tiene benchmark; se saca más abajo).
+    title: 'Alcance',
+    field: 'benchmark',
+    width: 100,
+    headerSortStartingDir: 'desc',
+    sorter: (a, b, aRow, bRow) => reachSortValue(aRow.getData()) - reachSortValue(bRow.getData()),
+    formatter: (cell) => buildReachMeter(postReach(cell.getRow().getData())),
+  },
+  {
     title: '',
     field: 'id',
     headerSort: false,
@@ -1200,6 +1283,8 @@ const MONITORING_COLUMNS = [
 if (IS_X_MONITOR) {
   const followersIdx = MONITORING_COLUMNS.findIndex((col) => col.field === 'followers');
   if (followersIdx !== -1) MONITORING_COLUMNS.splice(followersIdx, 1);
+  const reachIdx = MONITORING_COLUMNS.findIndex((col) => col.field === 'benchmark');
+  if (reachIdx !== -1) MONITORING_COLUMNS.splice(reachIdx, 1);
   const commentsCol = MONITORING_COLUMNS.find((col) => col.field === 'comments');
   if (commentsCol) commentsCol.title = 'Resp.';
   const commentsIdx = MONITORING_COLUMNS.findIndex((col) => col.field === 'comments');
@@ -1254,6 +1339,9 @@ function ensureMonitoringTable(posts) {
     rowFormatter: (row) => {
       const data = row.getData();
       const el = row.getElement();
+      // Para el radar de instagram.html: el mouse sobre un pulso resalta su
+      // fila (clase "hot").
+      el.dataset.postId = data.id;
       const isOpen = expandedRowId === data.id;
       el.classList.toggle('on', isOpen);
       const existingPanel = el.querySelector('.dt');
@@ -1529,6 +1617,30 @@ if (HAS_SEARCHES) {
   viewAllSearchesBtn.addEventListener('click', openSearchesModal);
   searchesModalCloseBtn.addEventListener('click', closeSearchesModal);
   searchesModal.addEventListener('click', (e) => { if (e.target === searchesModal) closeSearchesModal(); });
+}
+// Acciones de las tiras de "Se despegaron" (instagram.html), en el
+// contenedor porque las tiras se rehacen con cada cambio: el selector de
+// sentimiento guarda; un clic en cualquier otro lado de la tira, o Enter /
+// Espacio con el foco en ella, abre el pop-up de ese posteo solo.
+if (cardsEl && !IS_X_MONITOR) {
+  cardsEl.addEventListener('change', (e) => {
+    const select = e.target.closest('select.sentiment-select');
+    const strip = select && select.closest('.hl-strip');
+    if (!strip || select.value === SENTIMENT_UNSET) return;
+    highlightSetSentiment(strip, select);
+  });
+  cardsEl.addEventListener('click', (e) => {
+    const strip = e.target.closest('.hl-strip');
+    if (!strip || e.target.closest('select, a, button, label')) return;
+    openHighlight(strip.dataset.postId);
+  });
+  cardsEl.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || e.repeat) return;
+    if (!e.target.matches('.hl-strip')) return;
+    e.preventDefault(); // Espacio no baja la página
+    openHighlight(e.target.dataset.postId);
+  });
 }
 ignoreCancelBtn.addEventListener('click', closeIgnoreModal);
 ignoreConfirmBtn.addEventListener('click', confirmIgnore);

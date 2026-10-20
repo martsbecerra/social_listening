@@ -16,16 +16,17 @@ const feedViewSegEl = document.getElementById('viewSeg');
 const feedOrderEl = document.getElementById('fOrden');
 const feedTableWrapEl = document.getElementById('monitoringTable').closest('.tbl-wrap');
 
-// Última vista elegida. localStorage puede no estar (modo privado,
-// almacenamiento bloqueado): en ese caso vale la tabla y no se recuerda nada.
+// Última vista elegida; si no hay ninguna, el feed (design/riel-radar-v3.html).
+// localStorage puede no estar (modo privado, almacenamiento bloqueado): en
+// ese caso vale el feed y no se recuerda nada.
 const FEED_VIEW_KEY = 'sl.monitoreo.vista';
-let feedCurrentView = 'tabla';
+let feedCurrentView = 'feed';
 
 function feedReadSavedView() {
   try {
-    return window.localStorage.getItem(FEED_VIEW_KEY) === 'feed' ? 'feed' : 'tabla';
+    return window.localStorage.getItem(FEED_VIEW_KEY) === 'tabla' ? 'tabla' : 'feed';
   } catch (err) {
-    return 'tabla';
+    return 'feed';
   }
 }
 
@@ -163,8 +164,7 @@ function buildFeedMedia(post, reach) {
 
   const typeLabel = FEED_TYPE_LABELS[post.post_type];
   if (typeLabel) media.appendChild(feedNode('span', 'feed-badge type', typeLabel));
-  // Sin referencia en ninguna de las dos métricas no hay etiqueta de alcance.
-  if (reach) media.appendChild(feedNode('span', `feed-badge reach ${reach.level}`, FEED_REACH_LABELS[reach.level]));
+  // El alcance va en el pie, con el medidor (buildFeedFoot).
   return media;
 }
 
@@ -251,7 +251,11 @@ function buildFeedMetrics(post, reach) {
   return metrics;
 }
 
-function buildFeedFoot(post) {
+// Pie: arriba el motivo (cortado con "…") y "Abrir ↗"; abajo el selector de
+// sentimiento y, al lado, el medidor de alcance (buildReachMeter de
+// monitoring.js), como en design/riel-radar-v3.html. Son dos renglones,
+// igual que antes: el medidor no le suma alto a la tarjeta (styles.css).
+function buildFeedFoot(post, reach) {
   const foot = feedNode('div', 'feed-foot');
 
   const why = feedNode('span', 'feed-why');
@@ -271,8 +275,7 @@ function buildFeedFoot(post) {
   open.target = '_blank';
   open.rel = 'noopener';
 
-  // El motivo ocupa su renglón; abajo, el selector y el enlace (styles.css).
-  foot.append(why, sentiment, open);
+  foot.append(why, open, sentiment, buildReachMeter(reach));
   return foot;
 }
 
@@ -286,7 +289,7 @@ function buildFeedCard(post, reach) {
   card.tabIndex = 0;
   const account = post.account && post.account !== 'N/D' ? `@${post.account}` : 'cuenta sin identificar';
   card.setAttribute('aria-label', `Posteo de ${account}: abrir el detalle`);
-  card.append(buildFeedHead(post), buildFeedMedia(post, reach), buildFeedBody(post), buildFeedMetrics(post, reach), buildFeedFoot(post));
+  card.append(buildFeedHead(post), buildFeedMedia(post, reach), buildFeedBody(post), buildFeedMetrics(post, reach), buildFeedFoot(post, reach));
   return card;
 }
 

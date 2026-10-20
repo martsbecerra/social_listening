@@ -227,27 +227,33 @@
     <div class="mon-page">
       <p id="monitoringLoadError" class="error hidden"></p>
 
-      <!-- Tarjetas destacadas -->
-      <div id="monitoringHighlightsSection" class="hidden">
-        <div class="sec-head">
+      <!-- "Se despegaron": tiras de los posteos con alcance alto (las arma
+           renderHighlightCards en monitoring.js). -->
+      <section id="monitoringHighlightsSection" class="hidden">
+        <div class="sec-head hl-head">
           <h2>Se despegaron</h2>
-          <span>Posteos con alcance alto: muy por encima de lo normal de su propia cuenta</span>
+          <span class="hl-count" id="highlightsCount"></span>
+          <span class="hl-sub">Mejor que lo habitual de su propia cuenta. Pasá el mouse para verlas en el radar.</span>
         </div>
-        <div class="cards" id="cards"></div>
+        <div class="hl-tops" id="cards"></div>
+      </section>
+
+      <div class="list-head">
+        <h2>Publicaciones detectadas</h2>
+        <span class="list-count"><b id="n">0</b> de <b id="m">0</b></span>
       </div>
 
-      <!-- Filtros -->
+      <!-- Vista, filtros, orden del feed y buscador, en una fila (baja entera
+           si no entra). -->
       <div class="filters">
         <div class="frow">
-          <!-- Vista de los resultados: la tabla de siempre o el feed de
-               tarjetas (public/js/monitoringFeed.js, solo en Instagram). Se
-               recuerda la última elegida. -->
+          <!-- Vista de los resultados: el feed de tarjetas
+               (public/js/monitoringFeed.js, solo en Instagram) o la tabla de
+               siempre. Se recuerda la última elegida; si no hay, el feed. -->
           <div class="view-seg" id="viewSeg" role="group" aria-label="Vista de los resultados">
-            <button type="button" data-view="tabla" class="on" aria-pressed="true">Tabla</button>
-            <button type="button" data-view="feed" aria-pressed="false">Feed</button>
+            <button type="button" data-view="feed" class="on" aria-pressed="true">Feed</button>
+            <button type="button" data-view="tabla" aria-pressed="false">Tabla</button>
           </div>
-
-          <span class="frow-lbl tag">Filtrar</span>
 
           <select id="fSent" aria-label="Filtrar por sentimiento">
             <option value="">Sentimiento</option>
@@ -291,12 +297,10 @@
             <option value="likes">Más likes</option>
           </select>
 
-          <!-- Buscador, contador y "Limpiar" van agrupados: si no entran en
-               el primer renglón de la barra, bajan los tres juntos. -->
+          <!-- Buscador y "Limpiar" van juntos: si no entran en el renglón de
+               la barra, bajan los dos. -->
           <div class="frow-end">
-            <input type="search" id="q" placeholder="Buscar título, cuenta o texto del posteo..." />
-
-            <span class="f-count">Mostrando <b id="n">0</b> de <b id="m">0</b> posteos</span>
+            <input type="search" id="q" placeholder="Buscar título, cuenta o texto" aria-label="Buscar título, cuenta o texto del posteo" />
             <button class="f-clear" id="clear" type="button" disabled>Limpiar</button>
           </div>
         </div>
