@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Entrar — Social Listening</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700;12..96,800&family=Instrument+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+/* ==========================================================================
+   LOGIN (index.html) y CONFIRMAR ACCESO (login-verify.html)
+   Un escenario oscuro a la izquierda, con la marca, la frase y un campo de
+   señales que escucha: ondas suaves que aparecen solas y que responden a lo
+   que la persona escribe (cada letra sube el medidor y manda una onda). A la
+   derecha, el formulario en papel, con sus cuatro estados: pedir el link,
+   link enviado (con la cuenta regresiva real del backend), confirmar acceso
+   y link vencido. Mismo flujo y mismos textos de seguridad que hoy: el
+   mensaje genérico nunca revela si el correo está autorizado.
+   ========================================================================== */
+:root{
+  --jade-950:#032a23;--jade-900:#06382e;--jade-700:#0b5947;--jade-500:#12805f;--jade-400:#2aa57c;--jade-300:#63c7a2;--jade-200:#9fe0c4;--jade-150:#c8e8da;--jade-100:#e3f2ea;--jade-50:#f1f9f5;
+  --clay-900:#2a211c;--clay-700:#5b4638;--clay-500:#8a6a52;--clay-200:#ded3c6;--clay-100:#f0e9df;
+  --coral-700:#8e3418;--coral-500:#c4522c;--coral-300:#f0a080;--coral-100:#fae7df;
+  --amber-700:#8a5a10;--amber-100:#fbf0d9;
+  --paper:#fcfdfb;--line:#e4ebe7;--line-strong:#c9d6cf;
+  --sky-text:#e8f1ec;--sky-text-2:#a9c2b7;--sky-text-3:#6f8f84;
+  --display:"Bricolage Grotesque",sans-serif;--mono:"DM Mono",ui-monospace,monospace;
+  --ease-out:cubic-bezier(.22,.8,.3,1);
+}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;font-family:"Instrument Sans",system-ui,sans-serif;font-size:15px;line-height:1.5;color:var(--clay-900);background:var(--jade-950);-webkit-font-smoothing:antialiased}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--jade-400);outline-offset:3px;border-radius:4px}
+.hidden{display:none !important}
+.meter{display:flex;align-items:flex-end;gap:var(--bar-gap,3px);height:var(--meter-h,28px)}
+.meter i{display:block;width:var(--bar-w,3px);height:100%;border-radius:99px;background:var(--bar-color,var(--jade-400));transform:scaleY(.18);transform-origin:bottom;animation:pulse var(--dur,1.6s) var(--delay,0s) ease-in-out infinite}
+@keyframes pulse{0%,100%{transform:scaleY(.18)}50%{transform:scaleY(var(--peak,.9))}}
+
+.auth{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(420px,.85fr);min-height:100vh}
+
+/* ---------- Escenario ---------- */
+.stage{position:relative;overflow:hidden;color:var(--sky-text);background:radial-gradient(70% 90% at 30% 20%,#0a4a3c 0%,transparent 60%),linear-gradient(180deg,var(--jade-950) 0%,#021e19 100%);display:flex;flex-direction:column;padding:34px clamp(24px,5vw,72px) 30px}
+.stage canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.stage > *{position:relative;z-index:2}
+.brand{display:inline-flex;align-items:center;gap:11px;text-decoration:none;width:fit-content}
+.brand .meter{--meter-h:26px;--bar-w:3.5px;--bar-gap:3px;--bar-color:var(--jade-300)}
+.brand-name{font-family:var(--display);font-size:17px;letter-spacing:-.025em;line-height:1;white-space:nowrap}
+.brand-name span{font-weight:500;color:var(--jade-300)}.brand-name b{font-weight:700;color:#fff}
+.stage-mid{margin:auto 0;padding:40px 0;max-width:560px}
+.stage-kicker{margin:0 0 18px;font-size:14px;color:var(--sky-text-2)}
+.stage-line{margin:0;font-family:var(--display);font-weight:700;font-size:clamp(40px,4.6vw,62px);line-height:1.02;letter-spacing:-.035em;color:#fff;text-wrap:balance}
+.stage-line em{font-style:normal;font-weight:500;color:var(--jade-200)}
+.stage-sub{margin:20px 0 0;max-width:46ch;font-size:16px;color:var(--sky-text-2);line-height:1.55}
+.stage-foot{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;flex-wrap:wrap}
+.big-meter{--meter-h:64px;--bar-w:5px;--bar-gap:5px;--bar-color:var(--jade-300)}
+.big-meter i{transition:transform .35s var(--ease-out)}
+.stage-status{display:inline-flex;align-items:center;gap:9px;font-size:13px;color:var(--sky-text-2)}
+.stage-status .dot{width:8px;height:8px;border-radius:99px;background:var(--jade-300);animation:ring 2.4s ease-out infinite}
+@keyframes ring{0%{box-shadow:0 0 0 0 rgba(99,199,162,.55)}70%{box-shadow:0 0 0 10px rgba(99,199,162,0)}100%{box-shadow:0 0 0 0 rgba(99,199,162,0)}}
+.stage-status b{color:#fff;font-weight:600}
+
+/* ---------- Formulario ---------- */
+.form{background:var(--paper);display:flex;flex-direction:column;position:relative}
+.form::before{content:"";position:absolute;left:0;top:0;height:3px;width:0;background:var(--jade-500);transition:width .6s var(--ease-out)}
+.form.sending::before{width:100%;animation:send 1.4s ease-in-out infinite}
+@keyframes send{0%{width:0;opacity:1}70%{width:100%;opacity:1}100%{width:100%;opacity:0}}
+.form-in{margin:auto;width:min(420px,100%);padding:40px clamp(22px,4vw,48px)}
+.state{animation:in .5s var(--ease-out) both}
+@keyframes in{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+.form h2{margin:0;font-family:var(--display);font-size:32px;font-weight:700;letter-spacing:-.03em;color:var(--jade-950);line-height:1.05}
+.form .note{margin:12px 0 26px;color:var(--clay-500);font-size:14.5px;line-height:1.55}
+.form .note b{color:var(--clay-900);font-weight:600}
+label{display:block;font-size:13.5px;font-weight:600;color:var(--clay-900);margin-bottom:7px}
+input[type=email]{width:100%;padding:13px 14px;border-radius:11px;border:1px solid var(--line-strong);background:#fff;font-size:16px;transition:border-color .15s,box-shadow .15s}
+input[type=email]::placeholder{color:#a79a8e}
+input[type=email]:focus{outline:none;border-color:var(--jade-400);box-shadow:0 0 0 4px rgba(42,165,124,.16)}
+input[type=email]:disabled{background:var(--jade-50);color:var(--clay-700)}
+.btn{margin-top:14px;width:100%;display:inline-flex;align-items:center;justify-content:center;gap:10px;border:0;border-radius:11px;padding:14px 18px;background:var(--jade-900);color:#fff;font-weight:600;font-size:15.5px;transition:transform .18s var(--ease-out),background .18s,box-shadow .18s;box-shadow:0 2px 4px rgba(6,56,46,.05),0 12px 32px rgba(6,56,46,.09)}
+.btn:hover{background:var(--jade-700);transform:translateY(-1px)}
+.btn:disabled{background:var(--jade-100);color:var(--jade-700);box-shadow:none;transform:none;cursor:default}
+.btn .meter{--meter-h:15px;--bar-w:2.5px;--bar-gap:2px;--bar-color:var(--jade-300)}
+.btn-ghost{margin-top:10px;width:100%;border:1px solid var(--line-strong);background:#fff;border-radius:11px;padding:12px 16px;font-weight:600;font-size:14.5px;color:var(--jade-900);transition:border-color .15s,background .15s}
+.btn-ghost:hover{border-color:var(--jade-400);background:var(--jade-50)}
+.status{margin:14px 0 0;font-size:13.5px;color:var(--clay-700);min-height:1.4em}
+.status.error{color:var(--coral-700)}
+.cooldown{display:inline-flex;align-items:center;gap:8px;margin-top:18px;padding:8px 12px;border-radius:999px;background:var(--jade-50);color:var(--jade-900);font-size:13px}
+.cooldown b{font-family:var(--mono);font-weight:500;font-variant-numeric:tabular-nums}
+.sent-mark{width:52px;height:52px;border-radius:99px;background:var(--jade-100);display:grid;place-items:center;margin-bottom:18px}
+.sent-mark svg{width:24px;height:24px;color:var(--jade-700)}
+.sent-mark.warn{background:var(--amber-100)}.sent-mark.warn svg{color:var(--amber-700)}
+.email-chip{display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:999px;background:var(--clay-100);color:var(--clay-900);font-size:14px;font-weight:500;margin:4px 0 14px}
+.form-foot{padding:18px clamp(22px,4vw,48px);border-top:1px solid var(--line);display:flex;justify-content:space-between;gap:12px;font-size:12.5px;color:var(--clay-500)}
+.form-foot b{color:var(--clay-700);font-weight:600}
+
+/* Control de la maqueta */
+.mock{position:fixed;left:16px;bottom:16px;z-index:50;display:flex;align-items:center;gap:8px;padding:6px 6px 6px 12px;border-radius:999px;background:#f0e9df;color:#2a211c;font-size:12.5px;box-shadow:0 10px 30px rgba(0,0,0,.4)}
+.seg{display:inline-flex;background:rgba(0,0,0,.06);border:1px solid rgba(0,0,0,.12);border-radius:999px;padding:3px}
+.seg button{border:0;background:none;padding:5px 11px;border-radius:999px;font-size:12px;font-weight:500;color:#5b4638}
+.seg button.on{background:#2a211c;color:#f0e9df}
+
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.001s !important;transition-duration:.001s !important}}
+@media (max-width:900px){.auth{grid-template-columns:1fr}.stage{min-height:46vh;padding-bottom:22px}.stage-mid{padding:22px 0}.big-meter{--meter-h:40px}}
+</style>
+</head>
+<body>
+<div class="auth">
+  <section class="stage" aria-label="Social listening">
+    <canvas id="field" aria-hidden="true"></canvas>
+    <a class="brand" href="#"><div class="meter" data-meter="5"></div><span class="brand-name"><span>social</span> <b>listening</b></span></a>
+    <div class="stage-mid">
+      <p class="stage-kicker">Equipo de monitoreo de la Ciudad</p>
+      <h1 class="stage-line">Lo que se dice, <em>cuando se dice.</em></h1>
+      <p class="stage-sub">Menciones en redes, leídas con su sentimiento y convertidas en un punto del mapa. Cuatro corridas por día, sin que nadie tenga que mirar.</p>
+    </div>
+    <div class="stage-foot">
+      <div class="meter big-meter" id="bigMeter" data-meter="26"></div>
+      <span class="stage-status"><span class="dot"></span><span><b>Escuchando.</b> Última corrida a las 12:00</span></span>
+    </div>
+  </section>
+
+  <section class="form" id="form">
+    <div class="form-in">
+      <!-- Estado 1: pedir el link -->
+      <div class="state" id="s-pedir">
+        <h2>Entrar</h2>
+        <p class="note">Sin contraseña: te mandamos un link a tu correo. <b>Vence en 15 minutos.</b></p>
+        <form id="loginForm" novalidate>
+          <label for="email">Correo</label>
+          <input type="email" id="email" placeholder="nombre@buenosaires.gob.ar" autocomplete="username" required />
+          <button class="btn" type="submit" id="submit"><div class="meter" data-meter="5"></div>Enviarme el link</button>
+          <p class="status" id="status" role="status"></p>
+        </form>
+      </div>
+
+      <!-- Estado 2: link enviado -->
+      <div class="state hidden" id="s-enviado">
+        <div class="sent-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7l9 6 9-6"/><rect x="3" y="5" width="18" height="14" rx="2.5"/></svg></div>
+        <h2>Revisá tu correo</h2>
+        <p class="note">Si el correo está autorizado, el link ya está en camino. Abrilo desde este mismo navegador.</p>
+        <span class="email-chip" id="sentTo">martin.becerra@buenosaires.gob.ar</span>
+        <button class="btn" type="button" disabled>Link enviado</button>
+        <div class="cooldown" id="cooldown"><span>Podés pedir otro en</span><b id="cdTime">2:00</b></div>
+        <button class="btn-ghost" type="button" id="otherEmail">Usar otro correo</button>
+      </div>
+
+      <!-- Estado 3: confirmar acceso (login-verify.html) -->
+      <div class="state hidden" id="s-confirmar">
+        <div class="sent-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></div>
+        <h2>Un clic más</h2>
+        <p class="note">Confirmá que sos vos. Este paso evita que un filtro de correo use el link antes que vos.</p>
+        <button class="btn" type="button" id="verify"><div class="meter" data-meter="5"></div>Entrar</button>
+        <p class="status" id="verifyStatus" role="status"></p>
+      </div>
+
+      <!-- Estado 4: link vencido -->
+      <div class="state hidden" id="s-vencido">
+        <div class="sent-mark warn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div>
+        <h2>Este link ya venció</h2>
+        <p class="note">Los links duran 15 minutos. Pedí uno nuevo y volvé a entrar desde el correo.</p>
+        <button class="btn" type="button" id="again">Pedir un link nuevo</button>
+      </div>
+    </div>
+    <div class="form-foot"><span>Acceso solo para correos autorizados por <b>DGAYD</b>.</span><span>2026</span></div>
+  </section>
+</div>
+
+<div class="mock" aria-label="Control de la maqueta">Estado<div class="seg"><button type="button" class="on" data-state="pedir">Pedir link</button><button type="button" data-state="enviado">Enviado</button><button type="button" data-state="confirmar">Confirmar</button><button type="button" data-state="vencido">Vencido</button></div></div>
+
+<script>
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+document.querySelectorAll('.meter[data-meter]').forEach(m => { const n = Number(m.dataset.meter) || 5; for (let i = 0; i < n; i++) { const b = document.createElement('i'); b.style.setProperty('--peak', (0.34 + Math.random() * 0.62).toFixed(3)); b.style.setProperty('--dur', (1.05 + Math.random() * 1.5).toFixed(2) + 's'); b.style.setProperty('--delay', (-Math.random() * 2).toFixed(2) + 's'); m.appendChild(b); } });
+
+/* ---------- El campo de señales: ondas que aparecen solas y responden al teclado ---------- */
+const cv = document.getElementById('field'), ctx = cv.getContext('2d'), stage = cv.parentElement;
+let W = 0, H = 0, ripples = [], last = 0;
+function resize() { const r = stage.getBoundingClientRect(); W = r.width; H = r.height; const d = Math.min(2, devicePixelRatio || 1); cv.width = W * d; cv.height = H * d; ctx.setTransform(d, 0, 0, d, 0, 0); }
+new ResizeObserver(resize).observe(stage); resize();
+function ripple(x, y, strength = 1) { ripples.push({x, y, start: performance.now(), ms: 2600 + Math.random() * 1200, r0: 6, s: strength}); }
+function ambient(t) { if (reduced) return; if (t - last > 900 + Math.random() * 1400) { last = t; ripple(W * (0.1 + Math.random() * 0.8), H * (0.15 + Math.random() * 0.75), 0.55); } }
+function draw(t) {
+  ctx.clearRect(0, 0, W, H); ambient(t);
+  // trama de puntos muy tenue: la ciudad como grilla
+  ctx.fillStyle = 'rgba(255,255,255,.035)'; for (let x = 24; x < W; x += 36) for (let y = 24; y < H; y += 36) { ctx.beginPath(); ctx.arc(x, y, 1, 0, Math.PI * 2); ctx.fill(); }
+  ripples = ripples.filter(r => t - r.start < r.ms);
+  ripples.forEach(r => { const k = (t - r.start) / r.ms; for (let i = 0; i < 3; i++) { const kk = Math.max(0, k - i * 0.12); if (kk <= 0) continue; ctx.beginPath(); ctx.arc(r.x, r.y, r.r0 + kk * 170 * r.s, 0, Math.PI * 2); ctx.strokeStyle = `rgba(99,199,162,${(1 - kk) * 0.35 * r.s})`; ctx.lineWidth = 1.2; ctx.stroke(); } });
+  requestAnimationFrame(draw);
+}
+requestAnimationFrame(draw);
+
+/* El medidor grande sube con lo que escribís: cada letra es una señal */
+const big = document.getElementById('bigMeter'), email = document.getElementById('email');
+function setLevel(level) { big.querySelectorAll('i').forEach((b, i) => { const peak = 0.3 + level * (0.5 + Math.sin(i * 0.9) * 0.2); b.style.setProperty('--peak', Math.min(1, peak).toFixed(3)); }); }
+email.addEventListener('input', () => { const level = Math.min(1, email.value.length / 24); setLevel(level); if (!reduced) { const r = big.getBoundingClientRect(), s = stage.getBoundingClientRect(); ripple(r.left - s.left + Math.min(r.width, email.value.length * 8), r.top - s.top + r.height / 2, 0.8); } });
+
+/* ---------- Estados ---------- */
+const form = document.getElementById('form'), states = ['pedir', 'enviado', 'confirmar', 'vencido'];
+let cdTimer = null;
+function show(name) { states.forEach(s => document.getElementById('s-' + s).classList.toggle('hidden', s !== name)); document.querySelectorAll('[data-state]').forEach(b => b.classList.toggle('on', b.dataset.state === name)); if (name === 'enviado') startCooldown(120); else clearInterval(cdTimer); }
+function startCooldown(seconds) { clearInterval(cdTimer); let left = seconds; const el = document.getElementById('cdTime'); const tick = () => { el.textContent = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`; if (left-- <= 0) { clearInterval(cdTimer); document.getElementById('cooldown').innerHTML = 'Ya podés pedir otro link.'; } }; tick(); cdTimer = setInterval(tick, 1000); }
+document.getElementById('loginForm').addEventListener('submit', async e => {
+  e.preventDefault(); const st = document.getElementById('status'); st.className = 'status'; st.textContent = '';
+  if (!email.value.trim()) { st.textContent = 'Ingresá tu correo.'; st.classList.add('error'); email.focus(); return; }
+  const btn = document.getElementById('submit'); btn.disabled = true; btn.textContent = 'Enviando…'; form.classList.add('sending');
+  await new Promise(r => setTimeout(r, 1400)); // la maqueta simula el POST /api/auth/magic-link
+  form.classList.remove('sending'); btn.disabled = false; btn.innerHTML = '<div class="meter" data-meter="5"></div>Enviarme el link';
+  document.getElementById('sentTo').textContent = email.value.trim(); setLevel(0.35); show('enviado');
+});
+document.getElementById('otherEmail').addEventListener('click', () => { email.value = ''; setLevel(0); show('pedir'); email.focus(); });
+document.getElementById('again').addEventListener('click', () => show('pedir'));
+document.getElementById('verify').addEventListener('click', () => { const b = document.getElementById('verify'); b.disabled = true; b.textContent = 'Entrando…'; setTimeout(() => { b.disabled = false; b.innerHTML = '<div class="meter" data-meter="5"></div>Entrar'; document.getElementById('verifyStatus').textContent = 'En la app real, acá ya estás adentro.'; }, 1200); });
+document.querySelectorAll('[data-state]').forEach(b => b.addEventListener('click', () => show(b.dataset.state)));
+</script>
+</body>
+</html>

@@ -1,0 +1,1124 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Social Listening — Riel + Radar (Monitoreo y Estadísticas)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700;12..96,800&family=Instrument+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+/* ==========================================================================
+   MAQUETA COMBINADA — RIEL + RADAR (19 oct 2026)
+   - Riel lateral oscuro (de "Sala de control"): Monitoreo, Estadísticas,
+     Mapa, Análisis (con lupa). Debajo, las
+     fuentes con sus contadores: abren un panel desde el riel.
+   - Franja oscura con la línea de tiempo del día (de "Radar"): cada
+     publicación es un pulso por hora, alcance, sentimiento y tamaño.
+   - De la franja para abajo, la página es clara: "Se despegaron" y las
+     publicaciones del día en feed o tabla.
+   Misma paleta y tipografías de la app (tokens de public/css/styles.css).
+   Todo vanilla: sin librerías ni build.
+   ========================================================================== */
+:root{
+  --jade-950:#032a23;--jade-900:#06382e;--jade-700:#0b5947;--jade-500:#12805f;--jade-400:#2aa57c;--jade-300:#63c7a2;--jade-200:#9fe0c4;--jade-150:#c8e8da;--jade-100:#e3f2ea;--jade-50:#f1f9f5;
+  --clay-900:#2a211c;--clay-700:#5b4638;--clay-500:#8a6a52;--clay-300:#d9c5b2;--clay-200:#ded3c6;--clay-100:#f0e9df;
+  --coral-700:#8e3418;--coral-500:#c4522c;--coral-400:#e07a58;--coral-300:#f0a080;--coral-100:#fae7df;
+  --paper:#fcfdfb;--line:#e4ebe7;--line-strong:#c9d6cf;
+  --shadow-md:0 2px 4px rgba(6,56,46,.05),0 12px 32px rgba(6,56,46,.09);
+  --shadow-lg:0 4px 8px rgba(6,56,46,.06),0 24px 60px rgba(6,56,46,.13);
+  --display:"Bricolage Grotesque",sans-serif;--mono:"DM Mono",ui-monospace,monospace;
+  --ease-out:cubic-bezier(.22,.8,.3,1);
+  --sky-text:#e8f1ec;--sky-text-2:#a9c2b7;--sky-text-3:#6f8f84;--sky-line:rgba(255,255,255,.08);--sky-line-2:rgba(255,255,255,.14);
+  --top:64px;--rail:76px;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;font-family:"Instrument Sans",system-ui,sans-serif;font-size:15px;line-height:1.5;color:var(--clay-900);background:var(--paper);-webkit-font-smoothing:antialiased;min-height:100vh}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+a{color:inherit}
+:focus-visible{outline:2px solid var(--jade-400);outline-offset:3px;border-radius:4px}
+.hidden{display:none !important}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.meter{display:flex;align-items:flex-end;gap:var(--bar-gap,3px);height:var(--meter-h,28px)}
+.meter i{display:block;width:var(--bar-w,3px);height:100%;border-radius:99px;background:var(--bar-color,var(--jade-400));transform:scaleY(.18);transform-origin:bottom;animation:pulse var(--dur,1.6s) var(--delay,0s) ease-in-out infinite}
+@keyframes pulse{0%,100%{transform:scaleY(.18)}50%{transform:scaleY(var(--peak,.9))}}
+
+/* ---------- Cabecera ---------- */
+.topbar{position:sticky;top:0;z-index:30;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:0 clamp(18px,3vw,40px) 0 18px;height:var(--top);color:#fff;background:var(--jade-950);border-bottom:1px solid var(--sky-line)}
+.brand{display:inline-flex;align-items:center;gap:11px;text-decoration:none}
+.brand .meter{--meter-h:26px;--bar-w:3.5px;--bar-gap:3px;--bar-color:var(--jade-300)}
+.brand-name{font-family:var(--display);font-size:17px;letter-spacing:-.025em;line-height:1;white-space:nowrap}
+.brand-name span{font-weight:500;color:var(--jade-300)}.brand-name b{font-weight:700;color:#fff}
+.crumb{display:flex;align-items:center;gap:14px;font-size:15px}
+.crumb-sep{opacity:.35}
+.crumb-here{display:inline-flex;align-items:center;gap:8px;font-weight:500;color:#e7f3ed}
+.crumb-here svg{width:18px;height:18px}
+.user-btn{display:inline-flex;align-items:center;gap:10px;padding:5px 14px 5px 6px;border-radius:999px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.08);color:#fff;font-weight:600;font-size:13.5px}
+.user-btn .avatar{width:26px;height:26px;border-radius:99px;background:var(--jade-300);color:var(--jade-950);display:grid;place-items:center;font-size:11px;font-weight:700}
+
+/* ---------- Riel ---------- */
+.shell{display:grid;grid-template-columns:var(--rail) minmax(0,1fr);min-height:calc(100vh - var(--top));background:linear-gradient(90deg,var(--jade-950) 0 var(--rail),transparent var(--rail))}
+.rail{position:sticky;top:var(--top);height:calc(100vh - var(--top));background:var(--jade-950);color:var(--sky-text);border-right:1px solid var(--sky-line);display:flex;flex-direction:column;align-items:center;padding:14px 0 16px;gap:4px;z-index:28}
+.rail-btn{position:relative;width:62px;padding:10px 0 8px;border:0;background:none;border-radius:12px;color:var(--sky-text-3);display:flex;flex-direction:column;align-items:center;gap:5px;font-size:10px;font-weight:500;line-height:1.1;transition:color .15s,background .15s}
+.rail-btn svg{width:20px;height:20px}
+.rail-btn:hover{color:var(--sky-text);background:rgba(255,255,255,.07)}
+.rail-btn.active{color:var(--jade-200)}
+.rail-btn.active::before{content:"";position:absolute;left:-7px;top:12px;bottom:12px;width:3px;border-radius:3px;background:var(--jade-300)}
+.rail-btn .meter{--meter-h:18px;--bar-w:2.5px;--bar-gap:2px;--bar-color:var(--jade-300)}
+.rail-btn:not(.active) .meter i{animation:none;transform:scaleY(.2);background:var(--sky-text-3)}
+.rail-sep{width:36px;height:1px;background:var(--sky-line-2);margin:10px 0}
+.rail-label{font-size:9.5px;color:var(--sky-text-3);letter-spacing:.04em;margin-bottom:2px}
+.rail-src .n{position:absolute;top:3px;right:5px;min-width:18px;padding:1px 5px;border-radius:999px;background:var(--jade-300);color:var(--jade-950);font-family:var(--mono);font-size:10.5px;font-weight:500;text-align:center;line-height:1.4}
+.rail-src.guide .n{background:var(--clay-300)}
+.rail-src[aria-expanded="true"]{color:var(--jade-200);background:rgba(255,255,255,.07)}
+.rail-foot{margin-top:auto;font-family:var(--mono);font-size:10px;color:var(--sky-text-3);writing-mode:vertical-rl;transform:rotate(180deg);letter-spacing:.08em}
+
+/* ---------- Vistas ---------- */
+.view{display:flex;flex-direction:column;min-height:calc(100vh - var(--top))}
+
+/* La franja del radar (Monitoreo) */
+.sky{position:relative;color:var(--sky-text);background:radial-gradient(60% 120% at 50% 0%,#0a4a3c 0%,transparent 60%),linear-gradient(180deg,var(--jade-950) 0%,#021e19 100%);border-bottom:1px solid var(--jade-150)}
+.sky-in{max-width:1220px;margin:0 auto;padding:30px clamp(18px,3vw,40px) 22px}
+.sky-head{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;flex-wrap:wrap}
+.sky-head h1{margin:0;font-family:var(--display);font-size:34px;font-weight:700;letter-spacing:-.03em;line-height:1;color:#fff}
+.status{margin-top:10px;font-size:14px;color:var(--sky-text-2);display:flex;align-items:center;gap:10px}
+.status .dot{width:8px;height:8px;border-radius:99px;background:var(--jade-300);animation:ring 2.4s ease-out infinite}
+@keyframes ring{0%{box-shadow:0 0 0 0 rgba(99,199,162,.55)}70%{box-shadow:0 0 0 10px rgba(99,199,162,0)}100%{box-shadow:0 0 0 0 rgba(99,199,162,0)}}
+.status b{color:#fff;font-weight:600}
+.btn{display:inline-flex;align-items:center;gap:10px;border:0;border-radius:10px;padding:12px 18px;background:var(--jade-300);color:var(--jade-950);font-weight:700;font-size:14.5px;transition:transform .18s var(--ease-out),background .18s,box-shadow .2s}
+.btn:hover{background:var(--jade-200);transform:translateY(-1px);box-shadow:0 8px 30px rgba(99,199,162,.25)}
+.btn[disabled]{opacity:.75;cursor:progress;transform:none}
+.btn .meter{--meter-h:15px;--bar-w:2.5px;--bar-gap:2px;--bar-color:var(--jade-950)}
+.radar{position:relative;margin-top:22px;height:250px}
+.radar canvas{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:crosshair}
+.tip{position:absolute;z-index:5;pointer-events:none;min-width:220px;max-width:300px;padding:10px 12px;border-radius:10px;background:#fff;color:var(--clay-900);box-shadow:var(--shadow-lg);font-size:12.5px;line-height:1.4;opacity:0;transform:translate(-50%,8px);transition:opacity .15s,transform .15s}
+.tip.on{opacity:1;transform:translate(-50%,0)}
+.tip b{font-weight:600;color:var(--jade-900)}
+.tip .t{display:block;font-family:var(--display);font-weight:600;font-size:13.5px;line-height:1.25;margin:3px 0 5px;color:var(--clay-900)}
+.tip .m{color:var(--clay-700)}
+.legend{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-top:8px;font-size:12.5px;color:var(--sky-text-2)}
+.legend ul{list-style:none;margin:0;padding:0;display:flex;gap:16px;flex-wrap:wrap}
+.legend li{display:inline-flex;align-items:center;gap:7px}
+.legend i{width:9px;height:9px;border-radius:99px;display:inline-block}
+.legend .pos i{background:var(--jade-300)}.legend .neu i{background:var(--clay-300)}.legend .neg i{background:var(--coral-400)}
+.legend .size i{width:5px;height:5px;box-shadow:0 0 0 2px #0a4a3c,0 0 0 3px rgba(255,255,255,.35);margin-right:4px}
+.legend .size i+i{width:11px;height:11px}
+.legend .now b{font-family:var(--mono);font-weight:500;color:var(--jade-200)}
+.run{margin-top:16px;border-top:1px solid rgba(255,255,255,.1);padding-top:12px;display:grid;grid-template-columns:1fr auto;gap:2px 20px;align-items:center}
+.run-title{font-weight:600;color:#fff}
+.run-count{font-family:var(--mono);font-size:12.5px;color:var(--sky-text-2)}
+.run-pct{grid-column:2;grid-row:1 / span 2;font-family:var(--display);font-weight:700;font-size:28px;color:var(--jade-200);letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+.run-bar{grid-column:1 / -1;height:3px;background:rgba(255,255,255,.1);border-radius:99px;overflow:hidden;margin-top:8px}
+.run-fill{height:100%;width:0;background:var(--jade-300);box-shadow:0 0 10px rgba(99,199,162,.7);transition:width .5s var(--ease-out)}
+.run-lines{grid-column:1 / -1;margin:8px 0 0;padding:0;list-style:none;font-size:12.5px;color:var(--sky-text-2);display:flex;flex-wrap:wrap;gap:4px 18px}
+.run-lines li.doing{color:var(--jade-200)}
+
+/* Contenido claro */
+.page{max-width:1220px;margin:0 auto;padding:30px clamp(18px,3vw,40px) 72px;width:100%}
+.sec-head{display:flex;align-items:baseline;gap:12px;margin:0 0 12px}
+.sec-head h2{margin:0;font-family:var(--display);font-size:24px;font-weight:700;letter-spacing:-.02em;color:var(--jade-950)}
+.sec-head .n{font-family:var(--mono);font-size:13.5px;color:var(--jade-500);background:var(--jade-50);padding:2px 8px;border-radius:6px}
+.sec-head p{margin:0;font-size:13.5px;color:var(--clay-500)}
+.tops{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px}
+.top{position:relative;display:grid;grid-template-columns:auto 1fr;gap:2px 16px;align-items:center;padding:14px 18px;border-radius:14px;border:1px solid var(--line);background:#fff;cursor:pointer;transition:border-color .2s,box-shadow .25s,transform .25s var(--ease-out)}
+.top:hover,.top.hot{border-color:var(--jade-400);box-shadow:var(--shadow-md);transform:translateY(-2px)}
+.top.neg:hover,.top.neg.hot{border-color:var(--coral-500)}
+.top .ratio{grid-row:1 / span 2;font-family:var(--display);font-weight:800;font-size:38px;line-height:.9;letter-spacing:-.04em;color:var(--jade-900);font-variant-numeric:tabular-nums}
+.top.neg .ratio{color:var(--coral-700)}
+.top .ratio small{display:block;font-family:"Instrument Sans",sans-serif;font-weight:500;font-size:11.5px;letter-spacing:0;color:var(--clay-500);margin-top:5px}
+.top h3{margin:0;font-family:var(--display);font-size:16.5px;font-weight:600;line-height:1.25;letter-spacing:-.01em;color:var(--jade-950)}
+.top .who{display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--clay-500)}
+.top .who b{color:var(--clay-900);font-weight:600}
+.top .who .sent{margin-left:auto}
+.top.new::after{content:"nuevo";position:absolute;right:14px;top:0;transform:translateY(-55%);padding:2px 10px;border-radius:999px;background:var(--jade-900);color:#fff;font-size:11px;font-weight:600;box-shadow:0 0 0 3px var(--paper)}
+.sent{display:inline-flex;align-items:center;gap:6px;padding:3px 10px 3px 8px;border-radius:999px;font-size:12.5px;font-weight:600;border:1px solid transparent;background:#fff;white-space:nowrap}
+.sent::before{content:"";width:7px;height:7px;border-radius:99px;background:currentColor}
+.sent.positivo{color:var(--jade-700);border-color:var(--jade-150);background:var(--jade-50)}
+.sent.neutral{color:var(--clay-700);border-color:var(--clay-200);background:var(--clay-100)}
+.sent.negativo{color:var(--coral-700);border-color:#efc6b6;background:var(--coral-100)}
+.sent select{appearance:none;border:0;background:none;font:inherit;color:inherit;padding:0;cursor:pointer}
+.list-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:40px 0 14px}
+.list-head h2{margin:0;font-family:var(--display);font-size:24px;font-weight:700;letter-spacing:-.02em;color:var(--jade-950)}
+.list-head .count{font-family:var(--mono);font-size:13.5px;color:var(--clay-500)}
+.toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-left:auto}
+.seg{display:inline-flex;background:#fff;border:1px solid var(--line-strong);border-radius:999px;padding:3px}
+.seg button{border:0;background:none;padding:6px 13px;border-radius:999px;font-size:13.5px;font-weight:500;color:var(--clay-700);transition:background .2s,color .2s}
+.seg button.on{background:var(--jade-900);color:#fff}
+.sel{appearance:none;border:1px solid var(--line-strong);background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238a6a52' stroke-width='1.6'/%3E%3C/svg%3E") no-repeat right 11px center;padding:7px 28px 7px 12px;border-radius:9px;font-size:13.5px;color:var(--clay-900)}
+.search{display:flex;align-items:center;gap:8px;border:1px solid var(--line-strong);background:#fff;border-radius:9px;padding:0 10px}
+.search input{border:0;background:none;padding:8px 0;width:220px;font-size:13.5px}
+.search input:focus{outline:none}
+.search svg{width:14px;height:14px;color:var(--clay-500)}
+.feed{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px}
+.card{display:flex;flex-direction:column;border-radius:14px;overflow:hidden;border:1px solid var(--line);background:#fff;transition:transform .25s var(--ease-out),box-shadow .25s,border-color .2s;cursor:pointer}
+.card:hover,.card.hot{transform:translateY(-3px);box-shadow:var(--shadow-md)}
+.card.negativo:hover,.card.negativo.hot{border-color:var(--coral-500)}.card.positivo:hover,.card.positivo.hot{border-color:var(--jade-400)}.card.neutral:hover,.card.neutral.hot{border-color:var(--clay-500)}
+.card .img{aspect-ratio:1;background:#0d1f1a;display:grid;place-items:center;color:#6f8f84;font-size:12.5px;position:relative;overflow:hidden}
+.card .img .hour{position:absolute;left:10px;top:10px;font-family:var(--mono);font-size:11.5px;color:#fff;background:rgba(0,0,0,.4);padding:2px 7px;border-radius:6px}
+.card .body{padding:12px 14px 10px;display:flex;flex-direction:column;gap:6px}
+.card .acc{font-size:12.5px;color:var(--clay-500)}.card .acc b{color:var(--jade-900);font-weight:600}
+.card h3{margin:0;font-size:14.5px;font-weight:600;line-height:1.3;color:var(--clay-900);font-family:"Instrument Sans",sans-serif}
+.card .nums{display:grid;grid-template-columns:auto auto 1fr;gap:12px;align-items:baseline;padding:10px 14px;border-top:1px solid var(--line);font-family:var(--mono);font-size:15px;color:var(--jade-950)}
+.card .nums small{font-family:"Instrument Sans",sans-serif;color:var(--clay-500);font-size:11.5px;margin-left:3px}
+.card .nums .when{justify-self:end;font-size:11.5px;color:var(--clay-500);font-family:"Instrument Sans",sans-serif}
+.card .foot{display:flex;justify-content:space-between;align-items:center;padding:8px 10px 10px 14px;border-top:1px solid var(--line)}
+.card.new{box-shadow:0 0 0 3px var(--jade-150)}
+/* Medidor de alcance: cinco barras. En "alto" laten y brillan, como el medidor de la marca; en "medio" la tercera respira. */
+.reach{display:inline-flex;align-items:flex-end;gap:2px;height:16px}
+.reach i{width:4px;border-radius:2px;background:var(--line-strong);transform-origin:bottom}
+.reach i:nth-child(1){height:4px}.reach i:nth-child(2){height:7px}.reach i:nth-child(3){height:10px}.reach i:nth-child(4){height:13px}.reach i:nth-child(5){height:16px}
+.reach.bajo i:nth-child(1){background:var(--clay-500)}
+.reach.medio i:nth-child(-n+3){background:var(--jade-400)}
+.reach.medio i:nth-child(3){animation:reachGlow 2.4s ease-in-out infinite}
+.reach.alto i{background:var(--jade-500);box-shadow:0 0 6px rgba(42,165,124,.5);animation:reachBeat var(--d,1.3s) var(--dl,0s) ease-in-out infinite}
+.reach.alto i:nth-child(1){--dl:-.1s;--d:1.5s}.reach.alto i:nth-child(2){--dl:-.5s;--d:1.2s}.reach.alto i:nth-child(3){--dl:-.9s;--d:1.4s}.reach.alto i:nth-child(4){--dl:-.3s;--d:1.1s}.reach.alto i:nth-child(5){--dl:-.7s;--d:1.3s}
+@keyframes reachBeat{0%,100%{transform:scaleY(.62)}50%{transform:scaleY(1)}}
+@keyframes reachGlow{0%,100%{opacity:.55}50%{opacity:1}}
+.reach-cell{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:var(--clay-700);justify-content:flex-end}
+.rows{border-top:2px solid var(--jade-950)}
+.row-h,.row{display:grid;grid-template-columns:62px 150px minmax(0,1fr) 128px 86px 96px 66px 34px;gap:14px;align-items:center;padding:0 6px}
+.row-h{font-size:12.5px;color:var(--clay-500);padding-top:9px;padding-bottom:9px;border-bottom:1px solid var(--line)}
+.row-h .r,.row .r{text-align:right}
+.row-h button{border:0;background:none;padding:0;color:inherit;font-weight:500}
+.row-h button.on{color:var(--jade-900);font-weight:600}
+.row{position:relative;padding-top:12px;padding-bottom:12px;border-bottom:1px solid var(--line);font-size:14px;cursor:pointer;transition:background .15s}
+.row:hover,.row.open,.row.hot{background:var(--jade-50)}
+.row.new{animation:arrive 2.4s var(--ease-out) both}
+@keyframes arrive{0%{background:var(--jade-150)}100%{background:transparent}}
+.row .time{font-family:var(--mono);font-size:12.5px;color:var(--clay-500)}.row .time small{display:block;font-size:10.5px;opacity:.8}
+.row .acc{font-weight:600;color:var(--jade-900);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.row .acc small{display:block;font-weight:400;font-size:12px;color:var(--clay-500)}
+.row .title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--clay-900)}.row .title small{display:block;font-size:12.5px;color:var(--clay-500);overflow:hidden;text-overflow:ellipsis}
+.row .n{font-family:var(--mono);font-size:13.5px;color:var(--clay-900)}
+.row .x{border:0;background:none;width:28px;height:28px;border-radius:99px;color:var(--clay-500);font-size:15px;line-height:1;display:grid;place-items:center;transition:background .15s,color .15s;justify-self:end}
+.row .x:hover{background:var(--coral-100);color:var(--coral-700)}
+.row-detail{grid-column:1 / -1;display:grid;grid-template-columns:1fr 300px;gap:24px;padding:8px 0 10px 76px;font-size:14px;color:var(--clay-700);line-height:1.55}
+.row-detail p{margin:0 0 10px}.row-detail b{font-family:var(--mono);font-weight:500;color:var(--clay-900)}
+.row-detail a{display:inline-flex;gap:6px;color:var(--jade-700);font-weight:600;text-decoration:none;font-size:13.5px}
+
+
+/* ==========================================================================
+   ESTADÍSTICAS
+   Franja oscura con el período y los indicadores del período; debajo, en
+   claro, los bloques: cuándo se habla, de qué se habla, quién habla y lo
+   que más se despegó. Reglas de las visualizaciones: marcas finas (barras de
+   hasta 24 px, punta redondeada, base cuadrada), separación de 2 px entre
+   segmentos, grilla de un paso sobre la superficie, texto siempre con los
+   tokens de texto (nunca del color de la serie), tooltip en cada marca y
+   vista tabla por gráfico. Colores: sentimiento = polos jade / coral con
+   un gris neutro en el medio; magnitud = una sola rampa de jade.
+   ========================================================================== */
+:root{
+  --viz-pos:#12805f;--viz-neu:#c5ccc8;--viz-neg:#c4522c;--viz-1:#12805f;
+  --viz-grid:#edf1ee;--viz-axis:#dfe6e2;
+  --heat-1:#f1f9f5;--heat-2:#d6eee2;--heat-3:#aedcc5;--heat-4:#7cc6a3;--heat-5:#3faa80;--heat-6:#12805f;--heat-7:#0b5947;
+}
+.est-head{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;flex-wrap:wrap}
+.est-head h1{margin:0;font-family:var(--display);font-size:34px;font-weight:700;letter-spacing:-.03em;line-height:1;color:#fff}
+.est-head .sub{margin-top:10px;font-size:14px;color:var(--sky-text-2)}
+.est-head .sub b{color:#fff;font-weight:600}
+.period{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.period .seg{background:rgba(255,255,255,.06);border:1px solid var(--sky-line-2);border-radius:999px;padding:3px;display:inline-flex}
+.period .seg button{border:0;background:none;padding:6px 13px;border-radius:999px;font-size:13.5px;font-weight:500;color:var(--sky-text-2);transition:background .2s,color .2s}
+.period .seg button.on{background:var(--jade-300);color:var(--jade-950);font-weight:600}
+.period .dates{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--sky-text-2)}
+.period .dates input{border:1px solid var(--sky-line-2);background:rgba(255,255,255,.06);color:var(--sky-text);border-radius:8px;padding:6px 8px;font-size:12.5px;color-scheme:dark}
+
+.kpis{margin-top:22px;position:relative;border:1px solid var(--sky-line);border-radius:16px;background:rgba(255,255,255,.035);overflow:hidden;display:grid;grid-template-columns:repeat(5,minmax(0,1fr))}
+.kpis::before{content:"";position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(90deg,rgba(255,255,255,.025) 0 1px,transparent 1px 28px),repeating-linear-gradient(0deg,rgba(255,255,255,.02) 0 1px,transparent 1px 28px);mask-image:linear-gradient(180deg,#000,transparent 85%)}
+.kpi{position:relative;padding:18px 18px 16px;border-right:1px solid var(--sky-line);display:grid;grid-template-columns:1fr auto;grid-template-rows:auto auto auto;gap:2px 10px;min-height:146px}
+.kpi:last-child{border-right:0}
+.kpi .lbl{grid-column:1 / -1;font-size:13px;color:var(--sky-text-2)}
+.kpi .val{font-family:var(--display);font-weight:800;font-size:40px;line-height:1;letter-spacing:-.04em;color:#fff;align-self:end}
+.kpi .val small{font-family:"Instrument Sans",sans-serif;font-weight:500;font-size:13px;letter-spacing:0;color:var(--sky-text-3);margin-left:5px}
+.kpi .delta{grid-column:1 / -1;font-size:12.5px;color:var(--sky-text-3);margin-top:6px}
+.kpi .delta b{font-weight:600;font-family:var(--mono);font-variant-numeric:tabular-nums}
+.kpi .delta.good b{color:var(--jade-200)}.kpi .delta.bad b{color:var(--coral-300)}.kpi .delta.flat b{color:var(--sky-text-2)}
+.kpi .spark{grid-row:2;grid-column:2;width:76px;height:34px;align-self:end}
+.kpi .spark path{fill:none;stroke:var(--jade-300);stroke-width:2;stroke-linecap:round;stroke-linejoin:round;opacity:.55}
+.kpi .spark path.cur{opacity:1}
+.kpi .spark circle{fill:var(--jade-200);stroke:#042f28;stroke-width:2}
+
+/* Secciones y tarjetas */
+.est{max-width:1220px;margin:0 auto;padding:30px clamp(18px,3vw,40px) 72px;width:100%;display:flex;flex-direction:column;gap:40px}
+.est h2{margin:0 0 12px;font-family:var(--display);font-size:24px;font-weight:700;letter-spacing:-.02em;color:var(--jade-950)}
+.est .lead{margin:-8px 0 14px;font-size:13.5px;color:var(--clay-500);max-width:70ch}
+.grid{display:grid;gap:16px}
+.grid.c21{grid-template-columns:2fr 1fr}
+.grid.c11{grid-template-columns:1fr 1fr}
+.grid.c111{grid-template-columns:repeat(3,minmax(0,1fr))}
+.grid.c211{grid-template-columns:2fr 1fr 1fr}
+.vcard{border:1px solid var(--line);border-radius:14px;background:#fff;padding:16px 18px 14px;display:flex;flex-direction:column;min-width:0}
+.vcard-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:10px}
+.vcard-head h3{margin:0;font-size:15px;font-weight:600;color:var(--jade-950)}
+.vcard-head h3 small{display:block;font-weight:400;font-size:12.5px;color:var(--clay-500);margin-top:2px}
+.vcard-tools{display:flex;align-items:center;gap:10px;flex:none}
+.legend-k{display:flex;gap:12px;font-size:12px;color:var(--clay-700)}
+.legend-k i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.legend-k .pos i{background:var(--viz-pos)}.legend-k .neu i{background:var(--viz-neu)}.legend-k .neg i{background:var(--viz-neg)}
+.tbl-toggle{border:1px solid var(--line-strong);background:#fff;border-radius:7px;padding:3px 8px;font-size:11.5px;font-weight:500;color:var(--clay-700)}
+.tbl-toggle[aria-pressed="true"]{background:var(--jade-900);color:#fff;border-color:var(--jade-900)}
+.viz{position:relative;min-height:60px;transition:opacity .25s}
+.viz.refetch{opacity:.45}
+.viz table{width:100%;border-collapse:collapse;font-size:12.5px}
+.viz th,.viz td{text-align:right;padding:5px 8px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}
+.viz th:first-child,.viz td:first-child{text-align:left}
+.viz th{color:var(--clay-500);font-weight:500}
+.viz .tscroll{overflow:auto;max-height:320px}
+
+/* Publicaciones por día (SVG) */
+.daily svg{display:block;width:100%;height:auto}
+.daily .grid-l{stroke:var(--viz-grid);stroke-width:1}
+.daily .axis-l{stroke:var(--viz-axis);stroke-width:1}
+.daily text{font-family:var(--mono);font-size:10.5px;fill:var(--clay-500)}
+.daily text.lbl{font-family:"Instrument Sans",sans-serif;font-size:11.5px;font-weight:600;fill:var(--clay-900)}
+.daily g.bar{transform-box:fill-box;transform-origin:bottom center}
+.daily g.bar.grow{animation:grow .6s var(--ease-out) both}
+@keyframes grow{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+.daily .hit{fill:transparent;cursor:crosshair}
+.daily.hover g.bar{opacity:.5;transition:opacity .15s}.daily.hover g.bar.on{opacity:1}
+
+/* Picos */
+.picos{display:flex;flex-direction:column;gap:12px}
+.pico{display:grid;grid-template-columns:auto 1fr;gap:2px 14px;align-items:start;padding:10px 0;border-bottom:1px solid var(--line)}
+.pico:last-child{border-bottom:0}
+.pico .x{font-family:var(--display);font-weight:800;font-size:30px;line-height:.9;letter-spacing:-.04em;color:var(--jade-900);grid-row:1 / span 2}
+.pico .x small{display:block;font-family:"Instrument Sans",sans-serif;font-weight:500;font-size:11px;letter-spacing:0;color:var(--clay-500);margin-top:4px}
+.pico b{font-weight:600;color:var(--clay-900);font-size:13.5px}
+.pico span{font-size:12.5px;color:var(--clay-500)}
+.picos .habitual{margin:auto 0 0;padding-top:10px;font-size:12px;color:var(--clay-500)}
+
+/* Mapa de calor */
+.heat{display:grid;grid-template-columns:40px 1fr;gap:4px 8px;align-items:center}
+.heat .ylab{display:grid;grid-template-rows:repeat(7,22px);gap:3px}
+.heat .rl{font-size:11.5px;color:var(--clay-500);display:flex;align-items:center;height:22px}
+.heat .cells{display:grid;grid-template-columns:repeat(24,minmax(0,1fr));grid-template-rows:repeat(7,22px);gap:3px}
+.heat .cell{border-radius:4px;background:var(--heat-1);cursor:crosshair;transition:transform .12s,box-shadow .12s;opacity:0;animation:cellIn .4s var(--ease-out) both}
+@keyframes cellIn{from{opacity:0;transform:scale(.6)}to{opacity:1;transform:none}}
+.heat .cell:hover,.heat .cell:focus-visible{transform:scale(1.18);box-shadow:0 0 0 2px #fff,0 0 0 3.5px var(--jade-500);z-index:1;position:relative}
+.heat .hx{grid-column:2;display:grid;grid-template-columns:repeat(24,minmax(0,1fr));gap:3px;font-family:var(--mono);font-size:10px;color:var(--clay-500);margin-top:2px}
+.heat .hx span{text-align:left}
+.heat .hx span.corrida{color:var(--jade-700);font-weight:500}
+.heat-legend{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--clay-500);margin-top:12px;justify-content:flex-end}
+.heat-legend i{display:inline-block;width:18px;height:10px;border-radius:2px}
+
+/* Nube de palabras */
+.cloud{position:relative;height:330px;overflow:hidden}
+.cloud span{position:absolute;white-space:nowrap;font-family:var(--display);font-weight:700;letter-spacing:-.02em;line-height:1;cursor:default;transform-origin:center;opacity:0;animation:wordIn .5s var(--ease-out) both;transition:color .15s}
+@keyframes wordIn{from{opacity:0;transform:scale(.7)}to{opacity:1;transform:none}}
+.cloud span.t1{color:var(--jade-950)}.cloud span.t2{color:var(--jade-700)}.cloud span.t3{color:var(--clay-700)}.cloud span.t4{color:var(--clay-500)}
+.cloud span:hover{color:var(--jade-500)}
+.sort-row{display:inline-flex;gap:2px;margin:-2px 0 12px;padding:2px;border:1px solid var(--line-strong);border-radius:999px;background:#fff;align-self:flex-start}
+.sort-row button{border:0;background:none;padding:4px 11px;border-radius:999px;font-size:12px;font-weight:500;color:var(--clay-700)}
+.sort-row button.on{background:var(--jade-900);color:#fff}
+.hbars{display:flex;flex-direction:column;gap:7px}
+.hbar .name small{display:block;font-size:11px;color:var(--clay-500)}
+.hbar{display:grid;grid-template-columns:110px 1fr 40px;gap:10px;align-items:center;font-size:12.5px;color:var(--clay-900)}
+.hbar .name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hbar .track{height:12px;position:relative}
+.hbar .fill{position:absolute;left:0;top:0;bottom:0;width:0;border-radius:0 4px 4px 0;background:var(--viz-1);transition:width .6s var(--ease-out)}
+.hbar .v{font-family:var(--mono);font-size:12px;color:var(--clay-700);text-align:right;font-variant-numeric:tabular-nums}
+.hbar.hot .fill{background:var(--jade-400)}
+
+/* Jorge vs la Ciudad */
+.vs{display:flex;flex-direction:column;gap:16px;padding-top:4px}
+.vs .vrow{display:grid;grid-template-columns:1fr auto;gap:2px 10px;align-items:baseline}
+.vs .who{font-size:13px;color:var(--clay-700)}
+.vs .vrow{cursor:default;border-radius:8px}
+.vs .n{font-family:var(--display);font-weight:800;font-size:30px;letter-spacing:-.03em;color:var(--jade-950);line-height:1}
+.vs .n small{font-family:var(--display);font-weight:700;font-size:16px;letter-spacing:0;color:var(--clay-500);margin-left:2px}
+.vs .meter-t{grid-column:1 / -1;height:10px;background:var(--jade-100);border-radius:0 4px 4px 0;position:relative;overflow:hidden}
+.vs .meter-t i{position:absolute;left:0;top:0;bottom:0;width:0;background:var(--viz-1);border-radius:0 4px 4px 0;transition:width .7s var(--ease-out)}
+.vs .note{font-size:12px;color:var(--clay-500);margin-top:2px}
+
+/* Temáticas */
+.topics{display:grid;grid-template-columns:150px 1fr 60px 180px 90px;gap:8px 14px;align-items:center;font-size:13px}
+.topics .th{font-size:11.5px;color:var(--clay-500);font-weight:500;padding-bottom:4px;border-bottom:1px solid var(--line)}
+.topics .th.r,.topics .r{text-align:right}
+.topics .name{color:var(--clay-900);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.topics .track{height:12px;position:relative}
+.topics .fill{position:absolute;left:0;top:0;bottom:0;width:0;background:var(--viz-1);border-radius:0 4px 4px 0;transition:width .6s var(--ease-out)}
+.topics .v{font-family:var(--mono);font-size:12px;color:var(--clay-700);font-variant-numeric:tabular-nums}
+.div{position:relative;height:12px}
+.div .mid{position:absolute;left:50%;top:-3px;bottom:-3px;width:1px;background:var(--viz-axis)}
+.div i{position:absolute;top:0;bottom:0;transition:left .5s var(--ease-out),width .5s var(--ease-out)}
+.div .neg{background:var(--viz-neg);border-radius:4px 0 0 4px}.div .neu{background:var(--viz-neu)}.div .pos{background:var(--viz-pos);border-radius:0 4px 4px 0}
+.spk{width:90px;height:22px;display:block}
+.spk path{fill:none;stroke:var(--jade-400);stroke-width:1.5;stroke-linejoin:round}
+.spk circle{fill:var(--jade-700)}
+.topics .row-hit{display:contents}
+.topics .row-hit:hover > *{background:var(--jade-50)}
+
+/* Quién habla */
+.acc-sent{display:grid;grid-template-columns:110px 1fr 54px;gap:9px 10px;align-items:center;font-size:12.5px}
+.acc-sent .name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--clay-900)}
+.acc-sent .v{font-family:var(--mono);font-size:11.5px;color:var(--clay-700);text-align:right;font-variant-numeric:tabular-nums}
+.ups{display:flex;flex-direction:column;gap:9px}
+.up{display:grid;grid-template-columns:1fr auto auto;gap:12px;align-items:center;font-size:13px;padding-bottom:9px;border-bottom:1px solid var(--line)}
+.up:last-child{border-bottom:0}
+.up b{font-weight:600;color:var(--jade-900)}
+.up .dots{display:flex;gap:3px}.up .dots i{width:9px;height:9px;border-radius:99px;background:var(--viz-1)}
+.up .r{font-size:12.5px;color:var(--clay-500)}
+.up .r b{font-family:var(--mono);font-weight:500;color:var(--clay-900)}
+
+/* Ranking */
+.rank{display:flex;flex-direction:column}
+.rk{display:grid;grid-template-columns:34px 90px 1fr 150px 120px;gap:14px;align-items:center;padding:11px 8px;border-bottom:1px solid var(--line);font-size:14px;cursor:pointer;transition:background .15s}
+.rk:hover{background:var(--jade-50)}
+.rk:first-child{border-top:2px solid var(--jade-950)}
+.rk .pos{font-family:var(--mono);font-size:12.5px;color:var(--clay-500)}
+.rk .ratio{font-family:var(--display);font-weight:800;font-size:24px;letter-spacing:-.04em;color:var(--jade-900);line-height:1}
+.rk.neg .ratio{color:var(--coral-700)}
+.rk .ratio small{display:block;font-family:"Instrument Sans",sans-serif;font-weight:500;font-size:10.5px;letter-spacing:0;color:var(--clay-500);margin-top:3px}
+.rk .t{font-weight:500;color:var(--clay-900);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rk .t small{display:block;font-weight:400;font-size:12.5px;color:var(--clay-500)}
+.rk .w{font-size:12.5px;color:var(--clay-700)}
+.rk .w b{font-family:var(--mono);font-weight:500;color:var(--clay-900)}
+
+/* Tooltip de las visualizaciones */
+.vtip{position:fixed;z-index:60;pointer-events:none;min-width:150px;max-width:260px;padding:9px 11px;border-radius:9px;background:var(--jade-950);color:#e8f1ec;box-shadow:var(--shadow-lg);font-size:12.5px;line-height:1.4;opacity:0;transform:translate(-50%,-100%) translateY(-10px);transition:opacity .12s}
+.vtip.on{opacity:1}
+.vtip .k{color:var(--sky-text-2);display:block;font-size:11.5px;margin-bottom:3px}
+.vtip .v{font-family:var(--mono);font-weight:500;font-size:14px;color:#fff;display:block}
+.vtip .s{display:flex;justify-content:space-between;gap:12px;margin-top:3px}
+.vtip .s i{display:inline-block;width:10px;height:2px;margin-right:6px;vertical-align:middle;border-radius:1px}
+
+@media (max-width:1150px){.kpis{grid-template-columns:repeat(3,1fr)}.kpi:nth-child(3n){border-right:0}.kpi:nth-child(-n+3){border-bottom:1px solid var(--sky-line)}.grid.c21,.grid.c11,.grid.c111,.grid.c211{grid-template-columns:1fr}.topics{grid-template-columns:130px 1fr 50px 150px 80px}}
+@media (max-width:900px){.rk{grid-template-columns:30px 70px 1fr}.rk .w{display:none}.topics{grid-template-columns:120px 1fr 44px}.topics .spk,.topics .div{display:none}}
+
+/* Pie claro (el de la app) */
+.foot-site{position:relative;overflow:hidden;margin-top:auto;border-top:1px solid var(--jade-150);background:radial-gradient(80% 180% at 92% 100%,rgba(42,165,124,.14) 0%,transparent 60%),radial-gradient(60% 140% at 6% 0%,rgba(138,106,82,.09) 0%,transparent 58%),linear-gradient(170deg,var(--jade-50) 0%,var(--clay-100) 100%)}
+.foot-site::after{content:"";position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(90deg,rgba(6,56,46,.022) 0 1px,transparent 1px 5px);mask-image:linear-gradient(to right,transparent,#000 45%,transparent)}
+.foot-in{position:relative;z-index:2;max-width:1220px;margin:0 auto;padding:38px clamp(18px,3vw,40px) 26px;display:grid;grid-template-columns:1.6fr repeat(4,minmax(0,1fr));gap:28px;font-size:13.5px;color:var(--clay-700)}
+.foot-in .foot-meta{margin-top:10px;font-size:12.5px;color:var(--clay-500)}
+.foot-in a{color:inherit;text-decoration:none}
+.foot-in a:hover{color:var(--jade-700);text-decoration:underline;text-underline-offset:3px}
+@media (max-width:1150px){.foot-in{grid-template-columns:1fr 1fr 1fr}}
+.foot-in .brand .meter{--bar-color:var(--jade-500)}.foot-in .brand-name span{color:var(--jade-500)}.foot-in .brand-name b{color:var(--jade-900)}
+.foot-in p{margin:14px 0 0;max-width:38ch;line-height:1.6}
+.foot-in h4{margin:0 0 12px;font-family:var(--display);font-size:15px;font-weight:600;color:var(--jade-900)}
+.foot-in ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.foot-in li b{font-family:var(--mono);font-weight:500;color:var(--jade-900);margin-right:6px}
+
+/* ---------- Panel de fuentes, desde el riel ---------- */
+.src-backdrop{position:fixed;inset:var(--top) 0 0 var(--rail);background:rgba(3,42,35,.35);backdrop-filter:blur(2px);z-index:25;opacity:0;pointer-events:none;transition:opacity .3s}
+.src-backdrop.on{opacity:1;pointer-events:auto}
+.src-panel{position:fixed;top:var(--top);bottom:0;left:var(--rail);width:min(500px,calc(100vw - var(--rail)));z-index:26;background:#04312a;color:var(--sky-text);border-right:1px solid var(--sky-line-2);box-shadow:30px 0 60px rgba(0,0,0,.35);transform:translateX(calc(-100% - var(--rail) - 40px));transition:transform .42s var(--ease-out);display:flex;flex-direction:column}
+.src-panel.on{transform:none}
+.src-head{display:flex;align-items:center;justify-content:space-between;padding:20px 26px 14px;border-bottom:1px solid var(--sky-line)}
+.src-head h2{margin:0;font-family:var(--display);font-size:22px;font-weight:700;letter-spacing:-.02em;color:#fff}
+.src-close{border:0;background:rgba(255,255,255,.08);width:34px;height:34px;border-radius:99px;font-size:18px;color:var(--sky-text)}
+.src-close:hover{background:rgba(255,255,255,.14)}
+.src-body{overflow:auto;padding:20px 26px 40px;display:flex;flex-direction:column;gap:24px}
+.src-group h3{margin:0 0 4px;font-family:var(--display);font-size:16px;font-weight:600;color:#fff;letter-spacing:-.01em}
+.src-group p{margin:0 0 12px;font-size:13px;color:var(--sky-text-2);max-width:60ch}
+.src-group.guide{padding:16px 18px;border-radius:14px;background:rgba(222,211,198,.06);border:1px solid rgba(222,211,198,.12)}
+.src-group.guide h3{font-size:14.5px;color:var(--clay-300)}
+.src-group.guide .sub{margin-top:12px}
+.src-group.guide .sub h4{margin:0 0 8px;font-size:13.5px;font-weight:600;color:var(--sky-text)}
+.add-row{display:flex;gap:8px;margin-bottom:10px;max-width:520px}
+.add-row input{flex:1;min-width:0;padding:8px 12px;border-radius:9px;border:1px solid var(--sky-line-2);background:rgba(0,0,0,.2);font-size:13.5px;color:var(--sky-text)}
+.add-row input::placeholder{color:var(--sky-text-3)}
+.add-row input:focus{border-color:var(--jade-300);outline:none;box-shadow:0 0 0 3px rgba(99,199,162,.2)}
+.btn-ghost{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--sky-line-2);background:rgba(255,255,255,.06);border-radius:9px;padding:8px 13px;font-weight:600;font-size:13px;color:var(--sky-text);transition:border-color .15s,background .15s}
+.btn-ghost:hover{border-color:var(--jade-300);background:rgba(99,199,162,.12)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:999px;background:rgba(99,199,162,.14);color:var(--jade-200);font-size:12.5px;font-weight:500;line-height:1.3;white-space:nowrap}
+.chip.quiet{background:rgba(222,211,198,.1);color:var(--clay-300)}
+.chip button{border:0;background:none;padding:0 0 0 2px;color:inherit;opacity:.55;font-size:14px;line-height:1}
+.chip button:hover{opacity:1;color:var(--coral-300)}
+
+.js .reveal{opacity:0}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.001s !important;transition-duration:.001s !important}.js .reveal{opacity:1}}
+@media (max-width:1150px){.feed{grid-template-columns:repeat(3,1fr)}.row-h,.row{grid-template-columns:56px 130px minmax(0,1fr) 120px 80px 90px 60px 30px}}
+@media (max-width:900px){:root{--rail:62px}.rail-btn{width:54px;font-size:9px}.feed{grid-template-columns:repeat(2,1fr)}.row-h{display:none}.row{grid-template-columns:1fr auto;gap:4px 10px}.row .time,.row .r{display:none}.row-detail{grid-template-columns:1fr;padding-left:0}.foot-in{grid-template-columns:1fr}.radar{height:210px}.sky-head h1{font-size:28px}}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="crumb">
+    <a class="brand" href="#"><div class="meter" data-meter="5"></div><span class="brand-name"><span>social</span> <b>listening</b></span></a>
+    <span class="crumb-sep">/</span>
+    <span class="crumb-here"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="2.8" y="2.8" width="18.4" height="18.4" rx="5.4"/><circle cx="12" cy="12" r="4.3"/><circle cx="17.3" cy="6.7" r="1.15" fill="currentColor" stroke="none"/></svg>Instagram</span>
+  </div>
+  <button class="user-btn" type="button"><span class="avatar">MB</span><span>Martín Becerra</span></button>
+</header>
+
+<div class="shell">
+  <!-- Riel: secciones y, debajo, las fuentes -->
+  <nav class="rail" aria-label="Secciones y fuentes">
+    <button class="rail-btn active" type="button" data-go="monitoreo" aria-current="page"><div class="meter" data-meter="5"></div>Monitoreo</button>
+    <button class="rail-btn" type="button" data-go="estadisticas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 20h18" stroke-width="1.5" opacity=".35"/><path d="M4 16.5 9 12 13 14.5 20 6"/><circle cx="20" cy="6" r="2.2" fill="currentColor" stroke="none"/></svg>Estadísticas</button>
+    <button class="rail-btn" type="button" data-go="mapa"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M12 21s6-5.7 6-10a6 6 0 1 0-12 0c0 4.3 6 10 6 10Z"/><circle cx="12" cy="10.4" r="2.1" fill="currentColor" stroke="none"/></svg>Mapa</button>
+    <button class="rail-btn" type="button" data-go="analisis"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m20 20-4.8-4.8"/></svg>Análisis</button>
+    <div class="rail-sep"></div>
+    <span class="rail-label">Fuentes</span>
+    <button class="rail-btn rail-src" type="button" data-src="searches" aria-expanded="false" title="Búsquedas por palabra clave"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="13" r="2.2" fill="currentColor" stroke="none"/><path d="M7.8 17.2a6 6 0 0 1 0-8.4M16.2 8.8a6 6 0 0 1 0 8.4"/><path d="M5 20a10 10 0 0 1 0-14M19 6a10 10 0 0 1 0 14"/></svg>Búsquedas<span class="n" data-count="searches">8</span></button>
+    <button class="rail-btn rail-src guide" type="button" data-src="accounts" aria-expanded="false" title="Cuentas trackeadas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8"/></svg>Cuentas<span class="n" data-count="accounts">15</span></button>
+    <button class="rail-btn rail-src guide" type="button" data-src="keywords" aria-expanded="false" title="Palabras clave y hashtags"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" aria-hidden="true"><path d="M4 9h16M4 15h16M10 3 8 21M16 3l-2 18"/></svg>Palabras<span class="n" data-count="keywords">14</span></button>
+    <span class="rail-foot">DGAYD 2026</span>
+  </nav>
+
+  <div>
+    <!-- ================= MONITOREO ================= -->
+    <div class="view" id="view-monitoreo">
+      <section class="sky" aria-label="El día en la línea de tiempo">
+        <div class="sky-in">
+          <div class="sky-head">
+            <div>
+              <h1 class="reveal">Monitoreo en vivo</h1>
+              <div class="status reveal"><span class="dot" aria-hidden="true"></span><span><b>Escuchando.</b> Última corrida a las 12:00, la próxima a las 16:00.</span></div>
+            </div>
+            <button class="btn reveal" id="runBtn" type="button"><div class="meter" data-meter="5"></div>Actualizar ahora</button>
+          </div>
+          <div class="radar" id="radar"><canvas id="cv" aria-label="Publicaciones del día por hora y alcance"></canvas><div class="tip" id="tip"></div></div>
+          <div class="legend reveal">
+            <ul><li class="pos"><i></i>Positivo</li><li class="neu"><i></i>Neutral</li><li class="neg"><i></i>Negativo</li><li class="size"><i></i><i></i>Más grande, más comentarios</li><li>Más arriba, más se despegó de lo habitual de su cuenta</li></ul>
+            <span class="now">Ahora: <b id="nowLbl">12:20</b></span>
+          </div>
+          <div class="run hidden" id="run" aria-live="polite">
+            <span class="run-title" id="runTitle">Buscando posteos nuevos</span><span class="run-pct" id="runPct">0%</span><span class="run-count" id="runCount">0 de 8 listas</span>
+            <div class="run-bar"><div class="run-fill" id="runFill"></div></div>
+            <ul class="run-lines" id="runLines"></ul>
+          </div>
+        </div>
+      </section>
+
+      <main class="page">
+        <section>
+          <div class="sec-head reveal"><h2>Se despegaron</h2><span class="n" id="topCount">2</span><p>Mejor que lo habitual de su propia cuenta. Pasá el mouse para verlas en el radar.</p></div>
+          <div class="tops" id="tops"></div>
+        </section>
+        <section>
+          <div class="list-head reveal">
+            <h2>Publicaciones del día</h2><span class="count"><span id="shown">12</span> de <span id="total">12</span></span>
+            <div class="toolbar">
+              <div class="seg" role="group" aria-label="Vista"><button type="button" class="on" data-view="feed">Feed</button><button type="button" data-view="tabla">Tabla</button></div>
+              <select class="sel" id="fSent" aria-label="Sentimiento"><option value="">Sentimiento</option><option value="positivo">Positivo</option><option value="neutral">Neutral</option><option value="negativo">Negativo</option></select>
+              <select class="sel" id="fReach" aria-label="Alcance"><option value="">Alcance</option><option value="alto">Alto</option><option value="medio">Medio</option><option value="bajo">Bajo</option></select>
+              <select class="sel" id="fAcc" aria-label="Cuenta"><option value="">Cuenta</option></select>
+              <label class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input type="search" id="q" placeholder="Buscar título, cuenta o texto" /></label>
+            </div>
+          </div>
+          <div id="list" class="reveal"></div>
+        </section>
+      </main>
+
+      <footer class="foot-site"><div class="foot-in">
+        <div><a class="brand" href="#"><div class="meter" data-meter="5"></div><span class="brand-name"><span>social</span> <b>listening</b></span></a><p>Una herramienta de DGAYD para escuchar lo que se dice en redes, medir cómo se dice y convertir los reclamos en un punto del mapa.</p><p class="foot-meta">4 corridas por día, a las 8, 12, 16 y 20.</p></div>
+        <div><h4>Secciones</h4><ul><li><a href="#" data-go="monitoreo">Monitoreo en vivo</a></li><li><a href="#" data-go="estadisticas">Estadísticas</a></li><li><a href="#">Mapa de reclamos</a></li><li><a href="#">Análisis de publicación</a></li></ul></div>
+        <div><h4>Fuentes</h4><ul><li><a href="#" data-src="searches">Búsquedas por palabra clave</a></li><li><a href="#" data-src="accounts">Cuentas trackeadas</a></li><li><a href="#" data-src="keywords">Palabras clave y hashtags</a></li></ul></div>
+        <div><h4>Plataformas</h4><ul><li><a href="#">Instagram</a></li><li><a href="#">X</a></li><li><a href="#">Facebook</a></li><li><a href="#">TikTok</a></li><li><a href="#">Elegir plataforma</a></li></ul></div>
+        <div><h4>Cuenta</h4><ul><li><a href="#">Martín Becerra</a></li><li><a href="#">Cerrar sesión</a></li></ul></div>
+      </div></footer>
+    </div>
+
+    <!-- ================= ESTADÍSTICAS ================= -->
+    <div class="view hidden" id="view-estadisticas">
+      <section class="sky" aria-label="Resumen del período">
+        <div class="sky-in">
+          <div class="est-head">
+            <div>
+              <h1>Estadísticas</h1>
+              <p class="sub" id="estSub">Del <b>20 de septiembre</b> al <b>19 de octubre</b>, comparado con los 30 días anteriores.</p>
+            </div>
+            <div class="period" role="group" aria-label="Período">
+              <div class="seg"><button type="button" data-period="7">7 días</button><button type="button" class="on" data-period="30">30 días</button><button type="button" data-period="90">90 días</button></div>
+              <label class="dates">Desde <input type="date" value="2026-09-20" aria-label="Desde" /></label>
+              <label class="dates">Hasta <input type="date" value="2026-10-19" aria-label="Hasta" /></label>
+            </div>
+          </div>
+          <div class="kpis" id="kpis" aria-label="Indicadores del período"></div>
+        </div>
+      </section>
+
+      <main class="est">
+        <!-- Cuándo se habla -->
+        <section>
+          <h2>Cuándo se habla</h2>
+          <div class="grid c21">
+            <div class="vcard">
+              <div class="vcard-head"><h3>Publicaciones relevantes por día<small>Apiladas por sentimiento</small></h3>
+                <div class="vcard-tools"><div class="legend-k"><span class="pos"><i></i>Positivo</span><span class="neu"><i></i>Neutral</span><span class="neg"><i></i>Negativo</span></div><button class="tbl-toggle" type="button" data-tbl="daily" aria-pressed="false">Tabla</button></div></div>
+              <div class="viz daily" id="vizDaily"></div>
+            </div>
+            <div class="vcard">
+              <div class="vcard-head"><h3>Picos del período<small>Días con más del doble de lo habitual</small></h3></div>
+              <div class="viz picos" id="vizPicos"></div>
+            </div>
+          </div>
+          <div class="grid" style="margin-top:16px">
+            <div class="vcard">
+              <div class="vcard-head"><h3>A qué hora se publica<small>Publicaciones por hora y día de la semana. Las corridas son a las 8, 12, 16 y 20.</small></h3>
+                <div class="vcard-tools"><button class="tbl-toggle" type="button" data-tbl="heat" aria-pressed="false">Tabla</button></div></div>
+              <div class="viz" id="vizHeat"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- De qué se habla -->
+        <section>
+          <h2>De qué se habla</h2>
+          <div class="grid c211">
+            <div class="vcard">
+              <div class="vcard-head"><h3>Palabras más usadas<small>En los textos de las publicaciones del período, sin palabras vacías</small></h3></div>
+              <div class="viz cloud" id="vizCloud"></div>
+            </div>
+            <div class="vcard">
+              <div class="vcard-head"><h3>Las más repetidas<small>Cantidad de publicaciones que las usan</small></h3></div>
+              <div class="viz hbars" id="vizWords"></div>
+            </div>
+            <div class="vcard">
+              <div class="vcard-head"><h3>Jorge Macri y la Ciudad<small>Qué parte de las publicaciones nombra a cada uno</small></h3></div>
+              <div class="viz vs" id="vizVs"></div>
+            </div>
+          </div>
+          <div class="grid" style="margin-top:16px">
+            <div class="vcard">
+              <div class="vcard-head"><h3>Temáticas<small>Qué temas aparecen, con qué tono y cómo evolucionaron semana a semana</small></h3>
+                <div class="vcard-tools"><div class="legend-k"><span class="neg"><i></i>Negativo</span><span class="neu"><i></i>Neutral</span><span class="pos"><i></i>Positivo</span></div><button class="tbl-toggle" type="button" data-tbl="topics" aria-pressed="false">Tabla</button></div></div>
+              <div class="viz" id="vizTopics"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Quién habla -->
+        <section>
+          <h2>Quién habla</h2>
+          <div class="grid c111">
+            <div class="vcard">
+              <div class="vcard-head"><h3>Quiénes más pesan<small id="accSortSub">Likes y comentarios que generaron hablando de nosotros</small></h3>
+                <div class="vcard-tools"><button class="tbl-toggle" type="button" data-tbl="accounts" aria-pressed="false">Tabla</button></div></div>
+              <div class="sort-row" role="group" aria-label="Ordenar por"><button type="button" class="on" data-acc-sort="impact">Impacto</button><button type="button" data-acc-sort="n">Publicaciones</button><button type="button" data-acc-sort="followers">Seguidores</button></div>
+              <div class="viz hbars" id="vizAccounts"></div>
+            </div>
+            <div class="vcard">
+              <div class="vcard-head"><h3>Se despegan más seguido<small>Veces que una cuenta superó lo habitual de su propia cuenta</small></h3></div>
+              <div class="viz ups" id="vizUps"></div>
+            </div>
+            <div class="vcard">
+              <div class="vcard-head"><h3>Sentimiento por cuenta<small>Negativo a la izquierda, positivo a la derecha</small></h3></div>
+              <div class="viz acc-sent" id="vizAccSent"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Lo que más se despegó -->
+        <section>
+          <h2>Lo que más se despegó</h2>
+          <p class="lead">Las diez publicaciones del período con mayor razón contra lo habitual de su cuenta, en likes o en comentarios.</p>
+          <div class="rank" id="vizRank"></div>
+        </section>
+      </main>
+
+      <footer class="foot-site"><div class="foot-in">
+        <div><a class="brand" href="#"><div class="meter" data-meter="5"></div><span class="brand-name"><span>social</span> <b>listening</b></span></a><p>Una herramienta de DGAYD para escuchar lo que se dice en redes, medir cómo se dice y convertir los reclamos en un punto del mapa.</p><p class="foot-meta">4 corridas por día, a las 8, 12, 16 y 20.</p></div>
+        <div><h4>Secciones</h4><ul><li><a href="#" data-go="monitoreo">Monitoreo en vivo</a></li><li><a href="#" data-go="estadisticas">Estadísticas</a></li><li><a href="#">Mapa de reclamos</a></li><li><a href="#">Análisis de publicación</a></li></ul></div>
+        <div><h4>Fuentes</h4><ul><li><a href="#" data-src="searches">Búsquedas por palabra clave</a></li><li><a href="#" data-src="accounts">Cuentas trackeadas</a></li><li><a href="#" data-src="keywords">Palabras clave y hashtags</a></li></ul></div>
+        <div><h4>Plataformas</h4><ul><li><a href="#">Instagram</a></li><li><a href="#">X</a></li><li><a href="#">Facebook</a></li><li><a href="#">TikTok</a></li><li><a href="#">Elegir plataforma</a></li></ul></div>
+        <div><h4>Cuenta</h4><ul><li><a href="#">Martín Becerra</a></li><li><a href="#">Cerrar sesión</a></li></ul></div>
+      </div></footer>
+    </div>
+  </div>
+</div>
+
+<!-- Fuentes: panel desde el riel -->
+<div class="src-backdrop" id="backdrop"></div>
+<aside class="src-panel" id="srcPanel" aria-label="Fuentes" aria-hidden="true">
+  <div class="src-head"><h2>Fuentes</h2><button class="src-close" id="srcClose" type="button" aria-label="Cerrar">×</button></div>
+  <div class="src-body">
+    <div class="src-group" id="g-searches">
+      <h3>Búsquedas por palabra clave</h3>
+      <p>Es lo único que trae publicaciones nuevas. Un término de poco volumen puede traer una viral: antes de sacar uno, pensalo dos veces.</p>
+      <div class="add-row"><input type="text" placeholder="Agregar un término" data-add="searches" /><button class="btn-ghost" type="button" data-add-btn="searches">Agregar</button></div>
+      <div class="chips" data-chips="searches"></div>
+    </div>
+    <div class="src-group guide">
+      <h3>Guía para el clasificador</h3>
+      <p>Estas listas no buscan nada. Le dan contexto al modelo para decidir si un posteo es relevante.</p>
+      <div class="sub" id="g-accounts"><h4>Cuentas trackeadas</h4>
+        <div class="add-row"><input type="text" placeholder="usuario, sin @" data-add="accounts" /><button class="btn-ghost" type="button" data-add-btn="accounts">Agregar</button></div>
+        <div class="chips" data-chips="accounts"></div></div>
+      <div class="sub" id="g-keywords"><h4>Palabras clave y hashtags</h4>
+        <div class="add-row"><input type="text" placeholder="Jorge Macri o #JorgeMacri" data-add="keywords" /><button class="btn-ghost" type="button" data-add-btn="keywords">Agregar</button></div>
+        <div class="chips" data-chips="keywords"></div></div>
+    </div>
+  </div>
+</aside>
+
+<script>
+const SOURCES = {
+  searches: ['macri','blackri','blacri','GCBA','PDLC','gobierno de la ciudad','gobierno porteño','jorgemacri'],
+  accounts: ['jorgemacri','gcba','buenosaires','clarincom','lanacioncom','infobae','todonoticias','c5n','pagina12','a24com','cronicatv','perfilcom','eldestapeweb','ambitofinanciero','tiempoargentino'],
+  keywords: ['Jorge Macri','#JorgeMacri','Blackri','Blacri','#GCBA','PDLC','gobierno porteño','Ciudad de Buenos Aires','#CABA','Macri','subte','colectivos','inundaciones','#BuenosAires'],
+};
+const P = (id, account, title, sentiment, hh, likes, comments, medL, medC, extra={}) => ({ id, account, title, sentiment, posted: `2026-10-19T${hh}:00`, likes, comments, medL, medC,
+  followers: extra.followers || 480000, type: extra.type || 'imagen', reason: extra.reason || 'Búsqueda: macri',
+  caption: extra.caption || (title + '. El Jefe de Gobierno porteño encabezó la actividad junto a vecinos y funcionarios de la Ciudad. Más información en el enlace de la bio.') });
+let POSTS = [
+  P(1,'clarincom','Jorge Macri presentó el plan de obras para el microcentro','neutral','11:52',5400,310,2300,140,{followers:5200000,type:'carrusel'}),
+  P(2,'c5n','Reclamos por el aumento del subte: críticas al Jefe de Gobierno','negativo','11:20',2100,540,1500,180,{followers:1900000,type:'reel',reason:'Búsqueda: gobierno porteño'}),
+  P(3,'gcba','Abrió la nueva plaza de Villa Lugano, con juegos y canchas','positivo','10:48',900,40,650,28,{followers:410000,reason:'Búsqueda: GCBA'}),
+  P(4,'infobae','Macri respondió a vecinos de Palermo por las inundaciones','negativo','10:05',1300,220,1200,160,{followers:6100000,type:'reel'}),
+  P(5,'lanacioncom','La Ciudad licita colectivos eléctricos para tres líneas','neutral','09:30',700,25,900,60,{followers:2300000,reason:'Búsqueda: gobierno de la ciudad'}),
+  P(6,'todonoticias','Blackri en el Congreso: qué dijo sobre la coparticipación','neutral','09:02',1800,190,1600,150,{followers:3400000,type:'reel',reason:'Búsqueda: blackri'}),
+  P(7,'pagina12','Protesta de trabajadores frente a la Jefatura de Gobierno','negativo','08:15',600,88,700,95,{followers:980000}),
+  P(8,'a24com','Fin de semana largo: récord de turistas en Buenos Aires','positivo','07:40',1100,30,1300,40,{followers:1200000,reason:'Búsqueda: gobierno porteño'}),
+  P(9,'eldestapeweb','El Gobierno porteño recortó el presupuesto de cultura','negativo','07:10',950,140,800,110,{followers:740000}),
+  P(10,'ambitofinanciero','ABL: cómo queda la boleta de noviembre','neutral','06:55',420,35,500,40,{followers:620000,reason:'Búsqueda: GCBA'}),
+  P(11,'buenosaires','Operativo de bacheo en la Comuna 7: 40 cuadras en una semana','positivo','06:30',380,12,420,15,{followers:1500000,reason:'Búsqueda: GCBA'}),
+  P(12,'perfilcom','Encuesta: cómo quedó la imagen del Jefe de Gobierno en octubre','neutral','06:05',760,61,820,70,{followers:1100000,type:'carrusel'}),
+];
+const NEW_POSTS = [
+  P(13,'cronicatv','Corte total en la 9 de Julio por un reclamo de vecinos de Constitución','negativo','12:21',1250,310,650,90,{followers:1700000,type:'reel',reason:'Búsqueda: gobierno de la ciudad'}),
+  P(14,'jorgemacri','Recorrimos las obras del arroyo Vega con vecinos de Belgrano','positivo','12:18',3900,210,3100,170,{followers:690000,type:'carrusel',reason:'Búsqueda: jorgemacri'}),
+];
+/* Alcance: la regla del colchón (src/reachRule.js) con los valores por defecto */
+const RULE = {likes:{cushion:2000,floor:1000},comments:{cushion:300,floor:150},high:1.5,mid:1.1};
+function level(metric, value, median){ const r = RULE[metric]; const ratio = (value + r.cushion) / (median + r.cushion); return {ratio, level: (ratio >= RULE.high && value >= r.floor) ? 'alto' : (ratio >= RULE.mid ? 'medio' : 'bajo')}; }
+function bench(p){ const L = level('likes', p.likes, p.medL), C = level('comments', p.comments, p.medC); const rank = {alto:3,medio:2,bajo:1};
+  const top = (rank[L.level] > rank[C.level] || (rank[L.level] === rank[C.level] && L.ratio > C.ratio)) ? {m:'likes', ...L} : {m:'comments', ...C}; return {L, C, top}; }
+const nf = new Intl.NumberFormat('es-AR'); const fmt = n => n == null ? '—' : nf.format(n);
+const ratioTxt = r => (Math.floor(r * 100) / 100).toLocaleString('es-AR', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + '×';
+const hhmm = iso => iso.slice(11, 16); const hours = iso => Number(iso.slice(11, 13)) + Number(iso.slice(14, 16)) / 60;
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const topLevel = p => bench(p).top.level; const reachLabel = p => ({alto:'Alto',medio:'Medio',bajo:'Bajo'})[topLevel(p)];
+const COL = {positivo: '#63c7a2', neutral: '#d9c5b2', negativo: '#e07a58'};
+document.querySelectorAll('.meter[data-meter]').forEach(m => { const n = Number(m.dataset.meter) || 5; for (let i = 0; i < n; i++) { const b = document.createElement('i'); b.style.setProperty('--peak', (0.34 + Math.random() * 0.62).toFixed(3)); b.style.setProperty('--dur', (1.05 + Math.random() * 1.5).toFixed(2) + 's'); b.style.setProperty('--delay', (-Math.random() * 2).toFixed(2) + 's'); m.appendChild(b); } });
+
+/* ---------- Riel: cambio de vista ---------- */
+document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', e => {
+  if (b.tagName === 'A') e.preventDefault();
+  const v = b.dataset.go; if (!document.getElementById('view-' + v)) return;
+  document.querySelectorAll('[data-go]').forEach(x => { x.classList.toggle('active', x === b); x.toggleAttribute('aria-current', x === b); });
+  document.querySelectorAll('.view').forEach(x => x.classList.toggle('hidden', x.id !== 'view-' + v));
+  window.scrollTo({top: 0, behavior: reduced ? 'auto' : 'smooth'});
+  if (v === 'estadisticas') ensureStats();
+}));
+
+/* ---------- El radar (canvas) ---------- */
+const cv = document.getElementById('cv'), ctx = cv.getContext('2d'), radarEl = document.getElementById('radar'), tip = document.getElementById('tip');
+let W = 0, H = 0, DPR = 1, now = 12 + 20 / 60, hot = null, ripples = [], sweep = null, t0 = performance.now();
+const PAD = {l: 34, r: 24, t: 26, b: 44}, RUNS = [8, 12, 16, 20];
+function resize() { const r = radarEl.getBoundingClientRect(); if (!r.width) return; W = r.width; H = r.height; DPR = Math.min(2, devicePixelRatio || 1); cv.width = W * DPR; cv.height = H * DPR; ctx.setTransform(DPR, 0, 0, DPR, 0, 0); }
+const X = h => PAD.l + (h / 24) * (W - PAD.l - PAD.r);
+const Y = ratio => { const t = Math.max(0, Math.min(1, (Math.log(ratio) - Math.log(0.6)) / (Math.log(3) - Math.log(0.6)))); return H - PAD.b - t * (H - PAD.t - PAD.b); };
+const R = p => 4 + Math.sqrt(p.comments) * 0.42;
+let dots = [];
+function layout() { dots = POSTS.filter(p => !p.ignored).map(p => { const b = bench(p).top; return {x: X(hours(p.posted)), y: Y(b.ratio), r: R(p), p, b}; }); }
+function hexA(hex, a) { const n = parseInt(hex.slice(1), 16); return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`; }
+function draw(ts) {
+  const t = (ts - t0) / 1000;
+  if (!W) { requestAnimationFrame(draw); return; }
+  ctx.clearRect(0, 0, W, H);
+  ctx.font = '11px "DM Mono", monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  for (let h = 0; h <= 24; h += 2) { const x = X(h); ctx.strokeStyle = h % 4 === 0 ? 'rgba(255,255,255,.10)' : 'rgba(255,255,255,.05)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x, PAD.t - 6); ctx.lineTo(x, H - PAD.b); ctx.stroke();
+    if (h % 4 === 0) { ctx.fillStyle = 'rgba(169,194,183,.8)'; ctx.fillText(String(h).padStart(2, '0') + ':00', x, H - PAD.b + 8);
+      if (RUNS.includes(h)) { const past = h <= now; ctx.fillStyle = past ? 'rgba(159,224,196,.9)' : 'rgba(169,194,183,.5)'; ctx.fillText(past ? 'corrida' : 'próxima', x, H - PAD.b + 22); } } }
+  const yAlto = Y(1.5); ctx.setLineDash([3, 5]); ctx.strokeStyle = 'rgba(99,199,162,.45)'; ctx.beginPath(); ctx.moveTo(PAD.l, yAlto); ctx.lineTo(W - PAD.r, yAlto); ctx.stroke(); ctx.setLineDash([]);
+  ctx.textAlign = 'left'; ctx.textBaseline = 'bottom'; ctx.fillStyle = 'rgba(159,224,196,.9)'; ctx.fillText('alto: 1,5× lo habitual de su cuenta', PAD.l + 4, yAlto - 4);
+  ctx.textBaseline = 'top'; ctx.fillStyle = 'rgba(169,194,183,.55)'; ctx.fillText('lo habitual', PAD.l + 4, Y(1) + 4);
+  const xn = X(now); ctx.fillStyle = 'rgba(2,30,25,.45)'; ctx.fillRect(xn, PAD.t - 6, W - PAD.r - xn, H - PAD.b - PAD.t + 6);
+  RUNS.forEach(h => { const x = X(h), past = h <= now; ctx.setLineDash([2, 4]); ctx.strokeStyle = past ? 'rgba(99,199,162,.55)' : 'rgba(255,255,255,.18)'; ctx.beginPath(); ctx.moveTo(x, PAD.t - 6); ctx.lineTo(x, H - PAD.b); ctx.stroke(); ctx.setLineDash([]); });
+  if (sweep) { const k = Math.min(1, (performance.now() - sweep.start) / sweep.ms); const x = PAD.l + k * (xn - PAD.l); const g = ctx.createLinearGradient(x - 160, 0, x, 0); g.addColorStop(0, 'rgba(99,199,162,0)'); g.addColorStop(1, 'rgba(99,199,162,.22)'); ctx.fillStyle = g; ctx.fillRect(x - 160, PAD.t - 6, 160, H - PAD.b - PAD.t + 6); ctx.fillStyle = 'rgba(159,224,196,.9)'; ctx.fillRect(x, PAD.t - 6, 1.5, H - PAD.b - PAD.t + 6); if (k >= 1) sweep = null; }
+  const breathe = reduced ? 0.6 : 0.5 + 0.3 * Math.sin(t * 1.6);
+  ctx.strokeStyle = `rgba(255,255,255,${0.35 + breathe * 0.3})`; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(xn, PAD.t - 6); ctx.lineTo(xn, H - PAD.b); ctx.stroke();
+  ctx.fillStyle = '#fff'; ctx.font = '500 11px "DM Mono", monospace'; ctx.textAlign = 'center'; ctx.fillText('ahora', xn, PAD.t - 22);
+  ripples = ripples.filter(r => (performance.now() - r.start) < r.ms);
+  ripples.forEach(r => { const k = (performance.now() - r.start) / r.ms; ctx.beginPath(); ctx.arc(r.x, r.y, r.r + k * 46, 0, Math.PI * 2); ctx.strokeStyle = hexA(r.c, (1 - k) * 0.7); ctx.lineWidth = 1.5 * (1 - k) + .5; ctx.stroke(); });
+  dots.forEach(d => {
+    const col = COL[d.p.sentiment], isHot = hot === d.p.id, alto = d.b.level === 'alto';
+    const appear = d.p.appear ? Math.max(0, Math.min(1, (performance.now() - d.p.appear) / 500)) : 1, sc = 1 - Math.pow(1 - appear, 3);
+    if (alto && !reduced) { const k = ((t * 0.5 + d.p.id * 0.37) % 1); ctx.beginPath(); ctx.arc(d.x, d.y, d.r + 4 + k * 16, 0, Math.PI * 2); ctx.strokeStyle = hexA(col, (1 - k) * 0.5); ctx.lineWidth = 1.2; ctx.stroke(); }
+    ctx.beginPath(); ctx.arc(d.x, d.y, d.r * sc + (isHot ? 3 : 0), 0, Math.PI * 2);
+    ctx.shadowColor = alto || isHot ? col : 'transparent'; ctx.shadowBlur = alto ? 16 : (isHot ? 12 : 0);
+    ctx.fillStyle = hexA(col, isHot ? 1 : 0.88); ctx.fill(); ctx.shadowBlur = 0;
+    if (isHot) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke(); }
+  });
+  requestAnimationFrame(draw);
+}
+function hitTest(mx, my) { let best = null, bd = 1e9; dots.forEach(d => { const dd = Math.hypot(d.x - mx, d.y - my); if (dd < d.r + 7 && dd < bd) { bd = dd; best = d; } }); return best; }
+cv.addEventListener('mousemove', e => { const r = cv.getBoundingClientRect(); const d = hitTest(e.clientX - r.left, e.clientY - r.top); setHot(d ? d.p.id : null, d, true); });
+cv.addEventListener('mouseleave', () => setHot(null));
+cv.addEventListener('click', e => { const r = cv.getBoundingClientRect(); const d = hitTest(e.clientX - r.left, e.clientY - r.top); if (d) { openId = d.p.id; renderList(); const el = document.querySelector(`#list [data-open="${d.p.id}"]`); if (el) el.scrollIntoView({block: 'center', behavior: reduced ? 'auto' : 'smooth'}); } });
+function setHot(id, d, fromCanvas) {
+  hot = id; document.querySelectorAll('.hot').forEach(el => el.classList.remove('hot'));
+  if (id != null) document.querySelectorAll(`[data-open="${id}"]`).forEach(el => el.classList.add('hot'));
+  if (fromCanvas && d) { const b = d.b; tip.innerHTML = `<b>${esc(d.p.account)}</b>, ${hhmm(d.p.posted)}<span class="t">${esc(d.p.title)}</span><span class="m">${fmt(d.p.likes)} likes, ${fmt(d.p.comments)} comentarios. Alcance ${reachLabel(d.p).toLowerCase()}, ${ratioTxt(b.ratio)} en ${b.m === 'likes' ? 'likes' : 'comentarios'}.</span>`;
+    const left = Math.max(150, Math.min(W - 150, d.x)); tip.style.left = left + 'px'; tip.style.top = (d.y + d.r + 12) + 'px'; tip.classList.add('on'); }
+  else if (fromCanvas || id == null) tip.classList.remove('on');
+}
+new ResizeObserver(() => { resize(); layout(); }).observe(radarEl);
+resize(); layout(); requestAnimationFrame(draw);
+
+/* ---------- Se despegaron, lista, filtros ---------- */
+function sentPill(p) { return `<label class="sent ${p.sentiment}" data-stop><select aria-label="Sentimiento" data-sent="${p.id}">${['positivo','neutral','negativo'].map(s => `<option value="${s}" ${s === p.sentiment ? 'selected' : ''}>${s[0].toUpperCase() + s.slice(1)}</option>`).join('')}</select></label>`; }
+const reachGlyph = lvl => `<span class="reach ${lvl}" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>`;
+function renderTops(animate) {
+  const tops = POSTS.filter(p => !p.ignored && topLevel(p) === 'alto').sort((a, b) => bench(b).top.ratio - bench(a).top.ratio);
+  document.getElementById('topCount').textContent = tops.length;
+  const el = document.getElementById('tops');
+  el.innerHTML = tops.map(p => { const b = bench(p).top, isL = b.m === 'likes'; return `<article class="top ${p.sentiment === 'negativo' ? 'neg' : ''} ${p.isNew ? 'new' : ''}" data-open="${p.id}" data-hot="${p.id}" tabindex="0">
+    <div class="ratio">${ratioTxt(b.ratio)}<small>${isL ? 'en likes' : 'en comentarios'}</small></div>
+    <h3>${esc(p.title)}</h3>
+    <div class="who"><span><b>${esc(p.account)}</b>, ${hhmm(p.posted)}, <span class="mono">${fmt(isL ? p.likes : p.comments)}</span> ${isL ? 'likes' : 'comentarios'} contra <span class="mono">${fmt(isL ? p.medL : p.medC)}</span></span>${sentPill(p)}</div></article>`; }).join('');
+  if (animate && !reduced) el.querySelectorAll('.top').forEach((t, i) => t.animate([{opacity: 0, transform: 'translateY(12px)'}, {opacity: 1, transform: 'none'}], {duration: 520, delay: 700 + i * 90, easing: 'cubic-bezier(.22,.8,.3,1)', fill: 'backwards'}));
+}
+document.addEventListener('mouseover', e => { const h = e.target.closest('[data-hot]'); if (h) setHot(Number(h.dataset.hot)); });
+document.addEventListener('mouseout', e => { const h = e.target.closest('[data-hot]'); if (h && !h.contains(e.relatedTarget)) setHot(null); });
+let view = 'feed', openId = null, sortKey = 'posted', sortDir = -1; const F = {sent: '', reach: '', acc: '', q: ''};
+function visible() { return POSTS.filter(p => !p.ignored).filter(p => !F.sent || p.sentiment === F.sent).filter(p => !F.reach || topLevel(p) === F.reach).filter(p => !F.acc || p.account === F.acc)
+  .filter(p => !F.q || (p.title + ' ' + p.account + ' ' + p.caption).toLowerCase().includes(F.q)).sort((a, b) => (a[sortKey] > b[sortKey] ? 1 : a[sortKey] < b[sortKey] ? -1 : 0) * sortDir); }
+function renderList(animate) {
+  const rows = visible(); document.getElementById('shown').textContent = rows.length; document.getElementById('total').textContent = POSTS.filter(p => !p.ignored).length;
+  const list = document.getElementById('list');
+  if (view === 'feed') {
+    list.innerHTML = `<div class="feed">${rows.map(p => { const b = bench(p); return `<article class="card ${p.sentiment} ${p.isNew ? 'new' : ''}" data-open="${p.id}" data-hot="${p.id}" tabindex="0">
+      <div class="img"><span class="hour">${hhmm(p.posted)}</span>Sin foto</div><div class="body"><span class="acc"><b>${esc(p.account)}</b></span><h3>${esc(p.title)}</h3></div>
+      <div class="nums"><span>${fmt(p.likes)}<small>likes</small></span><span>${fmt(p.comments)}<small>com.</small></span><span class="when">al 19/10</span></div>
+      <div class="foot">${sentPill(p)}<span class="reach-cell">${reachGlyph(b.top.level)}${reachLabel(p)}</span></div></article>`; }).join('')}</div>`;
+  } else {
+    const th = (k, label) => `<button type="button" data-sort="${k}" class="${sortKey === k ? 'on' : ''}">${label}${sortKey === k ? (sortDir < 0 ? ' ↓' : ' ↑') : ''}</button>`;
+    list.innerHTML = `<div class="rows"><div class="row-h"><span>${th('posted','Hora')}</span><span>${th('account','Cuenta')}</span><span>Título</span><span>Sentimiento</span><span class="r">${th('likes','Likes')}</span><span class="r">${th('comments','Comentarios')}</span><span class="r">Alcance</span><span></span></div>
+      ${rows.map(p => { const b = bench(p), open = openId === p.id; return `<div class="row ${open ? 'open' : ''} ${p.isNew ? 'new' : ''}" data-open="${p.id}" data-hot="${p.id}" tabindex="0">
+        <span class="time">${hhmm(p.posted)}<small>${p.type}</small></span><span class="acc">${esc(p.account)}<small>${fmt(p.followers)} seg.</small></span>
+        <span class="title">${esc(p.title)}<small>${esc(p.reason)}</small></span><span>${sentPill(p)}</span>
+        <span class="n r">${fmt(p.likes)}</span><span class="n r">${fmt(p.comments)}</span><span class="reach-cell r">${reachGlyph(b.top.level)}${reachLabel(p)}</span>
+        <button class="x" type="button" data-ignore="${p.id}" aria-label="Ignorar" data-stop>×</button>
+        ${open ? `<div class="row-detail"><div><p>${esc(p.caption)}</p><a href="#" data-stop>Abrir en Instagram <span aria-hidden="true">↗</span></a></div><div><p>Likes: <b>${fmt(p.likes)}</b> contra una mediana de <b>${fmt(p.medL)}</b> (razón ${ratioTxt(b.L.ratio)}, colchón 2.000).</p><p>Comentarios: <b>${fmt(p.comments)}</b> contra <b>${fmt(p.medC)}</b> (razón ${ratioTxt(b.C.ratio)}, colchón 300).</p></div></div>` : ''}</div>`; }).join('')}</div>`;
+  }
+  if (animate && !reduced) list.querySelectorAll('.row, .card').forEach((r, i) => { if (i < 14) r.animate([{opacity: 0, transform: 'translateY(8px)'}, {opacity: 1, transform: 'none'}], {duration: 420, delay: 900 + i * 40, easing: 'cubic-bezier(.22,.8,.3,1)', fill: 'backwards'}); });
+}
+document.getElementById('list').addEventListener('click', e => {
+  const sort = e.target.closest('[data-sort]'); if (sort) { const k = sort.dataset.sort; if (sortKey === k) sortDir *= -1; else { sortKey = k; sortDir = k === 'account' ? 1 : -1; } renderList(); return; }
+  const ig = e.target.closest('[data-ignore]'); if (ig) { ignore(Number(ig.dataset.ignore)); return; }
+  if (e.target.closest('[data-stop]')) return;
+  const row = e.target.closest('[data-open]'); if (row && view === 'tabla') { const id = Number(row.dataset.open); openId = openId === id ? null : id; renderList(); }
+});
+document.addEventListener('change', e => { const s = e.target.closest('[data-sent]'); if (s) { POSTS.find(x => x.id === Number(s.dataset.sent)).sentiment = s.value; renderTops(); renderList(); } });
+function ignore(id) { const el = document.querySelector(`.row[data-open="${id}"], .card[data-open="${id}"]`); const done = () => { POSTS.find(p => p.id === id).ignored = true; layout(); renderTops(); renderList(); };
+  if (el && !reduced) el.animate([{opacity: 1}, {opacity: 0, transform: 'translateX(12px)'}], {duration: 220, easing: 'ease-in'}).onfinish = done; else done(); }
+document.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => { document.querySelectorAll('[data-view]').forEach(x => x.classList.toggle('on', x === b)); view = b.dataset.view; renderList(); }));
+document.getElementById('fSent').addEventListener('change', e => { F.sent = e.target.value; renderList(); });
+document.getElementById('fReach').addEventListener('change', e => { F.reach = e.target.value; renderList(); });
+document.getElementById('fAcc').addEventListener('change', e => { F.acc = e.target.value; renderList(); });
+document.getElementById('q').addEventListener('input', e => { F.q = e.target.value.trim().toLowerCase(); renderList(); });
+function fillAccounts() { const sel = document.getElementById('fAcc'); sel.innerHTML = '<option value="">Cuenta</option>' + [...new Set(POSTS.map(p => p.account))].sort().map(a => `<option value="${a}">${a}</option>`).join(''); }
+
+/* ---------- Fuentes: panel desde el riel ---------- */
+function renderSources() {
+  Object.keys(SOURCES).forEach(k => document.querySelectorAll(`[data-count="${k}"]`).forEach(el => el.textContent = SOURCES[k].length));
+  document.querySelectorAll('[data-chips]').forEach(box => { const key = box.dataset.chips; box.innerHTML = SOURCES[key].map(v => `<span class="chip ${key === 'searches' ? '' : 'quiet'}">${esc(v)}<button type="button" aria-label="Quitar ${esc(v)}" data-rm="${key}" data-v="${esc(v)}">×</button></span>`).join(''); });
+}
+document.addEventListener('click', e => {
+  const rm = e.target.closest('[data-rm]'); if (rm) { SOURCES[rm.dataset.rm] = SOURCES[rm.dataset.rm].filter(v => v !== rm.dataset.v); renderSources(); return; }
+  const add = e.target.closest('[data-add-btn]'); if (add) { const inp = add.parentElement.querySelector('input'); const v = inp.value.trim(); if (v && !SOURCES[add.dataset.addBtn].includes(v)) { SOURCES[add.dataset.addBtn].push(v); renderSources(); } inp.value = ''; return; }
+});
+document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches('[data-add]')) e.target.parentElement.querySelector('[data-add-btn]').click(); if (e.key === 'Escape') closeSources(); });
+const panel = document.getElementById('srcPanel'), backdrop = document.getElementById('backdrop');
+function openSources(key) {
+  document.querySelectorAll('.rail-src').forEach(b => b.setAttribute('aria-expanded', 'true'));
+  panel.classList.add('on'); backdrop.classList.add('on'); panel.setAttribute('aria-hidden', 'false');
+  const g = document.getElementById('g-' + key); if (g) { g.scrollIntoView({block: 'start', behavior: reduced ? 'auto' : 'smooth'}); g.querySelector('input').focus({preventScroll: true}); }
+}
+function closeSources() { document.querySelectorAll('.rail-src').forEach(b => b.setAttribute('aria-expanded', 'false')); panel.classList.remove('on'); backdrop.classList.remove('on'); panel.setAttribute('aria-hidden', 'true'); }
+document.querySelectorAll('.rail-src').forEach(b => b.addEventListener('click', () => (panel.classList.contains('on') ? closeSources() : openSources(b.dataset.src))));
+document.querySelectorAll('.foot-in [data-src]').forEach(a => a.addEventListener('click', e => { e.preventDefault(); window.scrollTo({top: 0, behavior: reduced ? 'auto' : 'smooth'}); openSources(a.dataset.src); }));
+document.getElementById('srcClose').addEventListener('click', closeSources); backdrop.addEventListener('click', closeSources);
+
+/* ---------- Actualizar ahora ---------- */
+const PHASES = [
+  {t: 'Buscando posteos nuevos', total: 8, suffix: 'listas', ms: 2400, lines: ['«macri»: 50 encontrados, 4 nuevos','«blackri»: 12, 1 nuevo','«gobierno de la ciudad»: 31, 2 nuevos','«PDLC»: 8, ninguno nuevo','4 listas más sin novedades']},
+  {t: 'Pidiendo el detalle de las búsquedas', total: 7, suffix: 'posteos', ms: 1500, lines: ['7 posteos nuevos en un solo run']},
+  {t: 'Clasificando relevancia', total: 7, suffix: 'posteos', ms: 2000, lines: ['2 relevantes, 5 descartados (otra ciudad, política nacional)']},
+  {t: 'Benchmark de cuentas', total: 2, suffix: 'cuentas', ms: 1200, lines: ['cronicatv y jorgemacri: mediana recalculada']},
+  {t: 'Refrescando métricas', total: 23, suffix: 'posteos', ms: 1500, lines: ['23 posteos vencidos en 1 run']},
+];
+const runBtn = document.getElementById('runBtn'), run = document.getElementById('run');
+runBtn.addEventListener('click', async () => {
+  runBtn.disabled = true; run.classList.remove('hidden'); if (!reduced) sweep = {start: performance.now(), ms: 2400};
+  const lines = document.getElementById('runLines'); lines.innerHTML = '';
+  const totalMs = PHASES.reduce((a, p) => a + p.ms, 0); let doneMs = 0;
+  for (const ph of PHASES) { document.getElementById('runTitle').textContent = ph.t; const li = document.createElement('li'); li.className = 'doing'; li.textContent = ph.t + '…'; lines.prepend(li); const s0 = performance.now();
+    await new Promise(res => { const tick = () => { const k = Math.min(1, (performance.now() - s0) / ph.ms); document.getElementById('runCount').textContent = `${Math.round(k * ph.total)} de ${ph.total} ${ph.suffix}`;
+      const pct = Math.round(((doneMs + k * ph.ms) / totalMs) * 100); document.getElementById('runPct').textContent = pct + '%'; document.getElementById('runFill').style.width = pct + '%'; if (k < 1) requestAnimationFrame(tick); else res(); }; tick(); });
+    doneMs += ph.ms; li.className = ''; li.textContent = ph.t + ': ' + ph.lines.join(', '); }
+  document.getElementById('runTitle').textContent = 'Listo: 2 relevantes guardados de 7 nuevos'; document.getElementById('runCount').textContent = 'Terminó a las 12:24. Esta corrida costó US$ 0,21';
+  now = 12 + 24 / 60; document.getElementById('nowLbl').textContent = '12:24';
+  NEW_POSTS.forEach((p, i) => { if (!POSTS.includes(p)) { p.isNew = true; p.appear = performance.now() + i * 250; POSTS.unshift(p); } });
+  layout();
+  if (!reduced) NEW_POSTS.forEach((p, i) => { const d = dots.find(x => x.p === p); [0, 350, 700].forEach(delay => setTimeout(() => ripples.push({x: d.x, y: d.y, r: d.r, c: COL[p.sentiment], start: performance.now(), ms: 1400}), i * 250 + delay)); });
+  fillAccounts(); renderTops(true); renderList(true);
+  document.querySelector('.status').innerHTML = '<span class="dot" aria-hidden="true"></span><span><b>Escuchando.</b> Última corrida a las 12:24, la próxima a las 16:00.</span>';
+  runBtn.disabled = false; setTimeout(() => POSTS.forEach(p => p.isNew = false), 4000);
+});
+
+
+/* ======================= ESTADÍSTICAS ======================= */
+/* Datos simulados con un generador determinístico: el mismo período dibuja
+   siempre lo mismo. En la app, cada bloque sale de una consulta a la base
+   (detected_posts, account_stats) acotada al período elegido. */
+const MESES_L = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+const MESES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+const DIAS = ['dom','lun','mar','mié','jue','vie','sáb'];
+const DIAS_L = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+const END = new Date(2026, 9, 19);
+const HOUR_W = [.05,.03,.02,.02,.02,.04,.14,.45,.95,1.3,1.4,1.3,1.1,.9,.7,.65,.75,.95,1.1,1.05,.85,.55,.3,.12];
+const CAUSAS = [
+  {t: 'Reclamos por el aumento del subte: críticas al Jefe de Gobierno', a: 'c5n'},
+  {t: 'Inundaciones en Palermo: vecinos reclaman al Gobierno porteño', a: 'infobae'},
+  {t: 'El Gobierno porteño recortó el presupuesto de cultura', a: 'eldestapeweb'},
+  {t: 'Corte total en la 9 de Julio por un reclamo de vecinos', a: 'cronicatv'},
+  {t: 'Jorge Macri presentó el plan de obras para el microcentro', a: 'clarincom'},
+];
+const WORDS = [['Jorge Macri',148],['Ciudad',221],['subte',96],['obras',84],['vecinos',79],['colectivos',61],['inundaciones',58],['seguridad',54],['PDLC',44],['ABL',41],['cultura',38],['Palermo',35],['microcentro',33],['presupuesto',31],['Blackri',29],['Congreso',27],['tarifa',26],['turismo',25],['plaza',24],['bacheo',22],['coparticipación',21],['Comuna 7',19],['licitación',18],['arroyo Vega',17],['Belgrano',16],['9 de Julio',15],['Constitución',14],['estacionamiento',14],['Villa Lugano',13],['bicisendas',13],['Retiro',12],['Caballito',11],['escuelas',11],['hospital',10],['Recoleta',9],['Lugano',9],['basura',8],['Flores',8],['Once',7],['peatonal',7],['Legislatura',7],['semáforos',6]];
+const TOPICS = [['Transporte',71,.38,.18],['Obras y espacio público',58,.22,.41],['Seguridad',44,.46,.14],['Política',36,.31,.17],['Inundaciones y clima',31,.52,.12],['Impuestos y economía',29,.44,.11],['Cultura y educación',24,.26,.38],['Otros',19,.25,.25]];
+const ACCS = [['clarincom',38,4,.3,.22,5200000],['infobae',34,5,.34,.2,6100000],['lanacioncom',29,2,.27,.25,2300000],['c5n',27,6,.55,.1,1900000],['todonoticias',25,3,.3,.22,3400000],['pagina12',22,2,.6,.08,980000],['a24com',18,2,.3,.24,1200000],['perfilcom',15,1,.33,.2,1100000],['eldestapeweb',14,3,.62,.07,740000],['gcba',12,1,.04,.78,410000]];
+const RANK = [
+  ['Inundaciones en Palermo: vecinos reclaman al Gobierno porteño','infobae','negativo','comentarios',890,160],
+  ['Macri inauguró el paso bajo nivel de Avenida Nazca','gcba','positivo','likes',4100,650],
+  ['Qué dijo Blackri sobre la coparticipación en el Congreso','todonoticias','neutral','likes',6200,1600],
+  ['El Gobierno porteño anunció la vuelta de las fotomultas','todonoticias','negativo','comentarios',720,150],
+  ['Aumenta el ABL: cómo queda la boleta en noviembre','ambitofinanciero','negativo','comentarios',410,40],
+  ['Nueva plaza en Villa Lugano: así quedó','buenosaires','positivo','likes',2900,420],
+  ['Protesta de trabajadores de cultura frente a la Jefatura','pagina12','negativo','comentarios',430,95],
+  ['Reclamos por el aumento del subte: críticas al Jefe de Gobierno','c5n','negativo','comentarios',540,180],
+  ['Jorge Macri presentó el plan de obras para el microcentro','clarincom','neutral','likes',5400,2300],
+  ['Récord de turistas en la Ciudad durante el fin de semana largo','a24com','positivo','likes',3300,1300],
+  ['Corte total en la 9 de Julio por un reclamo de vecinos de Constitución','cronicatv','negativo','comentarios',310,90],
+  ['La Ciudad licita colectivos eléctricos para tres líneas','lanacioncom','neutral','comentarios',260,60],
+];
+function rng(seed) { let a = seed >>> 0; return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const clamp01 = v => Math.max(.03, Math.min(.9, v));
+const median = arr => { const s = [...arr].sort((a, b) => a - b); const m = Math.floor(s.length / 2); return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+const fmtDate = d => `${d.getDate()} de ${MESES_L[d.getMonth()]}`;
+const fmtShort = d => `${d.getDate()} ${MESES[d.getMonth()]}`;
+const compact = n => n >= 1e6 ? (n / 1e6).toLocaleString('es-AR', {maximumFractionDigits: 1}) + ' M' : n >= 1e3 ? Math.round(n / 1e3).toLocaleString('es-AR') + ' K' : nf.format(Math.round(n));
+const pct = v => Math.round(v * 100) + '%';
+const cushionRatio = (metric, value, med) => metric === 'likes' ? (value + 2000) / (med + 2000) : (value + 300) / (med + 300);
+
+function genStats(days) {
+  const r = rng(7919 * days + 11);
+  const daily = [];
+  const nSpikes = Math.max(2, Math.round(days / 12)); const spikeDays = new Set(); while (spikeDays.size < nSpikes) spikeDays.add(Math.floor(r() * days));
+  for (let i = 2 * days - 1; i >= 0; i--) {
+    const d = new Date(END); d.setDate(END.getDate() - i);
+    const dow = d.getDay(), wk = dow === 0 || dow === 6;
+    let n = Math.round((wk ? 6 : 11) + (r() - .5) * 6), spike = null;
+    const isSpike = i < days ? spikeDays.has(days - 1 - i) : r() < .08;
+    if (isSpike) { n = Math.round(Math.max(n, 9) * (2.1 + r() * 1.2)); spike = CAUSAS[Math.floor(r() * CAUSAS.length)]; }
+    n = Math.max(2, n);
+    const neg = Math.round(n * (.22 + r() * .16)), pos = Math.round(n * (.17 + r() * .16));
+    daily.push({date: d, dow, n, pos, neg, neu: n - pos - neg, spike, current: i < days});
+  }
+  const cur = daily.filter(x => x.current), prev = daily.filter(x => !x.current);
+  const sum = (arr, k) => arr.reduce((a, x) => a + x[k], 0);
+  const relevantes = sum(cur, 'n'), relPrev = sum(prev, 'n');
+  const negPct = sum(cur, 'neg') / relevantes, negPrev = sum(prev, 'neg') / relPrev, posPct = sum(cur, 'pos') / relevantes, posPrev = sum(prev, 'pos') / relPrev;
+  const tops = Math.max(1, Math.round(relevantes * .075)), topsPrev = Math.max(1, Math.round(relPrev * (.06 + r() * .03)));
+  const conv = Math.round(relevantes * (1850 + r() * 400)), convPrev = Math.round(relPrev * (1700 + r() * 400));
+  const heat = Array.from({length: 7}, () => Array(24).fill(0)); const tw = HOUR_W.reduce((a, b) => a + b, 0);
+  cur.forEach(x => { for (let i = 0; i < x.n; i++) { let s = r() * tw, h = 0; while (s > HOUR_W[h] && h < 23) { s -= HOUR_W[h]; h++; } heat[x.dow][h]++; } });
+  const med = median(cur.map(x => x.n));
+  const picos = cur.filter(x => x.n >= 2 * med).sort((a, b) => b.n - a.n).slice(0, 3).map(x => ({...x, ratio: x.n / med, cause: x.spike || CAUSAS[0]}));
+  const habitual = med;
+  const k = days / 30;
+  const words = WORDS.map(w => ({w: w[0], n: Math.max(1, Math.round(w[1] * k * (.85 + r() * .3)))})).sort((a, b) => b.n - a.n);
+  const jorge = Math.round(relevantes * .47), ciudad = Math.round(relevantes * .71), ambos = Math.round(relevantes * .2);
+  const topics = TOPICS.map(t => { const n = Math.max(1, Math.round(t[1] * k * (.8 + r() * .4))); const weeks = 12;
+    return {name: t[0], n, neg: clamp01(t[2] + (r() - .5) * .1), pos: clamp01(t[3] + (r() - .5) * .1), spark: Array.from({length: weeks}, () => Math.max(0, Math.round(n / weeks * (.4 + r() * 1.3))))}; }).sort((a, b) => b.n - a.n);
+  const accounts = ACCS.map(a => { const n = Math.max(1, Math.round(a[1] * k * (.8 + r() * .4)));
+    return {name: a[0], n, alto: Math.max(0, Math.round(a[2] * k * (.7 + r() * .6))), neg: clamp01(a[3] + (r() - .5) * .12), pos: clamp01(a[4] + (r() - .5) * .12), best: 1.5 + r() * 1.2, followers: a[5], impact: Math.round(n * (700 + a[5] / 1400 * (.6 + r() * .8)))}; }).sort((a, b) => b.n - a.n);
+  const rank = RANK.map(p => { const d = new Date(END); d.setDate(END.getDate() - Math.floor(r() * days)); const ratio = cushionRatio(p[3], p[4], p[5]);
+    return {title: p[0], account: p[1], sentiment: p[2], metric: p[3], value: p[4], med: p[5], ratio, date: d}; }).sort((a, b) => b.ratio - a.ratio).slice(0, 10);
+  return {days, daily, cur, prev, relevantes, relPrev, negPct, negPrev, posPct, posPrev, tops, topsPrev, conv, convPrev, heat, picos, habitual, words, jorge, ciudad, ambos, topics, accounts, rank, start: cur[0].date, end: END};
+}
+
+/* ---------- Tooltip de las visualizaciones (todo por textContent) ---------- */
+const vtip = document.createElement('div'); vtip.className = 'vtip'; document.body.appendChild(vtip);
+function tipShow(x, y, head, rows) {
+  vtip.replaceChildren();
+  const k = document.createElement('span'); k.className = 'k'; k.textContent = head.k; vtip.appendChild(k);
+  if (head.v) { const v = document.createElement('span'); v.className = 'v'; v.textContent = head.v; vtip.appendChild(v); }
+  (rows || []).forEach(rw => { const s = document.createElement('div'); s.className = 's'; const a = document.createElement('span');
+    if (rw.color) { const i = document.createElement('i'); i.style.background = rw.color; a.appendChild(i); }
+    a.appendChild(document.createTextNode(rw.k)); const b = document.createElement('b'); b.textContent = rw.v; s.appendChild(a); s.appendChild(b); vtip.appendChild(s); });
+  vtip.style.left = x + 'px'; vtip.style.top = (y - 12) + 'px'; vtip.classList.add('on');
+}
+const tipHide = () => vtip.classList.remove('on');
+
+/* ---------- Estado y utilidades ---------- */
+const ST = {period: 30, data: null, rendered: false, tables: {}};
+function countTo(el, to, ms, fmtFn) {
+  const from = Number(el.dataset.v || 0); el.dataset.v = to;
+  if (reduced || from === to) { el.textContent = fmtFn(to); return; }
+  const t0 = performance.now(); const step = t => { const kk = Math.min(1, (t - t0) / ms), e = 1 - Math.pow(1 - kk, 3); el.textContent = fmtFn(from + (to - from) * e); if (kk < 1) requestAnimationFrame(step); }; requestAnimationFrame(step);
+}
+function niceTicks(max) { const steps = [1, 2, 5, 10, 20, 25, 50, 100, 200, 500, 1000]; const step = steps.find(s => max / s <= 4) || 1000; const top = Math.ceil(max / step) * step; const t = []; for (let v = 0; v <= top; v += step) t.push(v); return {top, ticks: t}; }
+function topRound(x, y, w, h, r, fill) { r = Math.min(r, h, w / 2); return `<path d="M${x} ${y + h} L${x} ${y + r} Q${x} ${y} ${x + r} ${y} L${x + w - r} ${y} Q${x + w} ${y} ${x + w} ${y + r} L${x + w} ${y + h} Z" fill="${fill}"/>`; }
+const SCOL = {pos: 'var(--viz-pos)', neu: 'var(--viz-neu)', neg: 'var(--viz-neg)'};
+const SHEX = {pos: '#12805f', neu: '#c5ccc8', neg: '#c4522c'};
+function sparkPath(vals, w, h, pad = 2) { const max = Math.max(...vals, 1), min = Math.min(...vals, 0); const n = vals.length; const pts = vals.map((v, i) => [pad + (i / (n - 1)) * (w - 2 * pad), h - pad - ((v - min) / (max - min || 1)) * (h - 2 * pad)]); return {d: pts.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' '), last: pts[pts.length - 1]}; }
+function buckets(arr, nb) { const out = []; const size = arr.length / nb; for (let i = 0; i < nb; i++) { const a = Math.floor(i * size), b = Math.max(a + 1, Math.floor((i + 1) * size)); out.push(arr.slice(a, b).reduce((s, v) => s + v, 0)); } return out; }
+function staticPill(s) { return `<span class="sent ${s}">${s[0].toUpperCase() + s.slice(1)}</span>`; }
+/* Barra divergente centrada en el neutro. `unit` = % de ancho por cada 100% de
+   publicaciones, calculado por tarjeta para que el lado más largo llegue al borde
+   y ninguno se salga. */
+function divUnit(rows) { const side = Math.max(...rows.map(r => Math.max(r.neg, r.pos) + (1 - r.neg - r.pos) / 2)); return 50 / side; }
+function divBar(neg, pos, unit) { const neu = Math.max(0, 1 - neg - pos); const l = 50 - neu * unit / 2;
+  return `<div class="div"><span class="mid"></span><i class="neg" style="left:calc(${(l - neg * unit).toFixed(1)}% + 1px);width:calc(${(neg * unit).toFixed(1)}% - 2px)"></i><i class="neu" style="left:calc(${l.toFixed(1)}% + 1px);width:calc(${(neu * unit).toFixed(1)}% - 2px)"></i><i class="pos" style="left:calc(${(l + neu * unit).toFixed(1)}% + 1px);width:calc(${(pos * unit).toFixed(1)}% - 2px)"></i></div>`; }
+
+/* ---------- Indicadores del período ---------- */
+function renderKpis(S) {
+  const el = document.getElementById('kpis');
+  const delta = (cur, prev, kind) => { const d = (cur - prev) / (prev || 1); const dir = Math.abs(d) < .005 ? 'flat' : d > 0 ? 'up' : 'down'; const cls = kind === 'badUp' ? (dir === 'up' ? 'bad' : dir === 'down' ? 'good' : 'flat') : 'flat'; const sign = d > 0 ? '+' : d < 0 ? '−' : ''; return {cls, txt: `${sign}${Math.abs(Math.round(d * 100))}%`}; };
+  const pts = (arr) => buckets(arr, Math.min(12, arr.length));
+  const ptsDelta = (cur, prev, upIsBad) => { const diff = Math.round((cur - prev) * 100); const cls = diff === 0 ? 'flat' : ((diff > 0) === upIsBad ? 'bad' : 'good'); return {cls, txt: `${diff > 0 ? '+' : diff < 0 ? '−' : ''}${Math.abs(diff)} ${Math.abs(diff) === 1 ? 'punto' : 'puntos'}`}; };
+  const tiles = [
+    {id: 'kRel', lbl: `Publicaciones relevantes`, val: S.relevantes, fmt: v => nf.format(Math.round(v)), d: delta(S.relevantes, S.relPrev, 'neutral'), spark: pts(S.cur.map(x => x.n))},
+    {id: 'kTop', lbl: 'Se despegaron', val: S.tops, fmt: v => nf.format(Math.round(v)), d: delta(S.tops, S.topsPrev, 'neutral'), spark: pts(S.cur.map(x => Math.round(x.n * .075)))},
+    {id: 'kNeg', lbl: 'Con sentimiento negativo', val: S.negPct * 100, fmt: v => Math.round(v) + '%', d: ptsDelta(S.negPct, S.negPrev, true), spark: pts(S.cur.map(x => x.neg))},
+    {id: 'kPos', lbl: 'Con sentimiento positivo', val: S.posPct * 100, fmt: v => Math.round(v) + '%', d: ptsDelta(S.posPct, S.posPrev, false), spark: pts(S.cur.map(x => x.pos))},
+    {id: 'kConv', lbl: 'Likes y comentarios generados', val: S.conv, fmt: v => compact(v), d: delta(S.conv, S.convPrev, 'neutral'), spark: pts(S.cur.map(x => x.n * 1900))},
+  ];
+  const first = !el.children.length;
+  if (first) el.innerHTML = tiles.map(t => `<div class="kpi"><span class="lbl">${t.lbl}</span><span class="val" id="${t.id}">${t.small ? '' : ''}</span><svg class="spark" viewBox="0 0 96 36" aria-hidden="true"></svg><span class="delta"></span></div>`).join('');
+  tiles.forEach((t, i) => { const tile = el.children[i]; const v = tile.querySelector('.val'); countTo(v, t.val, 1000, t.fmt);
+    tile.querySelector('.lbl').textContent = t.lbl + (t.small ? ` (${t.small})` : '');
+    const dl = tile.querySelector('.delta'); dl.className = 'delta ' + t.d.cls; dl.innerHTML = `<b>${t.d.txt}</b> vs. período anterior`;
+    const sp = sparkPath(t.spark, 96, 36, 3); const svg = tile.querySelector('.spark'); svg.innerHTML = `<path class="cur" d="${sp.d}"/><circle cx="${sp.last[0]}" cy="${sp.last[1]}" r="3.5"/>`;
+    if (!reduced) { const p = svg.querySelector('path'); const len = p.getTotalLength(); p.style.strokeDasharray = len; p.style.strokeDashoffset = len; p.animate([{strokeDashoffset: len}, {strokeDashoffset: 0}], {duration: 900, delay: 150 + i * 90, easing: 'ease-out', fill: 'forwards'}); } });
+  document.getElementById('estSub').innerHTML = `Del <b>${fmtDate(S.start)}</b> al <b>${fmtDate(S.end)}</b>, comparado con los ${S.days} días anteriores.`;
+  document.querySelectorAll('.period .dates input')[0].value = S.start.toISOString().slice(0, 10);
+}
+
+/* ---------- Publicaciones por día ---------- */
+function renderDaily(S) {
+  const el = document.getElementById('vizDaily'); if (ST.tables.daily) return renderDailyTable(S);
+  el.classList.remove('hover');
+  const W = Math.max(320, el.clientWidth), H = 232, m = {l: 32, r: 6, t: 16, b: 26};
+  const data = S.cur, n = data.length, plotW = W - m.l - m.r, plotH = H - m.t - m.b;
+  const nt = niceTicks(Math.max(...data.map(d => d.n)) * 1.06), yMax = nt.top;
+  const slot = plotW / n, bw = Math.min(24, slot * .66);
+  const y = v => m.t + plotH - (v / yMax) * plotH;
+  const ticks = nt.ticks;
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Publicaciones relevantes por día, apiladas por sentimiento">`;
+  ticks.forEach(t => { s += `<line class="grid-l" x1="${m.l}" x2="${W - m.r}" y1="${y(t)}" y2="${y(t)}"/><text x="${m.l - 6}" y="${y(t) + 3.5}" text-anchor="end">${t % 1 ? t.toFixed(1) : t}</text>`; });
+  s += `<line class="axis-l" x1="${m.l}" x2="${W - m.r}" y1="${y(0)}" y2="${y(0)}"/>`;
+  const maxI = data.reduce((bi, d, i) => d.n > data[bi].n ? i : bi, 0);
+  data.forEach((d, i) => { const x = m.l + i * slot + (slot - bw) / 2; let yb = y(0); const segs = [['neg', d.neg], ['neu', d.neu], ['pos', d.pos]].filter(sg => sg[1] > 0);
+    let g = `<g class="bar ${reduced ? '' : 'grow'}" style="animation-delay:${i * (n > 40 ? 6 : 18)}ms" data-i="${i}">`;
+    segs.forEach(([k, v], si) => { const h = (v / yMax) * plotH, yt = yb - h, top = si === segs.length - 1;
+      g += top ? topRound(x, yt, bw, h, 4, SCOL[k]) : `<rect x="${x}" y="${yt + 2}" width="${bw}" height="${Math.max(0, h - 2)}" fill="${SCOL[k]}"/>`; yb = yt; });
+    s += g + '</g>';
+    if (i === maxI) s += `<text class="lbl" x="${x + bw / 2}" y="${y(d.n) - 6}" text-anchor="middle">${d.n}</text>`; });
+  const every = n <= 7 ? 1 : n <= 31 ? 5 : 15;
+  data.forEach((d, i) => { if (i % every === 0 || (n <= 7)) s += `<text x="${m.l + i * slot + slot / 2}" y="${H - 8}" text-anchor="middle">${n <= 7 ? DIAS[d.dow] + ' ' + d.date.getDate() : fmtShort(d.date)}</text>`; });
+  data.forEach((d, i) => { s += `<rect class="hit" x="${m.l + i * slot}" y="${m.t}" width="${slot}" height="${plotH}" data-i="${i}" tabindex="0"/>`; });
+  el.innerHTML = s + '</svg>';
+  const bars = el.querySelectorAll('g.bar');
+  const show = (i, cx, cy) => { const d = data[i]; el.classList.add('hover'); bars.forEach((b, j) => b.classList.toggle('on', j === i));
+    tipShow(cx, cy, {k: `${DIAS_L[d.dow]} ${fmtDate(d.date)}`, v: `${d.n} publicaciones`}, [{k: 'Positivo', v: d.pos, color: SHEX.pos}, {k: 'Neutral', v: d.neu, color: SHEX.neu}, {k: 'Negativo', v: d.neg, color: SHEX.neg}]); };
+  el.querySelectorAll('.hit').forEach(h => { h.addEventListener('pointermove', e => show(Number(h.dataset.i), e.clientX, e.clientY)); h.addEventListener('focus', () => { const r = h.getBoundingClientRect(); show(Number(h.dataset.i), r.left + r.width / 2, r.top + 20); }); h.addEventListener('blur', leave); });
+  function leave() { el.classList.remove('hover'); bars.forEach(b => b.classList.remove('on')); tipHide(); }
+  el.querySelector('svg').addEventListener('pointerleave', leave);
+}
+function renderDailyTable(S) { const el = document.getElementById('vizDaily'); el.innerHTML = `<div class="tscroll"><table><thead><tr><th>Día</th><th>Positivas</th><th>Neutrales</th><th>Negativas</th><th>Total</th></tr></thead><tbody>${S.cur.map(d => `<tr><td>${DIAS[d.dow]} ${fmtShort(d.date)}</td><td>${d.pos}</td><td>${d.neu}</td><td>${d.neg}</td><td><b>${d.n}</b></td></tr>`).join('')}</tbody></table></div>`; }
+
+/* ---------- Picos ---------- */
+function renderPicos(S) {
+  const el = document.getElementById('vizPicos');
+  if (!S.picos.length) { el.innerHTML = `<p style="margin:0;color:var(--clay-500);font-size:13.5px">Sin picos en el período: ningún día superó el doble de lo habitual.</p>`; return; }
+  el.innerHTML = S.picos.map(p => `<div class="pico"><div class="x">${p.ratio.toLocaleString('es-AR', {maximumFractionDigits: 1})}×<small>lo habitual</small></div><b>${DIAS_L[p.dow]} ${fmtDate(p.date)}, ${p.n} publicaciones</b><span>Lo explicó: «${esc(p.cause.t)}» (${esc(p.cause.a)})</span></div>`).join('') + `<p class="habitual">Lo habitual en el período: ${S.habitual} publicaciones por día (la mediana).</p>`;
+}
+
+/* ---------- Mapa de calor ---------- */
+function renderHeat(S) {
+  const el = document.getElementById('vizHeat'); if (ST.tables.heat) return renderHeatTable(S);
+  const order = [1, 2, 3, 4, 5, 6, 0]; const max = Math.max(1, ...S.heat.flat());
+  const step = v => v === 0 ? 1 : 2 + Math.min(5, Math.ceil(v / max * 5));
+  let cells = ''; order.forEach((dow, ri) => { for (let h = 0; h < 24; h++) { const v = S.heat[dow][h]; cells += `<div class="cell" style="background:var(--heat-${step(v)});animation-delay:${reduced ? 0 : h * 14 + ri * 8}ms" data-dow="${dow}" data-h="${h}" data-v="${v}" tabindex="0" role="img" aria-label="${DIAS_L[dow]} ${h}:00, ${v} publicaciones"></div>`; } });
+  el.innerHTML = `<div class="heat"><div class="ylab">${order.map(d => `<span class="rl">${DIAS_L[d].slice(0, 3)}</span>`).join('')}</div><div class="cells">${cells}</div><div class="hx">${Array.from({length: 24}, (_, h) => `<span class="${[8, 12, 16, 20].includes(h) ? 'corrida' : ''}">${h % 4 === 0 ? String(h).padStart(2, '0') : ''}</span>`).join('')}</div></div>
+    <div class="heat-legend">menos ${[1,2,3,4,5,6,7].map(i => `<i style="background:var(--heat-${i})"></i>`).join('')} más</div>`;
+  const show = (c, x, y) => tipShow(x, y, {k: `${DIAS_L[c.dataset.dow]}, de ${c.dataset.h}:00 a ${Number(c.dataset.h) + 1}:00`, v: `${c.dataset.v} publicaciones`});
+  el.querySelectorAll('.cell').forEach(c => { c.addEventListener('pointermove', e => show(c, e.clientX, e.clientY)); c.addEventListener('pointerleave', tipHide); c.addEventListener('focus', () => { const r = c.getBoundingClientRect(); show(c, r.left + r.width / 2, r.top); }); c.addEventListener('blur', tipHide); });
+}
+function renderHeatTable(S) { const el = document.getElementById('vizHeat'); const order = [1, 2, 3, 4, 5, 6, 0]; el.innerHTML = `<div class="tscroll"><table><thead><tr><th>Día</th>${Array.from({length: 24}, (_, h) => `<th>${h}</th>`).join('')}</tr></thead><tbody>${order.map(d => `<tr><td>${DIAS_L[d]}</td>${S.heat[d].map(v => `<td>${v || ''}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`; }
+
+/* ---------- Nube de palabras + lista ---------- */
+function renderCloud(S) {
+  const el = document.getElementById('vizCloud'); el.replaceChildren();
+  const W = el.clientWidth, H = el.clientHeight || 330, cx = W / 2, cy = H / 2;
+  const words = S.words.slice(0, 44), max = words[0].n, min = words[words.length - 1].n;
+  const c2d = document.createElement('canvas').getContext('2d'); const placed = [];
+  words.forEach((w, i) => { const size = 13 + Math.sqrt((w.n - min) / (max - min || 1)) * 40; c2d.font = `700 ${size}px "Bricolage Grotesque", sans-serif`; const tw = c2d.measureText(w.w).width + 4, th = size * .98;
+    let a = 0; for (let step = 0; step < 2600; step++) { a += .3; const rad = 1.6 * a; const x = cx + rad * Math.cos(a) - tw / 2, y = cy + rad * Math.sin(a) * .62 - th / 2;
+      if (x < 2 || y < 2 || x + tw > W - 2 || y + th > H - 2) continue;
+      if (placed.some(p => x < p.x + p.w + 5 && x + tw + 5 > p.x && y < p.y + p.h + 3 && y + th + 3 > p.y)) continue;
+      placed.push({x, y, w: tw, h: th}); const s = document.createElement('span'); s.textContent = w.w; s.className = i < 3 ? 't1' : i < 10 ? 't2' : i < 24 ? 't3' : 't4';
+      s.style.cssText = `left:${x.toFixed(1)}px;top:${y.toFixed(1)}px;font-size:${size.toFixed(1)}px;animation-delay:${reduced ? 0 : i * 22}ms`; s.dataset.n = w.n; el.appendChild(s); break; } });
+  el.querySelectorAll('span').forEach(s => { s.addEventListener('pointermove', e => tipShow(e.clientX, e.clientY, {k: s.textContent, v: `${s.dataset.n} publicaciones`})); s.addEventListener('pointerleave', tipHide); });
+}
+function renderHBars(el, rows, max, fmtFn = v => nf.format(v), unit = 'publicaciones') { el.innerHTML = rows.map((r, i) => `<div class="hbar" data-i="${i}"><span class="name" title="${esc(r.name)}">${esc(r.name)}</span><span class="track"><i class="fill" data-w="${(r.n / max * 100).toFixed(1)}"></i></span><span class="v">${fmtFn(r.n)}</span></div>`).join('');
+  requestAnimationFrame(() => el.querySelectorAll('.fill').forEach(f => { f.style.width = f.dataset.w + '%'; }));
+  el.querySelectorAll('.hbar').forEach(h => { const r = rows[Number(h.dataset.i)]; h.addEventListener('pointermove', e => { h.classList.add('hot'); tipShow(e.clientX, e.clientY, {k: r.name, v: r.tip ? '' : `${nf.format(r.n)} ${unit}`}, r.tip || []); }); h.addEventListener('pointerleave', () => { h.classList.remove('hot'); tipHide(); }); }); }
+function renderWords(S) { const rows = S.words.slice(0, 12).map(w => ({name: w.w, n: w.n})); renderHBars(document.getElementById('vizWords'), rows, rows[0].n); }
+
+/* ---------- Jorge Macri y la Ciudad ---------- */
+function renderVs(S) {
+  const el = document.getElementById('vizVs'); const rows = [['Nombran a Jorge Macri', S.jorge, 'Jorge Macri, Blackri, Blacri, jorgemacri'], ['Hablan de la Ciudad o su gestión', S.ciudad, 'Ciudad, GCBA, gobierno porteño, PDLC'], ['Los dos a la vez', S.ambos, '']];
+  el.innerHTML = rows.map(r => `<div class="vrow" data-n="${r[1]}" data-who="${r[0]}"><span class="who">${r[0]}</span><span class="n"><span class="num">0</span><small>%</small></span><span class="meter-t"><i data-w="${(r[1] / S.relevantes * 100).toFixed(1)}"></i></span>${r[2] ? `<span class="note">${r[2]}</span>` : ''}</div>`).join('');
+  requestAnimationFrame(() => el.querySelectorAll('.meter-t i').forEach(i => i.style.width = i.dataset.w + '%'));
+  el.querySelectorAll('.num').forEach((n, i) => countTo(n, Math.round(rows[i][1] / S.relevantes * 100), 900, v => String(Math.round(v))));
+  el.querySelectorAll('.vrow').forEach(rw => { rw.addEventListener('pointermove', e => tipShow(e.clientX, e.clientY, {k: rw.dataset.who, v: `${nf.format(rw.dataset.n)} de ${nf.format(S.relevantes)} publicaciones`})); rw.addEventListener('pointerleave', tipHide); });
+}
+
+/* ---------- Temáticas ---------- */
+function renderTopics(S) {
+  const el = document.getElementById('vizTopics'); if (ST.tables.topics) return renderTopicsTable(S);
+  const max = S.topics[0].n, unit = divUnit(S.topics);
+  el.innerHTML = `<div class="topics"><span class="th">Temática</span><span class="th">Publicaciones</span><span class="th r"></span><span class="th">Sentimiento</span><span class="th">Por semana</span>
+    ${S.topics.map(t => { const sp = sparkPath(t.spark, 90, 22, 3); return `<div class="row-hit" data-name="${esc(t.name)}" data-n="${t.n}" data-neg="${t.neg}" data-pos="${t.pos}" data-last="${t.spark[t.spark.length - 1]}"><span class="name" title="${esc(t.name)}">${esc(t.name)}</span><span class="track"><i class="fill" data-w="${(t.n / max * 100).toFixed(1)}"></i></span><span class="v r">${t.n}</span>${divBar(t.neg, t.pos, unit)}<svg class="spk" viewBox="0 0 90 22" aria-hidden="true"><path d="${sp.d}"/><circle cx="${sp.last[0]}" cy="${sp.last[1]}" r="2.5"/></svg></div>`; }).join('')}</div>`;
+  requestAnimationFrame(() => el.querySelectorAll('.fill').forEach(f => f.style.width = f.dataset.w + '%'));
+  el.querySelectorAll('.row-hit').forEach(rw => { const d = rw.dataset; const neu = 1 - d.neg - d.pos; rw.querySelectorAll('*').forEach(ch => { ch.addEventListener('pointermove', e => tipShow(e.clientX, e.clientY, {k: d.name, v: `${d.n} publicaciones`}, [{k: 'Negativo', v: pct(d.neg), color: SHEX.neg}, {k: 'Neutral', v: pct(neu), color: SHEX.neu}, {k: 'Positivo', v: pct(d.pos), color: SHEX.pos}, {k: 'Última semana', v: d.last}])); ch.addEventListener('pointerleave', tipHide); }); });
+}
+function renderTopicsTable(S) { const el = document.getElementById('vizTopics'); el.innerHTML = `<table><thead><tr><th>Temática</th><th>Publicaciones</th><th>Negativo</th><th>Neutral</th><th>Positivo</th><th>Última semana</th></tr></thead><tbody>${S.topics.map(t => `<tr><td>${esc(t.name)}</td><td>${t.n}</td><td>${pct(t.neg)}</td><td>${pct(1 - t.neg - t.pos)}</td><td>${pct(t.pos)}</td><td>${t.spark[t.spark.length - 1]}</td></tr>`).join('')}</tbody></table>`; }
+
+/* ---------- Quién habla ---------- */
+const ACC_SORT = {impact: {sub: 'Likes y comentarios que generaron hablando de nosotros', fmt: v => compact(v), unit: 'likes y comentarios'}, n: {sub: 'Publicaciones relevantes en el período', fmt: v => nf.format(v), unit: 'publicaciones'}, followers: {sub: 'Seguidores de la cuenta', fmt: v => compact(v), unit: 'seguidores'}};
+function renderAccounts(S) { const el = document.getElementById('vizAccounts'); const key = ST.accSort || 'impact';
+  if (ST.tables.accounts) { el.innerHTML = `<table><thead><tr><th>Cuenta</th><th>Impacto</th><th>Publicaciones</th><th>Seguidores</th><th>Se despegó</th><th>Negativo</th><th>Positivo</th></tr></thead><tbody>${S.accounts.map(a => `<tr><td>${esc(a.name)}</td><td>${nf.format(a.impact)}</td><td>${a.n}</td><td>${nf.format(a.followers)}</td><td>${a.alto}</td><td>${pct(a.neg)}</td><td>${pct(a.pos)}</td></tr>`).join('')}</tbody></table>`; return; }
+  const rows = [...S.accounts].sort((a, b) => b[key] - a[key]).slice(0, 10).map(a => ({name: a.name, n: a[key], tip: [{k: 'Impacto', v: compact(a.impact) + ' likes y comentarios'}, {k: 'Publicaciones', v: String(a.n)}, {k: 'Seguidores', v: compact(a.followers)}]}));
+  document.getElementById('accSortSub').textContent = ACC_SORT[key].sub;
+  renderHBars(el, rows, rows[0].n, ACC_SORT[key].fmt, ACC_SORT[key].unit); }
+document.querySelectorAll('[data-acc-sort]').forEach(b => b.addEventListener('click', () => { ST.accSort = b.dataset.accSort; document.querySelectorAll('[data-acc-sort]').forEach(x => x.classList.toggle('on', x === b)); renderAccounts(ST.data); }));
+function renderUps(S) { const el = document.getElementById('vizUps'); const rows = [...S.accounts].filter(a => a.alto > 0).sort((a, b) => b.alto - a.alto).slice(0, 7);
+  el.innerHTML = rows.map(a => `<div class="up"><b>${esc(a.name)}</b><span class="dots" aria-label="${a.alto} veces">${a.alto <= 8 ? '<i></i>'.repeat(a.alto) : `<span class="r">${a.alto}</span>`}</span><span class="r"><b>${a.alto}</b> ${a.alto === 1 ? 'vez' : 'veces'}, hasta <b>${ratioTxt(a.best)}</b></span></div>`).join(''); }
+function renderAccSent(S) { const el = document.getElementById('vizAccSent'); const rows = S.accounts.slice(0, 8); const unit = divUnit(rows);
+  el.innerHTML = rows.map(a => `<span class="name" title="${esc(a.name)}">${esc(a.name)}</span>${divBar(a.neg, a.pos, unit)}<span class="v">${a.n}</span>`).join('');
+  const kids = [...el.children]; rows.forEach((a, i) => kids.slice(i * 3, i * 3 + 3).forEach(ch => { ch.addEventListener('pointermove', e => tipShow(e.clientX, e.clientY, {k: a.name, v: `${a.n} publicaciones`}, [{k: 'Negativo', v: pct(a.neg), color: SHEX.neg}, {k: 'Neutral', v: pct(1 - a.neg - a.pos), color: SHEX.neu}, {k: 'Positivo', v: pct(a.pos), color: SHEX.pos}])); ch.addEventListener('pointerleave', tipHide); })); }
+
+/* ---------- Ranking ---------- */
+function renderRank(S) { const el = document.getElementById('vizRank');
+  el.innerHTML = S.rank.map((p, i) => `<div class="rk ${p.sentiment === 'negativo' ? 'neg' : ''}" tabindex="0"><span class="pos">${String(i + 1).padStart(2, '0')}</span><span class="ratio">${ratioTxt(p.ratio)}<small>en ${p.metric}</small></span><span class="t">${esc(p.title)}<small>${esc(p.account)}, ${fmtDate(p.date)}</small></span><span class="w"><b>${nf.format(p.value)}</b> ${p.metric} contra una mediana de <b>${nf.format(p.med)}</b></span>${staticPill(p.sentiment)}</div>`).join('');
+  if (!reduced) el.querySelectorAll('.rk').forEach((r, i) => r.animate([{opacity: 0, transform: 'translateY(6px)'}, {opacity: 1, transform: 'none'}], {duration: 360, delay: i * 40, easing: 'cubic-bezier(.22,.8,.3,1)', fill: 'backwards'})); }
+
+/* ---------- Orquestación ---------- */
+function renderStats() { const S = ST.data; renderKpis(S); renderDaily(S); renderPicos(S); renderHeat(S); renderCloud(S); renderWords(S); renderVs(S); renderTopics(S); renderAccounts(S); renderUps(S); renderAccSent(S); renderRank(S); }
+function ensureStats() { if (ST.rendered) return; ST.rendered = true; ST.data = genStats(ST.period); const go = () => renderStats(); (document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve()).then(go); }
+document.querySelectorAll('[data-period]').forEach(b => b.addEventListener('click', () => { if (ST.period === Number(b.dataset.period)) return; document.querySelectorAll('[data-period]').forEach(x => x.classList.toggle('on', x === b)); ST.period = Number(b.dataset.period); ST.data = genStats(ST.period);
+  document.querySelectorAll('.viz').forEach(v => v.classList.add('refetch')); setTimeout(() => { renderStats(); document.querySelectorAll('.viz').forEach(v => v.classList.remove('refetch')); }, 180); }));
+document.querySelectorAll('[data-tbl]').forEach(b => b.addEventListener('click', () => { const k = b.dataset.tbl; ST.tables[k] = !ST.tables[k]; b.setAttribute('aria-pressed', String(!!ST.tables[k])); b.textContent = ST.tables[k] ? 'Gráfico' : 'Tabla'; ({daily: renderDaily, heat: renderHeat, topics: renderTopics, accounts: renderAccounts})[k](ST.data); }));
+let rsT; new ResizeObserver(() => { if (!ST.rendered || document.getElementById('view-estadisticas').classList.contains('hidden')) return; clearTimeout(rsT); rsT = setTimeout(() => { renderDaily(ST.data); renderCloud(ST.data); }, 150); }).observe(document.querySelector('.est'));
+
+/* ---------- Entrada ---------- */
+document.documentElement.classList.add('js');
+fillAccounts(); renderSources(); renderTops(true); renderList(true);
+if (!reduced) { POSTS.slice().sort((a, b) => hours(a.posted) - hours(b.posted)).forEach((p, i) => { p.appear = performance.now() + 300 + i * 70; }); layout(); }
+['.sky-head h1', '.status', '#runBtn', '.legend', '.sec-head', '.list-head', '#list'].forEach((sel, i) => document.querySelectorAll(sel).forEach(el => { el.classList.remove('reveal');
+  if (!reduced) el.animate([{opacity: 0, transform: 'translateY(10px)'}, {opacity: 1, transform: 'none'}], {duration: 560, delay: 60 + i * 110, easing: 'cubic-bezier(.22,.8,.3,1)', fill: 'backwards'}); }));
+</script>
+</body>
+</html>
