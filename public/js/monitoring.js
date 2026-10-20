@@ -382,6 +382,8 @@ function buildSentimentSelect(raw) {
 
   const select = document.createElement('select');
   select.className = `sentiment-select sentiment-${sentiment}`;
+  // Réplica de solo lectura (main.js): se ve, no se cambia.
+  if (document.documentElement.dataset.readonly) select.disabled = true;
 
   // La opción "Sin clasificar" existe sólo mientras el posteo lo esté: es
   // un estado del sistema, no algo que se elija a mano. Elegir cualquier

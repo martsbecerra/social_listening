@@ -4020,3 +4020,42 @@ html.feed-pop-lock body {
     transform: scale(1);
   }
 }
+
+/* ------------------------------------------------------------------ */
+/* Réplica de solo lectura (APP_MODE=replica): public/js/main.js marca  */
+/* <html data-readonly> y agrega la franja. Se esconde lo que escribe   */
+/* o gasta; los selectores de sentimiento y de estado quedan a la vista */
+/* (muestran el valor), deshabilitados. El servidor responde 403 a      */
+/* cualquier escritura que se escape de acá.                            */
+/* ------------------------------------------------------------------ */
+.readonly-bar {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  padding: 7px 16px;
+  background: var(--amber-100);
+  color: var(--amber-700);
+  border-bottom: 1px solid var(--clay-200);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: center;
+}
+.readonly-bar-update {
+  font-weight: 600;
+}
+[data-readonly] .tab-btn[data-tab="analysis"],
+[data-readonly] #tab-analysis,
+[data-readonly] .foot-links a[href$="#tab-analysis"],
+[data-readonly] .add-row,
+[data-readonly] .chip button,
+[data-readonly] .runbar,
+[data-readonly] .ico.del,
+[data-readonly] .feed-pop-btn.danger,
+[data-readonly] .logout-btn {
+  display: none !important;
+}
+[data-readonly] select.sentiment-select:disabled,
+[data-readonly] select.claims-popup-estado:disabled {
+  cursor: default;
+  opacity: 1;
+}

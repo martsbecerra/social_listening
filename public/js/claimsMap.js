@@ -495,7 +495,9 @@ function estadoSelectHtml(reclamo) {
         `<option value="${escapeHtml(e)}"${e === reclamo.estado ? ' selected' : ''}>${escapeHtml(e)}</option>`
     )
     .join('');
-  return `<select class="claims-popup-estado" data-id="${escapeHtml(reclamo.id)}">${options}</select>`;
+  // Réplica de solo lectura (main.js): se ve, no se cambia.
+  const disabled = document.documentElement.dataset.readonly ? ' disabled' : '';
+  return `<select class="claims-popup-estado" data-id="${escapeHtml(reclamo.id)}"${disabled}>${options}</select>`;
 }
 
 function popupHtml(group) {

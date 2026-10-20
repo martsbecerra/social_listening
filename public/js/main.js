@@ -85,6 +85,72 @@ async function initAuthHeader() {
 
 initAuthHeader();
 
+// Réplica de solo lectura (APP_MODE=replica, ver
+// openspec/changes/replicas-solo-lectura): <html data-readonly> esconde por
+// CSS los controles que escriben, una franja dice de cuándo son los datos y
+// la solapa de análisis (que gasta en Apify y en el LLM) no se abre. El
+// servidor es la barrera real: lo que se escape de acá recibe 403.
+function formatReadOnlyDate(iso) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('es-AR', {
+      timeZone: 'America/Argentina/Buenos_Aires',
+      day: '2-digit',
+      month: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    })
+      .formatToParts(d)
+      .map((p) => [p.type, p.value])
+  );
+  return `${parts.day}/${parts.month} ${parts.hour}:${parts.minute}`;
+}
+
+function leaveAnalysisTab() {
+  const analysis = document.querySelector('.tab-btn[data-tab="analysis"]');
+  if (analysis && analysis.classList.contains('active')) {
+    document.querySelector('.tab-btn[data-tab="monitoring"]')?.click();
+  }
+}
+
+async function initReadOnlyMode() {
+  let mode;
+  try {
+    const res = await fetch('/api/app/mode', { credentials: 'same-origin' });
+    if (!res.ok) return;
+    mode = await res.json();
+  } catch {
+    return;
+  }
+  if (!mode || !mode.readOnly) return;
+
+  document.documentElement.dataset.readonly = '1';
+  // Los selectores que ya se dibujaron antes de saber el modo; los nuevos
+  // salen deshabilitados de buildSentimentSelect y estadoSelectHtml.
+  document
+    .querySelectorAll('select.sentiment-select, select.claims-popup-estado')
+    .forEach((select) => (select.disabled = true));
+  const bar = document.createElement('div');
+  bar.className = 'readonly-bar';
+  bar.setAttribute('role', 'status');
+  const fecha = mode.dataAsOf ? formatReadOnlyDate(mode.dataAsOf) : null;
+  bar.textContent = `Copia de solo lectura · ${fecha ? `Datos al ${fecha}` : 'Todavía no hay datos descargados'}`;
+  if (mode.newerAppAvailable) {
+    const aviso = document.createElement('span');
+    aviso.className = 'readonly-bar-update';
+    aviso.textContent = 'Hay una versión nueva de la app: pedí el instalador actualizado';
+    bar.append(' · ', aviso);
+  }
+  document.body.prepend(bar);
+
+  leaveAnalysisTab();
+  document.addEventListener('DOMContentLoaded', leaveAnalysisTab);
+}
+
+initReadOnlyMode();
+
 // Atajos del pie de página: si la URL trae #tab-analysis / #tab-monitoring /
 // #tab-claims-map, abre esa solapa al cargar. Dispara el mismo click que ya
 // usa el usuario — no es un camino de navegación nuevo.
