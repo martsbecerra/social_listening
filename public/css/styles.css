@@ -4001,3 +4001,144 @@ html.feed-pop-lock body {
     transform: scale(1);
   }
 }
+
+/* ══════════════════════════════════════════════════════════
+   RIEL Y RADAR — instagram.html (design/riel-radar-v3.html)
+   El riel lateral oscuro reemplaza a las solapas; el Monitoreo arranca con
+   una franja oscura (el radar del día) y de ahí para abajo la página es
+   clara. Las clases de la maqueta que ya existían con otro estilo (.status,
+   .chip, .add-row, .btn-ghost, .btn, .sec-head) van con alcance (.sky …,
+   .src-panel …) o con nombre propio. Los botones nuevos anulan el estilo
+   global de <button> (ancho completo, degradé, sombra).
+   ══════════════════════════════════════════════════════════ */
+:root {
+  --jade-200: #9fe0c4;
+  --clay-300: #d9c5b2;
+  --coral-400: #e07a58;
+  --coral-300: #f0a080;
+  --line-strong: #c9d6cf;
+  --sky-text: #e8f1ec;
+  --sky-text-2: #a9c2b7;
+  --sky-text-3: #6f8f84;
+  --sky-line: rgba(255, 255, 255, 0.08);
+  --sky-line-2: rgba(255, 255, 255, 0.14);
+  --ease-out: cubic-bezier(0.22, 0.8, 0.3, 1);
+  /* Alto de la cabecera (rail.js lo mide de verdad) y ancho del riel. */
+  --top: 67px;
+  --rail: 76px;
+}
+
+/* ---------- Riel ---------- */
+.shell {
+  flex: 1 0 auto;
+  display: grid;
+  grid-template-columns: var(--rail) minmax(0, 1fr);
+  /* La columna del riel queda oscura hasta el final de la página, aunque
+     el riel (sticky) mida lo que la ventana. */
+  background: linear-gradient(90deg, var(--jade-950) 0 var(--rail), transparent var(--rail));
+}
+.shell-main {
+  position: relative; /* contiene a #tab-monitoring cuando está "oculto" */
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.shell-main > .foot {
+  margin-top: auto;
+}
+.rail {
+  position: sticky;
+  top: var(--top);
+  align-self: start;
+  height: calc(100vh - var(--top));
+  z-index: 28;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 14px 0 16px;
+  background: var(--jade-950);
+  color: var(--sky-text);
+  border-right: 1px solid var(--sky-line);
+}
+.rail-btn,
+.rail-btn:hover:not(:disabled) {
+  position: relative;
+  width: 62px;
+  margin: 0;
+  padding: 10px 0 8px;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  box-shadow: none;
+  transform: none;
+  filter: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.1;
+  color: var(--sky-text-3);
+  transition: color 0.15s, background 0.15s;
+}
+.rail-btn svg {
+  width: 20px;
+  height: 20px;
+}
+.rail-btn:hover:not(:disabled) {
+  color: var(--sky-text);
+  background: rgba(255, 255, 255, 0.07);
+}
+.rail-btn.active {
+  color: var(--jade-200);
+}
+.rail-btn.active::before {
+  content: "";
+  position: absolute;
+  left: -7px;
+  top: 12px;
+  bottom: 12px;
+  width: 3px;
+  border-radius: 3px;
+  background: var(--jade-300);
+}
+.rail-btn .meter {
+  --meter-h: 18px;
+  --bar-w: 2.5px;
+  --bar-gap: 2px;
+  --bar-color: var(--jade-300);
+}
+.rail-btn:not(.active) .meter i {
+  animation: none;
+  transform: scaleY(0.2);
+  background: var(--sky-text-3);
+}
+/* Estadísticas, hasta que exista su pantalla. */
+.rail-btn[aria-disabled="true"],
+.rail-btn[aria-disabled="true"]:hover:not(:disabled) {
+  opacity: 0.4;
+  cursor: default;
+  color: var(--sky-text-3);
+  background: none;
+}
+.rail-foot {
+  margin-top: auto;
+  font-family: "DM Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--sky-text-3);
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+}
+@media (max-width: 900px) {
+  :root {
+    --rail: 62px;
+  }
+  .rail-btn,
+  .rail-btn:hover:not(:disabled) {
+    width: 54px;
+    font-size: 9px;
+  }
+}
