@@ -798,6 +798,35 @@ const getLastFinishedRunAtAnyStmt = db.prepare(`
   ORDER BY finished_at DESC
   LIMIT 1
 `);
+// Estadísticas (src/stats.js): los posteos visibles de una plataforma
+// publicados en un rango, con lo justo para contar y calcular el alcance.
+// posted_at se guarda en ISO UTC con milisegundos ("2026-10-13T16:12:21.000Z"),
+// así que el rango se compara como texto, como en el resto de este archivo.
+const listPostsForStatsStmt = db.prepare(`
+  SELECT id, account, title, caption, sentiment, tema, likes, comments, followers, post_type, posted_at
+  FROM detected_posts
+  WHERE plataforma = ? AND ignored = 0 AND posted_at >= ? AND posted_at < ?
+  ORDER BY posted_at
+`);
+// El primer posteo visible de la plataforma: antes de ese día no hay datos,
+// que no es lo mismo que un día sin publicaciones.
+const getFirstPostedAtStmt = db.prepare(
+  'SELECT MIN(posted_at) AS first FROM detected_posts WHERE plataforma = ? AND ignored = 0 AND posted_at IS NOT NULL'
+);
+// Seguidores por cuenta para Estadísticas: la caché account_followers y, de
+// respaldo, el número del posteo más reciente de la cuenta que lo trae.
+const listCachedFollowersStmt = db.prepare(
+  'SELECT account, followers FROM account_followers WHERE plataforma = ? AND followers IS NOT NULL'
+);
+const listLatestPostFollowersStmt = db.prepare(`
+  SELECT account, followers FROM (
+    SELECT account, followers,
+      ROW_NUMBER() OVER (PARTITION BY account ORDER BY detected_at DESC, posted_at DESC) AS n
+    FROM detected_posts
+    WHERE plataforma = ? AND followers IS NOT NULL AND account IS NOT NULL
+  )
+  WHERE n = 1
+`);
 // Conciliación del costo real (apifyCost.reconcileRealCosts): llamadas con
 // run de Apify conocido y sin usd_real todavía, en una ventana de antigüedad.
 const listApifyCallsPendingRealCostStmt = db.prepare(`
@@ -1630,6 +1659,40 @@ function getLastFinishedRunAtAny() {
   return row ? row.finished_at : null;
 }
 
+/**
+ * Posteos visibles (ignored = 0) de una plataforma publicados entre desdeIso
+ * (incluido) y hastaIso (excluido), en orden de publicación. Para
+ * Estadísticas (src/stats.js), que cuenta y calcula el alcance de cada uno.
+ * @returns {{id: string, account: string|null, title: string|null, caption: string|null,
+ *   sentiment: string|null, tema: string|null, likes: number|null, comments: number|null,
+ *   followers: number|null, post_type: string|null, posted_at: string}[]}
+ */
+function listPostsForStats({ plataforma, desdeIso, hastaIso }) {
+  requirePlataforma(plataforma, 'listPostsForStats');
+  return listPostsForStatsStmt.all(plataforma, desdeIso, hastaIso);
+}
+
+/** @returns {string|null} posted_at (ISO) del primer posteo visible de la plataforma, o null si no hay ninguno. */
+function getFirstPostedAt(plataforma) {
+  requirePlataforma(plataforma, 'getFirstPostedAt');
+  const row = getFirstPostedAtStmt.get(plataforma);
+  return row ? row.first : null;
+}
+
+/**
+ * Seguidores por cuenta de una plataforma, para Estadísticas: el de
+ * account_followers y, si la cuenta no está ahí, el del posteo más reciente
+ * de la cuenta que lo trae.
+ * @returns {Map<string, number>}
+ */
+function listFollowersForStats(plataforma) {
+  requirePlataforma(plataforma, 'listFollowersForStats');
+  const map = new Map();
+  for (const row of listLatestPostFollowersStmt.all(plataforma)) map.set(row.account, row.followers);
+  for (const row of listCachedFollowersStmt.all(plataforma)) map.set(row.account, row.followers); // la caché manda
+  return map;
+}
+
 /** @returns {{id: number, runId: number|null, apifyRunId: string, usd: number, at: string}[]} llamadas con run conocido y sin costo real, con `at` entre newerThanIso y olderThanIso. */
 function listApifyCallsPendingRealCost({ olderThanIso, newerThanIso, limit = 100 }) {
   return listApifyCallsPendingRealCostStmt.all({ olderThanIso, newerThanIso, limit: Math.max(1, Math.floor(Number(limit)) || 100) });
@@ -1960,6 +2023,9 @@ module.exports = {
   getLastFinishedRunAtAny,
   getLastFinishedRun,
   listPostsDetectedBetween,
+  listPostsForStats,
+  getFirstPostedAt,
+  listFollowersForStats,
   sumApifyCallsSince,
   listApifyCallsPendingRealCost,
   setApifyCallRealCost,
