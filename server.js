@@ -56,6 +56,7 @@ const { processPendingReclamosInBackground } = require('./src/geoWorker');
 const accountStats = require('./src/accountStats');
 const postImageRoutes = require('./src/postImageRoutes');
 const { buildLastRun } = require('./src/lastRun');
+const statsRoutes = require('./src/statsRoutes');
 const { CATEGORIAS_RECLAMO, ESTADOS_RECLAMO, isValidEstado } = require('./src/categoriaReclamo');
 const { subcategoriasDe, CATEGORIAS: TEMAS_POSTEO } = require('./src/categoriasConfig');
 const { parseReclamosFilters, isValidReclamosPlataforma } = require('./src/reclamosQuery');
@@ -499,6 +500,16 @@ app.get('/api/monitoring/posts', (req, res) => {
 // /api/ y con la plataforma ya validada por el middleware de arriba:
 // GET /api/monitoring/posts/:id/image?plataforma=instagram&size=thumb|full
 postImageRoutes.register(app);
+
+// Estadísticas: todos los bloques del período en una sola respuesta, con la
+// plataforma ya validada por el middleware de arriba:
+// GET /api/monitoring/stats?plataforma=instagram&desde=AAAA-MM-DD&hasta=AAAA-MM-DD
+// Las frases de la nube de palabras son las palabras clave y búsquedas de la
+// plataforma; el alcance, solo donde el adapter tiene benchmark.
+statsRoutes.register(app, {
+  configFor: (plataforma) => monitor.loadConfig(plataforma),
+  conAlcance: (plataforma) => Boolean(getPlatform(plataforma).capabilities?.benchmark),
+});
 
 // Las fuentes de la plataforma y, para el filtro "Tema" del Monitoreo, los
 // temas posibles de un posteo: las categorías de primer nivel del mapa de

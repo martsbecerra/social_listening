@@ -450,3 +450,87 @@ describe('stats: la respuesta armada desde la base', { concurrency: false }, () 
     assert.throws(() => stats.armarEstadisticas({ ahora: AHORA }), (err) => err.status === 400);
   });
 });
+
+// La ruta, en una app de prueba en un puerto local de esta máquina, montada
+// con statsRoutes.register como en server.js (el login y el chequeo de
+// plataforma de /api/monitoring quedan en server.js). Usa los posteos de
+// marzo del bloque de arriba con fechas explícitas: el resultado no depende
+// del día en que corra el test.
+describe('GET /api/monitoring/stats', { concurrency: false }, () => {
+  const express = require('express');
+  const statsRoutes = require('../src/statsRoutes');
+  let server;
+  let base;
+  let configFor = () => ({ keywords: ['Jorge Macri'], searches: ['gobierno de la ciudad'] });
+
+  test('arranca la app de prueba', async () => {
+    const app = express();
+    statsRoutes.register(app, { configFor: (p) => configFor(p), conAlcance: (p) => p === 'instagram' });
+    await new Promise((resolve) => {
+      server = app.listen(0, '127.0.0.1', resolve);
+    });
+    base = `http://127.0.0.1:${server.address().port}`;
+  });
+
+  test('responde todos los bloques del período en un solo JSON', async () => {
+    const res = await fetch(`${base}/api/monitoring/stats?plataforma=instagram&desde=2026-03-12&hasta=2026-03-20`);
+    assert.equal(res.status, 200);
+    const r = await res.json();
+    assert.deepEqual(Object.keys(r), [
+      'periodo',
+      'anterior',
+      'resumen',
+      'porDia',
+      'habitual',
+      'picos',
+      'porHora',
+      'palabras',
+      'menciones',
+      'semanas',
+      'temas',
+      'cuentas',
+      'ranking',
+    ]);
+    assert.equal(r.resumen.relevantes, 17);
+    assert.equal(r.resumen.relevantesAnterior, null); // el anterior (3 al 11 de marzo) es antes del primer posteo
+    assert.equal(r.resumen.seDespegaron, 2);
+    assert.ok(r.palabras.some((p) => p.palabra === 'gobierno de la ciudad'), 'las búsquedas también son frases');
+  });
+
+  test('fechas mal pedidas: 400 con el mensaje', async () => {
+    for (const [query, mensaje] of [
+      ['desde=2026-03-12', /juntas/],
+      ['desde=12/03/2026&hasta=2026-03-20', /AAAA-MM-DD/],
+      ['desde=2026-03-20&hasta=2026-03-12', /posterior/],
+    ]) {
+      const res = await fetch(`${base}/api/monitoring/stats?plataforma=instagram&${query}`);
+      assert.equal(res.status, 400, query);
+      assert.match((await res.json()).error, mensaje);
+    }
+  });
+
+  test('sin plataforma: 400', async () => {
+    const res = await fetch(`${base}/api/monitoring/stats`);
+    assert.equal(res.status, 400);
+    assert.match((await res.json()).error, /plataforma/);
+  });
+
+  test('un error inesperado: 500 con un mensaje genérico', async () => {
+    configFor = () => {
+      throw new Error('config ilegible');
+    };
+    const errorOriginal = console.error;
+    console.error = () => {};
+    try {
+      const res = await fetch(`${base}/api/monitoring/stats?plataforma=instagram`);
+      assert.equal(res.status, 500);
+      assert.match((await res.json()).error, /No se pudieron armar las estadísticas/);
+    } finally {
+      console.error = errorOriginal;
+    }
+  });
+
+  test('cierra la app de prueba', async () => {
+    await new Promise((resolve) => server.close(resolve));
+  });
+});
