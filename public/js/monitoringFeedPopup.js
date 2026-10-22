@@ -1,9 +1,9 @@
 // --------------------------------------------------------------------
 // Pop-up "Ver más" del feed del Monitoreo de Instagram: el posteo completo,
 // con la foto a la izquierda y el texto, las métricas y las acciones a la
-// derecha, y el paso al posteo anterior y al siguiente. Calcado de
-// design/monitoreo-popup.html (estilos en public/css/styles.css, clases
-// feed-pop-*).
+// derecha, y el paso al posteo anterior y al siguiente (estilos en
+// public/css/styles.css, clases feed-pop-*; la maqueta vigente es
+// design/social-listening-v4.html).
 //
 // Lo carga SOLO instagram.html, después de monitoringFeed.js, y se apoya en
 // lo que ese archivo y monitoring.js ya definen: las tarjetas del feed, la

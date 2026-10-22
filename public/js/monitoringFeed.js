@@ -1,8 +1,8 @@
 // --------------------------------------------------------------------
 // Vista "Feed" de la solapa Monitoreo en vivo de Instagram: las mismas
-// publicaciones y los mismos filtros que la tabla, en tarjetas. Calcado de
-// design/monitoreo-feed.html (estilos en public/css/styles.css, clases
-// feed-*).
+// publicaciones y los mismos filtros que la tabla, en tarjetas (estilos en
+// public/css/styles.css, clases feed-*; la maqueta vigente es
+// design/social-listening-v4.html).
 //
 // Lo carga SOLO instagram.html, después de monitoring.js, y se apoya en lo
 // que ese archivo ya define: monitoringTable (la fuente de los posteos, ya
@@ -16,7 +16,7 @@ const feedViewSegEl = document.getElementById('viewSeg');
 const feedOrderEl = document.getElementById('fOrden');
 const feedTableWrapEl = document.getElementById('monitoringTable').closest('.tbl-wrap');
 
-// Última vista elegida; si no hay ninguna, el feed (design/riel-radar-v3.html).
+// Última vista elegida; si no hay ninguna, el feed.
 // localStorage puede no estar (modo privado, almacenamiento bloqueado): en
 // ese caso vale el feed y no se recuerda nada.
 const FEED_VIEW_KEY = 'sl.monitoreo.vista';
@@ -253,7 +253,7 @@ function buildFeedMetrics(post, reach) {
 
 // Pie: arriba el motivo (cortado con "…") y "Abrir ↗"; abajo el selector de
 // sentimiento y, al lado, el medidor de alcance (buildReachMeter de
-// monitoring.js), como en design/riel-radar-v3.html. Son dos renglones,
+// monitoring.js). Son dos renglones,
 // igual que antes: el medidor no le suma alto a la tarjeta (styles.css).
 function buildFeedFoot(post, reach) {
   const foot = feedNode('div', 'feed-foot');
@@ -581,8 +581,8 @@ function feedGoToCard(id) {
 
 // Aviso de monitoring.js (ver monitoringViewListeners).
 function onMonitoringChange(change) {
-  // Los avisos de "Actualizar ahora" son para el radar: el feed se redibuja
-  // con el aviso de los datos nuevos, que llega aparte.
+  // Los avisos de "Actualizar ahora" no son para el feed: se redibuja con el
+  // aviso de los datos nuevos, que llega aparte.
   if (change && change.run) return false;
   if (change && change.goToId !== undefined) return feedGoToCard(change.goToId);
   if (change && change.ignoredId !== undefined) {

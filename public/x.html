@@ -8,11 +8,12 @@
   <link rel="icon" href="favicon.svg" type="image/svg+xml" />
   <link rel="icon" href="favicon-32.png" type="image/png" sizes="32x32" />
   <link rel="apple-touch-icon" href="apple-touch-icon.png" />
-  <meta name="theme-color" content="#032a23" />
+  <meta name="theme-color" content="#f3f5fb" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#0b1020" media="(prefers-color-scheme: dark)" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link
-    href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=Instrument+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap"
+    href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
     rel="stylesheet"
   />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -21,67 +22,52 @@
 </head>
 
 <body data-platform="x">
-  <header class="topbar">
-    <div class="crumb">
-      <a class="brand" href="dashboard.html">
-        <div class="meter" data-meter="5"></div>
-        <span class="brand-name"><span>social</span> <b>listening</b></span>
-      </a>
-      <span class="crumb-sep">/</span>
-      <span class="crumb-here">
-        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-          <path d="M14.234 10.162 22.977 0h-2.072l-7.591 8.824L7.251 0H.258l9.168 13.343L.258 24H2.33l8.016-9.318L16.749 24h6.993zm-2.837 3.299-.929-1.329L3.076 1.56h3.182l5.965 8.532.929 1.329 7.754 11.09h-3.182z" />
-        </svg>
-        X
-      </span>
-    </div>
-    <div class="topbar-user">
-      <button class="user-btn" data-dropdown="userDropdown" type="button">
-        <span class="avatar"></span>
-        <span class="user-name"></span>
-      </button>
-      <div id="userDropdown" class="user-dropdown hidden">
-        <span class="user-email"></span>
-        <button type="button" class="logout-btn">Cerrar sesión</button>
+  <!-- Barra superior (design/social-listening-v4.html), la misma que en
+       instagram.html. X no tiene Estadísticas; abre en Análisis, como antes. -->
+  <header class="top">
+    <div class="top-in">
+      <a class="brand" href="dashboard.html"><span class="logo" aria-hidden="true">◎</span><span>Social Listening<small>DGAYD · GCBA</small></span></a>
+      <nav class="tabs" role="tablist" aria-label="Secciones">
+        <span class="pill" aria-hidden="true"></span>
+        <button type="button" role="tab" data-tab="monitoring" aria-controls="tab-monitoring" aria-selected="false"><span class="k">1</span>Monitoreo</button>
+        <button type="button" role="tab" data-tab="claims-map" aria-controls="tab-claims-map" aria-selected="false"><span class="k">2</span>Mapa</button>
+        <button type="button" role="tab" data-tab="analysis" aria-controls="tab-analysis" aria-selected="true"><span class="k">3</span>Análisis de publicación</button>
+      </nav>
+      <div class="status">
+        <a class="plat" href="dashboard.html" title="Elegir plataforma"><i class="x" aria-hidden="true"></i>X</a>
+        <span class="live off" id="topLive" tabindex="0"><i aria-hidden="true"></i><span id="topLiveText">—</span></span>
+        <div class="user-wrap">
+          <button class="user user-btn" data-dropdown="userDropdown" type="button" aria-haspopup="true" aria-expanded="false">
+            <span class="av avatar"></span>
+            <span class="user-name"></span>
+          </button>
+          <div id="userDropdown" class="user-dropdown hidden">
+            <span class="user-email"></span>
+            <button type="button" class="logout-btn">Cerrar sesión</button>
+          </div>
+        </div>
       </div>
     </div>
   </header>
 
-  <nav class="tabs">
-    <div class="tabs-group">
-      <button class="tab-btn active" data-tab="analysis">
-        <svg class="glyph glyph-an" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1"
-          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M3 20h18" stroke-width="1.5" opacity=".3" />
-          <path class="trend" d="M4 16.5 9 12 13 14.5 20 6" />
-          <circle class="head" cx="20" cy="6" r="2.2" fill="currentColor" stroke="none" />
-        </svg>
-        Análisis de publicación
-      </button>
-      <button class="tab-btn" data-tab="monitoring"><div class="meter" data-meter="4"></div>Monitoreo en vivo</button>
-      <button class="tab-btn" data-tab="claims-map">
-        <svg class="glyph glyph-mp" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true">
-          <circle class="ping" cx="12" cy="10" r="7" stroke-width="1.5" />
-          <path d="M12 21s6-5.7 6-10a6 6 0 1 0-12 0c0 4.3 6 10 6 10Z" />
-          <circle cx="12" cy="10.4" r="2.1" fill="currentColor" stroke="none" />
-        </svg>
-        Mapa de reclamos
-      </button>
-    </div>
-  </nav>
+  <main class="page">
+  <section id="tab-analysis" class="tab-panel" role="tabpanel" aria-label="Análisis de publicación">
+    <div class="ana-wrap">
+      <div class="head rv">
+        <div>
+          <h1>Análisis de publicación</h1>
+          <p>Pegá el link de una publicación de X y obtené un reporte ejecutivo listo para WhatsApp.</p>
+        </div>
+      </div>
 
-  <section id="tab-analysis" class="tab-panel">
-    <div class="container">
-      <p class="tag panel-eyebrow">Análisis</p>
-      <h1 class="display">Análisis de sentimiento en X</h1>
-      <p class="sub">Pegá el link de una publicación y obtené un reporte ejecutivo listo para WhatsApp.</p>
+      <div class="card rv">
+        <label for="url" class="sr">Link de la publicación</label>
+        <div class="urlbar">
+          <input type="text" id="url" placeholder="https://x.com/usuario/status/1234567890" autocomplete="off" />
+          <button id="analyzeBtn" class="btn primary" type="button">Analizar</button>
+        </div>
 
-      <div class="card">
-        <label for="url">Link de la publicación</label>
-        <input type="text" id="url" placeholder="https://x.com/usuario/status/1234567890" autocomplete="off" />
-        <button id="analyzeBtn">Analizar publicación</button>
-
-        <div id="status" class="status hidden">
+        <div id="status" class="load-status hidden">
           <div>
             <span class="spinner"></span>
             <span id="statusText" class="status-text">Buscando el hilo en X con Grok…</span>
@@ -98,9 +84,9 @@
         <div class="result-header">
           <span id="meta" class="hidden"></span>
           <div class="actions">
-            <button id="clearBtn" class="btn-small btn-clear">Limpiar</button>
-            <button id="csvBtn" class="btn-small btn-copy">Descargar CSV</button>
-            <button id="copyBtn" class="btn-small btn-copy">Copiar</button>
+            <button id="clearBtn" class="btn-small btn-clear" type="button">Limpiar</button>
+            <button id="csvBtn" class="btn-small btn-copy" type="button">Descargar CSV</button>
+            <button id="copyBtn" class="btn-small btn-copy" type="button">Copiar</button>
             <button id="waShareBtn" type="button" class="btn-small btn-whatsapp" aria-label="Compartir por WhatsApp"
               title="Compartir por WhatsApp">
               <svg class="btn-whatsapp-icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
@@ -122,152 +108,155 @@
     </div>
   </section>
 
-  <section id="tab-monitoring" class="tab-panel hidden">
-    <div class="container-wide">
-      <p class="tag panel-eyebrow">Monitoreo</p>
-      <h1 class="display">Monitoreo en vivo</h1>
-      <p class="sub">Detección automática de menciones en X cada 4 horas.</p>
-
-      <div class="card config">
-        <div>
-          <h3 class="tag">Cuentas trackeadas</h3>
-          <div class="add-row">
-            <input type="text" id="newAccount" placeholder="usuario (sin @)" autocomplete="off" />
-            <button id="addAccountBtn" class="btn-ghost">Agregar</button>
-          </div>
-          <p id="accountError" class="error hidden" style="margin-top:8px;"></p>
-          <div id="accountListPreview" class="chips">
-            <button id="viewAllAccountsBtn" class="chip-more hidden"></button>
-          </div>
-        </div>
-        <div>
-          <h3 class="tag">Palabras clave / hashtags</h3>
-          <div class="add-row">
-            <input type="text" id="newKeyword" placeholder="Jorge Macri o #JorgeMacri" autocomplete="off" />
-            <button id="addKeywordBtn" class="btn-ghost">Agregar</button>
-          </div>
-          <p id="keywordError" class="error hidden" style="margin-top:8px;"></p>
-          <div id="keywordListPreview" class="chips">
-            <button id="viewAllKeywordsBtn" class="chip-more hidden"></button>
-          </div>
-        </div>
-      </div>
-
-      <div class="runbar">
-        <button id="runNowBtn" class="btn">Actualizar ahora</button>
-        <span class="live">
-          <div class="meter" data-meter="7"></div>
-          <span><b>Escuchando</b> · <span id="monitoringNextRun">próxima corrida –</span></span>
-        </span>
-      </div>
-
-      <!-- Progreso de "Actualizar ahora" (el mismo recuadro que en
-           instagram.html; lo maneja public/js/monitoring.js). -->
-      <div id="monitoringStatusCard" class="card hidden">
-        <div id="monitoringProgress" class="run-progress">
-          <div class="run-progress-head" role="status" aria-live="polite">
-            <span id="monitoringStatusIcon" class="spinner"></span>
-            <span class="run-progress-text">
-              <span id="monitoringStatusText" class="run-progress-title">Buscando posteos nuevos…</span>
-              <span id="monitoringStatusCount" class="run-progress-count"></span>
-            </span>
-            <button type="button" id="monitoringProgressHide" class="run-progress-hide hidden">Ocultar</button>
-          </div>
-          <div class="progress-track">
-            <div id="monitoringProgressFill" class="progress-fill"></div>
-          </div>
-          <ol id="monitoringProgressList" class="run-progress-list" aria-label="Últimos pasos"></ol>
-        </div>
-      </div>
-
-      <p id="monitoringLoadError" class="error hidden"></p>
-
-      <div id="monitoringHighlightsSection" class="hidden">
-        <div class="sec-head">
-          <h2>Se despegaron</h2>
-          <span>Posteos muy por encima del promedio de su propia cuenta</span>
-        </div>
-        <div class="cards" id="cards"></div>
-      </div>
-
-      <div class="filters">
-        <div class="frow">
-          <span class="frow-lbl tag">Filtrar</span>
-
-          <select id="fSent" aria-label="Filtrar por sentimiento">
-            <option value="">Sentimiento</option>
-            <option value="positivo">Positivo</option>
-            <option value="neutral">Neutral</option>
-            <option value="negativo">Negativo</option>
-            <option value="sin_clasificar">Sin clasificar</option>
-          </select>
-
-          <div class="acc-select" id="fAccSelect">
-            <button type="button" class="acc-select-btn" id="fAccBtn" aria-haspopup="listbox" aria-expanded="false">
-              Cuenta
-            </button>
-            <div class="acc-select-panel hidden" id="fAccPanel" role="listbox" aria-label="Cuenta"></div>
-          </div>
-
-          <input type="date" id="fDesde" aria-label="Fecha desde" />
-          <input type="date" id="fHasta" aria-label="Fecha hasta" />
-
-          <input type="search" id="q" placeholder="Buscar título, cuenta o texto del posteo..." />
-
-          <span class="f-count">Mostrando <b id="n">0</b> de <b id="m">0</b> posteos</span>
-          <button class="f-clear" id="clear" type="button" disabled>Limpiar</button>
-        </div>
-      </div>
-
-      <div class="card tbl-wrap">
-        <div id="monitoringTable"></div>
+  <section id="tab-monitoring" class="tab-panel hidden" role="tabpanel" aria-label="Monitoreo">
+    <div class="head rv">
+      <div>
+        <h1>Monitoreo en vivo</h1>
+        <p>Detección automática de menciones en X cada 4 horas.</p>
       </div>
     </div>
-  </section>
 
-  <section id="tab-claims-map" class="tab-panel hidden">
-    <div class="container-wide">
-      <p class="tag panel-eyebrow">Reclamos</p>
-      <h1 class="display">Mapa de reclamos</h1>
-      <p class="sub">Reclamos con dirección detectados en los hilos analizados de X.</p>
-
-      <div class="card claims-filters-card">
-        <div class="claims-filters-row">
-          <div id="claimsCategoriaSelect"></div>
-          <div id="claimsSubcategoriaSelect"></div>
-          <div id="claimsEstadoSelect"></div>
-          <select id="claimsBarrio">
-            <option value="">Barrio</option>
-          </select>
-          <select id="claimsComuna">
-            <option value="">Comuna</option>
-          </select>
-          <input type="date" id="claimsDesde" />
-          <input type="date" id="claimsHasta" />
-          <input
-            type="text"
-            id="claimsBuscar"
-            class="claims-search"
-            placeholder="Buscar dirección o texto del comentario…"
-            autocomplete="off"
-          />
-          <button type="button" id="claimsClearBtn" class="btn-small btn-clear">Limpiar</button>
+    <div class="card config rv">
+      <div>
+        <h3 class="tag">Cuentas trackeadas</h3>
+        <div class="add-row">
+          <input type="text" id="newAccount" placeholder="usuario (sin @)" autocomplete="off" />
+          <button id="addAccountBtn" class="btn-ghost" type="button">Agregar</button>
         </div>
-        <div id="claimsLeyenda" class="claims-leyenda"></div>
+        <p id="accountError" class="error hidden"></p>
+        <div id="accountListPreview" class="chips">
+          <button id="viewAllAccountsBtn" class="chip-more hidden"></button>
+        </div>
       </div>
-
-      <p id="claimsMapError" class="error hidden"></p>
-
-      <div class="card claims-map-card">
-        <div id="claims-map"></div>
-        <div id="claimsMapEmpty" class="hidden muted claims-map-empty">
-          <div class="meter" data-meter="16"></div>
-          <h3 id="claimsMapEmptyTitle" data-default-title="Todavía no hay reclamos ubicados">Todavía no hay reclamos ubicados</h3>
-          <p id="claimsMapEmptyText" data-default-text="Cuando el análisis de X detecte un hilo con una dirección, van a aparecer acá.">Cuando el análisis de X detecte un hilo con una dirección, van a aparecer acá.</p>
+      <div>
+        <h3 class="tag">Palabras clave / hashtags</h3>
+        <div class="add-row">
+          <input type="text" id="newKeyword" placeholder="Jorge Macri o #JorgeMacri" autocomplete="off" />
+          <button id="addKeywordBtn" class="btn-ghost" type="button">Agregar</button>
+        </div>
+        <p id="keywordError" class="error hidden"></p>
+        <div id="keywordListPreview" class="chips">
+          <button id="viewAllKeywordsBtn" class="chip-more hidden"></button>
         </div>
       </div>
     </div>
+
+    <div class="runbar">
+      <button id="runNowBtn" class="btn primary" type="button">▶ Actualizar ahora</button>
+      <span class="live">
+        <div class="meter" data-meter="7"></div>
+        <span><b>Escuchando</b> · <span id="monitoringNextRun">próxima corrida –</span></span>
+      </span>
+    </div>
+
+    <!-- Progreso de "Actualizar ahora" (el mismo recuadro que en
+         instagram.html; lo maneja public/js/monitoring.js). -->
+    <div id="monitoringStatusCard" class="run-card hidden">
+      <div id="monitoringProgress" class="run-progress">
+        <div class="run-progress-head" role="status" aria-live="polite">
+          <span id="monitoringStatusIcon" class="spinner"></span>
+          <span class="run-progress-text">
+            <span id="monitoringStatusText" class="run-progress-title">Buscando posteos nuevos…</span>
+            <span id="monitoringStatusCount" class="run-progress-count"></span>
+          </span>
+          <button type="button" id="monitoringProgressHide" class="run-progress-hide hidden">Ocultar</button>
+        </div>
+        <div class="progress-track">
+          <div id="monitoringProgressFill" class="progress-fill"></div>
+        </div>
+        <ol id="monitoringProgressList" class="run-progress-list" aria-label="Últimos pasos"></ol>
+      </div>
+    </div>
+
+    <p id="monitoringLoadError" class="error hidden"></p>
+
+    <div id="monitoringHighlightsSection" class="hidden">
+      <div class="sec-head">
+        <h2>Se despegaron</h2>
+        <span>Posteos muy por encima del promedio de su propia cuenta</span>
+      </div>
+      <div class="cards" id="cards"></div>
+    </div>
+
+    <div class="filters" style="margin-top:20px">
+      <div class="frow">
+        <span class="frow-lbl tag">Filtrar</span>
+
+        <select id="fSent" aria-label="Filtrar por sentimiento">
+          <option value="">Sentimiento</option>
+          <option value="positivo">Positivo</option>
+          <option value="neutral">Neutral</option>
+          <option value="negativo">Negativo</option>
+          <option value="sin_clasificar">Sin clasificar</option>
+        </select>
+
+        <div class="acc-select" id="fAccSelect">
+          <button type="button" class="acc-select-btn" id="fAccBtn" aria-haspopup="listbox" aria-expanded="false">
+            Cuenta
+          </button>
+          <div class="acc-select-panel hidden" id="fAccPanel" role="listbox" aria-label="Cuenta"></div>
+        </div>
+
+        <input type="date" id="fDesde" aria-label="Fecha desde" />
+        <input type="date" id="fHasta" aria-label="Fecha hasta" />
+
+        <input type="search" id="q" placeholder="Buscar título, cuenta o texto del posteo..." />
+
+        <span class="f-count">Mostrando <b id="n">0</b> de <b id="m">0</b> posteos</span>
+        <button class="f-clear" id="clear" type="button" disabled>Limpiar</button>
+      </div>
+    </div>
+
+    <div class="card tbl-wrap">
+      <div id="monitoringTable"></div>
+    </div>
   </section>
+
+  <section id="tab-claims-map" class="tab-panel hidden" role="tabpanel" aria-label="Mapa de reclamos">
+    <div class="head rv">
+      <div>
+        <h1>Mapa de reclamos</h1>
+        <p>Reclamos con dirección detectados en los hilos analizados de X.</p>
+      </div>
+    </div>
+
+    <div class="card claims-filters-card rv">
+      <div class="claims-filters-row">
+        <div id="claimsCategoriaSelect"></div>
+        <div id="claimsSubcategoriaSelect"></div>
+        <div id="claimsEstadoSelect"></div>
+        <select id="claimsBarrio">
+          <option value="">Barrio</option>
+        </select>
+        <select id="claimsComuna">
+          <option value="">Comuna</option>
+        </select>
+        <input type="date" id="claimsDesde" />
+        <input type="date" id="claimsHasta" />
+        <input
+          type="text"
+          id="claimsBuscar"
+          class="claims-search"
+          placeholder="Buscar dirección o texto del comentario…"
+          autocomplete="off"
+        />
+        <button type="button" id="claimsClearBtn" class="btn-small btn-clear">Limpiar</button>
+      </div>
+      <div id="claimsLeyenda" class="claims-leyenda"></div>
+    </div>
+
+    <p id="claimsMapError" class="error hidden"></p>
+
+    <div class="card claims-map-card rv">
+      <div id="claims-map"></div>
+      <div id="claimsMapEmpty" class="hidden claims-map-empty">
+        <div class="meter" data-meter="16"></div>
+        <h3 id="claimsMapEmptyTitle" data-default-title="Todavía no hay reclamos ubicados">Todavía no hay reclamos ubicados</h3>
+        <p id="claimsMapEmptyText" data-default-text="Cuando el análisis de X detecte un hilo con una dirección, van a aparecer acá.">Cuando el análisis de X detecte un hilo con una dirección, van a aparecer acá.</p>
+      </div>
+    </div>
+  </section>
+  </main>
 
   <!-- Pie: lo arma public/js/footer.js -->
   <footer id="siteFooter"></footer>
@@ -276,8 +265,8 @@
     <div class="modal-box">
       <p>¿Seguro que querés ignorar esta publicación?</p>
       <div class="modal-actions">
-        <button id="ignoreCancelBtn" class="btn-clear">Cancelar</button>
-        <button id="ignoreConfirmBtn">Sí, ignorar</button>
+        <button id="ignoreCancelBtn" class="btn" type="button">Cancelar</button>
+        <button id="ignoreConfirmBtn" class="btn primary" type="button">Sí, ignorar</button>
       </div>
     </div>
   </div>
@@ -286,7 +275,7 @@
     <div class="modal-box modal-box-wide">
       <div class="modal-header">
         <p>Palabras clave / hashtags</p>
-        <button id="keywordsModalCloseBtn" class="btn-small btn-clear">Cerrar</button>
+        <button id="keywordsModalCloseBtn" class="btn-small btn-clear" type="button">Cerrar</button>
       </div>
       <ul id="keywordListFull" class="tag-list"></ul>
     </div>
@@ -296,7 +285,7 @@
     <div class="modal-box modal-box-wide">
       <div class="modal-header">
         <p>Cuentas trackeadas</p>
-        <button id="accountsModalCloseBtn" class="btn-small btn-clear">Cerrar</button>
+        <button id="accountsModalCloseBtn" class="btn-small btn-clear" type="button">Cerrar</button>
       </div>
       <ul id="accountListFull" class="tag-list"></ul>
     </div>
@@ -304,11 +293,13 @@
 
   <script src="js/meter.js"></script>
   <script src="js/main.js"></script>
+  <script src="js/tip.js"></script>
   <script src="js/temasEditor.js"></script>
   <script src="js/x-analysis.js"></script>
   <script src="https://unpkg.com/tabulator-tables@6.3.0/dist/js/tabulator.min.js"></script>
   <script>window.SL_PLATFORM = 'x';</script>
   <script src="js/monitoring.js?v=plat"></script>
+  <script src="js/topbar.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="js/claimsMap.js"></script>
   <script src="js/footer.js"></script>

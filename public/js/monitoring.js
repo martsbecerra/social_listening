@@ -46,11 +46,11 @@ const monitoringStatusCountEl = document.getElementById('monitoringStatusCount')
 const monitoringProgressFillEl = document.getElementById('monitoringProgressFill');
 const monitoringProgressListEl = document.getElementById('monitoringProgressList');
 const monitoringProgressHideEl = document.getElementById('monitoringProgressHide');
-// El porcentaje grande del recuadro (solo en la franja de instagram.html).
+// El porcentaje del recuadro (solo en instagram.html).
 const monitoringProgressPctEl = document.getElementById('monitoringProgressPct');
 const monitoringLoadErrorEl = document.getElementById('monitoringLoadError');
-// "próxima corrida HH:MM" de x.html. En instagram.html el estado de la
-// escucha lo escribe la franja del radar (monitoringRadar.js).
+// "próxima corrida HH:MM" de x.html. El estado de la escucha de la barra
+// superior lo escribe topbar.js.
 const monitoringNextRunEl = document.getElementById('monitoringNextRun');
 
 const highlightsSectionEl = document.getElementById('monitoringHighlightsSection');
@@ -146,7 +146,7 @@ function renderPreviewLists({ previewEl, fullEl, viewAllBtn, items, onRemove, ex
   previewEl.appendChild(viewAllBtn);
 }
 
-// Contadores de las fuentes en el riel de instagram.html
+// Contadores de las cajas de fuentes del Monitoreo de instagram.html
 // ([data-src-count]); en x.html no hay ninguno.
 function updateSourceCount(kind, count) {
   document.querySelectorAll(`[data-src-count="${kind}"]`).forEach((el) => {
@@ -689,8 +689,8 @@ function renderHighlightCards(posts) {
   for (const { post, top } of scored) cardsEl.appendChild(buildHighlightStrip(post, top));
 }
 
-// Hora del destacado, en hora de Argentina como el radar: "10:35" si es de
-// hoy, "14/10 10:35" si no.
+// Hora del destacado, en hora de Argentina: "10:35" si es de hoy,
+// "14/10 10:35" si no.
 const HIGHLIGHT_TZ = 'America/Argentina/Buenos_Aires';
 const HIGHLIGHT_TIME = new Intl.DateTimeFormat('es-AR', { timeZone: HIGHLIGHT_TZ, hour: '2-digit', minute: '2-digit', hour12: false });
 const HIGHLIGHT_DATE = new Intl.DateTimeFormat('es-AR', { timeZone: HIGHLIGHT_TZ, day: '2-digit', month: '2-digit' });
@@ -703,7 +703,7 @@ function highlightWhen(iso) {
   return HIGHLIGHT_DAY.format(date) === HIGHLIGHT_DAY.format(new Date()) ? time : `${HIGHLIGHT_DATE.format(date)} ${time}`;
 }
 
-// Una tira (design/riel-radar-v3.html): la razón grande con su métrica, el
+// Una tira (design/social-listening-v4.html): la razón grande con su métrica, el
 // título, la cuenta y la hora, el valor contra la mediana y el selector de
 // sentimiento. La razón lleva colchón: no es "N veces lo habitual"; al lado
 // van el valor y la mediana reales de la métrica que lo destacó. Todo dato
@@ -754,7 +754,7 @@ function buildHighlightStrip(post, top) {
 
 // Corrige el sentimiento desde una tira: PATCH y color de la pastilla como en
 // la tabla, el dato de la fila de Tabulator, y aviso a las otras vistas (el
-// feed y el radar se redibujan con el color nuevo).
+// feed se redibuja con el color nuevo).
 function highlightSetSentiment(strip, select) {
   const id = strip.dataset.postId;
   const row = monitoringTable ? monitoringTable.getRow(id) : null;
@@ -849,10 +849,10 @@ function postReach(post) {
 }
 
 // El alcance a la vista: medidor de cinco barras con su nivel
-// (design/riel-radar-v3.html). En "alto" las cinco laten y brillan, en
-// "medio" la tercera respira, en "bajo" queda quieto (.reach-meter en
-// styles.css; en la maqueta se llama .reach, que acá ya es una etiqueta del
-// pop-up). Sin referencia: "—". Lo usan la columna "Alcance" de la tabla y el
+// (design/social-listening-v4.html). En "alto" las cinco laten en el color
+// de acento, en "medio" van tres en ámbar, en "bajo" quedan grises
+// (.reach-meter en styles.css; en la maqueta se llama .reach, que acá ya es
+// una etiqueta del pop-up). Sin referencia: "—". Lo usan la columna "Alcance" de la tabla y el
 // pie de la tarjeta del feed. "reach" es lo que devuelve postReach.
 const REACH_TITLES = { alto: 'Alto', medio: 'Medio', bajo: 'Bajo' };
 
@@ -927,8 +927,9 @@ function updateCounts() {
 //                  si ninguna lo hace, lo muestra la tabla.
 //   { run: 'start' }           arrancó "Actualizar ahora".
 //   { run: 'end', newIds }     terminó (bien o mal); newIds, los posteos que
-//                  no estaban antes. Son para el radar de instagram.html
-//                  (monitoringRadar.js); el feed los ignora.
+//                  no estaban antes. Los usa la barra superior
+//                  (topbar.js) para releer la última corrida; el feed los
+//                  ignora.
 const monitoringViewListeners = [];
 
 function notifyMonitoringViews(change) {
@@ -1340,8 +1341,7 @@ function ensureMonitoringTable(posts) {
     rowFormatter: (row) => {
       const data = row.getData();
       const el = row.getElement();
-      // Para el radar de instagram.html: el mouse sobre un pulso resalta su
-      // fila (clase "hot").
+      // El id del posteo en la fila, para ubicarla desde otras vistas.
       el.dataset.postId = data.id;
       const isOpen = expandedRowId === data.id;
       el.classList.toggle('on', isOpen);
@@ -1574,8 +1574,8 @@ async function finishMonitorLoading(ok, text) {
 async function runNow() {
   runNowBtn.disabled = true;
   startMonitorLoading();
-  // Para el radar de instagram.html (monitoringRadar.js): barre mientras
-  // corre y, al terminar, hace entrar con ondas los posteos que no estaban.
+  // Aviso a las otras vistas: arrancó y, al terminar, qué posteos no
+  // estaban antes (ver monitoringViewListeners).
   const idsBefore = new Set(monitoringTable ? monitoringTable.getData().map((post) => post.id) : []);
   notifyMonitoringViews({ run: 'start' });
   let newIds = [];

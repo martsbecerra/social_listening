@@ -1,23 +1,53 @@
-// Cambio de solapas (tabs), dropdown del header y sesión.
+// Barra superior (diseño v4): solapas de la píldora, menú del usuario y
+// sesión. Lo carga cada página con sesión (instagram.html, x.html y
+// dashboard.html).
 
-// Solapas: cada botón con data-tab muestra su .tab-panel (#tab-<nombre>) y
-// esconde los demás. Son los botones del riel en instagram.html y los de la
-// barra de solapas en x.html. La solapa abierta queda en el hash
-// (#tab-<nombre>, sin sumar pasos al historial), y un cambio de hash abre
-// esa solapa sin recargar: así navegan los enlaces del pie. Un botón con
-// aria-disabled="true" (Estadísticas, hasta que exista) no abre nada.
+// ---------------------------------------------------------------------------
+// Solapas: cada botón de la píldora ([role="tab"][data-tab]) muestra su
+// .tab-panel (#tab-<nombre>) y esconde los demás; la pastilla de color se
+// corre al botón elegido. La solapa abierta queda en el hash (#tab-<nombre>,
+// sin sumar pasos al historial), y un cambio de hash abre esa solapa sin
+// recargar: así navegan los enlaces del pie. Un botón con aria-disabled
+// (Estadísticas, hasta que exista su pantalla) no abre nada.
+// Teclas: 1, 2, 3... abren la solapa de ese número (no mientras se escribe
+// ni con un pop-up abierto); ← y → recorren la píldora con el foco en ella.
+// ---------------------------------------------------------------------------
+const tabButtons = [...document.querySelectorAll('nav.tabs [role="tab"][data-tab]')];
+const tabPillEl = document.querySelector('nav.tabs .pill');
+const topEl = document.querySelector('.top');
+const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+function moveTabPill() {
+  const selected = tabButtons.find((b) => b.getAttribute('aria-selected') === 'true');
+  if (!tabPillEl || !selected) return;
+  tabPillEl.style.left = `${selected.offsetLeft}px`;
+  tabPillEl.style.width = `${selected.offsetWidth}px`;
+}
+
+// Las .rv de la solapa que aparece vuelven a subir escalonadas, como en la
+// maqueta (sin esto la animación corre una sola vez, al cargar).
+function replayReveal(panel) {
+  panel.querySelectorAll('.rv').forEach((el) => {
+    el.style.animation = 'none';
+    void el.offsetHeight;
+    el.style.animation = '';
+  });
+}
+
 function openTab(name, { updateHash = true } = {}) {
   const panel = document.getElementById(`tab-${name}`);
-  const btn = document.querySelector(`[data-tab="${name}"]`);
+  const btn = tabButtons.find((b) => b.dataset.tab === name);
   if (!panel || !btn || btn.getAttribute('aria-disabled') === 'true') return false;
 
-  document.querySelectorAll('[data-tab]').forEach((b) => {
+  const wasOpen = !panel.classList.contains('hidden');
+  tabButtons.forEach((b) => {
     const on = b === btn;
-    b.classList.toggle('active', on);
-    if (on) b.setAttribute('aria-current', 'page');
-    else b.removeAttribute('aria-current');
+    b.setAttribute('aria-selected', String(on));
+    b.tabIndex = on ? 0 : -1;
   });
+  moveTabPill();
   document.querySelectorAll('.tab-panel').forEach((p) => p.classList.toggle('hidden', p !== panel));
+  if (!wasOpen) replayReveal(panel);
   if (updateHash && location.hash !== `#tab-${name}`) {
     history.replaceState(null, '', `#tab-${name}`);
   }
@@ -28,17 +58,94 @@ function openTab(name, { updateHash = true } = {}) {
   return true;
 }
 
-document.querySelectorAll('[data-tab]').forEach((btn) => {
-  btn.addEventListener('click', () => {
-    // En el riel la página arranca de nuevo arriba, como en la maqueta.
-    if (openTab(btn.dataset.tab) && btn.classList.contains('rail-btn')) window.scrollTo(0, 0);
+// Al cambiar de solapa la página arranca de nuevo arriba.
+function openTabFromUser(name) {
+  if (openTab(name)) window.scrollTo(0, 0);
+}
+
+tabButtons.forEach((btn) => {
+  btn.tabIndex = btn.getAttribute('aria-selected') === 'true' ? 0 : -1;
+  btn.addEventListener('click', () => openTabFromUser(btn.dataset.tab));
+  btn.addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+    const usable = tabButtons.filter((b) => b.getAttribute('aria-disabled') !== 'true');
+    const i = usable.indexOf(btn);
+    if (i < 0) return;
+    const next = usable[(i + (e.key === 'ArrowRight' ? 1 : usable.length - 1)) % usable.length];
+    e.preventDefault();
+    next.focus();
+    openTabFromUser(next.dataset.tab);
   });
 });
 
+function typingIn(target) {
+  if (!target || !(target instanceof Element)) return false;
+  return target.isContentEditable || Boolean(target.closest('input, textarea, select'));
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.defaultPrevented || e.repeat || e.altKey || e.ctrlKey || e.metaKey) return;
+  if (!/^[1-9]$/.test(e.key) || typingIn(e.target)) return;
+  // Con el pop-up del posteo o un modal abierto, las teclas son de ellos.
+  if (document.querySelector('dialog[open], .modal-overlay:not(.hidden)')) return;
+  const btn = tabButtons[Number(e.key) - 1];
+  if (!btn) return;
+  e.preventDefault();
+  openTabFromUser(btn.dataset.tab);
+});
+
+window.addEventListener('resize', moveTabPill);
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(moveTabPill);
+
+// ---------------------------------------------------------------------------
+// Alto real de la barra superior (--top en styles.css): la barra de filtros
+// se pega justo debajo y las cajas de fuentes dejan ese aire al saltar a
+// ellas.
+// ---------------------------------------------------------------------------
+function measureTop() {
+  if (!topEl) return;
+  document.documentElement.style.setProperty('--top', `${topEl.offsetHeight}px`);
+}
+measureTop();
+if (topEl && typeof ResizeObserver === 'function') new ResizeObserver(measureTop).observe(topEl);
+
+// ---------------------------------------------------------------------------
+// Enlaces del pie a las fuentes (instagram.html#fuentes-busquedas | -cuentas
+// | -palabras | -hashtags): abren el Monitoreo, bajan a esa caja y enfocan
+// su campo. Después el hash vuelve a ser el de la solapa, así el mismo
+// enlace sirve la próxima vez.
+// ---------------------------------------------------------------------------
+const SOURCE_BOXES = { busquedas: 'srcBusquedas', cuentas: 'srcCuentas', palabras: 'srcPalabras', hashtags: 'srcPalabras' };
+
+function goToSourceBox(box, smooth) {
+  box.scrollIntoView({ block: 'start', behavior: smooth && !reducedMotion.matches ? 'smooth' : 'auto' });
+  const input = box.querySelector('input');
+  if (input) input.focus({ preventScroll: true });
+}
+
+// Al cargar la página (onLoad), el salto espera al load y es inmediato: si
+// no, el navegador corta el desplazamiento y el campo pierde el foco cuando
+// se llega desde un enlace de otra página.
+function openSourceFromHash({ onLoad = false } = {}) {
+  const match = /^#fuentes-(busquedas|cuentas|palabras|hashtags)$/.exec(location.hash);
+  if (!match) return false;
+  const box = document.getElementById(SOURCE_BOXES[match[1]]);
+  if (!box || !openTab('monitoring', { updateHash: false })) return false;
+  history.replaceState(null, '', '#tab-monitoring');
+  if (!onLoad) goToSourceBox(box, true);
+  else if (document.readyState === 'complete') goToSourceBox(box, false);
+  else window.addEventListener('load', () => goToSourceBox(box, false), { once: true });
+  return true;
+}
+
 window.addEventListener('hashchange', () => {
+  if (openSourceFromHash()) return;
   if (location.hash.startsWith('#tab-')) openTab(location.hash.slice('#tab-'.length), { updateHash: false });
 });
 
+// ---------------------------------------------------------------------------
+// Menú del usuario.
+// ---------------------------------------------------------------------------
 document.querySelectorAll('.user-btn').forEach((btn) => {
   const dropdown = document.getElementById(btn.dataset.dropdown);
   if (!dropdown) return;
@@ -46,17 +153,27 @@ document.querySelectorAll('.user-btn').forEach((btn) => {
   btn.addEventListener('click', (e) => {
     e.stopPropagation();
     dropdown.classList.toggle('hidden');
+    btn.setAttribute('aria-expanded', String(!dropdown.classList.contains('hidden')));
   });
 });
 
-document.addEventListener('click', (e) => {
+function closeUserDropdowns(except) {
   document.querySelectorAll('.user-dropdown').forEach((dropdown) => {
     const btn = document.querySelector(`.user-btn[data-dropdown="${dropdown.id}"]`);
-    if (btn && (btn.contains(e.target) || dropdown.contains(e.target))) return;
+    if (except && ((btn && btn.contains(except)) || dropdown.contains(except))) return;
     dropdown.classList.add('hidden');
+    if (btn) btn.setAttribute('aria-expanded', 'false');
   });
+}
+
+document.addEventListener('click', (e) => closeUserDropdowns(e.target));
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeUserDropdowns(null);
 });
 
+// ---------------------------------------------------------------------------
+// Sesión: correo, iniciales y nombre del usuario; sin sesión, al login.
+// ---------------------------------------------------------------------------
 function initialsFromEmail(email) {
   const local = String(email || '').split('@')[0];
   const parts = local.split(/[._-]+/).filter(Boolean);
@@ -115,17 +232,20 @@ document.addEventListener('click', async (e) => {
 
 initAuthHeader();
 
-// Atajos del pie de página: si la URL trae #tab-analysis / #tab-monitoring /
-// #tab-claims-map, abre esa solapa al cargar (sin hash, queda la que el HTML
-// marca activa: Monitoreo en instagram.html).
-//
-// Se difiere a DOMContentLoaded porque main.js corre ANTES que claimsMap.js
-// en el orden de scripts: en este momento window.refreshClaimsMap todavía no
-// existe, y abrir la solapa del mapa ahora la dejaría sin inicializar.
-// DOMContentLoaded dispara recién cuando todos los scripts clásicos del final
-// del body terminaron.
+// Si la URL trae #tab-analysis / #tab-monitoring / #tab-claims-map (o
+// #fuentes-…), abre esa solapa al cargar; sin hash queda la que el HTML
+// marca elegida. Se difiere a DOMContentLoaded porque main.js corre ANTES que
+// claimsMap.js: abrir el mapa ahora lo dejaría sin inicializar.
+// El hash es también el id de la solapa, y el navegador salta hasta ella
+// (con la cabecera tapada por la barra superior): la página arranca arriba,
+// donde empieza la solapa igual.
 document.addEventListener('DOMContentLoaded', () => {
+  if (openSourceFromHash({ onLoad: true })) return;
   if (location.hash.startsWith('#tab-')) {
     openTab(location.hash.slice('#tab-'.length), { updateHash: false });
+    window.scrollTo(0, 0);
+    window.addEventListener('load', () => window.scrollTo(0, 0), { once: true });
   }
+  moveTabPill();
 });
+moveTabPill();
