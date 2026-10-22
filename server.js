@@ -55,8 +55,9 @@ const { startKeepAwake, stopKeepAwake } = require('./src/keepAwake');
 const { processPendingReclamosInBackground } = require('./src/geoWorker');
 const accountStats = require('./src/accountStats');
 const postImageRoutes = require('./src/postImageRoutes');
+const { buildLastRun } = require('./src/lastRun');
 const { CATEGORIAS_RECLAMO, ESTADOS_RECLAMO, isValidEstado } = require('./src/categoriaReclamo');
-const { subcategoriasDe } = require('./src/categoriasConfig');
+const { subcategoriasDe, CATEGORIAS: TEMAS_POSTEO } = require('./src/categoriasConfig');
 const { parseReclamosFilters, isValidReclamosPlataforma } = require('./src/reclamosQuery');
 const { normalizeEmail, isEmailAllowed } = require('./src/auth/allowlist');
 const { issueMagicLink, redeemMagicLink } = require('./src/auth/magicLink');
@@ -499,15 +500,20 @@ app.get('/api/monitoring/posts', (req, res) => {
 // GET /api/monitoring/posts/:id/image?plataforma=instagram&size=thumb|full
 postImageRoutes.register(app);
 
+// Las fuentes de la plataforma y, para el filtro "Tema" del Monitoreo, los
+// temas posibles de un posteo: las categorías de primer nivel del mapa de
+// reclamos, en el orden del JSON (ver "Tema" en CLAUDE.md).
 app.get('/api/monitoring/config', (req, res) => {
-  res.json(monitor.loadConfig(monitoringPlataforma(req)));
+  res.json({ ...monitor.loadConfig(monitoringPlataforma(req)), temas: TEMAS_POSTEO });
 });
 
 // Estado de la escucha para "Monitoreo en vivo": la próxima corrida y las
 // horas de corrida del día salen de la expresión cron real (nada fijo en el
 // cliente); la última corrida terminada, de monitoring_runs (sobrevive a un
 // reinicio): de la plataforma pedida o, sin plataforma (el inicio), de
-// cualquier red.
+// cualquier red. Con plataforma suma `lastRun`, el resumen de esa corrida
+// para el Pipeline (src/lastRun.js; null si nunca corrió), y `model`, el
+// modelo que clasifica.
 app.get('/api/monitoring/status', (req, res) => {
   const plataforma = monitoringPlataforma(req);
   let lastRunAt = null;
@@ -516,10 +522,27 @@ app.get('/api/monitoring/status', (req, res) => {
   } catch (err) {
     console.error('Error leyendo la última corrida:', err.message);
   }
+  let lastRun = null;
+  if (plataforma) {
+    try {
+      const { capabilities } = getPlatform(plataforma);
+      lastRun = buildLastRun(plataforma, { hasBenchmark: Boolean(capabilities && capabilities.benchmark) });
+    } catch (err) {
+      console.error('Error armando el resumen de la última corrida:', err.message);
+    }
+  }
+  let model = null;
+  try {
+    model = getAnalysisModel();
+  } catch (err) {
+    model = null;
+  }
   res.json({
     nextRunAt: getNextRunAt(getCronExpression()).toISOString(),
     lastRunAt,
     runHours: getRunHours(),
+    lastRun,
+    model,
   });
 });
 

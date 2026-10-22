@@ -724,6 +724,13 @@ db.exec(`
     quota_exceeded INTEGER NOT NULL DEFAULT 0
   )
 `);
+// Posteos nuevos de la corrida (monitor.isNewPost, antes del detalle): la
+// etapa "nuevas" del Pipeline del Monitoreo. Anulable: las corridas
+// anteriores a la columna no lo tienen y la pantalla muestra "—".
+const monitoringRunsColumns = db.prepare('PRAGMA table_info(monitoring_runs)').all().map((c) => c.name);
+if (!monitoringRunsColumns.includes('new_candidates')) {
+  db.exec('ALTER TABLE monitoring_runs ADD COLUMN new_candidates INTEGER');
+}
 const insertApifyCallStmt = db.prepare(`
   INSERT INTO apify_calls (at, run_id, phase, plataforma, actor, query_type, target, results_type, items, ok, error, duration_ms, usd, usd_real, apify_run_id)
   VALUES (@at, @runId, @phase, @plataforma, @actor, @queryType, @target, @resultsType, @items, @ok, @error, @durationMs, @usd, @usdReal, @apifyRunId)
@@ -744,10 +751,35 @@ const sumApifyCallsByRunStmt = db.prepare(`
 `);
 const finishMonitoringRunStmt = db.prepare(`
   UPDATE monitoring_runs
-  SET finished_at = @finishedAt, new_posts = @newPosts, calls = @calls, results = @results, usd = @usd, quota_exceeded = @quotaExceeded
+  SET finished_at = @finishedAt, new_posts = @newPosts, new_candidates = @newCandidates, calls = @calls, results = @results,
+      usd = @usd, quota_exceeded = @quotaExceeded
   WHERE id = @id
 `);
 const getMonitoringRunStmt = db.prepare('SELECT * FROM monitoring_runs WHERE id = ?');
+// La última corrida terminada de una plataforma, entera (el Pipeline del
+// Monitoreo). Mismo criterio de plataforma que getLastFinishedRunAtStmt.
+const getLastFinishedRunStmt = db.prepare(`
+  SELECT * FROM monitoring_runs
+  WHERE finished_at IS NOT NULL
+    AND (plataforma = 'todas' OR (',' || plataforma || ',') LIKE ('%,' || ? || ',%'))
+  ORDER BY finished_at DESC
+  LIMIT 1
+`);
+// Lo que trajeron las consultas de detección de una corrida en una red: los
+// resultados de las búsquedas (y, en una red que consulta cuentas o
+// hashtags para detectar, los de esas consultas). El detalle de los nuevos
+// (query_type post) no es detección: son los mismos posteos otra vez.
+const sumDetectionItemsStmt = db.prepare(`
+  SELECT COUNT(*) AS calls, COALESCE(SUM(items), 0) AS items
+  FROM apify_calls
+  WHERE run_id = ? AND plataforma = ? AND phase IN ('monitoreo', 'busqueda') AND query_type IN ('search', 'user', 'hashtag')
+`);
+// Posteos guardados entre dos instantes (detected_at), para contar los
+// destacados de una corrida.
+const listPostsDetectedBetweenStmt = db.prepare(`
+  SELECT id, account, post_type, likes, comments FROM detected_posts
+  WHERE ignored = 0 AND plataforma = ? AND detected_at >= ? AND detected_at <= ?
+`);
 // Fin de la última corrida terminada de una plataforma. La columna
 // plataforma dice qué corrió el ciclo: una sola ("instagram"), varias
 // separadas por coma ("instagram,x", el cron) o "todas".
@@ -1505,7 +1537,7 @@ function startMonitoringRun({ trigger, plataforma, startedAt } = {}) {
  *   porFase: Object<string, {calls: number, results: number, usd: number,
  *     porActor: Object<string, {calls: number, results: number, usd: number, usdReal: number|null, withReal: number}>}> }}
  */
-function finishMonitoringRun(id, { newPosts = 0, finishedAt } = {}) {
+function finishMonitoringRun(id, { newPosts = 0, newCandidates = null, finishedAt } = {}) {
   const byPhaseActor = sumApifyCallsByRunStmt.all(id);
   const totals = { calls: 0, results: 0, usd: 0, quotaExceeded: false };
   const porFase = {};
@@ -1524,6 +1556,7 @@ function finishMonitoringRun(id, { newPosts = 0, finishedAt } = {}) {
     id,
     finishedAt: finishedAt || new Date().toISOString(),
     newPosts: Number(newPosts) || 0,
+    newCandidates: newCandidates == null || !Number.isFinite(Number(newCandidates)) ? null : Math.max(0, Math.floor(Number(newCandidates))),
     calls: totals.calls,
     results: totals.results,
     usd: totals.usd,
@@ -1532,9 +1565,7 @@ function finishMonitoringRun(id, { newPosts = 0, finishedAt } = {}) {
   return { id, ...totals, porFase };
 }
 
-function getMonitoringRun(id) {
-  const row = getMonitoringRunStmt.get(id);
-  if (!row) return null;
+function monitoringRunFromRow(row) {
   return {
     id: row.id,
     startedAt: row.started_at,
@@ -1542,11 +1573,37 @@ function getMonitoringRun(id) {
     trigger: row.trigger,
     plataforma: row.plataforma,
     newPosts: row.new_posts,
+    newCandidates: row.new_candidates ?? null,
     calls: row.calls,
     results: row.results,
     usd: row.usd,
     quotaExceeded: Boolean(row.quota_exceeded),
   };
+}
+
+function getMonitoringRun(id) {
+  const row = getMonitoringRunStmt.get(id);
+  return row ? monitoringRunFromRow(row) : null;
+}
+
+/**
+ * La última corrida terminada de esa plataforma (sola o junto con otras),
+ * con lo que trajeron sus consultas de detección en esa red (`fetched`,
+ * null si la corrida no hizo ninguna). Para el Pipeline del Monitoreo.
+ * @returns {object|null} la fila de getMonitoringRun más `fetched`, o null.
+ */
+function getLastFinishedRun(plataforma) {
+  requirePlataforma(plataforma, 'getLastFinishedRun');
+  const row = getLastFinishedRunStmt.get(plataforma);
+  if (!row) return null;
+  const detection = sumDetectionItemsStmt.get(row.id, plataforma);
+  return { ...monitoringRunFromRow(row), fetched: detection.calls > 0 ? detection.items : null };
+}
+
+/** Posteos no ignorados de esa plataforma con detected_at entre fromIso y toIso (inclusive). */
+function listPostsDetectedBetween(plataforma, fromIso, toIso) {
+  requirePlataforma(plataforma, 'listPostsDetectedBetween');
+  return listPostsDetectedBetweenStmt.all(plataforma, fromIso, toIso);
 }
 
 /**
@@ -1901,6 +1958,8 @@ module.exports = {
   getMonitoringRun,
   getLastFinishedRunAt,
   getLastFinishedRunAtAny,
+  getLastFinishedRun,
+  listPostsDetectedBetween,
   sumApifyCallsSince,
   listApifyCallsPendingRealCost,
   setApifyCallRealCost,
