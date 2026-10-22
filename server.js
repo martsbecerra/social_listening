@@ -505,14 +505,14 @@ app.get('/api/monitoring/config', (req, res) => {
 
 // Estado de la escucha para "Monitoreo en vivo": la próxima corrida y las
 // horas de corrida del día salen de la expresión cron real (nada fijo en el
-// cliente); la última corrida, de monitoring_runs para la plataforma pedida
-// (sobrevive a un reinicio). Sin plataforma, la última que vio el scheduler
-// desde que arrancó, de cualquier red.
+// cliente); la última corrida terminada, de monitoring_runs (sobrevive a un
+// reinicio): de la plataforma pedida o, sin plataforma (el inicio), de
+// cualquier red.
 app.get('/api/monitoring/status', (req, res) => {
   const plataforma = monitoringPlataforma(req);
   let lastRunAt = null;
   try {
-    lastRunAt = plataforma ? db.getLastFinishedRunAt(plataforma) : getLastRunAt();
+    lastRunAt = plataforma ? db.getLastFinishedRunAt(plataforma) : db.getLastFinishedRunAtAny();
   } catch (err) {
     console.error('Error leyendo la última corrida:', err.message);
   }

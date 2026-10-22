@@ -1,8 +1,8 @@
 // --------------------------------------------------------------------
 // Vista "Feed" de la solapa Monitoreo en vivo de Instagram: las mismas
-// publicaciones y los mismos filtros que la tabla, en tarjetas. Calcado de
-// design/monitoreo-feed.html (estilos en public/css/styles.css, clases
-// feed-*).
+// publicaciones y los mismos filtros que la tabla, en tarjetas (estilos en
+// public/css/styles.css, clases feed-*; la maqueta vigente es
+// design/social-listening-v4.html).
 //
 // Lo carga SOLO instagram.html, después de monitoring.js, y se apoya en lo
 // que ese archivo ya define: monitoringTable (la fuente de los posteos, ya
@@ -16,7 +16,7 @@ const feedViewSegEl = document.getElementById('viewSeg');
 const feedOrderEl = document.getElementById('fOrden');
 const feedTableWrapEl = document.getElementById('monitoringTable').closest('.tbl-wrap');
 
-// Última vista elegida; si no hay ninguna, el feed (design/riel-radar-v3.html).
+// Última vista elegida; si no hay ninguna, el feed.
 // localStorage puede no estar (modo privado, almacenamiento bloqueado): en
 // ese caso vale el feed y no se recuerda nada.
 const FEED_VIEW_KEY = 'sl.monitoreo.vista';
@@ -88,9 +88,10 @@ function feedReasonParts(reason) {
 // Un posteo sin tipo detectado no lleva etiqueta de tipo.
 const FEED_TYPE_LABELS = { reel: 'Reel', imagen: 'Imagen', carrusel: 'Carrusel' };
 const FEED_REACH_LABELS = { alto: 'Alcance alto', medio: 'Alcance medio', bajo: 'Alcance bajo' };
-// Colores del avatar de la maqueta. El color sale del nombre de la cuenta,
-// así cada cuenta se ve siempre igual.
-const FEED_PALETTE = ['#12805f', '#c4522c', '#2f6f9e', '#8a5a10', '#6b4c8f', '#a8324f', '#4f7a3a', '#3f6f6a'];
+// Colores del avatar, de la paleta de la maqueta v4 (en su tono oscuro, para
+// la inicial en blanco). El color sale del nombre de la cuenta, así cada
+// cuenta se ve siempre igual.
+const FEED_PALETTE = ['#199e70', '#d04a4a', '#2a78d6', '#c98500', '#6250d6', '#0b7fc4', '#d95926', '#5466b8'];
 
 function feedHash(text) {
   let hash = 7;
@@ -253,7 +254,7 @@ function buildFeedMetrics(post, reach) {
 
 // Pie: arriba el motivo (cortado con "…") y "Abrir ↗"; abajo el selector de
 // sentimiento y, al lado, el medidor de alcance (buildReachMeter de
-// monitoring.js), como en design/riel-radar-v3.html. Son dos renglones,
+// monitoring.js). Son dos renglones,
 // igual que antes: el medidor no le suma alto a la tarjeta (styles.css).
 function buildFeedFoot(post, reach) {
   const foot = feedNode('div', 'feed-foot');
@@ -581,8 +582,8 @@ function feedGoToCard(id) {
 
 // Aviso de monitoring.js (ver monitoringViewListeners).
 function onMonitoringChange(change) {
-  // Los avisos de "Actualizar ahora" son para el radar: el feed se redibuja
-  // con el aviso de los datos nuevos, que llega aparte.
+  // Los avisos de "Actualizar ahora" no son para el feed: se redibuja con el
+  // aviso de los datos nuevos, que llega aparte.
   if (change && change.run) return false;
   if (change && change.goToId !== undefined) return feedGoToCard(change.goToId);
   if (change && change.ignoredId !== undefined) {

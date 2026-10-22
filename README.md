@@ -90,12 +90,14 @@ social_listening_app/
 │   ├── index.html            # Login (pide un magic link por email).
 │   ├── login-verify.html     # Confirma el link (POST, un solo uso).
 │   ├── dashboard.html        # Selector de red social.
-│   ├── instagram.html        # App Instagram: monitoreo + mapa de reclamos + análisis (riel lateral).
+│   ├── instagram.html        # App Instagram: monitoreo + mapa de reclamos + análisis (píldora de solapas).
 │   ├── x.html                # App X: análisis (Grok) + monitoreo + mapa de reclamos.
-│   ├── css/styles.css        # Estilos (paleta oscura corporativa).
+│   ├── css/styles.css        # Estilos del diseño v4 (tokens claro / oscuro de design/social-listening-v4.html).
 │   └── js/
-│       ├── main.js           # Solapas ([data-tab], hash) + dropdown de usuario (sesión / logout).
-│       ├── rail.js           # Riel de Instagram: panel de fuentes. Solo Instagram.
+│       ├── theme.js          # Tema: clara de origen, botón para pasar a oscura (va en el <head>).
+│       ├── main.js           # Píldora de solapas (teclas 1-4, hash) + menú del usuario (sesión / logout).
+│       ├── topbar.js         # "escuchando · HH:MM" de la barra superior (última corrida terminada).
+│       ├── tip.js            # Tooltip global ([data-tip], siempre por textContent).
 │       ├── footer.js         # Arma el pie de las páginas con sesión.
 │       ├── login.js          # Pedido del magic link.
 │       ├── analysis.js       # Lógica de "Análisis de publicación" (Instagram).
@@ -104,7 +106,6 @@ social_listening_app/
 │       ├── monitoring.js     # Monitoreo en vivo (parametrizado por data-platform).
 │       ├── monitoringFeed.js # Vista Feed del Monitoreo (tarjetas). Solo Instagram.
 │       ├── monitoringFeedPopup.js # Pop-up del posteo, desde el feed. Solo Instagram.
-│       ├── monitoringRadar.js # Franja del Monitoreo: estado y radar del día. Solo Instagram.
 │       └── claimsMap.js      # Mapa de reclamos (Leaflet, filtrado por plataforma).
 ├── scripts/
 │   ├── import-reclamos.js       # Importador genérico de Excel/CSV (solo CLI).
@@ -1015,54 +1016,43 @@ posteos").
   `test/refreshPorUrl.test.js`, `test/refreshPorUrlLotes.test.js` y
   `test/metricasConservadas.test.js`.
 
-### Riel, franja y radar de Instagram (octubre 2026)
+### Diseño v4 (octubre 2026)
 
-Fase 1 del rediseño (maqueta `design/riel-radar-v3.html`, SDD en
-`openspec/changes/riel-y-radar/`). Solo `instagram.html`; `x.html` no
-cambia, salvo el pie.
+El frontend se rehace en cinco fases sobre una sola maqueta,
+`design/social-listening-v4.html` (login, inicio y las cuatro solapas). La
+fase A (`openspec/changes/sistema-visual-v4/`) cambia el marco de todas las
+páginas; las siguientes rehacen el Monitoreo (B), suman Estadísticas (C),
+el inicio y el login (D) y el análisis de publicación (E). Lo anterior (el
+riel lateral, la franja con el radar y las maquetas viejas) quedó guardado
+en el tag `v3-riel-radar`.
 
-- **Riel lateral** en lugar de las solapas: Monitoreo (por defecto),
-  Estadísticas (atenuado y deshabilitado, "Pronto", hasta que exista su
-  pantalla), Mapa y Análisis. La solapa abierta queda en el hash
-  (`#tab-monitoring`, etc.) y los enlaces del pie la cambian sin recargar.
-- **Fuentes** (búsquedas, cuentas, palabras) salen de arriba del
-  Monitoreo: se abren en un panel desde los botones con contador del riel
-  o desde el pie, con las listas completas. Arriba las búsquedas, lo único
-  que trae publicaciones nuevas; abajo la "Guía para el clasificador"
-  (cuentas y palabras no buscan: le dan contexto al modelo). Agregar,
-  quitar y los errores funcionan igual que antes.
-- **La franja oscura** del Monitoreo: el estado de la escucha ("Escuchando.
-  Última corrida a las HH:MM, la próxima a las HH:MM.", con
-  `GET /api/monitoring/status`, que ahora trae también `lastRunAt`, la
-  última corrida guardada en `monitoring_runs` de esa red, y `runHours`, las
-  horas de `MONITOR_CRON`), "Actualizar ahora" y su recuadro de progreso de
-  siempre, en oscuro y con el porcentaje grande.
-- **El radar** (`public/js/monitoringRadar.js`): las publicaciones de hoy
-  (hora de Argentina) que pasan los filtros, en un canvas. Cada una es un
-  pulso: a la izquierda o a la derecha según la hora de publicación, más
-  arriba cuanto más se despegó de lo habitual de su cuenta (la razón con
-  colchón del alcance, en escala logarítmica de 0,6 a 3, con la línea de
-  "alto" en 1,5), del color de su sentimiento y más grande con más
-  comentarios. Los de alcance alto laten; los de una cuenta sin mediana van
-  huecos sobre "lo habitual". La línea de "ahora" es la hora real y las
-  corridas del día se marcan debajo ("corrida" las que pasaron, "próxima"
-  las que faltan). Con el mouse sobre un pulso se ve el detalle y se
-  resalta su tira, tarjeta o fila (y al revés); un clic abre el pop-up del
-  posteo. "Actualizar ahora" barre el radar y los posteos nuevos entran con
-  ondas. Sin publicaciones de hoy, la franja lo dice. Con
-  `prefers-reduced-motion` no hay latido, barrido ni ondas, y la animación
-  se frena sola con la franja fuera de la vista.
-- **"Se despegaron"** en tiras: la razón grande con su métrica, el título,
-  la cuenta y la hora, el valor contra la mediana y el selector de
-  sentimiento. Hasta 4, como siempre.
-- **"Publicaciones detectadas"** con "N de M"; Feed | Tabla, filtros,
-  fechas, orden, buscador y Limpiar en una fila. El Feed es la vista por
-  defecto.
-- **Medidor de alcance** de cinco barras en el pie de la tarjeta y en una
-  columna nueva "Alcance" de la tabla.
-- **El pie** de Instagram, X e inicio lo arma `public/js/footer.js`: DGAYD,
-  las corridas del día y las columnas Secciones, Fuentes, Plataformas y
-  Cuenta.
+- **Aspecto nuevo**: Sora, IBM Plex Sans e IBM Plex Mono; tarjetas, chips,
+  botones y campos de la maqueta. La app arranca **siempre clara**; el botón
+  luna / sol de la barra superior la pasa a oscura y la elección queda en
+  ese navegador. Tabulator, Leaflet, los modales y los formularios de X van
+  con los mismos colores, también en oscuro (los mosaicos del mapa quedan
+  claros).
+- **Barra superior**, igual en Instagram y X: la marca (vuelve al inicio),
+  la píldora con las solapas (Monitoreo, Mapa, Análisis de publicación y
+  Estadísticas, atenuada con "pronto" hasta la fase C; teclas 1 a 4), la
+  plataforma (va al inicio), "escuchando · HH:MM" y el usuario. La hora es
+  la de la última corrida terminada: verde si fue hace menos de 5 horas;
+  si no, en gris "última corrida · dd/mm HH:MM", o "todavía no corrió". En
+  el inicio cuenta cualquier red. X tiene las mismas solapas sin
+  Estadísticas y sigue abriendo en Análisis.
+- **Monitoreo de Instagram, hasta la fase B**: arriba "▶ Actualizar ahora"
+  con su recuadro de progreso, y las tres cajas de fuentes (búsquedas,
+  palabras clave y hashtags, cuentas seguidas) con las listas completas;
+  debajo, "Se despegaron" en 2 x 2 y las publicaciones con Feed | Tabla como
+  antes.
+- **El pie** (`public/js/footer.js`): la marca, el texto de la Dirección
+  General de Análisis y Datos, "4 corridas por día · 8, 12, 16 y 20 h" (de
+  la expresión del cron real), Secciones, Fuentes (cada una baja a su caja
+  del Monitoreo), Plataformas y Cuenta.
+- **Login**: pantalla partida (la marca sobre fondo oscuro, la tarjeta con
+  el formulario del link mágico de siempre). La parte animada llega en la
+  fase D; el login sigue por link mágico.
+- **Favicon** nuevo: el ◎ de la marca.
 
 ### Vista Feed del Monitoreo de Instagram (octubre 2026)
 
@@ -1077,7 +1067,7 @@ vista elegida en ese navegador; sin nada guardado, el Feed.
   dibuja los posteos que la tabla ya trajo y ya filtró
   (`postMatchesFilters` en `public/js/monitoring.js`). Sentimiento, Alcance,
   Cuenta, Desde / Hasta, el buscador y el contador "N de M" valen para las
-  dos vistas (y para el radar). Si se filtra, se ordena o se cambia de vista con la
+  dos vistas. Si se filtra, se ordena o se cambia de vista con la
   página bajada, los resultados se muestran desde el principio.
 - **Alcance (alto / medio / bajo).** Sale del benchmark que calcula el
   backend para likes y para comentarios, con la regla del colchón (ver
@@ -1139,8 +1129,8 @@ vista elegida en ese navegador; sin nada guardado, el Feed.
   `public/js/monitoringFeedPopup.js`.
 - Código en `public/js/monitoringFeed.js` y
   `public/js/monitoringFeedPopup.js` (los carga solo `instagram.html`);
-  maquetas en `design/monitoreo-feed.html` y `design/monitoreo-popup.html`;
-  SDD en `openspec/changes/monitoreo-feed/` y
+  las maquetas originales quedaron en el tag `v3-riel-radar` (la vigente es
+  `design/social-listening-v4.html`); SDD en `openspec/changes/monitoreo-feed/` y
   `openspec/changes/monitoreo-popup/`.
 
 ### Fotos de los posteos (octubre 2026)
@@ -1690,10 +1680,13 @@ adivinanza. Entonces:
 - **Excepción:** si el filtro deja 12 o menos categorías seleccionadas, cada una
   toma color propio — ya no hay ambigüedad posible.
 
-Los colores salen de la paleta del sistema (jade, barro, coral, ámbar) más
-análogos en la misma saturación, alternando claros y oscuros para que dos
-vecinos en la leyenda no se parezcan. Están en `:root` como `--cat-1` … `--cat-12`
-y `--cat-otras`.
+Los colores salen de la paleta del diseño v4 (los de los reclamos de la
+maqueta: verde, rojo, azul, ámbar, violeta, naranja, celeste, índigo y
+lavanda, en su tono oscuro para que el número blanco del pin se lea) más
+tres del juego anterior (borravino, oliva y petróleo) para llegar a doce,
+ordenados para que dos vecinos en la leyenda no se parezcan. El resto va en
+gris (`--cat-otras`). Se ven sobre los mosaicos claros del mapa, así que no
+cambian con el tema oscuro. Están en `:root` como `--cat-1` … `--cat-12`.
 
 **La leyenda muestra sólo las categorías presentes en la vista actual**, con su
 conteo. Listar las 26 sería ruido; ocultar alguna dejaría pines sin explicar.

@@ -380,62 +380,100 @@ llamada al LLM por posteo, de a una (avance por consola cada 50); devuelve
 `{ classified, temasCompletados, stillPending }`. Lo corre el dueño, nunca
 un agente: cuesta una clasificación por posteo pendiente.
 
-## Riel, franja y radar de Instagram
+## Diseño v4
 
-Desde octubre 2026 `instagram.html` no tiene solapas arriba: un riel
-lateral (`nav.rail`) con Monitoreo, Estadísticas (todavía deshabilitado:
-`aria-disabled`, atenuado, title "Pronto"; se activa en la fase 3, sin
-pantalla "en preparación"), Mapa de reclamos, Análisis y las tres fuentes.
-Maqueta aprobada en `design/riel-radar-v3.html`; SDD en
-`openspec/changes/riel-y-radar/`. `x.html` y `dashboard.html` solo cambian
-el pie.
+Desde octubre 2026 el frontend se rehace sobre UNA maqueta,
+`design/social-listening-v4.html` (login, inicio y las cuatro solapas; la
+barrita "maqueta" de abajo a la derecha no va en la app). Cinco fases, una
+rama y un PR por fase: A `sistema-visual-v4` (el marco en todas las
+páginas), B `monitoreo-v4`, C `estadisticas`, D `inicio-y-login`, E
+`analisis-v4`. El estado anterior (riel, radar y las maquetas viejas) quedó
+en el tag `v3-riel-radar`. SDD de la fase A en
+`openspec/changes/sistema-visual-v4/`.
 
-- **Solapas** (`main.js`, `openTab`): cualquier `[data-tab]` (riel o
-  solapas de X), con `aria-current` y el hash (`#monitoring`,
-  `#claims-map`, `#analysis`, `history.replaceState`); un botón con
-  `aria-disabled` no abre nada.
-- **Fuentes** (`public/js/rail.js`, prefijo `rail`): búsquedas, cuentas y
-  palabras se editan en un panel que sale del riel (`aside#srcPanel`,
-  `inert` cerrado; se cierra con Esc, el fondo o la ✕). Adentro van los
-  MISMOS ids de antes (`newSearch`, `searchListPreview`…), así
-  `monitoring.js` agrega, valida y borra sin cambios; `updateSourceCount`
-  llena los contadores del riel (`[data-src-count]`). `#fuentes-busquedas`
-  / `-cuentas` / `-palabras` abren el panel (lo usan los enlaces del pie).
-  `rail.js` también mide el alto de la cabecera en `--top`.
-- **Franja oscura** (`section.sky`): estado de la escucha con
-  `GET /api/monitoring/status`, que ahora trae `lastRunAt` (la última
-  corrida TERMINADA de esa plataforma, `db.getLastFinishedRunAt`) y
-  `runHours` (`scheduler.getRunHours`, las horas del cron). "Actualizar
-  ahora" y su recuadro de progreso (con el porcentaje real) viven ahí.
-- **Radar** (`public/js/monitoringRadar.js`, prefijo `radar`, solo
-  `instagram.html`): un canvas con los posteos de HOY (hora de Argentina por
-  `Intl`, nunca la del navegador) de las filas que la tabla ya filtró. x =
-  hora; y = la razón de `benchmark.top` en escala logarítmica de 0,6 a 3,
-  con la línea "lo habitual" (1) y la de alto rotulada "alto: razón 1,5
-  contra su cuenta" (NUNCA "N veces lo habitual": la razón lleva colchón);
-  radio por comentarios (tope 22); sin `top` es un círculo hueco sobre lo
-  habitual, con el aviso en el tooltip. Marca las horas de corrida y sombrea
-  lo que falta del día. Tooltip por `textContent`; un clic abre el posteo
-  solo (`openFeedPopSolo`); el hover resalta la tarjeta o la fila (`.hot`)
-  y al revés. Escucha `notifyMonitoringViews`: `{ run: 'start' }` (barrido
-  mientras corre) y `{ run: 'end', newIds }` (ondas en los posteos nuevos);
-  el feed los ignora. Vacíos: sin posteos de hoy (con la próxima corrida),
-  "Ninguna publicación de hoy coincide con los filtros." y sin canvas. El
-  `requestAnimationFrame` se frena fuera de pantalla, en otra solapa y con
-  la pestaña oculta; con `prefers-reduced-motion` no hay barrido ni ondas.
-- **"Se despegaron"**: hasta 4 tiras (`buildHighlightStrip`, grilla 2×2)
-  con la razón, título, cuenta, hora, valor contra mediana y el selector de
-  sentimiento (cambiarlo no abre el posteo).
-- **Medidor de alcance** (`buildReachMeter` en `monitoring.js`, clase
-  `.reach-meter`, NO `.reach`: choca con el chip del pop-up): cinco barras +
-  Alto / Medio / Bajo, o "—" sin referencia. Va en el pie de la tarjeta del
-  feed y en la columna "Alcance" de la tabla (solo Instagram, ordenable;
-  `reachSortValue`). Con Cuenta (`minWidth` 120) y Título (200) la tabla
-  entra entera desde ~1280 px; más angosta, se desplaza de costado.
-- **Pie** (`public/js/footer.js`): lo arma en `#siteFooter` para las tres
-  páginas; Estadísticas, Facebook y TikTok van sin enlace. Las corridas
-  salen de `runHours` de `/api/footer-stats`.
-- En celular (≤ 900 px) la barra de filtros deja de ser pegajosa.
+- **Sistema visual** (`public/css/styles.css`, en tres partes comentadas):
+  1) los tokens y componentes de la maqueta tal cual (`--bg`, `--surface`,
+  `--accent`, `--glow`, `--pos`/`--neu`/`--neg`, `--c1`…`--c5`; `.card`,
+  `.chip`, `.kpi`, `.seg`, `.btn`, `.field`, `.tip`; `rise` escalonado por
+  `.rv`, `fadeIn`, `pop`, `slideIn`, `ping`, `draw`), con Sora, IBM Plex
+  Sans e IBM Plex Mono de Google Fonts; 2) el marco; 3) lo que la maqueta no
+  dibuja o que todavía no se rehizo (progreso, fuentes, filtros, Tabulator,
+  feed, pop-up, modales, análisis, mapa, inicio, login), con los mismos
+  tokens y las mismas clases de antes. Todo color sale de los tokens: los únicos sueltos son los de marca de cada
+  red, los de las categorías del mapa y el negro de las fotos. Los tokens
+  viejos (`--jade-*`, `--clay-*`, `--coral-*`) ya no existen. No hay estilo
+  global de `<button>`: cada botón lleva su clase (`.btn`, `.btn.primary`,
+  `.btn-small`, `.btn-ghost`…). `--warn-ink` es el ámbar legible del tono
+  neutral; `--top`, el alto real de la barra superior.
+- **Tema** (`public/js/theme.js`, en el `<head>` de las cinco páginas,
+  antes de pintar): la app arranca SIEMPRE clara, aunque el sistema esté en
+  oscuro (decisión del dueño; la maqueta lo tomaba del sistema). El botón
+  `[data-theme-toggle]` de la barra superior (luna / sol) la pasa a oscura;
+  `theme.js` marca SIEMPRE `data-theme="light"` o `"dark"` en `<html>`
+  (nunca lo deja vacío) y la elección queda en `localStorage`
+  (`sl.tema`: `oscuro` | `claro`, con try/catch; sin almacenamiento vale la
+  clara). El login no tiene botón pero respeta lo elegido. Los valores
+  oscuros son los de la maqueta (`:root[data-theme="dark"]`); no hay
+  `prefers-color-scheme` en styles.css.
+- **Barra superior** (`header.top`, igual en `instagram.html`, `x.html` y,
+  sin solapas, `dashboard.html`): marca (vuelve al inicio), la píldora de
+  solapas, el selector de plataforma (va al inicio), el estado de la
+  escucha, el botón de tema y el usuario (iniciales solas por debajo de
+  980 px). Queda fija arriba solo en escritorio: por debajo de 900 px (dos
+  o tres renglones) va en su lugar, como la barra de filtros; por debajo de
+  560 px la plataforma muestra solo su cuadradito de color y la píldora,
+  que se desplaza de costado, deja a la vista la solapa elegida. `main.js`:
+  `openTab` marca `aria-selected` y corre la pastilla (`.pill`), muestra el
+  `.tab-panel` (`#tab-<nombre>`, con `hidden`) y repite las `.rv`; el hash
+  sigue siendo `#tab-monitoring` / `#tab-claims-map` / `#tab-analysis`.
+  Teclas 1-4 (el número de la solapa; no mientras se escribe ni con un
+  pop-up o modal abierto) y ← → con el foco en la píldora. Estadísticas va
+  con `aria-disabled` y "pronto" hasta la fase C. X: Monitoreo, Mapa y
+  Análisis, sin Estadísticas, y abre en Análisis. `main.js` también mide
+  `--top` y atiende `#fuentes-busquedas` / `-cuentas` / `-palabras` /
+  `-hashtags` (abre el Monitoreo, baja a esa caja y enfoca su campo; al
+  cargar la página, recién en `load` y sin animación).
+- **Estado de la escucha** (`public/js/topbar.js`): la hora de la última
+  corrida TERMINADA (`GET /api/monitoring/status`, `lastRunAt`): de esa
+  plataforma en `instagram.html` y `x.html` (`db.getLastFinishedRunAt`); en
+  el inicio, de cualquiera (`db.getLastFinishedRunAtAny`). Hace menos de 5 h:
+  verde, "escuchando · 16:02"; más vieja: gris, "última corrida · 21/10
+  08:03"; ninguna: "todavía no corrió"; sin respuesta, "—" (nunca una hora
+  inventada). Hora de Argentina por `Intl`. Se pide cada 5 min y con
+  `{ run: 'end' }` de `notifyMonitoringViews`; el color se recalcula cada
+  minuto.
+- **Tooltip** (`public/js/tip.js`): cualquier elemento con `data-tip` (y
+  `data-tip-title`) lo muestra al pasar el mouse o al enfocarlo; "\n" corta
+  renglones. Todo por `textContent`, nunca HTML.
+- **Pie** (`public/js/footer.js`, en `#siteFooter` de las tres páginas con
+  sesión): marca, texto de la Dirección General de Análisis y Datos (DGAYD,
+  nunca "DGAND"), "4 corridas por día · 8, 12, 16 y 20 h" desde `runHours`
+  y `corridasPorDia` de `/api/footer-stats` (sin dato, la línea no sale),
+  columnas Secciones / Fuentes / Plataformas / Cuenta y la línea final.
+  Estadísticas, Facebook y TikTok van "· pronto", sin enlace.
+- **Monitoreo de Instagram entre la fase A y la B**: cabecera con "▶
+  Actualizar ahora", el recuadro de progreso de siempre (`.run-card`), tres
+  cajas de fuentes (`.src-grid`: búsquedas, palabras clave y hashtags,
+  cuentas; mismos ids, `data-full`, contadores en `[data-src-count]`),
+  "Se despegaron" en 2 x 2, y la lista con filtros, feed y tabla como
+  antes. Ya no hay riel, panel de fuentes, franja ni radar (`rail.js` y
+  `monitoringRadar.js` se borraron). La fase B arma la solapa de la maqueta.
+- **Mapa**: mosaicos de OpenStreetMap claros también en oscuro; controles,
+  leyenda, popups y tooltips de Leaflet con los tokens. Los colores de
+  categoría (`--cat-1` … `--cat-12`) salen de la paleta de la maqueta, en su
+  tono oscuro (el número del pin va en blanco). La tarjeta de filtros lleva
+  `z-index: 3`: las dos tarjetas tienen `.rv`, cuya animación les da su
+  propia capa, y sin eso el mapa tapaba los desplegables.
+- **Login** (`index.html`, que es el de `/`, y `login-verify.html`):
+  pantalla partida estática (marca y título sobre fondo oscuro, la tarjeta
+  con el formulario del link mágico de siempre). Sin pie. La fase D suma la
+  parte animada; el login SIGUE por link mágico (sin código de 6 dígitos) y
+  `/api/auth/*` no cambia.
+- **Favicon**: el ◎ sobre el degradé (`favicon.svg`); los PNG y el `.ico`
+  salen de él con `sharp`.
+- Pruebas de pantalla: servidor de prueba aparte (otro puerto, copia de la
+  base, sin scheduler, sin Apify ni LLM), con capturas a 1366 y 375 px, en
+  oscuro y con movimiento reducido.
 
 ## Vista Feed del Monitoreo (solo Instagram)
 
@@ -455,7 +493,7 @@ control existe solo en `instagram.html` (como `fAlcanceEl`), en X es null y
 hay que tratarlo así. `monitoring.js` avisa los cambios con
 `notifyMonitoringViews(change)` (sin argumento = redibujar;
 `{ ignoredId }`; `{ goToId }`, que quedó como respaldo: ver "Se despegaron"
-más abajo; `{ run }`, solo para el radar). El alcance de la
+más abajo; `{ run }`, para la barra superior, `topbar.js`). El alcance de la
 tarjeta y del filtro "Alcance" es `postReach`: combina los niveles que ya
 manda el backend en `benchmark.likes` y `benchmark.comments` (vale el
 mejor de los dos; "normal" se muestra "medio"; sin ninguna métrica con
@@ -494,7 +532,7 @@ comentarios van en una franja propia, en grande, con la fecha de esos
 números a la derecha ("al 08/10"; en el pop-up, "Métricas al 08/10/2026 ·
 23:48" debajo de las métricas). La fecha sale de `postMetricsDate`
 (`monitoring.js`): `metrics_updated_at` o, si nunca se refrescó,
-`detected_at`; con más de `METRICS_STALE_DAYS` (3) va en naranja. La franja
+`detected_at`; con más de `METRICS_STALE_DAYS` (3) va en ámbar. La franja
 es una grilla de UN renglón con dos espacios que ceden: lo que se le sume
 no puede agregarle alto a la tarjeta (medir en la de 240 px). El pie tiene
 dos renglones: el motivo y "Abrir ↗"; debajo, el selector de sentimiento y
@@ -502,8 +540,10 @@ el medidor de alcance (`buildFeedFoot`). El hover
 (sube, borde del color del sentimiento, foto que se acerca) va solo con
 mouse (`hover: hover`) y el movimiento se apaga con
 `prefers-reduced-motion`.
-Maquetas aprobadas en `design/monitoreo-feed.html` y
-`design/monitoreo-popup.html`; SDD en `openspec/changes/monitoreo-feed/` y
+Las maquetas originales (`design/monitoreo-feed.html` y
+`design/monitoreo-popup.html`) quedaron en el tag `v3-riel-radar`; la
+vigente es `design/social-listening-v4.html`, que la fase B aplica al feed y
+al pop-up. SDD en `openspec/changes/monitoreo-feed/` y
 `openspec/changes/monitoreo-popup/`. La suite no cubre el frontend: se
 prueba en el navegador con un servidor de prueba aparte (otro puerto, copia
 de la base, sin scheduler ni Apify).
