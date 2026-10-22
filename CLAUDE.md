@@ -408,8 +408,9 @@ en el tag `v3-riel-radar`. SDD de la fase A en
 - **Tema** (`public/js/theme.js`, en el `<head>` de las cinco páginas,
   antes de pintar): la app arranca SIEMPRE clara, aunque el sistema esté en
   oscuro (decisión del dueño; la maqueta lo tomaba del sistema). El botón
-  `[data-theme-toggle]` de la barra superior (luna / sol) la pasa a oscura
-  con `data-theme="dark"` en `<html>` y la elección queda en `localStorage`
+  `[data-theme-toggle]` de la barra superior (luna / sol) la pasa a oscura;
+  `theme.js` marca SIEMPRE `data-theme="light"` o `"dark"` en `<html>`
+  (nunca lo deja vacío) y la elección queda en `localStorage`
   (`sl.tema`: `oscuro` | `claro`, con try/catch; sin almacenamiento vale la
   clara). El login no tiene botón pero respeta lo elegido. Los valores
   oscuros son los de la maqueta (`:root[data-theme="dark"]`); no hay
@@ -418,7 +419,8 @@ en el tag `v3-riel-radar`. SDD de la fase A en
   sin solapas, `dashboard.html`): marca (vuelve al inicio), la píldora de
   solapas, el selector de plataforma (va al inicio), el estado de la
   escucha, el botón de tema y el usuario (iniciales solas por debajo de
-  980 px). `main.js`:
+  980 px). Queda fija arriba solo en escritorio: por debajo de 900 px (dos
+  o tres renglones) va en su lugar, como la barra de filtros. `main.js`:
   `openTab` marca `aria-selected` y corre la pastilla (`.pill`), muestra el
   `.tab-panel` (`#tab-<nombre>`, con `hidden`) y repite las `.rv`; el hash
   sigue siendo `#tab-monitoring` / `#tab-claims-map` / `#tab-analysis`.

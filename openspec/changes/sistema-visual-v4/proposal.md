@@ -75,7 +75,7 @@ sin tocar clases ni comportamiento. Los ids que usa `monitoring.js`,
 | Risk | Likelihood | Mitigation |
 |------|------------|------------|
 | Un componente viejo pierde su estilo al irse el `button` global | Media | Cada botón con su clase; revisado en el navegador, claro y oscuro |
-| La barra superior en celular ocupa tres renglones (como la maqueta) | Alta | Se deja como la maqueta y se anota para decidir |
+| La barra superior en celular ocupa tres renglones (como la maqueta) | Alta | Decisión del dueño: fija solo en escritorio; por debajo de 900 px va en su lugar |
 | `x.html` comparte `monitoring.js` | Baja | Mismos ids; probado en el servidor de prueba |
 
 ## Rollback Plan

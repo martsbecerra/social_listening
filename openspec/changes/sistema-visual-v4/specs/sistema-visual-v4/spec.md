@@ -14,7 +14,7 @@ El marco del diseño v4 (`design/social-listening-v4.html`) en todas las página
 
 ### Requirement: REQ-V4-02 — Barra superior y píldora
 
-`instagram.html` y `x.html` MUST mostrar una barra superior pegada arriba con la marca (enlace al inicio), la píldora de solapas, el selector de plataforma (enlace al inicio), el estado de la escucha, el botón de tema y el usuario; `dashboard.html`, lo mismo sin píldora ni plataforma. En Instagram la píldora MUST tener, en orden, Monitoreo, Mapa, Análisis de publicación y Estadísticas (con `aria-disabled` y "pronto": un clic o la tecla 4 MUST NOT abrir nada). En X MUST tener Monitoreo, Mapa y Análisis, y abrir en Análisis. La solapa elegida MUST llevar `aria-selected="true"` y la pastilla de color MUST correrse a ella. Las teclas 1 a 4 MUST abrir la solapa de ese número, salvo mientras se escribe en un campo o con un pop-up o modal abierto. La solapa MUST quedar en el hash (`#tab-…`) y un cambio de hash MUST abrirla sin recargar. Por debajo de 980 px el usuario MUST mostrar solo sus iniciales.
+`instagram.html` y `x.html` MUST mostrar una barra superior (pegada arriba en escritorio; por debajo de 900 px MUST NOT quedar fija) con la marca (enlace al inicio), la píldora de solapas, el selector de plataforma (enlace al inicio), el estado de la escucha, el botón de tema y el usuario; `dashboard.html`, lo mismo sin píldora ni plataforma. En Instagram la píldora MUST tener, en orden, Monitoreo, Mapa, Análisis de publicación y Estadísticas (con `aria-disabled` y "pronto": un clic o la tecla 4 MUST NOT abrir nada). En X MUST tener Monitoreo, Mapa y Análisis, y abrir en Análisis. La solapa elegida MUST llevar `aria-selected="true"` y la pastilla de color MUST correrse a ella. Las teclas 1 a 4 MUST abrir la solapa de ese número, salvo mientras se escribe en un campo o con un pop-up o modal abierto. La solapa MUST quedar en el hash (`#tab-…`) y un cambio de hash MUST abrirla sin recargar. Por debajo de 980 px el usuario MUST mostrar solo sus iniciales.
 
 #### Scenario: Tecla con un campo enfocado
 
@@ -62,7 +62,7 @@ El Monitoreo de Instagram MUST NOT tener riel, panel de fuentes, franja ni radar
 
 ### Requirement: REQ-V4-08 — Tema
 
-La app MUST arrancar en claro aunque el sistema esté en oscuro. El botón de tema de la barra superior MUST pasarla a oscuro y volver, y la elección MUST recordarse en ese navegador para todas las páginas (también el login). Sin almacenamiento disponible MUST valer el claro.
+La app MUST arrancar en claro aunque el sistema esté en oscuro; `<html>` MUST llevar siempre `data-theme="light"` o `"dark"`, y el CSS MUST NOT tener reglas con `prefers-color-scheme`. El botón de tema de la barra superior MUST pasarla a oscuro y volver, y la elección MUST recordarse en ese navegador para todas las páginas (también el login). Sin almacenamiento disponible MUST valer el claro.
 
 #### Scenario: Volver otro día
 
