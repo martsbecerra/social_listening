@@ -12,7 +12,8 @@
       Leaflet, inicio y login), con los mismos tokens y sin cambiar su
       comportamiento.
    Clara de origen, aunque el sistema esté en oscuro; oscura con el botón de
-   la barra superior (public/js/theme.js pone data-theme="dark" en <html>).
+   la barra superior (public/js/theme.js marca siempre data-theme="light" o
+   "dark" en <html>). Acá no hay ninguna regla con prefers-color-scheme.
    Todo color sale de los tokens: los únicos colores sueltos son los de
    marca de cada red, los de las categorías del mapa y el fondo negro de las
    fotos.
@@ -889,6 +890,18 @@ nav.tabs button .soon {
     clip: rect(0 0 0 0);
     clip-path: inset(50%);
     white-space: nowrap;
+  }
+}
+/* En celular y tablet la barra (dos o tres renglones) no queda fija: pegada
+   arriba tapaba un quinto de la pantalla. Fija, solo en escritorio. Las
+   cajas y solapas a las que se salta ya no tienen que dejarle lugar. */
+@media (max-width: 900px) {
+  .top {
+    position: static;
+  }
+  .src-box,
+  .tab-panel {
+    scroll-margin-top: 12px;
   }
 }
 @media (max-width: 560px) {
