@@ -1849,8 +1849,11 @@ pre.report a {
 .hl-head .hl-count:empty {
   display: none;
 }
-/* Hasta 4 tiras, de a dos por renglón (2 x 2), como .ups de la maqueta. */
-.hl-tops {
+/* Hasta 4 tiras, de a dos por renglón (2 x 2), como .ups de la maqueta.
+   .cards es el contenedor de x.html (hoy X no muestra destacados:
+   renderHighlightCards deja la sección oculta). */
+.hl-tops,
+.cards {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 14px;
@@ -1926,7 +1929,8 @@ pre.report a {
   margin-left: auto;
 }
 @media (max-width: 900px) {
-  .hl-tops {
+  .hl-tops,
+  .cards {
     grid-template-columns: 1fr;
   }
   .hl-strip-ratio {
@@ -3622,22 +3626,25 @@ html.feed-pop-lock body {
   border-style: dashed;
 }
 /* Colores por categoría: doce y el resto en gris (con 26 categorías no hay
-   26 colores que el ojo separe). Se ven sobre los mosaicos claros, por eso
-   no cambian en oscuro. */
+   26 colores que el ojo separe). Salen de la paleta de la maqueta (sus
+   reclamos usan c1-c5, pos, neg, neu y el acento, en su tono más oscuro
+   para que el número blanco del pin se lea), más tres para llegar a doce;
+   dos vecinos en la leyenda nunca se parecen. Se ven sobre los mosaicos
+   claros, por eso no cambian en oscuro. */
 :root {
-  --cat-1: #12805f;
-  --cat-2: #c4522c;
-  --cat-3: #2f6f9e;
-  --cat-4: #8a5a10;
-  --cat-5: #6b4c8f;
-  --cat-6: #63c7a2;
+  --cat-1: #199e70;
+  --cat-2: #d04a4a;
+  --cat-3: #2a78d6;
+  --cat-4: #c98500;
+  --cat-5: #6250d6;
+  --cat-6: #0b7fc4;
   --cat-7: #a8324f;
   --cat-8: #4f7a3a;
-  --cat-9: #b07d2b;
+  --cat-9: #d95926;
   --cat-10: #3f6f6a;
-  --cat-11: #8e5b4a;
-  --cat-12: #5a6b8c;
-  --cat-otras: #8a8178;
+  --cat-11: #9085e9;
+  --cat-12: #5466b8;
+  --cat-otras: #7c87a4;
 }
 .claims-leyenda {
   display: flex;
