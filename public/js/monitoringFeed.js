@@ -142,7 +142,14 @@ function buildFeedMedia(post, reach) {
 
   const typeLabel = FEED_TYPE_LABELS[post.post_type];
   if (typeLabel) media.appendChild(feedNode('span', 'feed-badge type', typeLabel));
-  // El alcance va en el pie, con el medidor (buildFeedFoot).
+  // Alcance alto: la razón arriba a la derecha, "1,56× se despegó" (la razón
+  // lleva colchón: no es "N veces lo habitual"). El medidor va en el pie
+  // (buildFeedFoot).
+  if (reach && reach.level === 'alto') {
+    const hot = feedNode('span', 'feed-badge hot', `${formatBenchmarkRatio(reach.ratio)}× se despegó`);
+    hot.title = `Razón de alcance por ${reach.label}: ${benchmarkRatioBasis(reach.metric)}`;
+    media.appendChild(hot);
+  }
   return media;
 }
 
@@ -326,6 +333,11 @@ function notifyFeedList(change) {
 // orden (monitoring.js avisa por monitoringViewListeners, ver
 // scheduleFeedRender). Solo si el feed es la vista elegida: en la vista
 // Tabla no se arma ninguna tarjeta.
+//
+// Filas completas: a la vista van FEED_ROWS_STEP filas (según cuántas
+// columnas tiene la grilla de verdad) y, si hay más, la última celda es
+// "+N · Ver 12 más", que suma otras tantas. Con otros filtros u otro orden
+// se vuelve a las primeras filas.
 // -------------------------------------------------------------------------
 let feedRenderTimer = null;
 // Filtros y orden del último dibujo. Si el siguiente llega con otros, la
@@ -333,6 +345,34 @@ let feedRenderTimer = null;
 // feedScrollToStart); si son los mismos (llegaron datos nuevos), la página
 // se queda donde está. null: todavía no se dibujó desde que se entró al feed.
 let feedLastQuery = null;
+// Los ids de toda la lista del feed (filtrada y ordenada), no solo de las
+// tarjetas a la vista: el pop-up abierto desde una tarjeta la recorre
+// entera.
+let feedVisibleIds = [];
+const FEED_ROWS_STEP = 3;
+let feedRows = FEED_ROWS_STEP;
+// Columnas del último dibujo: si cambian (otro ancho de ventana), se rehace.
+let feedLastColumns = 0;
+
+// Cuántas columnas tiene la grilla del feed (auto-fill de 240 px).
+function feedColumns() {
+  const template = getComputedStyle(feedContainerEl).gridTemplateColumns;
+  return Math.max(1, template.split(' ').filter((part) => part.endsWith('px')).length);
+}
+
+// La última celda cuando hay más de las que entran: "+N" grande, "Ver 12
+// más" (una tanda de filas, o las que queden) y cuántas se ven.
+function buildFeedMore(rest, step, shown, total) {
+  const more = feedNode('button', 'feed-more');
+  more.type = 'button';
+  more.dataset.act = 'more';
+  more.append(
+    feedNode('span', 'n', `+${rest.toLocaleString('es-AR')}`),
+    feedNode('span', 'l', `Ver ${Math.min(rest, step).toLocaleString('es-AR')} más`),
+    feedNode('small', '', `${shown.toLocaleString('es-AR')} de ${total.toLocaleString('es-AR')}`)
+  );
+  return more;
+}
 
 function renderFeed() {
   clearTimeout(feedRenderTimer);
@@ -340,6 +380,7 @@ function renderFeed() {
   if (feedCurrentView !== 'feed' || !monitoringTable) return;
   const query = JSON.stringify([readFilterValues(), feedOrderEl.value]);
   const listChanged = feedLastQuery !== null && query !== feedLastQuery;
+  if (listChanged) feedRows = FEED_ROWS_STEP;
   feedLastQuery = query;
   // Los posteos a mostrar son las filas "activas" de la tabla: las que dejó
   // pasar la barra de filtros la última vez que se aplicó (applyFilters, con
@@ -352,9 +393,19 @@ function renderFeed() {
   const visible = monitoringTable.getData('active');
   const reachById = new Map(visible.map((post) => [post.id, postReach(post)]));
   visible.sort(feedSorter(feedOrderEl.value, reachById));
+  feedVisibleIds = visible.map((post) => String(post.id));
+
+  const columns = feedColumns();
+  feedLastColumns = columns;
+  let cap = columns * feedRows;
+  if (visible.length > cap) cap -= 1; // la última celda es "Ver más"
+  const shown = visible.slice(0, cap);
 
   const fragment = document.createDocumentFragment();
-  for (const post of visible) fragment.appendChild(buildFeedCard(post, reachById.get(post.id)));
+  for (const post of shown) fragment.appendChild(buildFeedCard(post, reachById.get(post.id)));
+  if (visible.length > shown.length) {
+    fragment.appendChild(buildFeedMore(visible.length - shown.length, columns * FEED_ROWS_STEP, shown.length, visible.length));
+  }
   if (!visible.length) {
     // "No hay publicaciones con esos filtros", o el período vacío con el
     // enlace al siguiente (buildEmptyListLine en monitoring.js).
@@ -458,6 +509,9 @@ function feedSetSentiment(card, sentiment, select) {
   // que leen los filtros y "Se despegaron".
   if (row) row.update({ sentiment });
   if (monitoringTable) renderHighlightCards(monitoringTable.getData());
+  // El panel (tono de las fuentes, KPI) y el flujo, al día; el feed se
+  // rehace con el color nuevo.
+  notifyMonitoringViews();
 }
 
 feedContainerEl.addEventListener('change', (e) => {
@@ -480,7 +534,20 @@ function feedSelectingIn(card) {
   return card.contains(selection.anchorNode) || card.contains(selection.focusNode);
 }
 
+// "Ver 12 más": otra tanda de filas. El foco pasa a la primera tarjeta nueva.
+function showMoreFeed() {
+  const before = feedContainerEl.querySelectorAll('.feed-card').length;
+  feedRows += FEED_ROWS_STEP;
+  renderFeed();
+  const first = feedContainerEl.querySelectorAll('.feed-card')[before];
+  if (first) first.focus({ preventScroll: true });
+}
+
 feedContainerEl.addEventListener('click', (e) => {
+  if (e.target.closest('.feed-more')) {
+    showMoreFeed();
+    return;
+  }
   const card = e.target.closest('.feed-card');
   if (!card) return;
   if (e.target.closest('.feed-head .ico.del')) {
@@ -507,19 +574,22 @@ feedContainerEl.addEventListener('keydown', (e) => {
   openFeedPop(e.target);
 });
 
-// Se ignoró un posteo: sale solo su tarjeta, sin rehacer el resto (así la
-// página no salta). Si era la última queda el cartel de "no hay".
+// Se ignoró un posteo: el feed se rehace con las mismas filas (la que sigue
+// ocupa su lugar y "Ver más" cuenta una menos). Si era la última queda el
+// cartel de "no hay".
 function removeFeedCard(id) {
   const card = feedCardById(id);
-  if (!card) return;
   // Antes de sacarla, mientras todavía ocupa su lugar: si el pop-up está
-  // mostrando ese posteo, pasa al de la tarjeta de al lado.
-  notifyFeedList({ removing: card });
-  card.remove();
-  // Si no quedó ninguna, el cartel de "no hay" (renderFeed ya avisa el cambio).
-  if (!feedContainerEl.querySelector('.feed-card')) renderFeed();
-  else notifyFeedList();
+  // mostrando ese posteo, pasa al de al lado.
+  if (card) notifyFeedList({ removing: card });
+  renderFeed();
 }
+
+// Con otro ancho la grilla puede tener otra cantidad de columnas: las filas
+// se vuelven a completar.
+window.addEventListener('resize', () => {
+  if (feedCurrentView === 'feed' && feedContainerEl.firstChild && feedColumns() !== feedLastColumns) scheduleFeedRender();
+});
 
 // Hasta dónde tapa la barra superior, que en escritorio queda fija arriba al
 // bajar (en celular va en su lugar y no tapa nada).
