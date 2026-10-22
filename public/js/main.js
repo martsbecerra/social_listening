@@ -22,6 +22,12 @@ function moveTabPill() {
   if (!tabPillEl || !selected) return;
   tabPillEl.style.left = `${selected.offsetLeft}px`;
   tabPillEl.style.width = `${selected.offsetWidth}px`;
+  // En celular la píldora se desplaza de costado: la solapa elegida queda a
+  // la vista (sin mover la página).
+  const nav = selected.parentElement;
+  if (nav.scrollWidth > nav.clientWidth) {
+    nav.scrollLeft = Math.max(0, selected.offsetLeft - (nav.clientWidth - selected.offsetWidth) / 2);
+  }
 }
 
 // Las .rv de la solapa que aparece vuelven a subir escalonadas, como en la
