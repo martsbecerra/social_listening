@@ -1736,43 +1736,7 @@ pre.report a {
   }
 }
 
-/* ---------- Monitoreo: las fuentes ----------
-   Instagram: tres cajas (búsquedas, palabras clave y hashtags, cuentas) en
-   la parte de arriba de la solapa, con las listas completas. La fase B las
-   pasa a la columna izquierda. X: las dos columnas de siempre (.config). */
-.src-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  margin-top: 14px;
-}
-.src-box {
-  display: flex;
-  flex-direction: column;
-  scroll-margin-top: calc(var(--top) + 12px);
-}
-.src-box h2 {
-  font-size: 15px;
-}
-.src-box .note {
-  margin: -4px 0 10px;
-}
-.src-box .error {
-  margin: 8px 0 0;
-  padding: 8px 10px;
-  font-size: 12.5px;
-}
-/* Las listas van completas: con muchas, la caja no crece sin fin. */
-.src-box .chips {
-  max-height: 212px;
-  overflow: auto;
-  align-content: flex-start;
-  scrollbar-width: thin;
-  scrollbar-color: var(--line2) transparent;
-}
-@media (max-width: 980px) {
-  .src-grid {
-    grid-template-columns: 1fr;
-  }
-}
+/* ---------- Monitoreo de X: las fuentes en dos columnas (.config) ---------- */
 .card.config {
   padding: 0;
   display: grid;
@@ -1943,25 +1907,7 @@ pre.report a {
   }
 }
 
-/* ---------- "Publicaciones detectadas": cabecera y filtros ---------- */
-.list-head {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin: 26px 0 12px;
-}
-.list-head h2 {
-  font-size: 20px;
-}
-.list-count {
-  font: 400 12.5px/1 var(--mono);
-  color: var(--muted);
-}
-.list-count b {
-  font-weight: 500;
-  color: var(--fg);
-}
+/* ---------- Monitoreo de X: la barra de filtros ---------- */
 /* La barra se pega justo debajo de la barra superior (su alto lo mide
    main.js en --top). En celular queda en su lugar: pegada taparía las
    tarjetas. */
@@ -2143,30 +2089,6 @@ pre.report a {
   font-size: 12px;
   color: var(--muted);
 }
-/* Feed / Tabla: el .seg de la maqueta. */
-.view-seg {
-  display: inline-flex;
-  flex: none;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  overflow: hidden;
-  background: var(--surface);
-}
-.view-seg button {
-  border: 0;
-  background: transparent;
-  padding: 8px 12px;
-  color: var(--fg2);
-  font-weight: 500;
-  white-space: nowrap;
-  transition: 0.2s;
-}
-.view-seg button.on {
-  background: var(--surface2);
-  color: var(--fg);
-  box-shadow: inset 0 -2px 0 var(--accent);
-}
-
 /* ---------- tabla (Tabulator) ---------- */
 .card.tbl-wrap {
   padding: 0;
@@ -2664,6 +2586,871 @@ pre.report a {
 }
 .reach-meter.alto i:nth-child(5) {
   animation-delay: 0.4s;
+}
+
+/* ==========================================================================
+   Monitoreo de Instagram (diseño v4, fase B): la solapa de la maqueta.
+   KPI arriba; tres columnas (fuentes | flujo en vivo | pulso, pipeline,
+   alertas y cuentas); "Se despegaron"; la lista con su barra de filtros.
+   Lo dibujan public/js/monitoringPanel.js, monitoringFlow.js,
+   monitoringFeed.js y monitoring.js.
+   ========================================================================== */
+#monKpis {
+  margin-top: 14px;
+}
+.kpi .d {
+  min-height: 18px;
+}
+.kpi .v.na {
+  color: var(--muted);
+}
+.mon {
+  grid-template-columns: 280px minmax(0, 1fr) 320px;
+  align-items: stretch;
+  margin-top: 14px;
+}
+.mon .col {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+/* La última tarjeta de cada costado se estira hasta el alto de la fila. */
+.mon .col > .card:last-child {
+  flex: 1;
+}
+/* Cabeceras de "Se despegaron" y "Publicaciones detectadas". */
+.head.sec {
+  margin: 26px 0 12px;
+  align-items: flex-end;
+}
+.head.sec h2 {
+  font-size: 20px;
+}
+.cnt {
+  display: inline-grid;
+  place-items: center;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 7px;
+  margin-left: 6px;
+  border-radius: 7px;
+  background: var(--surface2);
+  color: var(--fg2);
+  font: 500 12px/1 var(--mono);
+  vertical-align: middle;
+}
+
+/* ---------- cajas de fuentes ---------- */
+.srcbox {
+  scroll-margin-top: calc(var(--top) + 12px);
+}
+.srcbox h2 {
+  font-size: 15px;
+}
+.srcbox .ct .hint {
+  margin-left: auto;
+}
+.srcbox .plus {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--line2);
+  border-radius: 8px;
+  background: var(--surface2);
+  color: var(--accent);
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    transform 0.2s;
+}
+.srcbox .plus:hover {
+  border-color: var(--accent);
+}
+.srcbox.adding .plus {
+  transform: rotate(45deg);
+}
+.kw-add {
+  display: none;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.srcbox.adding .kw-add {
+  display: flex;
+  animation: fadeIn 0.2s both;
+}
+.kw-add input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--line2);
+  background: var(--surface2);
+  color: var(--fg);
+  border-radius: 9px;
+  padding: 8px 10px;
+  font: inherit;
+}
+.kw-add input::placeholder {
+  color: var(--muted);
+}
+.kw-add input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 18%, transparent);
+}
+.kw-add button {
+  flex: none;
+  min-width: 36px;
+  border: 0;
+  border-radius: 9px;
+  padding: 0 12px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+  cursor: pointer;
+}
+.kw-add button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.srcbox .error {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  font-size: 12.5px;
+}
+.srcbox .note {
+  margin: 10px 0 0;
+}
+.kw-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.kw-list .chip {
+  animation: pop 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.4) both;
+}
+.kw-list .chip .w {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* La ✕ de cada chip es un botón propio (la maqueta usa un span). */
+.kw-list .chip .x {
+  border: 0;
+  background: transparent;
+  padding: 2px;
+  margin: -2px -2px -2px 0;
+  border-radius: 50%;
+  cursor: pointer;
+}
+/* El chip que está filtrando la lista. */
+.kw-list .chip.on {
+  border-color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 12%, var(--surface2));
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 14%, transparent);
+}
+/* Pedido de confirmación para sacar una fuente, en el mismo chip. */
+.chip.ask {
+  cursor: default;
+  border-color: var(--neg);
+  background: color-mix(in oklab, var(--neg) 8%, var(--surface));
+}
+.chip.ask:hover {
+  transform: none;
+  box-shadow: none;
+}
+.chip.ask .q {
+  color: var(--fg);
+}
+.chip.ask button {
+  border: 0;
+  border-radius: 999px;
+  padding: 3px 8px;
+  font: 600 11.5px/1 var(--body);
+  cursor: pointer;
+}
+.chip.ask .yes {
+  background: var(--neg);
+  color: #fff;
+}
+.chip.ask .no {
+  background: var(--surface2);
+  color: var(--fg2);
+}
+.kw-more {
+  display: block;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px 0;
+  margin-top: 6px;
+}
+.kw-more:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.srcbox .empty {
+  padding: 6px 0;
+  text-align: left;
+}
+
+/* Cuentas seguidas: una fila por cuenta. */
+.accts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+.acct {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  font-size: 12.5px;
+}
+.acct .av {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  color: #fff;
+  font: 600 11px/1 var(--mono);
+}
+.acct .nm {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.acct .m {
+  margin-left: auto;
+  font: 500 11px/1 var(--mono);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.acct .x {
+  flex: none;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: 500 11px/1 var(--mono);
+  padding: 4px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.acct .x:hover {
+  color: var(--neg);
+  background: var(--surface2);
+}
+.acct.ask {
+  padding: 4px 6px;
+  border-radius: 10px;
+  background: color-mix(in oklab, var(--neg) 8%, var(--surface));
+}
+.acct.ask button {
+  border: 0;
+  border-radius: 999px;
+  padding: 3px 8px;
+  font: 600 11.5px/1 var(--body);
+  cursor: pointer;
+}
+.acct.ask .yes {
+  margin-left: auto;
+  background: var(--neg);
+  color: #fff;
+}
+.acct.ask .no {
+  background: var(--surface2);
+  color: var(--fg2);
+}
+
+/* ---------- flujo en vivo ---------- */
+/* La tarjeta tiene el alto de la fila (el de las columnas de los costados) y
+   nunca crece: el contenido va en una capa absoluta y entran las líneas que
+   caben. */
+.flowcard {
+  position: relative;
+  min-height: 380px;
+}
+.flowcard .inner {
+  position: absolute;
+  inset: 16px;
+  display: flex;
+  flex-direction: column;
+}
+.flowcard .inner .ct {
+  flex: none;
+}
+.flow {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.flow .empty {
+  padding: 40px 10px;
+}
+.fl {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto auto auto auto;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+  padding: 6px 10px 6px 6px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface2);
+  cursor: pointer;
+  animation: slideIn 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  transition:
+    transform 0.2s,
+    border-color 0.2s;
+}
+.fl:hover {
+  transform: translateX(3px);
+  border-color: var(--accent);
+}
+.fl:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.fl.out {
+  animation: fadeOut 0.4s both;
+}
+/* La foto chiquita: la miniatura recortada, o la inicial sobre el degradé. */
+.fl .th {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  overflow: hidden;
+  border-radius: 7px;
+  background: linear-gradient(135deg, var(--accent), var(--glow));
+  color: #fff;
+  font: 600 11px/1 var(--mono);
+}
+.fl .th img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.fl .l1 {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+.fl .l1 b {
+  font-weight: 600;
+}
+.fl mark {
+  padding: 0 3px;
+  border-radius: 4px;
+  background: color-mix(in oklab, var(--accent) 22%, transparent);
+  color: var(--fg);
+}
+.fl .lbl {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 6px;
+  border-radius: 6px;
+  background: var(--surface);
+}
+.fl .lbl i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--line2);
+}
+.fl .t {
+  font: 400 11px/1 var(--mono);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.fl .t.now {
+  color: var(--accent);
+  font-weight: 500;
+}
+@media (max-width: 700px) {
+  .fl {
+    grid-template-columns: 28px minmax(0, 1fr) auto auto;
+  }
+  .fl > .tema,
+  .fl > .reach {
+    display: none;
+  }
+}
+
+/* Tema de un posteo: punto de color y nombre. */
+.tema {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 150px;
+  padding: 4px 7px;
+  border-radius: 6px;
+  background: var(--surface2);
+  color: var(--fg2);
+  font: 500 11px/1 var(--mono);
+  white-space: nowrap;
+}
+.tema i {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--c3);
+}
+.tema span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fl .tema {
+  background: var(--surface);
+}
+
+/* ---------- pulso del tono ---------- */
+.pulse-chart {
+  display: block;
+  width: 100%;
+  height: 150px;
+}
+.pulse-chart .hr {
+  fill: transparent;
+}
+.pulse-chart .hr:hover {
+  fill: color-mix(in oklab, var(--fg) 6%, transparent);
+}
+.pulse-chart text {
+  font: 400 9px var(--mono);
+}
+.card .legend {
+  margin-top: 8px;
+}
+
+/* ---------- pipeline ---------- */
+.pipe {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: 6px;
+}
+.pipe .st {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+}
+.pipe .st .ic {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  margin: 0 auto 6px;
+  border-radius: 12px;
+  border: 1px solid var(--line2);
+  background: var(--surface2);
+  font: 600 11px/1 var(--mono);
+}
+.pipe .st .ic.ai {
+  color: var(--glow);
+}
+.pipe .st small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--muted);
+}
+.pipe .st .num {
+  display: block;
+  font: 600 15px/1.4 var(--display);
+}
+.pipe .st .lb {
+  display: block;
+  font-size: 10.5px;
+  color: var(--muted);
+}
+.pipe .lnk {
+  position: relative;
+  flex: 0 0 34px;
+  height: 2px;
+  margin-bottom: 28px;
+  background: var(--line2);
+}
+.pipe .lnk i {
+  position: absolute;
+  top: -3px;
+  left: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent);
+  animation: flow 1.6s linear infinite;
+}
+.pipe .lnk i:nth-child(2) {
+  animation-delay: 0.8s;
+}
+/* Sin corridas no hay nada que fluya. */
+.pipe.idle .lnk i {
+  display: none;
+}
+@keyframes flow {
+  from {
+    left: -4px;
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
+  }
+  to {
+    left: calc(100% - 4px);
+    opacity: 0;
+  }
+}
+.pipe-note {
+  margin: 12px 0 0;
+  text-align: center;
+}
+.pipe-note:empty {
+  display: none;
+}
+
+/* ---------- alertas ---------- */
+.alerts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.al {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface2);
+  color: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+.al:hover {
+  border-color: var(--accent);
+}
+.al i {
+  flex: 0 0 8px;
+  width: 8px;
+  height: 8px;
+  margin-top: 6px;
+  border-radius: 50%;
+}
+.al b {
+  display: block;
+  font-weight: 600;
+}
+.al small {
+  display: block;
+  color: var(--muted);
+}
+.alerts .empty {
+  padding: 18px 6px;
+}
+
+@media (max-width: 1100px) {
+  .mon {
+    grid-template-columns: 260px minmax(0, 1fr);
+  }
+  .mon > :nth-child(3) {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    align-items: start;
+  }
+  .mon > :nth-child(3) > .card:last-child {
+    flex: none;
+  }
+  .flowcard {
+    min-height: 520px;
+  }
+}
+@media (max-width: 760px) {
+  .mon {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .flowcard {
+    min-height: 430px;
+  }
+}
+
+/* ---------- "Publicaciones detectadas": filtros y estado ---------- */
+.fbar {
+  display: grid;
+  grid-template-columns: 2fr repeat(7, minmax(0, 1fr));
+  gap: 10px;
+  align-items: end;
+}
+.fbar .f {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  margin: 0;
+}
+.fbar .f > span {
+  padding-left: 2px;
+  font: 500 10px/1 var(--body);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.fbar .field {
+  width: 100%;
+  height: 38px;
+  padding: 0 10px;
+  border-radius: 10px;
+  font-size: 13px;
+  outline: none;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s,
+    background-color 0.15s;
+}
+.fbar select.field {
+  padding-right: 28px;
+  cursor: pointer;
+}
+.fbar input[type="date"].field {
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+.fbar .field:hover {
+  border-color: var(--accent);
+}
+.fbar .field:focus,
+.fbar .field:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 18%, transparent);
+}
+/* Un filtro puesto se marca. */
+.fbar .field.on {
+  border-color: var(--accent);
+  background-color: color-mix(in oklab, var(--accent) 9%, var(--surface));
+  font-weight: 500;
+}
+.fbar select.field option {
+  background: var(--surface);
+  color: var(--fg);
+  font-weight: 400;
+}
+/* "Orden" en la vista Tabla: a la vista pero apagado; el aviso lo da la
+   etiqueta (un control deshabilitado no recibe el mouse). */
+.fbar .field:disabled {
+  opacity: 0.5;
+  cursor: default;
+  pointer-events: none;
+}
+.combo {
+  position: relative;
+}
+.combo-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  text-align: left;
+  cursor: pointer;
+}
+.combo-btn b {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: inherit;
+}
+.combo-btn i {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--muted);
+}
+.combo-panel {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 6px);
+  z-index: 30;
+  width: max(100%, 260px);
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  animation: fadeIn 0.15s both;
+}
+.combo-panel .field {
+  height: 34px;
+  margin-bottom: 6px;
+}
+.combo-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 260px;
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line2) transparent;
+}
+.combo-list button {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--fg);
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.combo-list button:hover,
+.combo-list button:focus-visible,
+.combo-list button.on {
+  background: var(--surface2);
+}
+.combo-list button.on .nm {
+  color: var(--accent);
+  font-weight: 600;
+}
+.combo-list .av {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  color: #fff;
+  font: 600 9px/1 var(--mono);
+}
+.combo-list .nm {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.combo-list small {
+  font: 400 11px/1 var(--mono);
+  color: var(--muted);
+}
+.combo-none {
+  margin: 6px 8px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.fstatus {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin: 12px 0 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  font: 400 12px/1.4 var(--mono);
+  color: var(--muted);
+}
+.fstatus .count b {
+  font-weight: 500;
+  color: var(--fg);
+}
+/* El filtro por fuente, con su ✕. */
+.f-source {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--accent);
+  background: color-mix(in oklab, var(--accent) 10%, var(--surface));
+  color: var(--fg2);
+  font: 500 12px/1 var(--body);
+}
+.f-source code {
+  font-family: var(--mono);
+  color: var(--fg);
+}
+.f-source button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 2px 4px;
+  border-radius: 50%;
+  cursor: pointer;
+}
+.f-source button:hover {
+  color: var(--neg);
+}
+.fstatus .f-clear {
+  margin-left: auto;
+  visibility: hidden;
+}
+.fstatus .f-clear.on {
+  visibility: visible;
+}
+/* Un enlace que es un botón ("ver 7 días"). */
+.link-btn {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.pubs-card .tbl-wrap {
+  margin: 0 -16px -16px;
+  border-top: 1px solid var(--line);
+  border-radius: 0 0 var(--r) var(--r);
+  overflow: hidden;
+}
+.tbl-empty {
+  padding: 28px 10px;
+  text-align: center;
+  font-size: 13px;
+}
+@media (max-width: 1200px) {
+  .fbar {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .fbar .f-q {
+    grid-column: 1 / -1;
+  }
+}
+@media (max-width: 700px) {
+  .fbar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 /* ---------- Monitoreo: vista Feed (solo Instagram, public/js/monitoringFeed.js) ----
