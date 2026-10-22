@@ -1304,11 +1304,14 @@ footer.foot {
   font-size: 13.5px;
 }
 
-/* ---------- progreso de "Actualizar ahora" ----------
-   Con el look del recuadro de la maqueta (.progress): borde con brillo,
-   barra en degradé. Arriba qué se está haciendo y su contador; debajo, las
-   líneas del ciclo que arma el backend (src/monitoringProgress.js) y dibuja
-   public/js/monitoring.js. */
+/* ---------- progreso de "Actualizar ahora" (Instagram y X) ----------
+   El recuadro .progress de la maqueta: borde con brillo, arriba qué se está
+   haciendo con su contador y el porcentaje, la barra en degradé y la lista
+   de líneas del ciclo que arma el backend (src/monitoringProgress.js) y
+   dibuja public/js/monitoring.js, cada una con su punto: en curso (late),
+   bien o con error. Cada línea toma el ancho de su texto y, si no entra,
+   baja de renglón: el término de una búsqueda nunca se corta. Al terminar:
+   "✓ Corrida terminada", la hora y la duración. */
 .run-card {
   margin-top: 14px;
   border: 1px solid color-mix(in oklab, var(--glow) 50%, var(--line));
@@ -1319,6 +1322,9 @@ footer.foot {
 }
 .run-card:not(.hidden) {
   animation: fadeIn 0.3s both;
+}
+.run-card.leaving {
+  animation: fadeOut 0.4s both;
 }
 .run-progress {
   color: var(--fg2);
@@ -1350,10 +1356,9 @@ footer.foot {
 .run-progress-count {
   font: 500 12px/1.45 var(--mono);
   color: var(--muted);
-  white-space: nowrap;
 }
 .run-progress-count::before {
-  content: "· ";
+  content: " · ";
 }
 .run-progress-count:empty {
   display: none;
@@ -1363,6 +1368,10 @@ footer.foot {
   margin-left: auto;
   font: 500 12px/1 var(--mono);
   color: var(--muted);
+  white-space: nowrap;
+}
+.run-progress-pct:empty {
+  display: none;
 }
 /* ✓ o ✕ del final, en el lugar de la ruedita. */
 .run-progress-mark {
@@ -1389,6 +1398,7 @@ footer.foot {
   padding: 4px 10px;
   font-size: 12px;
   color: var(--fg2);
+  cursor: pointer;
 }
 .run-progress-hide:hover {
   border-color: var(--accent);
@@ -1408,63 +1418,67 @@ footer.foot {
   list-style: none;
   margin: 0;
   padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 4px 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
   font-size: 12.5px;
 }
 .run-progress-list:empty {
   display: none;
 }
 .run-progress-list li {
+  flex: 1 1 auto;
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 8px;
-  min-width: 0;
+  min-width: min(100%, 200px);
+  max-width: 100%;
   color: var(--muted);
 }
+/* El punto de cada línea (la maqueta): gris, verde si salió bien, rojo si
+   falló; el de lo que está en curso late en el color de acento. */
 .run-progress-list .i {
   flex: none;
-  width: 14px;
-  text-align: center;
-  font-weight: 700;
-  line-height: 1;
+  align-self: center;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--line2);
 }
 .run-progress-list .t {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
   color: var(--fg);
 }
 .run-progress-list .d {
   flex: none;
   margin-left: auto;
-  font: 500 11px/1 var(--mono);
+  font: 500 11px/1.4 var(--mono);
   white-space: nowrap;
 }
 .run-progress-list .d:empty {
   display: none;
 }
 .run-progress-list li.ok .i {
-  color: var(--pos);
+  background: var(--pos);
 }
-.run-progress-list li.err .i,
+.run-progress-list li.err .i {
+  background: var(--neg);
+}
 .run-progress-list li.err .d {
   color: var(--neg);
 }
-/* En curso: una ruedita chica en el lugar del ícono. */
 .run-progress-list li.run .i {
-  width: 11px;
-  height: 11px;
-  margin: 0 1.5px;
-  border: 2px solid var(--line2);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+  animation: ping 1.2s infinite;
 }
 .run-progress-list li.run .t {
   color: var(--fg2);
+}
+/* La línea del resultado, al final. */
+.run-progress-list li.sum .t {
+  font-weight: 600;
 }
 
 /* ---------- fuentes del monitoreo: agregar, chips, "Ver todas" ---------- */

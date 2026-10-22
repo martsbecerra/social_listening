@@ -1814,11 +1814,17 @@ async function loadNextRun() {
 //     siguen en curso, el resumen de cada fase). Acá no se arma ni se recorta
 //     ninguna: solo se dibujan.
 // null (el ciclo todavía no arrancó su primera fase) deja todo como estaba,
-// no lo pisa con nada inventado. Al terminar, el recuadro queda a la vista
-// con el resultado hasta que se aprieta "Ocultar" o se lanza otro ciclo.
+// no lo pisa con nada inventado. Al terminar bien dice "✓ Corrida terminada"
+// con la hora y la duración, suma el resultado al final de la lista y se va
+// solo a los 9 s (antes, con "Ocultar"; si el mouse o el foco están encima,
+// espera). Si falló, queda a la vista hasta "Ocultar" o el próximo ciclo.
 // --------------------------------------------------------------------
 const PROGRESS_POLL_MS = 1500;
+const PROGRESS_HIDE_MS = 9000;
 let progressPollTimer = null;
+let progressHideTimer = null;
+// Cuándo se apretó "Actualizar ahora", para la duración del cierre.
+let progressStartedAt = 0;
 // ¿Se está esperando un ciclo? Una respuesta del progreso que llega tarde,
 // con el resultado ya dibujado, no tiene que pisarlo.
 let progressWaiting = false;
@@ -1829,11 +1835,11 @@ let progressSeenRunning = false;
 // rehacerla, las rueditas de lo que está en curso vuelven a empezar).
 let progressLinesDrawn = '';
 
-const PROGRESS_LINE_ICONS = { ok: '✓', err: '✕', run: '' };
+const PROGRESS_LINE_STATES = ['ok', 'err', 'run'];
 
-// Cada línea: ícono (✓, ✕ o la ruedita de "en curso"), de qué se trata y
-// cómo salió. Todo entra por textContent: los términos de búsqueda y las
-// cuentas los escribe el usuario.
+// Cada línea: su punto (bien, con error o en curso), de qué se trata y cómo
+// salió. Todo entra por textContent: los términos de búsqueda y las cuentas
+// los escribe el usuario.
 function drawProgressLines(lines) {
   const list = Array.isArray(lines) ? lines : [];
   const key = JSON.stringify(list);
@@ -1841,12 +1847,11 @@ function drawProgressLines(lines) {
   progressLinesDrawn = key;
   monitoringProgressListEl.replaceChildren(
     ...list.map((line) => {
-      const state = Object.prototype.hasOwnProperty.call(PROGRESS_LINE_ICONS, line.state) ? line.state : 'ok';
+      const state = PROGRESS_LINE_STATES.includes(line.state) ? line.state : 'ok';
       const li = document.createElement('li');
       li.className = state;
       const icon = document.createElement('span');
       icon.className = 'i';
-      icon.textContent = PROGRESS_LINE_ICONS[state];
       icon.setAttribute('aria-hidden', 'true');
       const label = document.createElement('span');
       label.className = 't';
@@ -1895,9 +1900,48 @@ async function pollMonitorProgress() {
   }
 }
 
+// Se va el recuadro (con su animación, si hay movimiento).
+function hideMonitorProgress() {
+  clearTimeout(progressHideTimer);
+  progressHideTimer = null;
+  if (monitoringStatusCard.classList.contains('hidden')) return;
+  monitoringStatusCard.classList.add('leaving');
+  setTimeout(() => {
+    if (!monitoringStatusCard.classList.contains('leaving')) return; // arrancó otro ciclo
+    monitoringStatusCard.classList.remove('leaving');
+    monitoringStatusCard.classList.add('hidden');
+  }, 400);
+}
+
+// A los 9 s del cierre se va solo, salvo que se lo esté mirando con el mouse
+// o con el foco adentro: ahí espera a que salgan.
+function scheduleProgressHide() {
+  clearTimeout(progressHideTimer);
+  const tryHide = () => {
+    if (monitoringStatusCard.matches(':hover') || monitoringStatusCard.contains(document.activeElement)) {
+      progressHideTimer = setTimeout(tryHide, 2000);
+      return;
+    }
+    hideMonitorProgress();
+  };
+  progressHideTimer = setTimeout(tryHide, PROGRESS_HIDE_MS);
+}
+
+// "3 min 12 s" / "45 s".
+function formatRunDuration(ms) {
+  const sec = Math.max(0, Math.round(ms / 1000));
+  if (sec < 60) return `${sec} s`;
+  const rest = sec % 60;
+  return rest ? `${Math.floor(sec / 60)} min ${rest} s` : `${Math.floor(sec / 60)} min`;
+}
+
 function startMonitorLoading() {
   progressWaiting = true;
   progressSeenRunning = false;
+  progressStartedAt = Date.now();
+  clearTimeout(progressHideTimer);
+  progressHideTimer = null;
+  monitoringStatusCard.classList.remove('leaving');
   monitoringProgressEl.classList.remove('done', 'failed');
   monitoringStatusIconEl.className = 'spinner';
   monitoringStatusIconEl.textContent = '';
@@ -1911,22 +1955,42 @@ function startMonitorLoading() {
   progressPollTimer = setInterval(pollMonitorProgress, PROGRESS_POLL_MS);
 }
 
-// "Listo: 4 relevantes guardados de 11 nuevos". "Nuevos" es lo mismo que en
-// cada línea de búsqueda: posteos que no estaban guardados ni se habían
-// evaluado antes (newCandidates, por plataforma, en la respuesta del ciclo).
+// "4 relevantes guardados de 11 nuevos". "Nuevos" es lo mismo que en cada
+// línea de búsqueda: posteos que no estaban guardados ni se habían evaluado
+// antes (newCandidates, por plataforma, en la respuesta del ciclo).
 function monitorDoneText(data) {
   const saved = Number(data.newCount) || 0;
   const perPlatform = Object.values(data.porPlataforma || {});
   if (!perPlatform.some((p) => p && Number.isFinite(p.newCandidates))) {
-    return `Listo: ${saved} ${saved === 1 ? 'posteo nuevo' : 'posteos nuevos'}`;
+    return `${saved} ${saved === 1 ? 'posteo nuevo' : 'posteos nuevos'}`;
   }
   const fresh = perPlatform.reduce((sum, p) => sum + ((p && p.newCandidates) || 0), 0);
-  if (fresh === 0 && saved === 0) return 'Listo: no hubo posteos nuevos';
-  return `Listo: ${saved} ${saved === 1 ? 'relevante guardado' : 'relevantes guardados'} de ${fresh} ${fresh === 1 ? 'nuevo' : 'nuevos'}`;
+  if (fresh === 0 && saved === 0) return 'no hubo posteos nuevos';
+  return `${saved} ${saved === 1 ? 'relevante guardado' : 'relevantes guardados'} de ${fresh} ${fresh === 1 ? 'nuevo' : 'nuevos'}`;
 }
 
-// Deja el recuadro en su estado final: ✓ con el resultado o ✕ con el error.
-// Las líneas quedan a la vista; se va con "Ocultar".
+// La línea del resultado, al final de la lista.
+function appendProgressSummary(text) {
+  const li = document.createElement('li');
+  li.className = 'ok sum';
+  const icon = document.createElement('span');
+  icon.className = 'i';
+  icon.setAttribute('aria-hidden', 'true');
+  const label = document.createElement('span');
+  label.className = 't';
+  label.textContent = 'Resultado';
+  const detail = document.createElement('span');
+  detail.className = 'd';
+  detail.textContent = text;
+  li.append(icon, label, detail);
+  monitoringProgressListEl.appendChild(li);
+  progressLinesDrawn = ''; // la lista ya no es la que mandó el backend
+}
+
+// Deja el recuadro en su estado final: "✓ Corrida terminada · 16:02 · 3 min
+// 12 s" con las líneas y el resultado (se va solo a los 9 s), o "✕ La
+// corrida falló" con el error (queda hasta "Ocultar"). "text": el resultado
+// o el mensaje de error.
 async function finishMonitorLoading(ok, text) {
   clearInterval(progressPollTimer);
   progressPollTimer = null;
@@ -1949,7 +2013,15 @@ async function finishMonitorLoading(ok, text) {
   monitoringProgressEl.classList.add(ok ? 'done' : 'failed');
   monitoringStatusIconEl.className = ok ? 'run-progress-mark' : 'run-progress-mark err';
   monitoringStatusIconEl.textContent = ok ? '✓' : '✕';
-  setProgressHead(text);
+  if (monitoringProgressPctEl) monitoringProgressPctEl.textContent = '';
+  if (ok) {
+    const when = `${HIGHLIGHT_TIME.format(new Date())} · ${formatRunDuration(Date.now() - progressStartedAt)}`;
+    setProgressHead('Corrida terminada', when);
+    appendProgressSummary(text);
+    scheduleProgressHide();
+  } else {
+    setProgressHead('La corrida falló', text);
+  }
   monitoringProgressHideEl.classList.remove('hidden');
 }
 
@@ -1977,7 +2049,7 @@ async function runNow() {
     if (posts) newIds = posts.filter((post) => !idsBefore.has(post.id)).map((post) => post.id);
     if (monitoringTable) monitoringTable.setPage(1);
   } catch (err) {
-    await finishMonitorLoading(false, `Error: ${err.message}`);
+    await finishMonitorLoading(false, err.message);
   } finally {
     runNowBtn.disabled = false;
     notifyMonitoringViews({ run: 'end', newIds });
@@ -2032,7 +2104,7 @@ ignoreCancelBtn.addEventListener('click', closeIgnoreModal);
 ignoreConfirmBtn.addEventListener('click', confirmIgnore);
 ignoreModal.addEventListener('click', (e) => { if (e.target === ignoreModal) closeIgnoreModal(); });
 runNowBtn.addEventListener('click', runNow);
-monitoringProgressHideEl.addEventListener('click', () => monitoringStatusCard.classList.add('hidden'));
+monitoringProgressHideEl.addEventListener('click', hideMonitorProgress);
 
 fSentEl.addEventListener('change', applyFilters);
 if (fAlcanceEl) fAlcanceEl.addEventListener('change', applyFilters);
