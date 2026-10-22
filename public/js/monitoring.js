@@ -182,9 +182,11 @@ function renderKeywordLists(keywords) {
   });
 }
 
-// La última config que llegó: { accounts, keywords, searches, temas }. null
-// mientras no llegó ninguna.
-let monitoringConfig = null;
+// La última config que llegó: { accounts, keywords, searches, temas };
+// undefined mientras no llegó ninguna, null si falló. Un script que se anota
+// en monitoringViewListeners después de que llegó (la respuesta puede ganarle
+// a la carga de los scripts siguientes) la lee de acá.
+let monitoringConfig;
 
 // Opciones del filtro "Tema" (instagram.html): los temas posibles de un
 // posteo, en el orden de config/categorias-reclamos.json (temas de
@@ -222,7 +224,8 @@ async function loadConfig() {
       accountListPreviewEl.innerHTML = '<span class="muted">No se pudo cargar. Reiniciá el servidor y recargá la página.</span>';
       keywordListPreviewEl.innerHTML = '<span class="muted">No se pudo cargar. Reiniciá el servidor y recargá la página.</span>';
     }
-    notifyMonitoringViews({ config: null });
+    if (monitoringConfig === undefined) monitoringConfig = null;
+    notifyMonitoringViews({ config: monitoringConfig });
     console.error('Error cargando config de monitoreo:', err);
   }
 }

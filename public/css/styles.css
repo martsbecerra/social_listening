@@ -2766,6 +2766,8 @@ pre.report a {
   color: var(--fg);
 }
 .chip.ask button {
+  width: auto;
+  height: auto;
   border: 0;
   border-radius: 999px;
   padding: 3px 8px;
