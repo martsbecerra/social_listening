@@ -758,6 +758,14 @@ const getLastFinishedRunAtStmt = db.prepare(`
   ORDER BY finished_at DESC
   LIMIT 1
 `);
+// Fin de la última corrida terminada, de la plataforma que sea (el inicio,
+// que no es de ninguna red).
+const getLastFinishedRunAtAnyStmt = db.prepare(`
+  SELECT finished_at FROM monitoring_runs
+  WHERE finished_at IS NOT NULL
+  ORDER BY finished_at DESC
+  LIMIT 1
+`);
 // Conciliación del costo real (apifyCost.reconcileRealCosts): llamadas con
 // run de Apify conocido y sin usd_real todavía, en una ventana de antigüedad.
 const listApifyCallsPendingRealCostStmt = db.prepare(`
@@ -1554,6 +1562,17 @@ function getLastFinishedRunAt(plataforma) {
   return row ? row.finished_at : null;
 }
 
+/**
+ * Cuándo terminó la última corrida, de cualquier plataforma: el estado de la
+ * escucha de la barra superior del inicio (dashboard.html), que no es de
+ * ninguna red. No es un default de getLastFinishedRunAt: es otra pregunta.
+ * @returns {string|null} ISO, o null si nunca terminó ninguna.
+ */
+function getLastFinishedRunAtAny() {
+  const row = getLastFinishedRunAtAnyStmt.get();
+  return row ? row.finished_at : null;
+}
+
 /** @returns {{id: number, runId: number|null, apifyRunId: string, usd: number, at: string}[]} llamadas con run conocido y sin costo real, con `at` entre newerThanIso y olderThanIso. */
 function listApifyCallsPendingRealCost({ olderThanIso, newerThanIso, limit = 100 }) {
   return listApifyCallsPendingRealCostStmt.all({ olderThanIso, newerThanIso, limit: Math.max(1, Math.floor(Number(limit)) || 100) });
@@ -1881,6 +1900,7 @@ module.exports = {
   finishMonitoringRun,
   getMonitoringRun,
   getLastFinishedRunAt,
+  getLastFinishedRunAtAny,
   sumApifyCallsSince,
   listApifyCallsPendingRealCost,
   setApifyCallRealCost,

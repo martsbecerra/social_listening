@@ -1,8 +1,9 @@
 'use strict';
 
-// "Última corrida a las HH:MM" de la franja del Monitoreo (riel-y-radar):
+// "escuchando · HH:MM" de la barra superior (diseño v4):
 // db.getLastFinishedRunAt lee monitoring_runs por plataforma, sea la corrida
-// de esa red sola, de varias juntas o de todas, y solo las terminadas. Base
+// de esa red sola, de varias juntas o de todas, y solo las terminadas;
+// db.getLastFinishedRunAtAny, la última de cualquier red (el inicio). Base
 // temporal; nunca toca data/monitoring.db.
 
 const fs = require('fs');
@@ -61,5 +62,24 @@ describe('db.getLastFinishedRunAt', { concurrency: false }, () => {
   test('sin plataforma tira, como toda función por plataforma', () => {
     assert.throws(() => db.getLastFinishedRunAt(), /falta plataforma/);
     assert.throws(() => db.getLastFinishedRunAt(''), /falta plataforma/);
+  });
+});
+
+describe('db.getLastFinishedRunAtAny', { concurrency: false }, () => {
+  test('la más nueva de cualquier red, sola o junto con otras', () => {
+    // La última de las de arriba es la de "xinstagram", del 21/10 08:01.
+    assert.equal(db.getLastFinishedRunAtAny(), '2026-10-21T08:01:00.000Z');
+
+    corrida('x', '2026-10-21T11:00:00.000Z', '2026-10-21T11:03:00.000Z');
+    assert.equal(db.getLastFinishedRunAtAny(), '2026-10-21T11:03:00.000Z', 'una de X sola también cuenta');
+    assert.equal(db.getLastFinishedRunAt('instagram'), '2026-10-20T19:04:00.000Z', 'y no cambia la de Instagram');
+
+    corrida('instagram,x', '2026-10-21T15:00:00.000Z', '2026-10-21T15:06:00.000Z');
+    assert.equal(db.getLastFinishedRunAtAny(), '2026-10-21T15:06:00.000Z');
+  });
+
+  test('una corrida en curso no cuenta', () => {
+    corrida('instagram', '2026-10-21T19:00:00.000Z', null);
+    assert.equal(db.getLastFinishedRunAtAny(), '2026-10-21T15:06:00.000Z');
   });
 });
