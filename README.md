@@ -1680,11 +1680,13 @@ adivinanza. Entonces:
 - **Excepción:** si el filtro deja 12 o menos categorías seleccionadas, cada una
   toma color propio — ya no hay ambigüedad posible.
 
-Los colores salieron de la paleta anterior del sistema (jade, barro, coral,
-ámbar) más análogos en la misma saturación, alternando claros y oscuros para
-que dos vecinos en la leyenda no se parezcan. Se ven sobre los mosaicos
-claros del mapa, así que no cambian con el tema oscuro. Están en `:root` como
-`--cat-1` … `--cat-12` y `--cat-otras`.
+Los colores salen de la paleta del diseño v4 (los de los reclamos de la
+maqueta: verde, rojo, azul, ámbar, violeta, naranja, celeste, índigo y
+lavanda, en su tono oscuro para que el número blanco del pin se lea) más
+tres del juego anterior (borravino, oliva y petróleo) para llegar a doce,
+ordenados para que dos vecinos en la leyenda no se parezcan. El resto va en
+gris (`--cat-otras`). Se ven sobre los mosaicos claros del mapa, así que no
+cambian con el tema oscuro. Están en `:root` como `--cat-1` … `--cat-12`.
 
 **La leyenda muestra sólo las categorías presentes en la vista actual**, con su
 conteo. Listar las 26 sería ruido; ocultar alguna dejaría pines sin explicar.

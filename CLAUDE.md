@@ -420,7 +420,9 @@ en el tag `v3-riel-radar`. SDD de la fase A en
   solapas, el selector de plataforma (va al inicio), el estado de la
   escucha, el botón de tema y el usuario (iniciales solas por debajo de
   980 px). Queda fija arriba solo en escritorio: por debajo de 900 px (dos
-  o tres renglones) va en su lugar, como la barra de filtros. `main.js`:
+  o tres renglones) va en su lugar, como la barra de filtros; por debajo de
+  560 px la plataforma muestra solo su cuadradito de color y la píldora,
+  que se desplaza de costado, deja a la vista la solapa elegida. `main.js`:
   `openTab` marca `aria-selected` y corre la pastilla (`.pill`), muestra el
   `.tab-panel` (`#tab-<nombre>`, con `hidden`) y repite las `.rv`; el hash
   sigue siendo `#tab-monitoring` / `#tab-claims-map` / `#tab-analysis`.
@@ -457,7 +459,11 @@ en el tag `v3-riel-radar`. SDD de la fase A en
   antes. Ya no hay riel, panel de fuentes, franja ni radar (`rail.js` y
   `monitoringRadar.js` se borraron). La fase B arma la solapa de la maqueta.
 - **Mapa**: mosaicos de OpenStreetMap claros también en oscuro; controles,
-  leyenda, popups y tooltips de Leaflet con los tokens.
+  leyenda, popups y tooltips de Leaflet con los tokens. Los colores de
+  categoría (`--cat-1` … `--cat-12`) salen de la paleta de la maqueta, en su
+  tono oscuro (el número del pin va en blanco). La tarjeta de filtros lleva
+  `z-index: 3`: las dos tarjetas tienen `.rv`, cuya animación les da su
+  propia capa, y sin eso el mapa tapaba los desplegables.
 - **Login** (`index.html`, que es el de `/`, y `login-verify.html`):
   pantalla partida estática (marca y título sobre fondo oscuro, la tarjeta
   con el formulario del link mágico de siempre). Sin pie. La fase D suma la
