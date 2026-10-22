@@ -63,13 +63,23 @@
 
   <main class="page">
   <!-- ===================== Solapa: Monitoreo en vivo ===================== -->
+  <!-- La solapa de design/social-listening-v4.html: cabecera con el período
+       y "Actualizar ahora", el recuadro de progreso, los KPI, las tres
+       columnas (fuentes; flujo en vivo; pulso, pipeline, alertas y cuentas),
+       "Se despegaron" y la lista. El período (Hoy / 7 días / 30 días) filtra
+       todo por la fecha de publicación (monitoring.js). -->
   <section id="tab-monitoring" class="tab-panel" role="tabpanel" aria-label="Monitoreo">
     <div class="head rv">
       <div>
         <h1>Monitoreo en vivo</h1>
-        <p>Lo que las búsquedas trajeron en las últimas corridas, clasificado por el modelo: relevancia, tono y tema.</p>
+        <p>Lo que las búsquedas trajeron en las últimas corridas, clasificado por el modelo: relevancia, tono y tema. Las fuentes son chips: un clic filtra la lista, se agregan con el + y se sacan con la ✕.</p>
       </div>
       <div class="tools">
+        <div class="seg" id="periodSeg" role="group" aria-label="Período">
+          <button type="button" data-days="1" aria-pressed="true" class="on">Hoy</button>
+          <button type="button" data-days="7" aria-pressed="false">7 días</button>
+          <button type="button" data-days="30" aria-pressed="false">30 días</button>
+        </div>
         <button id="runNowBtn" class="btn primary" type="button">▶ Actualizar ahora</button>
       </div>
     </div>
@@ -77,7 +87,7 @@
     <!-- Progreso de "Actualizar ahora": arriba, qué se está haciendo, su
          contador y el porcentaje; la barra; debajo, las últimas líneas del
          ciclo (las arma el backend, src/monitoringProgress.js). Al terminar
-         queda a la vista con el resultado, hasta "Ocultar". -->
+         muestra el resultado y se va solo. -->
     <div id="monitoringStatusCard" class="run-card hidden">
       <div id="monitoringProgress" class="run-progress">
         <div class="run-progress-head" role="status" aria-live="polite">
@@ -96,133 +106,207 @@
       </div>
     </div>
 
-    <!-- Fuentes del monitoreo: mismos ids y misma lógica de siempre
-         (monitoring.js); con data-full las listas van completas, sin "Ver
-         todas". Los enlaces del pie (#fuentes-…) bajan a cada caja. -->
-    <div class="grid src-grid rv">
-      <div class="card src-box" id="srcBusquedas">
-        <div class="ct"><h2>Búsquedas</h2><span class="hint"><span data-src-count="searches">–</span> términos</span></div>
-        <p class="note">Es lo único que trae publicaciones nuevas. Un término de poco volumen puede traer una viral: antes de sacar uno, pensalo dos veces.</p>
-        <div class="add-row">
-          <input type="text" id="newSearch" placeholder="Agregar un término" autocomplete="off" aria-label="Agregar una búsqueda" />
-          <button id="addSearchBtn" class="btn-ghost" type="button">Agregar</button>
-        </div>
-        <p id="searchError" class="error hidden"></p>
-        <div id="searchListPreview" class="chips" data-full>
-          <button id="viewAllSearchesBtn" class="chip-more hidden"></button>
-        </div>
-      </div>
-      <div class="card src-box" id="srcPalabras">
-        <div class="ct"><h2>Palabras clave y hashtags</h2><span class="hint"><span data-src-count="keywords">–</span> en la lista</span></div>
-        <p class="note">No buscan nada: le dan contexto al modelo para decidir si un posteo es relevante.</p>
-        <div class="add-row">
-          <input type="text" id="newKeyword" placeholder="Jorge Macri o #JorgeMacri" autocomplete="off" aria-label="Agregar una palabra clave" />
-          <button id="addKeywordBtn" class="btn-ghost" type="button">Agregar</button>
-        </div>
-        <p id="keywordError" class="error hidden"></p>
-        <div id="keywordListPreview" class="chips" data-full>
-          <button id="viewAllKeywordsBtn" class="chip-more hidden"></button>
-        </div>
-      </div>
-      <div class="card src-box" id="srcCuentas">
-        <div class="ct"><h2>Cuentas seguidas</h2><span class="hint"><span data-src-count="accounts">–</span> cuentas</span></div>
-        <p class="note">Tampoco buscan: son una pista débil para el clasificador.</p>
-        <div class="add-row">
-          <input type="text" id="newAccount" placeholder="usuario, sin @" autocomplete="off" aria-label="Agregar una cuenta" />
-          <button id="addAccountBtn" class="btn-ghost" type="button">Agregar</button>
-        </div>
-        <p id="accountError" class="error hidden"></p>
-        <div id="accountListPreview" class="chips" data-full>
-          <button id="viewAllAccountsBtn" class="chip-more hidden"></button>
-        </div>
-      </div>
-    </div>
-
     <p id="monitoringLoadError" class="error hidden"></p>
 
-    <!-- "Se despegaron": tiras de los posteos con alcance alto (las arma
-         renderHighlightCards en monitoring.js). -->
-    <section id="monitoringHighlightsSection" class="hidden">
-      <div class="sec-head hl-head">
-        <h2>Se despegaron</h2>
-        <span class="hl-count" id="highlightsCount"></span>
-        <span class="hl-sub">Mejor que lo habitual de su propia cuenta. Click abre la publicación.</span>
-      </div>
-      <div class="hl-tops" id="cards"></div>
-    </section>
+    <!-- KPI del período (los arma monitoringPanel.js). -->
+    <div class="grid kpis rv" id="monKpis"></div>
 
-    <div class="list-head">
-      <h2>Publicaciones detectadas</h2>
-      <span class="list-count"><b id="n">0</b> de <b id="m">0</b></span>
+    <div class="grid mon rv">
+      <!-- Izquierda: las fuentes. Los enlaces del pie (#fuentes-…) bajan a
+           cada caja y abren su campo. -->
+      <div class="col">
+        <div class="card srcbox" id="srcBusquedas">
+          <div class="ct">
+            <h2>Búsquedas</h2>
+            <span class="hint" id="searchCount"></span>
+            <button type="button" class="plus" aria-expanded="false" aria-controls="searchAdd" aria-label="Agregar una búsqueda" data-tip="Agregar una búsqueda">+</button>
+          </div>
+          <div class="kw-add" id="searchAdd">
+            <input type="text" id="newSearch" placeholder="Agregar término y Enter…" autocomplete="off" aria-label="Agregar una búsqueda" />
+            <button type="button" id="addSearchBtn" aria-label="Agregar la búsqueda">+</button>
+          </div>
+          <p id="searchError" class="error hidden"></p>
+          <div class="kw-list" id="searchList"></div>
+          <p class="note">La lupa busca estos términos en Instagram en cada corrida: es lo único que trae publicaciones nuevas. La barrita es el tono de lo que trajo en el período.</p>
+        </div>
+        <div class="card srcbox" id="srcPalabras">
+          <div class="ct">
+            <h2>Palabras clave</h2>
+            <span class="hint" id="keywordCount"></span>
+            <button type="button" class="plus" aria-expanded="false" aria-controls="keywordAdd" aria-label="Agregar una palabra clave" data-tip="Agregar una palabra clave">+</button>
+          </div>
+          <div class="kw-add" id="keywordAdd">
+            <input type="text" id="newKeyword" placeholder="Agregar palabra y Enter…" autocomplete="off" aria-label="Agregar una palabra clave" />
+            <button type="button" id="addKeywordBtn" aria-label="Agregar la palabra clave">+</button>
+          </div>
+          <p id="keywordError" class="error hidden"></p>
+          <div class="kw-list" id="keywordList"></div>
+          <button type="button" class="kw-more hidden" id="keywordMore"></button>
+          <p class="note">Guían al clasificador: no se buscan, ayudan a decidir qué es relevante.</p>
+        </div>
+        <div class="card srcbox" id="srcHashtags">
+          <div class="ct">
+            <h2>Hashtags</h2>
+            <span class="hint" id="hashtagCount"></span>
+            <button type="button" class="plus" aria-expanded="false" aria-controls="hashtagAdd" aria-label="Agregar un hashtag" data-tip="Agregar un hashtag">+</button>
+          </div>
+          <div class="kw-add" id="hashtagAdd">
+            <input type="text" id="newHashtag" placeholder="#hashtag y Enter…" autocomplete="off" aria-label="Agregar un hashtag" />
+            <button type="button" id="addHashtagBtn" aria-label="Agregar el hashtag">+</button>
+          </div>
+          <p id="hashtagError" class="error hidden"></p>
+          <div class="kw-list" id="hashtagList"></div>
+          <button type="button" class="kw-more hidden" id="hashtagMore"></button>
+        </div>
+      </div>
+
+      <!-- Centro: el flujo en vivo (monitoringFlow.js). La tarjeta no crece:
+           entran las líneas que caben. -->
+      <div class="card flowcard">
+        <div class="inner">
+          <div class="ct">
+            <h2>Flujo en vivo</h2>
+            <span class="hint"><span class="num" id="flowRate">—</span> publicaciones/hora · pasá el mouse para pausar · click abre la publicación</span>
+          </div>
+          <div class="flow" id="flow" aria-label="Últimas publicaciones detectadas"></div>
+        </div>
+      </div>
+
+      <!-- Derecha: pulso, pipeline, alertas y cuentas (monitoringPanel.js). -->
+      <div class="col">
+        <div class="card">
+          <div class="ct"><h2>Pulso del tono</h2><span class="hint">por hora del día · 7 días</span></div>
+          <svg class="pulse-chart" id="pulse" viewBox="0 0 300 150" role="img" aria-label="Publicaciones por hora del día en los últimos 7 días, según el tono"></svg>
+          <div class="legend"><span><i class="bg-pos"></i>Positivo</span><span><i class="bg-neu"></i>Neutral</span><span><i class="bg-neg"></i>Negativo</span></div>
+        </div>
+        <div class="card">
+          <div class="ct"><h2>Pipeline</h2><span class="hint" id="pipeHint">—</span></div>
+          <div class="pipe">
+            <div class="st"><div class="ic">IG</div><small>Apify</small><span class="num" id="pipeFetched">—</span><span class="lb">traídas</span></div>
+            <div class="lnk" aria-hidden="true"><i></i><i></i></div>
+            <div class="st"><div class="ic ai">AI</div><small id="pipeModel">—</small><span class="num" id="pipeNew">—</span><span class="lb">nuevas</span></div>
+            <div class="lnk" aria-hidden="true"><i></i><i></i></div>
+            <div class="st"><div class="ic">DB</div><small>SQLite</small><span class="num" id="pipeSaved">—</span><span class="lb">relevantes</span></div>
+          </div>
+          <p class="note pipe-note" id="pipeNote"></p>
+        </div>
+        <div class="card">
+          <div class="ct"><h2>Alertas</h2><span class="hint" id="alertsCount"></span></div>
+          <div class="alerts" id="alerts"></div>
+        </div>
+        <div class="card srcbox" id="srcCuentas">
+          <div class="ct">
+            <h2>Cuentas seguidas</h2>
+            <span class="hint" id="accountCount"></span>
+            <button type="button" class="plus" aria-expanded="false" aria-controls="accountAdd" aria-label="Agregar una cuenta" data-tip="Agregar una cuenta">+</button>
+          </div>
+          <div class="kw-add" id="accountAdd">
+            <input type="text" id="newAccount" placeholder="@cuenta y Enter…" autocomplete="off" aria-label="Agregar una cuenta" />
+            <button type="button" id="addAccountBtn" aria-label="Agregar la cuenta">+</button>
+          </div>
+          <p id="accountError" class="error hidden"></p>
+          <div class="accts" id="accountList"></div>
+          <button type="button" class="kw-more hidden" id="accountMore"></button>
+          <p class="note">No buscan: son una pista débil para el clasificador.</p>
+        </div>
+      </div>
     </div>
 
-    <!-- Vista, filtros, orden del feed y buscador, en una fila (baja entera
-         si no entra). -->
-    <div class="filters">
-      <div class="frow">
+    <!-- "Se despegaron": hasta 4 tiras del período con alcance alto (las arma
+         renderHighlightCards en monitoring.js). -->
+    <section id="monitoringHighlightsSection" class="rv">
+      <div class="head sec">
+        <div>
+          <h2>Se despegaron <span class="cnt" id="highlightsCount">0</span></h2>
+          <p>Mejor que lo habitual de su propia cuenta. Click abre la publicación.</p>
+        </div>
+      </div>
+      <div class="grid ups" id="cards"></div>
+    </section>
+
+    <div class="head sec rv">
+      <div>
+        <h2>Publicaciones detectadas</h2>
+        <p>Todo lo relevante del período, con su tono, su tema y cuánto se despegó de lo habitual de su cuenta. Cada tarjeta abre el detalle.</p>
+      </div>
+      <div class="tools">
         <!-- Vista de los resultados: el feed de tarjetas
              (public/js/monitoringFeed.js, solo en Instagram) o la tabla de
              siempre. Se recuerda la última elegida; si no hay, el feed. -->
-        <div class="view-seg" id="viewSeg" role="group" aria-label="Vista de los resultados">
+        <div class="seg" id="viewSeg" role="group" aria-label="Vista de los resultados">
           <button type="button" data-view="feed" class="on" aria-pressed="true">Feed</button>
           <button type="button" data-view="tabla" aria-pressed="false">Tabla</button>
-        </div>
-
-        <select id="fSent" aria-label="Filtrar por sentimiento">
-          <option value="">Sentimiento</option>
-          <option value="positivo">Positivo</option>
-          <option value="neutral">Neutral</option>
-          <option value="negativo">Negativo</option>
-          <option value="sin_clasificar">Sin clasificar</option>
-        </select>
-
-        <!-- Alcance del posteo contra lo habitual de su cuenta (postReach
-             en public/js/monitoring.js). Filtra las dos vistas. Solo en
-             Instagram. -->
-        <select id="fAlcance" aria-label="Filtrar por alcance">
-          <option value="">Alcance</option>
-          <option value="alto">Alto</option>
-          <option value="medio">Medio</option>
-          <option value="bajo">Bajo</option>
-        </select>
-
-        <!-- No es un <select> nativo a propósito: con ~70 opciones el
-             navegador puede abrir el desplegable hacia arriba. Este panel
-             propio se ancla siempre hacia abajo. -->
-        <div class="acc-select" id="fAccSelect">
-          <button type="button" class="acc-select-btn" id="fAccBtn" aria-haspopup="listbox" aria-expanded="false">
-            Cuenta
-          </button>
-          <div class="acc-select-panel hidden" id="fAccPanel" role="listbox" aria-label="Cuenta"></div>
-        </div>
-
-        <label class="f-date">Desde <input type="date" id="fDesde" aria-label="Fecha desde" /></label>
-        <label class="f-date">Hasta <input type="date" id="fHasta" aria-label="Fecha hasta" /></label>
-
-        <!-- Orden del feed: solo se ve en la vista Feed (la tabla ordena
-             cliqueando el encabezado de cada columna). -->
-        <select id="fOrden" class="hidden" aria-label="Ordenar el feed">
-          <option value="recent">Más recientes</option>
-          <option value="reach">Mayor alcance</option>
-          <option value="likes">Más likes</option>
-        </select>
-
-        <!-- Buscador y "Limpiar" van juntos: si no entran en el renglón de
-             la barra, bajan los dos. -->
-        <div class="frow-end">
-          <input type="search" id="q" placeholder="Buscar título, cuenta o texto" aria-label="Buscar título, cuenta o texto del posteo" />
-          <button class="f-clear" id="clear" type="button" disabled>Limpiar</button>
         </div>
       </div>
     </div>
 
-    <div class="card tbl-wrap">
-      <div id="monitoringTable"></div>
-    </div>
+    <div class="card pubs-card rv">
+      <!-- Ocho filtros con su nombre. Valen para el feed y la tabla. -->
+      <div class="fbar">
+        <label class="f f-q"><span>Buscar</span><input class="field" type="search" id="q" placeholder="Título, cuenta o texto…" autocomplete="off" /></label>
+        <label class="f"><span>Tono</span>
+          <select class="field" id="fSent">
+            <option value="">Todos</option>
+            <option value="positivo">Positivo</option>
+            <option value="neutral">Neutral</option>
+            <option value="negativo">Negativo</option>
+            <option value="sin_clasificar">Sin clasificar</option>
+          </select>
+        </label>
+        <!-- Alcance del posteo contra lo habitual de su cuenta (postReach en
+             public/js/monitoring.js). -->
+        <label class="f"><span>Alcance</span>
+          <select class="field" id="fAlcance">
+            <option value="">Todos</option>
+            <option value="alto">Alto · se despegaron</option>
+            <option value="medio">Medio</option>
+            <option value="bajo">Bajo</option>
+          </select>
+        </label>
+        <!-- Las opciones llegan con la config (temas de /api/monitoring/config). -->
+        <label class="f"><span>Tema</span>
+          <select class="field" id="fTema"><option value="">Todos</option></select>
+        </label>
+        <!-- No es un <select> nativo a propósito: con ~70 opciones el
+             navegador puede abrir el desplegable hacia arriba. Este panel
+             propio se ancla siempre hacia abajo y tiene buscador. -->
+        <div class="f">
+          <span id="fAccLabel">Cuenta</span>
+          <div class="combo" id="fAccSelect">
+            <button type="button" class="field combo-btn" id="fAccBtn" aria-haspopup="listbox" aria-expanded="false" aria-labelledby="fAccLabel fAccBtnText"><b id="fAccBtnText">Todas</b><i aria-hidden="true">▾</i></button>
+            <div class="combo-panel hidden" id="fAccPanel">
+              <input class="field" type="search" id="fAccQ" placeholder="Buscar cuenta…" autocomplete="off" aria-label="Buscar cuenta" />
+              <div class="combo-list" id="fAccList" role="listbox" aria-label="Cuenta"></div>
+            </div>
+          </div>
+        </div>
+        <label class="f"><span>Desde</span><input class="field" type="date" id="fDesde" /></label>
+        <label class="f"><span>Hasta</span><input class="field" type="date" id="fHasta" /></label>
+        <!-- Orden del feed: en la tabla queda deshabilitado (se ordena con el
+             encabezado de cada columna). -->
+        <label class="f"><span>Orden</span>
+          <select class="field" id="fOrden">
+            <option value="recent">Más recientes</option>
+            <option value="reach">Mayor alcance</option>
+            <option value="likes">Más likes</option>
+            <option value="comments">Más comentarios</option>
+          </select>
+        </label>
+      </div>
+      <div class="fstatus">
+        <span class="count">Mostrando <b id="n">0</b> de <b id="m">0</b> publicaciones del período</span>
+        <span class="f-source hidden" id="fSource"></span>
+        <button class="f-clear" id="clear" type="button" disabled>Limpiar filtros</button>
+      </div>
 
-    <!-- Vista Feed: las mismas publicaciones y los mismos filtros que la
-         tabla, en tarjetas. La llena public/js/monitoringFeed.js. -->
-    <section class="feed hidden" id="monitoringFeed" aria-label="Publicaciones detectadas, en tarjetas"></section>
+      <div class="tbl-wrap">
+        <div id="monitoringTable"></div>
+      </div>
+
+      <!-- Vista Feed: las mismas publicaciones y los mismos filtros que la
+           tabla, en tarjetas. La llena public/js/monitoringFeed.js. -->
+      <section class="feed hidden" id="monitoringFeed" aria-label="Publicaciones detectadas, en tarjetas"></section>
+    </div>
   </section>
 
   <!-- ===================== Solapa: Mapa de reclamos ===================== -->
@@ -347,39 +431,6 @@
         <button id="ignoreCancelBtn" class="btn" type="button">Cancelar</button>
         <button id="ignoreConfirmBtn" class="btn primary" type="button">Sí, ignorar</button>
       </div>
-    </div>
-  </div>
-
-  <!-- Popup con el listado completo de cuentas trackeadas -->
-  <div id="accountsModal" class="modal-overlay hidden">
-    <div class="modal-box modal-box-wide">
-      <div class="modal-header">
-        <p>Cuentas seguidas</p>
-        <button id="accountsModalCloseBtn" class="btn-small btn-clear" type="button">Cerrar</button>
-      </div>
-      <ul id="accountListFull" class="tag-list"></ul>
-    </div>
-  </div>
-
-  <!-- Popup con el listado completo de palabras clave / hashtags -->
-  <div id="keywordsModal" class="modal-overlay hidden">
-    <div class="modal-box modal-box-wide">
-      <div class="modal-header">
-        <p>Palabras clave y hashtags</p>
-        <button id="keywordsModalCloseBtn" class="btn-small btn-clear" type="button">Cerrar</button>
-      </div>
-      <ul id="keywordListFull" class="tag-list"></ul>
-    </div>
-  </div>
-
-  <!-- Popup con el listado completo de búsquedas por palabra clave -->
-  <div id="searchesModal" class="modal-overlay hidden">
-    <div class="modal-box modal-box-wide">
-      <div class="modal-header">
-        <p>Búsquedas</p>
-        <button id="searchesModalCloseBtn" class="btn-small btn-clear" type="button">Cerrar</button>
-      </div>
-      <ul id="searchListFull" class="tag-list"></ul>
     </div>
   </div>
 

@@ -268,7 +268,7 @@ function fillFeedPop(post) {
   feedPopBoxEl.dataset.s = post.sentiment || SENTIMENT_UNSET;
 
   feedPopAvatarEl.textContent = account ? account[0].toUpperCase() : '?';
-  feedPopAvatarEl.style.background = FEED_PALETTE[feedHash(account) % FEED_PALETTE.length];
+  feedPopAvatarEl.style.background = accountColor(account);
   feedPopWhoEl.textContent = account ? `@${account}` : 'N/D';
   feedPopWhoEl.title = feedPopWhoEl.textContent; // entero al pasar el mouse, si quedó cortado
   feedPopFollowersEl.textContent = `${feedCount(post.followers)} seguidores`;

@@ -121,10 +121,16 @@ if (topEl && typeof ResizeObserver === 'function') new ResizeObserver(measureTop
 // su campo. Después el hash vuelve a ser el de la solapa, así el mismo
 // enlace sirve la próxima vez.
 // ---------------------------------------------------------------------------
-const SOURCE_BOXES = { busquedas: 'srcBusquedas', cuentas: 'srcCuentas', palabras: 'srcPalabras', hashtags: 'srcPalabras' };
+const SOURCE_BOXES = { busquedas: 'srcBusquedas', cuentas: 'srcCuentas', palabras: 'srcPalabras', hashtags: 'srcHashtags' };
 
 function goToSourceBox(box, smooth) {
   box.scrollIntoView({ block: 'start', behavior: smooth && !reducedMotion.matches ? 'smooth' : 'auto' });
+  // El campo de agregar de cada caja está plegado detrás de su "+": se abre
+  // (panelOpenAdd, en monitoringPanel.js) antes de enfocarlo.
+  if (typeof panelOpenAdd === 'function') {
+    panelOpenAdd(box);
+    return;
+  }
   const input = box.querySelector('input');
   if (input) input.focus({ preventScroll: true });
 }

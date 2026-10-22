@@ -14,6 +14,7 @@
 const feedContainerEl = document.getElementById('monitoringFeed');
 const feedViewSegEl = document.getElementById('viewSeg');
 const feedOrderEl = document.getElementById('fOrden');
+const feedOrderWrapEl = feedOrderEl.closest('.f');
 const feedTableWrapEl = document.getElementById('monitoringTable').closest('.tbl-wrap');
 
 // Última vista elegida; si no hay ninguna, el feed.
@@ -68,36 +69,12 @@ function feedAgo(iso) {
   return `hace ${days} ${days === 1 ? 'día' : 'días'}`;
 }
 
-// Motivo corto para el pie de la tarjeta, a partir de matched_reason (lo arma
-// src/monitor.js): "búsqueda <término>", "palabra clave <término>" o "cuenta
-// trackeada". Lo que viene después de " · " es el motivo del clasificador y
-// no entra acá. Una forma desconocida se muestra tal cual.
-function feedReasonParts(reason) {
-  const base = String(reason || '').split(' · ')[0].trim();
-  let match = base.match(/^Búsqueda:\s*(.+?)(?:\s+\(|\s+—\s|$)/);
-  if (match) return { text: 'búsqueda', term: match[1] };
-  match = base.match(/^Coincidencia con palabra clave:\s*"?(.+?)"?$/);
-  if (match) return { text: 'palabra clave', term: match[1] };
-  if (base.startsWith('Cuenta trackeada')) return { text: 'cuenta trackeada', term: null };
-  return { text: base, term: null };
-}
-
 // -------------------------------------------------------------------------
 // Recuadro de la imagen.
 // -------------------------------------------------------------------------
 // Un posteo sin tipo detectado no lleva etiqueta de tipo.
 const FEED_TYPE_LABELS = { reel: 'Reel', imagen: 'Imagen', carrusel: 'Carrusel' };
 const FEED_REACH_LABELS = { alto: 'Alcance alto', medio: 'Alcance medio', bajo: 'Alcance bajo' };
-// Colores del avatar, de la paleta de la maqueta v4 (en su tono oscuro, para
-// la inicial en blanco). El color sale del nombre de la cuenta, así cada
-// cuenta se ve siempre igual.
-const FEED_PALETTE = ['#199e70', '#d04a4a', '#2a78d6', '#c98500', '#6250d6', '#0b7fc4', '#d95926', '#5466b8'];
-
-function feedHash(text) {
-  let hash = 7;
-  for (const ch of String(text || '')) hash = (hash * 31 + ch.codePointAt(0)) >>> 0;
-  return hash;
-}
 
 // Foto del posteo. El listado manda `image` (src/postImageRoutes.js):
 // thumbUrl y fullUrl, las direcciones de las dos copias guardadas en el
@@ -178,7 +155,7 @@ function buildFeedHead(post) {
   const account = post.account && post.account !== 'N/D' ? post.account : null;
 
   const avatar = feedNode('div', 'feed-av', account ? account[0].toUpperCase() : '?');
-  avatar.style.background = FEED_PALETTE[feedHash(account) % FEED_PALETTE.length];
+  avatar.style.background = accountColor(account);
   avatar.setAttribute('aria-hidden', 'true');
 
   const who = feedNode('div', 'feed-who');
@@ -260,7 +237,7 @@ function buildFeedFoot(post, reach) {
   const foot = feedNode('div', 'feed-foot');
 
   const why = feedNode('span', 'feed-why');
-  const { text, term } = feedReasonParts(post.matched_reason);
+  const { text, term } = postReasonParts(post.matched_reason);
   why.append(term ? `${text} ` : text);
   if (term) why.appendChild(feedNode('code', '', term));
   why.title = post.matched_reason || '';
@@ -326,6 +303,7 @@ function feedSorter(order, reachById) {
     return (a, b) => feedDescending(level(a), level(b)) || feedDescending(ratio(a), ratio(b)) || recent(a, b);
   }
   if (order === 'likes') return (a, b) => feedDescending(a.likes, b.likes) || recent(a, b);
+  if (order === 'comments') return (a, b) => feedDescending(a.comments, b.comments) || recent(a, b);
   return recent;
 }
 
@@ -378,13 +356,11 @@ function renderFeed() {
   const fragment = document.createDocumentFragment();
   for (const post of visible) fragment.appendChild(buildFeedCard(post, reachById.get(post.id)));
   if (!visible.length) {
-    fragment.appendChild(
-      feedNode(
-        'div',
-        'feed-empty',
-        monitoringTable.getDataCount() ? 'No hay publicaciones con esos filtros.' : 'Todavía no se detectó ningún posteo.'
-      )
-    );
+    // "No hay publicaciones con esos filtros", o el período vacío con el
+    // enlace al siguiente (buildEmptyListLine en monitoring.js).
+    const empty = feedNode('div', 'feed-empty');
+    empty.appendChild(buildEmptyListLine());
+    fragment.appendChild(empty);
   }
   feedContainerEl.replaceChildren(fragment);
   if (listChanged) feedScrollToStart();
@@ -420,7 +396,18 @@ function setFeedView(view, { save = true } = {}) {
   }
   feedTableWrapEl.classList.toggle('hidden', isFeed);
   feedContainerEl.classList.toggle('hidden', !isFeed);
-  feedOrderEl.classList.toggle('hidden', !isFeed);
+  // "Orden" es del feed: en la tabla se ordena con el encabezado de cada
+  // columna. Queda a la vista, deshabilitado y con el aviso.
+  feedOrderEl.disabled = !isFeed;
+  if (feedOrderWrapEl) {
+    if (isFeed) {
+      delete feedOrderWrapEl.dataset.tipTitle;
+      delete feedOrderWrapEl.dataset.tip;
+    } else {
+      feedOrderWrapEl.dataset.tipTitle = 'Orden de la tabla';
+      feedOrderWrapEl.dataset.tip = 'En la tabla se ordena con el encabezado de cada columna.';
+    }
+  }
 
   if (isFeed) {
     renderFeed();
@@ -443,7 +430,6 @@ feedViewSegEl.addEventListener('click', (e) => {
   const button = e.target.closest('button[data-view]');
   if (button) setFeedView(button.dataset.view);
 });
-feedOrderEl.addEventListener('change', renderFeed);
 
 // -------------------------------------------------------------------------
 // Acciones de la tarjeta: las mismas de la fila de la tabla, con los mismos
@@ -535,25 +521,26 @@ function removeFeedCard(id) {
   else notifyFeedList();
 }
 
-// Hasta dónde tapa la barra de filtros, que queda pegada arriba al bajar.
+// Hasta dónde tapa la barra superior, que en escritorio queda fija arriba al
+// bajar (en celular va en su lugar y no tapa nada).
 function feedBarBottom() {
-  const bar = document.querySelector('.filters');
-  return bar ? (parseFloat(getComputedStyle(bar).top) || 0) + bar.offsetHeight : 0;
+  const top = document.querySelector('header.top');
+  if (!top) return 0;
+  const position = getComputedStyle(top).position;
+  return position === 'sticky' || position === 'fixed' ? top.offsetHeight : 0;
 }
 
-// Deja la tarjeta justo debajo de la barra de filtros. De un salto, sin
+// Deja la tarjeta justo debajo de la barra superior. De un salto, sin
 // animar: las tarjetas que todavía no se dibujaron tienen un alto estimado y
 // un scroll animado caería en otro lado.
 function feedScrollToCard(card) {
   window.scrollTo({ top: card.getBoundingClientRect().top + window.scrollY - feedBarBottom() - 12 });
 }
 
-// La barra de filtros queda pegada arriba, así que se puede filtrar, ordenar
-// o cambiar de vista desde cualquier altura de la lista. Si se estaba más
-// abajo que el principio de los resultados ("el": el feed o la tabla), se
-// vuelve ahí: sin esto se quedaba mirando la mitad de la lista nueva, o su
-// final si era más corta. Si el principio ya está a la vista, la página no
-// se mueve.
+// Si se cambia un filtro, el orden o la vista con la página más abajo que el
+// principio de los resultados ("el": el feed o la tabla), se vuelve ahí: sin
+// esto se quedaba mirando la mitad de la lista nueva, o su final si era más
+// corta. Si el principio ya está a la vista, la página no se mueve.
 function feedScrollToStart(el = feedContainerEl) {
   const top = el.getBoundingClientRect().top;
   const limit = feedBarBottom() + 12;
@@ -582,9 +569,9 @@ function feedGoToCard(id) {
 
 // Aviso de monitoring.js (ver monitoringViewListeners).
 function onMonitoringChange(change) {
-  // Los avisos de "Actualizar ahora" no son para el feed: se redibuja con el
-  // aviso de los datos nuevos, que llega aparte.
-  if (change && change.run) return false;
+  // Los avisos de "Actualizar ahora" y de la config no son para el feed: se
+  // redibuja con el aviso de los datos nuevos, que llega aparte.
+  if (change && (change.run || 'config' in change)) return false;
   if (change && change.goToId !== undefined) return feedGoToCard(change.goToId);
   if (change && change.ignoredId !== undefined) {
     removeFeedCard(change.ignoredId);

@@ -1,37 +1,39 @@
 const newAccountInput = document.getElementById('newAccount');
 const addAccountBtn = document.getElementById('addAccountBtn');
+const accountErrorEl = document.getElementById('accountError');
+const newKeywordInput = document.getElementById('newKeyword');
+const addKeywordBtn = document.getElementById('addKeywordBtn');
+const keywordErrorEl = document.getElementById('keywordError');
+
+// Listas de fuentes "de siempre" (x.html): vista previa con "Ver todas" y el
+// listado completo en un modal. En instagram.html no están: ahí las cajas de
+// fuentes las dibuja public/js/monitoringPanel.js con la config que se
+// avisa por notifyMonitoringViews({ config }).
 const accountListPreviewEl = document.getElementById('accountListPreview');
 const accountListFullEl = document.getElementById('accountListFull');
 const viewAllAccountsBtn = document.getElementById('viewAllAccountsBtn');
-const accountErrorEl = document.getElementById('accountError');
-
 const accountsModal = document.getElementById('accountsModal');
 const accountsModalCloseBtn = document.getElementById('accountsModalCloseBtn');
-
-const newKeywordInput = document.getElementById('newKeyword');
-const addKeywordBtn = document.getElementById('addKeywordBtn');
 const keywordListPreviewEl = document.getElementById('keywordListPreview');
 const keywordListFullEl = document.getElementById('keywordListFull');
 const viewAllKeywordsBtn = document.getElementById('viewAllKeywordsBtn');
-const keywordErrorEl = document.getElementById('keywordError');
-
 const keywordsModal = document.getElementById('keywordsModal');
 const keywordsModalCloseBtn = document.getElementById('keywordsModalCloseBtn');
+const HAS_CLASSIC_SOURCES = Boolean(
+  accountListPreviewEl && accountListFullEl && viewAllAccountsBtn && accountsModal && accountsModalCloseBtn &&
+    keywordListPreviewEl && keywordListFullEl && viewAllKeywordsBtn && keywordsModal && keywordsModalCloseBtn
+);
 
-// Búsquedas por palabra clave (lista `searches`): la caja existe solo en la
-// solapa de Instagram (x.html no la tiene), así que todo lo que las usa
-// chequea HAS_SEARCHES.
+// Búsquedas por palabra clave (lista `searches`) y hashtags aparte: las cajas
+// existen solo en la solapa de Instagram (x.html no las tiene).
 const newSearchInput = document.getElementById('newSearch');
 const addSearchBtn = document.getElementById('addSearchBtn');
-const searchListPreviewEl = document.getElementById('searchListPreview');
-const searchListFullEl = document.getElementById('searchListFull');
-const viewAllSearchesBtn = document.getElementById('viewAllSearchesBtn');
 const searchErrorEl = document.getElementById('searchError');
-const searchesModal = document.getElementById('searchesModal');
-const searchesModalCloseBtn = document.getElementById('searchesModalCloseBtn');
-const HAS_SEARCHES = Boolean(
-  newSearchInput && addSearchBtn && searchListPreviewEl && searchListFullEl && viewAllSearchesBtn && searchErrorEl && searchesModal && searchesModalCloseBtn
-);
+const HAS_SEARCHES = Boolean(newSearchInput && addSearchBtn && searchErrorEl);
+const newHashtagInput = document.getElementById('newHashtag');
+const addHashtagBtn = document.getElementById('addHashtagBtn');
+const hashtagErrorEl = document.getElementById('hashtagError');
+const HAS_HASHTAGS = Boolean(newHashtagInput && addHashtagBtn && hashtagErrorEl);
 
 const ignoreModal = document.getElementById('ignoreModal');
 const ignoreCancelBtn = document.getElementById('ignoreCancelBtn');
@@ -59,17 +61,33 @@ const cardsEl = document.getElementById('cards');
 const highlightsCountEl = document.getElementById('highlightsCount');
 
 const fSentEl = document.getElementById('fSent');
-// Filtro "Alcance": solo está en instagram.html (la etiqueta sale del
-// benchmark, que X no tiene). En x.html esto es null y el filtro no existe.
+// Filtros "Alcance" y "Tema", el orden y el período: solo están en
+// instagram.html (el alcance sale del benchmark, que X no tiene). En x.html
+// son null y esos filtros no existen.
 const fAlcanceEl = document.getElementById('fAlcance');
+const fTemaEl = document.getElementById('fTema');
+const fOrdenEl = document.getElementById('fOrden');
 const fAccBtnEl = document.getElementById('fAccBtn');
 const fAccPanelEl = document.getElementById('fAccPanel');
+// Instagram: el desplegable de Cuenta lleva buscador y la cantidad de
+// publicaciones del período de cada cuenta (el combo de la maqueta). X: la
+// lista simple de siempre.
+const fAccTextEl = document.getElementById('fAccBtnText');
+const fAccQEl = document.getElementById('fAccQ');
+const fAccListEl = document.getElementById('fAccList');
+const HAS_ACC_COMBO = Boolean(fAccTextEl && fAccQEl && fAccListEl);
 const fDesdeEl = document.getElementById('fDesde');
 const fHastaEl = document.getElementById('fHasta');
 const qEl = document.getElementById('q');
 const nEl = document.getElementById('n');
 const mEl = document.getElementById('m');
 const monitoringClearBtn = document.getElementById('clear');
+// El filtro por fuente (un clic en un chip de búsqueda, palabra clave o
+// hashtag), a la vista como una pastilla con ✕ en la línea "Mostrando N de
+// M". Solo instagram.html.
+const fSourceEl = document.getElementById('fSource');
+// Selector Hoy / 7 días / 30 días de la cabecera (solo instagram.html).
+const periodSegEl = document.getElementById('periodSeg');
 
 const KEYWORDS_PREVIEW_COUNT = 2;
 // Todo de una sola vez: el orden/filtro/paginación ahora los maneja
@@ -124,20 +142,17 @@ function renderTagList(listEl, items, onRemove, extraClass) {
   });
 }
 
-// Lista con vista previa + "Ver todas (N)" + listado completo en un modal.
-// El mismo componente para cuentas, palabras clave y búsquedas. En el panel
-// de fuentes de instagram.html el contenedor lleva data-full: ahí la lista
-// va completa y "Ver todas" no hace falta.
+// Lista con vista previa + "Ver todas (N)" + listado completo en un modal
+// (x.html: cuentas y palabras clave).
 function renderPreviewLists({ previewEl, fullEl, viewAllBtn, items, onRemove, extraClass }) {
-  const full = previewEl.hasAttribute('data-full');
-  const preview = full ? items : items.slice(0, KEYWORDS_PREVIEW_COUNT);
+  const preview = items.slice(0, KEYWORDS_PREVIEW_COUNT);
   renderTagList(previewEl, preview, onRemove, extraClass);
   renderTagList(fullEl, items, onRemove, extraClass);
 
   // renderTagList reemplaza todo el contenido del contenedor, así que el
   // botón "Ver todas" (que vive ahí adentro para quedar en la misma fila
   // que los chips) hay que volver a engancharlo después.
-  if (!full && items.length > KEYWORDS_PREVIEW_COUNT) {
+  if (items.length > KEYWORDS_PREVIEW_COUNT) {
     viewAllBtn.textContent = `Ver todas (${items.length})`;
     viewAllBtn.classList.remove('hidden');
   } else {
@@ -146,16 +161,7 @@ function renderPreviewLists({ previewEl, fullEl, viewAllBtn, items, onRemove, ex
   previewEl.appendChild(viewAllBtn);
 }
 
-// Contadores de las cajas de fuentes del Monitoreo de instagram.html
-// ([data-src-count]); en x.html no hay ninguno.
-function updateSourceCount(kind, count) {
-  document.querySelectorAll(`[data-src-count="${kind}"]`).forEach((el) => {
-    el.textContent = String(count);
-  });
-}
-
 function renderAccountLists(accounts) {
-  updateSourceCount('accounts', accounts.length);
   renderPreviewLists({
     previewEl: accountListPreviewEl,
     fullEl: accountListFullEl,
@@ -166,7 +172,6 @@ function renderAccountLists(accounts) {
 }
 
 function renderKeywordLists(keywords) {
-  updateSourceCount('keywords', keywords.length);
   renderPreviewLists({
     previewEl: keywordListPreviewEl,
     fullEl: keywordListFullEl,
@@ -177,16 +182,27 @@ function renderKeywordLists(keywords) {
   });
 }
 
-function renderSearchLists(searches) {
-  updateSourceCount('searches', searches.length);
-  renderPreviewLists({
-    previewEl: searchListPreviewEl,
-    fullEl: searchListFullEl,
-    viewAllBtn: viewAllSearchesBtn,
-    items: searches,
-    onRemove: removeSearch,
-    extraClass: 'kw',
+// La última config que llegó: { accounts, keywords, searches, temas }. null
+// mientras no llegó ninguna.
+let monitoringConfig = null;
+
+// Opciones del filtro "Tema" (instagram.html): los temas posibles de un
+// posteo, en el orden de config/categorias-reclamos.json (temas de
+// /api/monitoring/config). Si el elegido sigue existiendo, queda elegido.
+function fillTemaFilter(temas) {
+  if (!fTemaEl) return;
+  const previous = fTemaEl.value;
+  const all = document.createElement('option');
+  all.value = '';
+  all.textContent = 'Todos';
+  const options = (temas || []).map((tema) => {
+    const opt = document.createElement('option');
+    opt.value = tema;
+    opt.textContent = tema;
+    return opt;
   });
+  fTemaEl.replaceChildren(all, ...options);
+  fTemaEl.value = (temas || []).includes(previous) ? previous : '';
 }
 
 async function loadConfig() {
@@ -194,87 +210,117 @@ async function loadConfig() {
     const resp = await fetch(withPlataforma('/api/monitoring/config'));
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const config = await resp.json();
-    renderAccountLists(config.accounts);
-    renderKeywordLists(config.keywords);
-    if (HAS_SEARCHES) renderSearchLists(config.searches || []);
+    monitoringConfig = config;
+    if (HAS_CLASSIC_SOURCES) {
+      renderAccountLists(config.accounts);
+      renderKeywordLists(config.keywords);
+    }
+    fillTemaFilter(config.temas);
+    notifyMonitoringViews({ config });
   } catch (err) {
-    accountListPreviewEl.innerHTML = '<span class="muted">No se pudo cargar. Reiniciá el servidor y recargá la página.</span>';
-    keywordListPreviewEl.innerHTML = '<span class="muted">No se pudo cargar. Reiniciá el servidor y recargá la página.</span>';
-    if (HAS_SEARCHES) searchListPreviewEl.innerHTML = '<span class="muted">No se pudo cargar. Reiniciá el servidor y recargá la página.</span>';
+    if (HAS_CLASSIC_SOURCES) {
+      accountListPreviewEl.innerHTML = '<span class="muted">No se pudo cargar. Reiniciá el servidor y recargá la página.</span>';
+      keywordListPreviewEl.innerHTML = '<span class="muted">No se pudo cargar. Reiniciá el servidor y recargá la página.</span>';
+    }
+    notifyMonitoringViews({ config: null });
     console.error('Error cargando config de monitoreo:', err);
   }
 }
 
-async function addAccount() {
-  const account = newAccountInput.value.trim();
-  if (!account) return;
-
-  accountErrorEl.classList.add('hidden');
-  addAccountBtn.disabled = true;
-  addAccountBtn.textContent = IS_X_MONITOR ? 'Agregando…' : 'Verificando…';
-
+// Agrega una fuente con su endpoint (POST /api/monitoring/<endpoint>, el
+// valor en `key`). Mientras espera, el botón dice busyText; un error queda
+// en errorEl. Al terminar bien vacía el campo y vuelve a leer la config.
+// Devuelve true si se agregó.
+async function addSource({ input, button, errorEl, endpoint, key, value, busyText, failText }) {
+  if (!value) return false;
+  errorEl.classList.add('hidden');
+  const label = button.textContent;
+  button.disabled = true;
+  button.textContent = busyText;
   try {
-    const resp = await fetch(withPlataforma('/api/monitoring/accounts'), {
+    const resp = await fetch(withPlataforma(`/api/monitoring/${endpoint}`), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ account, plataforma: MONITOR_PLATFORM }),
+      body: JSON.stringify({ [key]: value, plataforma: MONITOR_PLATFORM }),
     });
     const data = await resp.json();
-    if (!resp.ok) throw new Error(data.error || 'No se pudo agregar la cuenta.');
-    newAccountInput.value = '';
+    if (!resp.ok) throw new Error(data.error || failText);
+    input.value = '';
     loadConfig();
+    return true;
   } catch (err) {
-    accountErrorEl.textContent = err.message;
-    accountErrorEl.classList.remove('hidden');
+    errorEl.textContent = err.message;
+    errorEl.classList.remove('hidden');
+    return false;
   } finally {
-    addAccountBtn.disabled = false;
-    addAccountBtn.textContent = 'Agregar';
+    button.disabled = false;
+    button.textContent = label;
   }
 }
 
-async function removeAccount(account) {
+// Saca una fuente (DELETE) y vuelve a leer la config. Devuelve true si el
+// servidor la sacó.
+async function removeSource(endpoint, value, what) {
+  let ok = false;
   try {
-    await fetch(withPlataforma(`/api/monitoring/accounts/${encodeURIComponent(account)}`), { method: 'DELETE' });
+    const resp = await fetch(withPlataforma(`/api/monitoring/${endpoint}/${encodeURIComponent(value)}`), { method: 'DELETE' });
+    ok = resp.ok;
   } catch (err) {
-    console.error('Error quitando cuenta:', err);
+    console.error(`Error quitando ${what}:`, err);
   }
   loadConfig();
+  return ok;
 }
 
-async function addKeyword() {
-  const keyword = newKeywordInput.value.trim();
-  if (!keyword) return;
-
-  keywordErrorEl.classList.add('hidden');
-  addKeywordBtn.disabled = true;
-  addKeywordBtn.textContent = 'Verificando…';
-
-  try {
-    const resp = await fetch(withPlataforma('/api/monitoring/keywords'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ keyword, plataforma: MONITOR_PLATFORM }),
-    });
-    const data = await resp.json();
-    if (!resp.ok) throw new Error(data.error || 'No se pudo agregar la palabra clave.');
-    newKeywordInput.value = '';
-    loadConfig();
-  } catch (err) {
-    keywordErrorEl.textContent = err.message;
-    keywordErrorEl.classList.remove('hidden');
-  } finally {
-    addKeywordBtn.disabled = false;
-    addKeywordBtn.textContent = 'Agregar';
-  }
+function addAccount() {
+  return addSource({
+    input: newAccountInput,
+    button: addAccountBtn,
+    errorEl: accountErrorEl,
+    endpoint: 'accounts',
+    key: 'account',
+    value: newAccountInput.value.trim(),
+    busyText: IS_X_MONITOR ? 'Agregando…' : 'Verificando…',
+    failText: 'No se pudo agregar la cuenta.',
+  });
 }
 
-async function removeKeyword(keyword) {
-  try {
-    await fetch(withPlataforma(`/api/monitoring/keywords/${encodeURIComponent(keyword)}`), { method: 'DELETE' });
-  } catch (err) {
-    console.error('Error quitando palabra clave:', err);
-  }
-  loadConfig();
+function removeAccount(account) {
+  return removeSource('accounts', account, 'cuenta');
+}
+
+function addKeyword() {
+  return addSource({
+    input: newKeywordInput,
+    button: addKeywordBtn,
+    errorEl: keywordErrorEl,
+    endpoint: 'keywords',
+    key: 'keyword',
+    value: newKeywordInput.value.trim(),
+    busyText: 'Verificando…',
+    failText: 'No se pudo agregar la palabra clave.',
+  });
+}
+
+// Un hashtag es una palabra clave que empieza con "#" (la misma lista y el
+// mismo endpoint): la caja de hashtags de instagram.html le pone el "#" si
+// no lo escribieron.
+function addHashtag() {
+  const raw = newHashtagInput.value.trim().replace(/^#+/, '');
+  return addSource({
+    input: newHashtagInput,
+    button: addHashtagBtn,
+    errorEl: hashtagErrorEl,
+    endpoint: 'keywords',
+    key: 'keyword',
+    value: raw ? `#${raw}` : '',
+    busyText: 'Verificando…',
+    failText: 'No se pudo agregar el hashtag.',
+  });
+}
+
+function removeKeyword(keyword) {
+  return removeSource('keywords', keyword, 'palabra clave');
 }
 
 function openAccountsModal() { accountsModal.classList.remove('hidden'); }
@@ -285,44 +331,22 @@ function closeKeywordsModal() { keywordsModal.classList.add('hidden'); }
 
 // Búsquedas por palabra clave: sin verificación contra Apify al agregar
 // (el backend solo rechaza si el actor activo no busca).
-async function addSearch() {
-  const search = newSearchInput.value.trim();
-  if (!search) return;
-
-  searchErrorEl.classList.add('hidden');
-  addSearchBtn.disabled = true;
-  addSearchBtn.textContent = 'Agregando…';
-
-  try {
-    const resp = await fetch(withPlataforma('/api/monitoring/searches'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ search, plataforma: MONITOR_PLATFORM }),
-    });
-    const data = await resp.json();
-    if (!resp.ok) throw new Error(data.error || 'No se pudo agregar la búsqueda.');
-    newSearchInput.value = '';
-    loadConfig();
-  } catch (err) {
-    searchErrorEl.textContent = err.message;
-    searchErrorEl.classList.remove('hidden');
-  } finally {
-    addSearchBtn.disabled = false;
-    addSearchBtn.textContent = 'Agregar';
-  }
+function addSearch() {
+  return addSource({
+    input: newSearchInput,
+    button: addSearchBtn,
+    errorEl: searchErrorEl,
+    endpoint: 'searches',
+    key: 'search',
+    value: newSearchInput.value.trim(),
+    busyText: 'Agregando…',
+    failText: 'No se pudo agregar la búsqueda.',
+  });
 }
 
-async function removeSearch(search) {
-  try {
-    await fetch(withPlataforma(`/api/monitoring/searches/${encodeURIComponent(search)}`), { method: 'DELETE' });
-  } catch (err) {
-    console.error('Error quitando búsqueda:', err);
-  }
-  loadConfig();
+function removeSearch(search) {
+  return removeSource('searches', search, 'búsqueda');
 }
-
-function openSearchesModal() { searchesModal.classList.remove('hidden'); }
-function closeSearchesModal() { searchesModal.classList.add('hidden'); }
 
 // --------------------------------------------------------------------
 // Tabla de posteos detectados, con Tabulator.
@@ -436,6 +460,33 @@ function formatFollowers(value) {
   if (n >= 1e6) return `${(n / 1e6).toFixed(1).replace('.', ',')}M`;
   if (n >= 1e3) return `${(n / 1e3).toFixed(1).replace('.', ',')}K`;
   return String(n);
+}
+
+// Color del avatar de una cuenta (la inicial va en blanco), de la paleta de
+// la maqueta v4 en su tono oscuro. Sale del nombre de la cuenta: cada una se
+// ve siempre igual en el feed, el pop-up, el flujo, las cuentas seguidas y
+// el filtro de Cuenta.
+const ACCOUNT_PALETTE = ['#199e70', '#d04a4a', '#2a78d6', '#c98500', '#6250d6', '#0b7fc4', '#d95926', '#5466b8'];
+
+function accountColor(account) {
+  let hash = 7;
+  for (const ch of String(account || '')) hash = (hash * 31 + ch.codePointAt(0)) >>> 0;
+  return ACCOUNT_PALETTE[hash % ACCOUNT_PALETTE.length];
+}
+
+// Por qué se detectó un posteo, a partir de matched_reason (lo arma
+// src/monitor.js): "búsqueda" con su término, "palabra clave" con la
+// palabra, o "cuenta trackeada". Lo que viene después de " · " es el motivo
+// del clasificador y no entra acá. Una forma desconocida va tal cual, sin
+// término.
+function postReasonParts(reason) {
+  const base = String(reason || '').split(' · ')[0].trim();
+  let match = base.match(/^Búsqueda:\s*(.+?)(?:\s+\(|\s+—\s|$)/);
+  if (match) return { text: 'búsqueda', term: match[1] };
+  match = base.match(/^Coincidencia con palabra clave:\s*"?(.+?)"?$/);
+  if (match) return { text: 'palabra clave', term: match[1] };
+  if (base.startsWith('Cuenta trackeada')) return { text: 'cuenta trackeada', term: null };
+  return { text: base, term: null };
 }
 
 // -------------------------------------------------------------------------
@@ -881,8 +932,124 @@ function reachSortValue(post) {
 }
 
 // -------------------------------------------------------------------------
-// Filtros (barra "Filtrar"). El orden se elige cliqueando el header de
-// cada columna — flechas asc/desc de Tabulator, no una fila "Ordenar".
+// Período de la solapa (instagram.html): Hoy, 7 días o 30 días, por la
+// fecha de publicación (posted_at) en hora de Argentina. "Hoy" arranca a las
+// 00:00 de hoy; "7 días", a las 00:00 de seis días antes (hoy y los seis
+// anteriores). Filtra todo lo de la solapa: los KPI, las fuentes, el flujo,
+// "Se despegaron" y la lista (va dentro de postMatchesFilters). Se recuerda
+// en el navegador; sin nada guardado, "Hoy". En x.html no hay período
+// (monitorPeriodDays 0) y no se filtra nada por acá.
+// -------------------------------------------------------------------------
+const PERIOD_KEY = 'sl.monitoreo.periodo';
+const PERIOD_OPTIONS = [1, 7, 30];
+const DAY_MS = 24 * 60 * 60 * 1000;
+const AR_DAY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' });
+
+function readSavedPeriod() {
+  try {
+    const saved = Number(window.localStorage.getItem(PERIOD_KEY));
+    return PERIOD_OPTIONS.includes(saved) ? saved : 1;
+  } catch (err) {
+    return 1;
+  }
+}
+
+let monitorPeriodDays = periodSegEl ? readSavedPeriod() : 0;
+
+// Las 00:00 en Argentina del día que está "days - 1" días antes de "now".
+// Argentina no tiene horario de verano desde 2009: siempre UTC−3, y restar
+// días enteros de 24 h da otra medianoche.
+function argentinaDayStart(now, daysBack = 0) {
+  return Date.parse(`${AR_DAY.format(new Date(now))}T00:00:00-03:00`) - daysBack * DAY_MS;
+}
+
+// Desde cuándo cuenta el período elegido (ms), o null si no hay período.
+function monitorPeriodStart(now = Date.now()) {
+  return monitorPeriodDays ? argentinaDayStart(now, monitorPeriodDays - 1) : null;
+}
+
+// El período en palabras: "hoy", "7 días", "30 días".
+function monitorPeriodLabel(days = monitorPeriodDays) {
+  return days === 1 ? 'hoy' : `${days} días`;
+}
+
+function postPostedMs(post) {
+  const ms = post && post.posted_at ? Date.parse(post.posted_at) : NaN;
+  return Number.isFinite(ms) ? ms : null;
+}
+
+// ¿El posteo es del período? Sin fecha de publicación no es de ninguno.
+function postInPeriod(post, from = monitorPeriodStart()) {
+  if (from === null) return true;
+  const ms = postPostedMs(post);
+  return ms !== null && ms >= from;
+}
+
+// Los posteos del período, de todos los cargados (sin los demás filtros).
+function monitorPeriodPosts() {
+  if (!monitoringTable) return [];
+  const from = monitorPeriodStart();
+  return monitoringTable.getData().filter((post) => postInPeriod(post, from));
+}
+
+function paintPeriodSeg() {
+  if (!periodSegEl) return;
+  for (const button of periodSegEl.querySelectorAll('button[data-days]')) {
+    const on = Number(button.dataset.days) === monitorPeriodDays;
+    button.classList.toggle('on', on);
+    button.setAttribute('aria-pressed', String(on));
+  }
+}
+
+function setMonitorPeriod(days) {
+  if (!periodSegEl || !PERIOD_OPTIONS.includes(days) || days === monitorPeriodDays) return;
+  monitorPeriodDays = days;
+  try {
+    window.localStorage.setItem(PERIOD_KEY, String(days));
+  } catch (err) {
+    // Sin almacenamiento el período igual cambia; solo no queda guardado.
+  }
+  paintPeriodSeg();
+  applyFilters();
+  if (monitoringTable) renderHighlightCards(monitoringTable.getData());
+}
+
+// La línea de "no hay nada" de la lista (feed y tabla) y del flujo. Si el
+// período no tiene ninguna publicación, lo dice con un enlace al período
+// siguiente: "Todavía no hay publicaciones de hoy · ver 7 días". Si las hay
+// pero los filtros las tapan, "No hay publicaciones con esos filtros.";
+// "filtered" false: el que pregunta no filtra (el flujo).
+function buildEmptyListLine({ filtered = true } = {}) {
+  const line = document.createElement('span');
+  const total = monitoringTable ? monitoringTable.getDataCount() : 0;
+  if (!total) {
+    line.textContent = 'Todavía no se detectó ningún posteo.';
+    return line;
+  }
+  const inPeriod = monitorPeriodDays ? monitorPeriodPosts().length : total;
+  if (inPeriod > 0) {
+    line.textContent = filtered ? 'No hay publicaciones con esos filtros.' : 'No hay publicaciones para mostrar.';
+    return line;
+  }
+  const next = PERIOD_OPTIONS[PERIOD_OPTIONS.indexOf(monitorPeriodDays) + 1];
+  line.textContent =
+    monitorPeriodDays === 1 ? 'Todavía no hay publicaciones de hoy' : `No hay publicaciones en los últimos ${monitorPeriodDays} días`;
+  if (next) {
+    line.append(' · ');
+    const link = document.createElement('button');
+    link.type = 'button';
+    link.className = 'link-btn';
+    link.textContent = `ver ${next} días`;
+    link.addEventListener('click', () => setMonitorPeriod(next));
+    line.appendChild(link);
+  }
+  return line;
+}
+
+// -------------------------------------------------------------------------
+// Filtros (barra "Filtrar"). La tabla se ordena cliqueando el header de
+// cada columna — flechas asc/desc de Tabulator, no una fila "Ordenar"; el
+// feed, con el selector "Orden".
 // -------------------------------------------------------------------------
 function normalizeSearch(text) {
   return String(text || '')
@@ -895,41 +1062,101 @@ function normalizeSearch(text) {
 // abajo) — reemplaza a fAccEl.value de un <select> nativo.
 let fAccValue = '';
 
+// Filtro por fuente: { kind: 'search' | 'keyword', term } o null. Lo pone un
+// clic en un chip de las cajas de fuentes (setSourceFilter, desde
+// monitoringPanel.js). "search": los posteos que trajo esa búsqueda
+// (matched_reason "Búsqueda: <término>"); "keyword": los que tienen esa
+// palabra o hashtag escrita en el título o el texto.
+let monitorSourceFilter = null;
+
+function sourceFilterKey(source) {
+  return source ? `${source.kind}:${normalizeSearch(source.term)}` : '';
+}
+
+function setSourceFilter(source) {
+  monitorSourceFilter = source && source.term ? { kind: source.kind === 'search' ? 'search' : 'keyword', term: source.term } : null;
+  applyFilters();
+}
+
+// ¿El posteo vino por esa fuente? Ver monitorSourceFilter.
+function postMatchesSource(post, source) {
+  const term = normalizeSearch(source.term).trim();
+  if (!term) return true;
+  if (source.kind === 'search') {
+    const reason = postReasonParts(post.matched_reason);
+    return reason.text === 'búsqueda' && normalizeSearch(reason.term).trim() === term;
+  }
+  return normalizeSearch(`${post.title || ''} ${post.caption || ''}`).includes(term);
+}
+
+const DEFAULT_ORDER = 'recent';
+
 function isDefaultFilterState() {
   return (
     !fSentEl.value &&
     !(fAlcanceEl && fAlcanceEl.value) &&
+    !(fTemaEl && fTemaEl.value) &&
+    !(fOrdenEl && fOrdenEl.value !== DEFAULT_ORDER) &&
     !fAccValue &&
+    !monitorSourceFilter &&
     !fDesdeEl.value &&
     !fHastaEl.value &&
     !qEl.value.trim()
   );
 }
 
+// "Limpiar": deshabilitado sin nada que limpiar; en instagram.html, además,
+// invisible (sigue ocupando su lugar, así la línea no salta).
 function updateMonitoringClearButtonState() {
-  monitoringClearBtn.disabled = isDefaultFilterState();
+  const clean = isDefaultFilterState();
+  monitoringClearBtn.disabled = clean;
+  if (fSourceEl) monitoringClearBtn.classList.toggle('on', !clean);
 }
 
+// "Mostrando N de M": N, lo que deja ver la barra; M, todas las del período
+// (en x.html, todas las cargadas).
 function updateCounts() {
   if (!monitoringTable) return;
   nEl.textContent = monitoringTable.getDataCount('active');
-  mEl.textContent = monitoringTable.getDataCount();
+  mEl.textContent = monitorPeriodDays ? monitorPeriodPosts().length : monitoringTable.getDataCount();
 }
 
-// Vistas extra sobre los mismos posteos y los mismos filtros que la tabla.
-// Hoy hay una sola, el Feed de Instagram (public/js/monitoringFeed.js, que
-// x.html no carga): se anota acá y se le avisa de cada cambio. Sin ninguna
-// anotada no pasa nada. "change" dice qué pasó:
-//   (nada)         cambiaron los datos o los filtros: hay que redibujar.
+// La pastilla del filtro por fuente, con su ✕ (solo instagram.html).
+function renderSourcePill() {
+  if (!fSourceEl) return;
+  fSourceEl.replaceChildren();
+  fSourceEl.classList.toggle('hidden', !monitorSourceFilter);
+  if (!monitorSourceFilter) return;
+  const label = document.createElement('span');
+  label.textContent = monitorSourceFilter.kind === 'search' ? 'búsqueda ' : 'contiene ';
+  const term = document.createElement('code');
+  term.textContent = monitorSourceFilter.term;
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.textContent = '✕';
+  close.setAttribute('aria-label', 'Sacar el filtro por fuente');
+  close.addEventListener('click', () => setSourceFilter(null));
+  fSourceEl.append(label, term, close);
+}
+
+// Vistas extra sobre los mismos posteos y los mismos filtros que la tabla:
+// en Instagram, el Feed (public/js/monitoringFeed.js), el pop-up, el panel
+// de arriba (KPI, fuentes, pulso, pipeline, alertas: monitoringPanel.js) y
+// el flujo en vivo (monitoringFlow.js); en las dos páginas, la barra
+// superior (topbar.js). Se anotan acá y se les avisa de cada cambio. Sin
+// ninguna anotada no pasa nada. "change" dice qué pasó:
+//   (nada)         cambiaron los datos, los filtros o el período: hay que
+//                  redibujar.
 //   { ignoredId }  se ignoró ese posteo (ya salió de la tabla).
-//   { goToId }     hay que mostrar ese posteo (tarjetas de "Se despegaron").
+//   { goToId }     hay que mostrar ese posteo (respaldo de "Se despegaron").
 //                  La vista que esté activa devuelve true y se hace cargo;
 //                  si ninguna lo hace, lo muestra la tabla.
+//   { config }     llegó la config de fuentes (null si falló).
 //   { run: 'start' }           arrancó "Actualizar ahora".
 //   { run: 'end', newIds }     terminó (bien o mal); newIds, los posteos que
-//                  no estaban antes. Los usa la barra superior
-//                  (topbar.js) para releer la última corrida; el feed los
-//                  ignora.
+//                  no estaban antes. Los usan la barra superior
+//                  (topbar.js) y el panel para releer la última corrida, y
+//                  el flujo para hacerlos entrar de a uno.
 const monitoringViewListeners = [];
 
 function notifyMonitoringViews(change) {
@@ -940,15 +1167,18 @@ function notifyMonitoringViews(change) {
   return handled;
 }
 
-// Valores actuales de la barra "Filtrar".
+// Valores actuales de la barra "Filtrar", con el período y la fuente.
 function readFilterValues() {
   return {
     sentiment: fSentEl.value,
     reach: fAlcanceEl ? fAlcanceEl.value : '', // "" | alto | medio | bajo
+    tema: fTemaEl ? fTemaEl.value : '',
     account: fAccValue,
     desde: fDesdeEl.value, // "YYYY-MM-DD" del <input type="date"> o ""
     hasta: fHastaEl.value,
     q: normalizeSearch(qEl.value.trim()),
+    periodFrom: monitorPeriodStart(), // ms, o null sin período (x.html)
+    source: monitorSourceFilter,
   };
 }
 
@@ -957,14 +1187,17 @@ function readFilterValues() {
 // las dos muestran siempre el mismo conjunto. "filters" es lo que devuelve
 // readFilterValues().
 function postMatchesFilters(data, filters) {
-  const { sentiment, reach, account, desde, hasta, q } = filters;
+  const { sentiment, reach, tema, account, desde, hasta, q, periodFrom, source } = filters;
+  if (periodFrom != null && !postInPeriod(data, periodFrom)) return false;
   // "sin_clasificar" no es un valor guardado: es la ausencia de valor.
   if (sentiment === SENTIMENT_UNSET) {
     if (data.sentiment) return false;
   } else if (sentiment && data.sentiment !== sentiment) {
     return false;
   }
+  if (tema && data.tema !== tema) return false;
   if (account && data.account !== account) return false;
+  if (source && !postMatchesSource(data, source)) return false;
   // Alcance: la etiqueta de postReach. Un posteo sin etiqueta (ninguna de sus
   // dos métricas tiene referencia) no entra en ninguno de los tres niveles.
   if (reach) {
@@ -984,6 +1217,12 @@ function postMatchesFilters(data, filters) {
   return true;
 }
 
+// La placa de "no hay nada" de la tabla (placeholder de Tabulator): el
+// mismo texto que la del feed (buildEmptyListLine), al día con el período y
+// los filtros.
+const tablePlaceholderEl = document.createElement('div');
+tablePlaceholderEl.className = 'tbl-empty';
+
 function applyFilters() {
   if (!monitoringTable) return;
   const filters = readFilterValues();
@@ -992,26 +1231,29 @@ function applyFilters() {
 
   fSentEl.classList.toggle('on', !!filters.sentiment);
   if (fAlcanceEl) fAlcanceEl.classList.toggle('on', !!filters.reach);
+  if (fTemaEl) fTemaEl.classList.toggle('on', !!filters.tema);
   fAccBtnEl.classList.toggle('on', !!filters.account);
   fDesdeEl.classList.toggle('on', !!filters.desde);
   fHastaEl.classList.toggle('on', !!filters.hasta);
+  tablePlaceholderEl.replaceChildren(buildEmptyListLine());
 
   updateCounts();
+  renderSourcePill();
   updateMonitoringClearButtonState();
   notifyMonitoringViews();
 }
 
 // -------------------------------------------------------------------------
-// Dropdown de Cuenta a medida (botón + panel propio, no un <select> nativo
-// — ver el comentario en instagram.html sobre por qué). Selección única,
-// se cierra solo al elegir, clickear afuera o Escape.
+// Dropdown de Cuenta a medida (botón + panel propio, no un <select> nativo:
+// con ~70 opciones el navegador puede abrirlo hacia arriba). Selección
+// única, se cierra solo al elegir, clickear afuera o Escape.
+//   - Instagram (HAS_ACC_COMBO, el combo de la maqueta): el panel cuelga del
+//     botón, con un buscador y, por cuenta, cuántas publicaciones tiene en
+//     el período. Se arma al abrirlo, con los datos de ese momento.
+//   - X: la lista simple de siempre, armada al cargar los datos. La barra
+//     de X tiene overflow:hidden, así que el panel se muda a <body> y se
+//     posiciona a mano en cada apertura.
 // -------------------------------------------------------------------------
-// .filters tiene overflow:hidden (esquinas redondeadas de la barra, a
-// propósito). El panel es un <div> común — a diferencia del popup de un
-// <select> nativo, que el navegador pinta fuera del DOM — así que si se
-// queda adentro de .filters, ese overflow lo recorta. Se reubica una sola
-// vez como hijo directo de <body> para escapar cualquier contenedor con
-// overflow/stacking context propio, y se posiciona a mano en cada apertura.
 let accPanelMovedToBody = false;
 
 function positionAccPanel() {
@@ -1022,48 +1264,152 @@ function positionAccPanel() {
 }
 
 function closeAccPanel() {
+  if (fAccPanelEl.classList.contains('hidden')) return;
   fAccPanelEl.classList.add('hidden');
   fAccBtnEl.setAttribute('aria-expanded', 'false');
 }
 
 function openAccPanel() {
-  if (!accPanelMovedToBody) {
-    document.body.appendChild(fAccPanelEl);
-    accPanelMovedToBody = true;
+  if (HAS_ACC_COMBO) {
+    fAccQEl.value = '';
+    drawAccountCombo();
+  } else {
+    if (!accPanelMovedToBody) {
+      document.body.appendChild(fAccPanelEl);
+      accPanelMovedToBody = true;
+    }
+    positionAccPanel();
   }
-  positionAccPanel();
   fAccPanelEl.classList.remove('hidden');
   fAccBtnEl.setAttribute('aria-expanded', 'true');
+  if (HAS_ACC_COMBO) fAccQEl.focus();
 }
+
+function setAccountLabel(label) {
+  if (HAS_ACC_COMBO) fAccTextEl.textContent = label;
+  else fAccBtnEl.textContent = label;
+}
+
+const ACC_ALL_LABEL = HAS_ACC_COMBO ? 'Todas' : 'Cuenta';
 
 function selectAccount(value, label) {
   fAccValue = value;
-  fAccBtnEl.textContent = label;
+  setAccountLabel(label);
   closeAccPanel();
+  if (HAS_ACC_COMBO) fAccBtnEl.focus();
   applyFilters();
+}
+
+// Una opción del combo de Instagram: inicial con el color de la cuenta,
+// "@cuenta" y la cantidad de publicaciones del período.
+function buildAccountComboOption(value, label, count) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.setAttribute('role', 'option');
+  btn.setAttribute('aria-selected', String(value === fAccValue));
+  if (value === fAccValue) btn.classList.add('on');
+  const av = document.createElement('span');
+  av.className = 'av';
+  av.setAttribute('aria-hidden', 'true');
+  av.textContent = value ? value[0].toUpperCase() : '∗';
+  av.style.background = value ? accountColor(value) : 'var(--line2)';
+  const name = document.createElement('span');
+  name.className = 'nm';
+  name.textContent = label;
+  const n = document.createElement('small');
+  n.textContent = String(count);
+  btn.append(av, name, n);
+  btn.addEventListener('click', () => selectAccount(value, value ? `@${value}` : ACC_ALL_LABEL));
+  return btn;
+}
+
+function drawAccountCombo() {
+  const query = normalizeSearch(fAccQEl.value.trim()).replace(/^@/, '');
+  const posts = monitorPeriodPosts();
+  const counts = new Map();
+  for (const post of posts) {
+    if (!post.account || post.account === 'N/D') continue;
+    counts.set(post.account, (counts.get(post.account) || 0) + 1);
+  }
+  // Todas las cuentas de lo cargado, aunque no tengan nada en el período
+  // (con 0), las de más publicaciones primero.
+  const all = monitoringTable ? monitoringTable.getData() : [];
+  for (const post of all) {
+    if (post.account && post.account !== 'N/D' && !counts.has(post.account)) counts.set(post.account, 0);
+  }
+  const accounts = [...counts.entries()]
+    .filter(([account]) => !query || normalizeSearch(account).includes(query))
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'es'));
+  const options = accounts.map(([account, count]) => buildAccountComboOption(account, `@${account}`, count));
+  if (!query) options.unshift(buildAccountComboOption('', 'Todas las cuentas', posts.length));
+  if (!options.length) {
+    const none = document.createElement('p');
+    none.className = 'combo-none';
+    none.textContent = 'Ninguna cuenta con ese nombre.';
+    options.push(none);
+  }
+  fAccListEl.replaceChildren(...options);
 }
 
 fAccBtnEl.addEventListener('click', () => {
   if (fAccPanelEl.classList.contains('hidden')) openAccPanel();
   else closeAccPanel();
 });
+if (HAS_ACC_COMBO) {
+  fAccQEl.addEventListener('input', drawAccountCombo);
+  // Enter en el buscador elige la primera cuenta de la lista; ↓ baja a ella.
+  fAccQEl.addEventListener('keydown', (e) => {
+    const first = fAccListEl.querySelector('button');
+    if (!first) return;
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      first.click();
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      first.focus();
+    }
+  });
+  fAccListEl.addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    const buttons = [...fAccListEl.querySelectorAll('button')];
+    const i = buttons.indexOf(document.activeElement);
+    if (i < 0) return;
+    e.preventDefault();
+    if (e.key === 'ArrowUp' && i === 0) fAccQEl.focus();
+    else (buttons[i + (e.key === 'ArrowDown' ? 1 : -1)] || buttons[i]).focus();
+  });
+}
 document.addEventListener('click', (e) => {
   if (!fAccPanelEl.classList.contains('hidden') && !fAccBtnEl.contains(e.target) && !fAccPanelEl.contains(e.target)) {
     closeAccPanel();
   }
 });
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') closeAccPanel();
+  if (e.key !== 'Escape' || fAccPanelEl.classList.contains('hidden')) return;
+  const inside = fAccPanelEl.contains(document.activeElement);
+  closeAccPanel();
+  if (inside) fAccBtnEl.focus();
 });
-// Reposicionado en fixed, no relativo a un ancestro: si se scrollea con el
+// X: el panel va en fixed, no relativo a un ancestro: si se scrollea con el
 // panel abierto se desalinearía del botón. Más simple y predecible cerrarlo,
-// mismo comportamiento que un <select> nativo (también se cierra al scrollear).
-window.addEventListener('scroll', () => closeAccPanel(), true);
-window.addEventListener('resize', () => closeAccPanel());
+// mismo comportamiento que un <select> nativo (también se cierra al
+// scrollear). El de Instagram cuelga del botón y se mueve con él.
+if (!HAS_ACC_COMBO) {
+  window.addEventListener('scroll', () => closeAccPanel(), true);
+  window.addEventListener('resize', () => closeAccPanel());
+}
 
 // Reconstruye el panel de Cuenta con las cuentas presentes en los datos
-// cargados. Si la cuenta elegida ya no está, vuelve a "Todas".
+// cargados (X; el combo de Instagram se arma al abrirlo). Si la cuenta
+// elegida ya no está, vuelve a "Todas".
 function ensureAccountFilterOptions(posts) {
+  if (HAS_ACC_COMBO) {
+    if (fAccValue && !posts.some((post) => post.account === fAccValue)) {
+      fAccValue = '';
+      setAccountLabel(ACC_ALL_LABEL);
+    }
+    return;
+  }
   const previous = fAccValue;
   const accounts = [...new Set(posts.map((p) => p.account).filter((a) => a && a !== 'N/D'))].sort((a, b) =>
     a.localeCompare(b, 'es')
@@ -1093,13 +1439,17 @@ function ensureAccountFilterOptions(posts) {
   }
 }
 
-// "Limpiar" resetea los filtros a blanco. El orden queda en los headers
-// de la tabla (no es un filtro de esta barra).
+// "Limpiar" resetea los filtros a blanco y el orden del feed a "Más
+// recientes"; el período no es un filtro y queda como está. El orden de la
+// tabla queda en sus headers.
 function resetFilters() {
   fSentEl.value = '';
   if (fAlcanceEl) fAlcanceEl.value = '';
+  if (fTemaEl) fTemaEl.value = '';
+  if (fOrdenEl) fOrdenEl.value = DEFAULT_ORDER;
+  monitorSourceFilter = null;
   fAccValue = '';
-  fAccBtnEl.textContent = 'Cuenta';
+  setAccountLabel(ACC_ALL_LABEL);
   fAccBtnEl.classList.remove('on');
   fDesdeEl.value = '';
   fHastaEl.value = '';
@@ -1205,6 +1555,8 @@ const MONITORING_COLUMNS = [
         // el rowFormatter, así el panel abierto también queda al día.
         cell.getRow().update({ sentiment: select.value });
         if (monitoringTable) renderHighlightCards(monitoringTable.getData());
+        // El panel (tono de las fuentes, KPI) y el flujo, al día.
+        notifyMonitoringViews();
       });
       return select;
     },
@@ -1357,7 +1709,9 @@ function ensureMonitoringTable(posts) {
     pagination: true,
     paginationSize: 20,
     paginationSizeSelector: [10, 20, 50, 100],
-    placeholder: 'Todavía no se detectó ningún posteo.',
+    // Un nodo propio y no un texto: applyFilters lo tiene al día (período
+    // sin publicaciones, filtros que tapan todo).
+    placeholder: tablePlaceholderEl,
     // Tabulator viene en inglés; traducimos solo el label del selector de
     // tamaño de página (lo demás no se pidió tocar).
     locale: 'es-ar',
@@ -1604,20 +1958,23 @@ async function runNow() {
 
 addAccountBtn.addEventListener('click', addAccount);
 newAccountInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') addAccount(); });
-viewAllAccountsBtn.addEventListener('click', openAccountsModal);
-accountsModalCloseBtn.addEventListener('click', closeAccountsModal);
-accountsModal.addEventListener('click', (e) => { if (e.target === accountsModal) closeAccountsModal(); });
 addKeywordBtn.addEventListener('click', addKeyword);
 newKeywordInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') addKeyword(); });
-viewAllKeywordsBtn.addEventListener('click', openKeywordsModal);
-keywordsModalCloseBtn.addEventListener('click', closeKeywordsModal);
-keywordsModal.addEventListener('click', (e) => { if (e.target === keywordsModal) closeKeywordsModal(); });
+if (HAS_CLASSIC_SOURCES) {
+  viewAllAccountsBtn.addEventListener('click', openAccountsModal);
+  accountsModalCloseBtn.addEventListener('click', closeAccountsModal);
+  accountsModal.addEventListener('click', (e) => { if (e.target === accountsModal) closeAccountsModal(); });
+  viewAllKeywordsBtn.addEventListener('click', openKeywordsModal);
+  keywordsModalCloseBtn.addEventListener('click', closeKeywordsModal);
+  keywordsModal.addEventListener('click', (e) => { if (e.target === keywordsModal) closeKeywordsModal(); });
+}
 if (HAS_SEARCHES) {
   addSearchBtn.addEventListener('click', addSearch);
   newSearchInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') addSearch(); });
-  viewAllSearchesBtn.addEventListener('click', openSearchesModal);
-  searchesModalCloseBtn.addEventListener('click', closeSearchesModal);
-  searchesModal.addEventListener('click', (e) => { if (e.target === searchesModal) closeSearchesModal(); });
+}
+if (HAS_HASHTAGS) {
+  addHashtagBtn.addEventListener('click', addHashtag);
+  newHashtagInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') addHashtag(); });
 }
 // Acciones de las tiras de "Se despegaron" (instagram.html), en el
 // contenedor porque las tiras se rehacen con cada cambio: el selector de
@@ -1651,10 +2008,21 @@ monitoringProgressHideEl.addEventListener('click', () => monitoringStatusCard.cl
 
 fSentEl.addEventListener('change', applyFilters);
 if (fAlcanceEl) fAlcanceEl.addEventListener('change', applyFilters);
+if (fTemaEl) fTemaEl.addEventListener('change', applyFilters);
+// El orden no filtra, pero cuenta para "Limpiar" y el feed se redibuja con
+// el aviso de applyFilters.
+if (fOrdenEl) fOrdenEl.addEventListener('change', applyFilters);
 fDesdeEl.addEventListener('change', applyFilters);
 fHastaEl.addEventListener('change', applyFilters);
 qEl.addEventListener('input', applyFilters);
 monitoringClearBtn.addEventListener('click', resetFilters);
+if (periodSegEl) {
+  paintPeriodSeg();
+  periodSegEl.addEventListener('click', (e) => {
+    const button = e.target.closest('button[data-days]');
+    if (button) setMonitorPeriod(Number(button.dataset.days));
+  });
+}
 
 loadConfig();
 loadPosts();
