@@ -3435,7 +3435,11 @@ html.feed-pop-lock body {
 .leaflet-control-attribution a {
   color: var(--accent);
 }
+/* Por encima de la tarjeta del mapa: las dos llevan .rv y la animación
+   (transform) le da a cada una su propia capa; sin esto, los desplegables de
+   Categoría, Subcategoría y Estado quedaban tapados por el mapa. */
 .claims-filters-card {
+  z-index: 3;
   padding: 14px 16px;
 }
 .claims-filters-row {
