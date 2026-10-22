@@ -11,9 +11,11 @@
       feed, pop-up, "Se despegaron", modales, análisis, mapa de reclamos con
       Leaflet, inicio y login), con los mismos tokens y sin cambiar su
       comportamiento.
-   Claro por defecto; oscuro si el sistema lo pide. Todo color sale de los
-   tokens: los únicos colores sueltos son los de marca de cada red, los de
-   las categorías del mapa y el fondo negro de las fotos.
+   Clara de origen, aunque el sistema esté en oscuro; oscura con el botón de
+   la barra superior (public/js/theme.js pone data-theme="dark" en <html>).
+   Todo color sale de los tokens: los únicos colores sueltos son los de
+   marca de cada red, los de las categorías del mapa y el fondo negro de las
+   fotos.
    ========================================================================== */
 
 /* ==========================================================================
@@ -53,32 +55,8 @@
   --top: 59px;
   color-scheme: light;
 }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #0b1020;
-    --surface: #121a2e;
-    --surface2: #182340;
-    --line: #243252;
-    --line2: #2f3f63;
-    --fg: #e8ecf7;
-    --fg2: #a9b4cf;
-    --muted: #6f7b99;
-    --accent: #5cc8ff;
-    --accent-ink: #0b1020;
-    --glow: #7c6cff;
-    --pos: #1fae72;
-    --neu: #7a8fd1;
-    --neg: #e66767;
-    --c1: #3987e5;
-    --c2: #d95926;
-    --c3: #9085e9;
-    --c4: #199e70;
-    --c5: #c98500;
-    --shadow: 0 18px 40px -24px rgba(0, 0, 0, 0.8);
-    --warn-ink: #e3b341;
-    color-scheme: dark;
-  }
-}
+/* Oscuro: los mismos valores de la maqueta, pero solo con el botón (la
+   maqueta lo tomaba también del sistema; la app arranca siempre clara). */
 :root[data-theme="dark"] {
   --bg: #0b1020;
   --surface: #121a2e;
@@ -857,6 +835,37 @@ nav.tabs button .soon {
 .user-dropdown .logout-btn:hover {
   border-color: var(--neg);
   color: var(--neg);
+}
+/* Botón de tema (public/js/theme.js): luna en claro, sol en oscuro. */
+.theme-btn {
+  width: 34px;
+  height: 34px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--fg2);
+  transition:
+    border-color 0.2s,
+    color 0.2s;
+}
+.theme-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.theme-btn svg {
+  width: 16px;
+  height: 16px;
+}
+.theme-btn .sun,
+:root[data-theme="dark"] .theme-btn .moon {
+  display: none;
+}
+:root[data-theme="dark"] .theme-btn .sun {
+  display: block;
 }
 @media (max-width: 1500px) {
   .top .tag {
