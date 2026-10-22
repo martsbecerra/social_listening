@@ -477,6 +477,31 @@ function accountColor(account) {
   return ACCOUNT_PALETTE[hash % ACCOUNT_PALETTE.length];
 }
 
+// Color del punto de un tema (el flujo, el pop-up): el de su lugar en la
+// lista de temas de la config, con los doce colores de categoría del mapa
+// (--cat-1 … --cat-12, se repiten); sin tema, el gris de "otras".
+function temaColor(tema) {
+  const temas = (monitoringConfig && monitoringConfig.temas) || [];
+  const i = tema ? temas.indexOf(tema) : -1;
+  return i < 0 ? 'var(--cat-otras)' : `var(--cat-${(i % 12) + 1})`;
+}
+
+// El tema a la vista: punto de color y nombre (.tema en styles.css). null
+// si el posteo no tiene tema.
+function buildTemaTag(tema) {
+  if (!tema) return null;
+  const tag = document.createElement('span');
+  tag.className = 'tema';
+  const dot = document.createElement('i');
+  dot.style.background = temaColor(tema);
+  dot.setAttribute('aria-hidden', 'true');
+  const name = document.createElement('span');
+  name.textContent = tema;
+  tag.title = tema;
+  tag.append(dot, name);
+  return tag;
+}
+
 // Por qué se detectó un posteo, a partir de matched_reason (lo arma
 // src/monitor.js): "búsqueda" con su término, "palabra clave" con la
 // palabra, o "cuenta trackeada". Lo que viene después de " · " es el motivo
