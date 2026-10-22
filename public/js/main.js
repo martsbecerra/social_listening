@@ -190,6 +190,18 @@ function displayNameFromEmail(email) {
   return parts.map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
 }
 
+// El nombre del usuario, una vez que llegó la sesión. footer.js lo pide al
+// armar el pie: según qué termine primero (la respuesta de /api/auth/me o el
+// pie), lo completa uno u otro.
+let authDisplayName = '';
+
+function fillUserNames(root = document) {
+  if (!authDisplayName) return;
+  root.querySelectorAll('[data-user-name]').forEach((el) => {
+    el.textContent = authDisplayName;
+  });
+}
+
 async function initAuthHeader() {
   const emailEl = document.querySelector('.user-dropdown .user-email');
   const logoutBtn = document.querySelector('.user-dropdown .logout-btn');
@@ -215,9 +227,8 @@ async function initAuthHeader() {
       nameEl.closest('.user-btn').title = fullName;
     }
     // El nombre en la columna "Cuenta" del pie (lo arma footer.js).
-    document.querySelectorAll('[data-user-name]').forEach((el) => {
-      el.textContent = displayNameFromEmail(email);
-    });
+    authDisplayName = displayNameFromEmail(email);
+    fillUserNames();
   } catch {
     window.location.replace('/');
   }

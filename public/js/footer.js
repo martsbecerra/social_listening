@@ -100,6 +100,8 @@ function renderSiteFooter() {
   // Constante propia, sin ningún dato de afuera: se puede insertar como HTML.
   footerEl.innerHTML = FOOTER_HTML;
   footerEl.querySelector('#footerYear').textContent = String(new Date().getFullYear());
+  // Si la sesión ya llegó antes que el pie, el nombre se completa acá.
+  if (typeof fillUserNames === 'function') fillUserNames(footerEl);
   loadFooterStats();
 }
 
