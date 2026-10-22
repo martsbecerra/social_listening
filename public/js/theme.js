@@ -27,10 +27,11 @@ function themeSave(theme) {
   }
 }
 
+// Siempre "light" o "dark", nunca sin marcar: así ninguna regla que mire el
+// tema del sistema puede pintar la página en oscuro sin el botón.
 function themeApply(theme) {
   const dark = theme === 'oscuro';
-  if (dark) document.documentElement.dataset.theme = 'dark';
-  else delete document.documentElement.dataset.theme;
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
   const meta = document.querySelector('meta[name="theme-color"][data-follow-theme]');
   if (meta) meta.setAttribute('content', THEME_COLOR[theme]);
   document.querySelectorAll('[data-theme-toggle]').forEach((btn) => {
