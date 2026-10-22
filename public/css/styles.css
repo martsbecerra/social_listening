@@ -1801,7 +1801,10 @@ pre.report a {
   font-weight: 600;
 }
 
-/* ---------- "Se despegaron": tiras (aspecto de .up de la maqueta) ---------- */
+/* ---------- "Se despegaron" ----------
+   Instagram: hasta 4 tiras del período (.up de la maqueta), de a dos por
+   renglón. X: la cabecera y la grilla de siempre (.sec-head, .cards; hoy X
+   no muestra destacados: renderHighlightCards deja la sección oculta). */
 .sec-head {
   display: flex;
   align-items: baseline;
@@ -1813,64 +1816,45 @@ pre.report a {
   font-size: 20px;
   white-space: nowrap;
 }
-.sec-head span,
-.hl-sub {
+.sec-head span {
   font-size: 13px;
   color: var(--fg2);
 }
-.hl-head .hl-count {
-  display: inline-grid;
-  place-items: center;
-  min-width: 24px;
-  height: 24px;
-  padding: 0 7px;
-  border-radius: 7px;
-  background: var(--surface2);
-  color: var(--fg2);
-  font: 500 12px/1 var(--mono);
-}
-.hl-head .hl-count:empty {
-  display: none;
-}
-/* Hasta 4 tiras, de a dos por renglón (2 x 2), como .ups de la maqueta.
-   .cards es el contenedor de x.html (hoy X no muestra destacados:
-   renderHighlightCards deja la sección oculta). */
-.hl-tops,
+.ups,
 .cards {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 14px;
 }
-.hl-strip {
-  position: relative;
+.ups .empty {
+  grid-column: 1 / -1;
+}
+.up {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  gap: 4px 16px;
+  gap: 16px;
   align-items: center;
-  padding: 14px 16px;
-  border-radius: var(--r);
-  border: 1px solid var(--line);
-  background: var(--surface);
-  box-shadow: var(--shadow);
   cursor: pointer;
   transition:
     transform 0.2s,
     border-color 0.2s;
 }
-.hl-strip:hover {
+.up:hover {
   transform: translateY(-2px);
   border-color: var(--accent);
 }
-.hl-strip.neg:hover {
+.up.neg:hover {
   border-color: var(--neg);
 }
-.hl-strip:focus-visible {
+.up:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
-.hl-strip-ratio {
-  grid-row: 1 / span 2;
+.up .rz {
   text-align: center;
+}
+.up .rz b {
+  display: block;
   font: 700 34px/1 var(--display);
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
@@ -1879,44 +1863,41 @@ pre.report a {
   background-clip: text;
   color: transparent;
 }
-.hl-strip-ratio small {
+.up .rz small {
   display: block;
   margin-top: 5px;
   font: 400 11px/1.3 var(--mono);
-  letter-spacing: 0;
   color: var(--muted);
-  -webkit-text-fill-color: var(--muted);
 }
-.hl-strip-title {
-  margin: 0;
+.up h3 {
   font-size: 15px;
   line-height: 1.3;
 }
-.hl-strip-who {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px 10px;
+.up .meta {
+  margin-top: 4px;
   font-size: 12px;
   color: var(--muted);
 }
-.hl-strip-who b {
+.up .meta b {
   font-weight: 600;
   color: var(--fg);
 }
-.hl-strip-who .mono {
+.up .meta .num {
   color: var(--fg2);
-  font-variant-numeric: tabular-nums;
 }
-.hl-strip-who .sentiment-select {
-  margin-left: auto;
+.up .row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
 }
-@media (max-width: 900px) {
-  .hl-tops,
+@media (max-width: 800px) {
+  .ups,
   .cards {
     grid-template-columns: 1fr;
   }
-  .hl-strip-ratio {
+  .up .rz b {
     font-size: 30px;
   }
 }

@@ -747,25 +747,36 @@ function highlightTop(post) {
   return top && top.level === 'alto' && Number.isFinite(top.ratio) ? top : null;
 }
 
+// Los ids de las tiras a la vista, en orden: el pop-up abierto desde una
+// tira recorre solo esas.
+let highlightIds = [];
+
+// Hasta 4 tiras de los posteos del período (instagram.html) con alcance
+// alto, las de mayor razón primero. Sin ninguna, la línea de "nada se
+// despegó" (la sección queda a la vista).
 function renderHighlightCards(posts) {
   if (IS_X_MONITOR || !highlightsSectionEl || !cardsEl) {
     if (highlightsSectionEl) highlightsSectionEl.classList.add('hidden');
     return;
   }
+  const from = monitorPeriodStart();
   const scored = posts
+    .filter((post) => postInPeriod(post, from))
     .map((post) => ({ post, top: highlightTop(post) }))
     .filter((entry) => entry.top)
     .sort((a, b) => b.top.ratio - a.top.ratio)
     .slice(0, HIGHLIGHT_CARD_COUNT);
 
-  cardsEl.replaceChildren();
+  highlightIds = scored.map(({ post }) => String(post.id));
   if (highlightsCountEl) highlightsCountEl.textContent = String(scored.length);
   if (scored.length === 0) {
-    highlightsSectionEl.classList.add('hidden');
+    const empty = document.createElement('div');
+    empty.className = 'empty';
+    empty.textContent = 'Ninguna publicación del período se despegó de lo habitual de su cuenta.';
+    cardsEl.replaceChildren(empty);
     return;
   }
-  highlightsSectionEl.classList.remove('hidden');
-  for (const { post, top } of scored) cardsEl.appendChild(buildHighlightStrip(post, top));
+  cardsEl.replaceChildren(...scored.map(({ post, top }) => buildHighlightStrip(post, top)));
 }
 
 // Hora del destacado, en hora de Argentina: "10:35" si es de hoy,
@@ -782,52 +793,58 @@ function highlightWhen(iso) {
   return HIGHLIGHT_DAY.format(date) === HIGHLIGHT_DAY.format(new Date()) ? time : `${HIGHLIGHT_DATE.format(date)} ${time}`;
 }
 
-// Una tira (design/social-listening-v4.html): la razón grande con su métrica, el
-// título, la cuenta y la hora, el valor contra la mediana y el selector de
-// sentimiento. La razón lleva colchón: no es "N veces lo habitual"; al lado
-// van el valor y la mediana reales de la métrica que lo destacó. Todo dato
-// del posteo entra por textContent. Las acciones (abrir, sentimiento) las
-// atiende el contenedor (ver más abajo).
+// Una tira (.up de design/social-listening-v4.html): la razón grande con su
+// métrica; al lado, el título, la cuenta y la hora con el valor contra la
+// mediana, y abajo el selector de sentimiento y el medidor de alcance. La
+// razón lleva colchón: no es "N veces lo habitual"; al lado van el valor y
+// la mediana reales de la métrica que lo destacó. Todo dato del posteo entra
+// por textContent. Las acciones (abrir, sentimiento) las atiende el
+// contenedor (ver más abajo).
 function buildHighlightStrip(post, top) {
   const decisive = post.benchmark[top.metric];
   const account = post.account && post.account !== 'N/D' ? `@${post.account}` : 'N/D';
 
   const strip = document.createElement('article');
-  strip.className = post.sentiment === 'negativo' ? 'hl-strip neg' : 'hl-strip';
+  strip.className = post.sentiment === 'negativo' ? 'card up neg' : 'card up';
   strip.dataset.postId = post.id;
   strip.tabIndex = 0;
   strip.setAttribute('aria-label', `Posteo de ${account}: abrir el detalle`);
 
   const ratio = document.createElement('div');
-  ratio.className = 'hl-strip-ratio';
-  ratio.textContent = `${formatBenchmarkRatio(top.ratio)}×`;
+  ratio.className = 'rz';
+  const ratioValue = document.createElement('b');
+  ratioValue.textContent = `${formatBenchmarkRatio(top.ratio)}×`;
   const ratioMetric = document.createElement('small');
   ratioMetric.textContent = `en ${top.label}`;
-  ratio.appendChild(ratioMetric);
+  ratio.append(ratioValue, ratioMetric);
   ratio.title = `Razón de alcance: ${benchmarkRatioBasis(decisive)}`;
 
+  const body = document.createElement('div');
+  body.className = 'up-body';
   const title = document.createElement('h3');
-  title.className = 'hl-strip-title';
   title.textContent = post.title || '(sin clasificar)';
 
-  const who = document.createElement('div');
-  who.className = 'hl-strip-who';
-  const text = document.createElement('span');
+  const meta = document.createElement('div');
+  meta.className = 'meta';
   const name = document.createElement('b');
   name.textContent = account;
   const value = document.createElement('span');
-  value.className = 'mono';
+  value.className = 'num';
   value.textContent = formatBenchmarkNumber(decisive.value);
   const median = document.createElement('span');
-  median.className = 'mono';
+  median.className = 'num';
   median.textContent = formatBenchmarkNumber(decisive.median);
   const when = highlightWhen(post.posted_at);
-  text.append(name, when ? `, ${when}, ` : ', ', value, ` ${top.label} contra `, median);
+  meta.append(name, when ? `, ${when}, ` : ', ', value, ` ${top.label} contra `, median);
+
+  const row = document.createElement('div');
+  row.className = 'row';
   const sentiment = buildSentimentSelect(post.sentiment);
   sentiment.setAttribute('aria-label', 'Sentimiento');
-  who.append(text, sentiment);
+  row.append(sentiment, buildReachMeter(postReach(post)));
 
-  strip.append(ratio, title, who);
+  body.append(title, meta, row);
+  strip.append(ratio, body);
   return strip;
 }
 
@@ -843,12 +860,13 @@ function highlightSetSentiment(strip, select) {
   notifyMonitoringViews();
 }
 
-// Clic en un destacado: abre el pop-up de ese posteo, solo (sin anterior ni
-// siguiente), en la vista Tabla y en el Feed, y aunque un filtro lo esté
-// tapando. El pop-up es de public/js/monitoringFeedPopup.js, que carga solo
-// instagram.html: donde no está (x.html), o si no encuentra el posteo, queda
-// lo de antes: ir a su fila.
-function openHighlight(id) {
+// Clic en un destacado: abre el pop-up de ese posteo y deja recorrer solo
+// los de "Se despegaron" (← →), en la vista Tabla y en el Feed, y aunque un
+// filtro los esté tapando. El pop-up es de public/js/monitoringFeedPopup.js,
+// que carga solo instagram.html: donde no está (x.html), o si no encuentra
+// el posteo, queda lo de antes: ir a su fila.
+function openHighlight(id, strip) {
+  if (typeof openFeedPopList === 'function' && openFeedPopList(highlightIds, id, strip)) return;
   if (typeof openFeedPopSolo === 'function' && openFeedPopSolo(id)) return;
   highlightGoToRow(id);
 }
@@ -2079,25 +2097,25 @@ if (HAS_HASHTAGS) {
 // Acciones de las tiras de "Se despegaron" (instagram.html), en el
 // contenedor porque las tiras se rehacen con cada cambio: el selector de
 // sentimiento guarda; un clic en cualquier otro lado de la tira, o Enter /
-// Espacio con el foco en ella, abre el pop-up de ese posteo solo.
+// Espacio con el foco en ella, abre el pop-up sobre las tiras.
 if (cardsEl && !IS_X_MONITOR) {
   cardsEl.addEventListener('change', (e) => {
     const select = e.target.closest('select.sentiment-select');
-    const strip = select && select.closest('.hl-strip');
+    const strip = select && select.closest('.up');
     if (!strip || select.value === SENTIMENT_UNSET) return;
     highlightSetSentiment(strip, select);
   });
   cardsEl.addEventListener('click', (e) => {
-    const strip = e.target.closest('.hl-strip');
+    const strip = e.target.closest('.up');
     if (!strip || e.target.closest('select, a, button, label')) return;
-    openHighlight(strip.dataset.postId);
+    openHighlight(strip.dataset.postId, strip);
   });
   cardsEl.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter' && e.key !== ' ') return;
     if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || e.repeat) return;
-    if (!e.target.matches('.hl-strip')) return;
+    if (!e.target.matches('.up')) return;
     e.preventDefault(); // Espacio no baja la página
-    openHighlight(e.target.dataset.postId);
+    openHighlight(e.target.dataset.postId, e.target);
   });
 }
 ignoreCancelBtn.addEventListener('click', closeIgnoreModal);
