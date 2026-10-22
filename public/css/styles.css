@@ -714,7 +714,7 @@ nav.tabs button .soon {
   margin-left: auto;
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 10px;
   flex-wrap: wrap;
 }
 .top .live {

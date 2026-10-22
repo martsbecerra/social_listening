@@ -207,7 +207,13 @@ async function initAuthHeader() {
     const email = data.email || '';
     if (emailEl) emailEl.textContent = email;
     if (avatarEl) avatarEl.textContent = initialsFromEmail(email);
-    if (nameEl) nameEl.textContent = displayNameFromEmail(email);
+    // En el botón, el nombre de pila (como la maqueta): con el completo la
+    // barra no entra en un renglón a 1366 px. El completo queda de título.
+    if (nameEl) {
+      const fullName = displayNameFromEmail(email);
+      nameEl.textContent = fullName.split(' ')[0];
+      nameEl.closest('.user-btn').title = fullName;
+    }
     // El nombre en la columna "Cuenta" del pie (lo arma footer.js).
     document.querySelectorAll('[data-user-name]').forEach((el) => {
       el.textContent = displayNameFromEmail(email);
