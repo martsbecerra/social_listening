@@ -923,7 +923,21 @@ nav.tabs button .soon {
     width: 100%;
     gap: 10px;
   }
-  .top .user-wrap {
+  /* Plataforma, escucha, tema y usuario en un renglón: el nombre de la red
+     queda para los lectores de pantalla (el cuadradito de color se ve). */
+  .top .plat {
+    padding: 8px;
+  }
+  .top .plat .plat-name {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .theme-btn {
     margin-left: auto;
   }
 }
