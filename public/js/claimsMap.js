@@ -28,7 +28,6 @@ let categoriaMultiSelect = null;
 let estadoMultiSelect = null;
 let openFilterPanel = null;
 let searchDebounceTimer = null;
-let pinSteps = null;
 // Árbol categoría -> subcategorías y conteo global, ambos del servidor.
 let subcategoriasPorCategoria = {};
 let conteoPorCategoria = {};
@@ -540,28 +539,6 @@ function popupHtml(group) {
     })
     .join('');
   return `<div class="claims-popup"><h2>${escapeHtml(group.address)}</h2>${desglose}${avisoPrecision}${items}</div>`;
-}
-
-function getPinSteps() {
-  if (pinSteps) return pinSteps;
-  pinSteps = [
-    { min: 1, bg: cssVar('--jade-150'), text: cssVar('--jade-950') },
-    { min: 2, bg: cssVar('--jade-300'), text: cssVar('--jade-950') },
-    { min: 4, bg: cssVar('--jade-400'), text: '#ffffff' },
-    { min: 7, bg: cssVar('--jade-500'), text: '#ffffff' },
-    { min: 12, bg: cssVar('--jade-700'), text: '#ffffff' },
-    { min: 20, bg: cssVar('--jade-900'), text: '#ffffff' },
-  ];
-  return pinSteps;
-}
-
-function pinTheme(count) {
-  const steps = getPinSteps();
-  let chosen = steps[0];
-  for (const step of steps) {
-    if (count >= step.min) chosen = step;
-  }
-  return chosen;
 }
 
 function pinDiameter(count) {

@@ -772,6 +772,10 @@ nav.tabs button .soon {
   background: #111;
   box-shadow: 0 0 0 1px var(--line2);
 }
+/* En oscuro el cuadradito de X va claro: negro sobre el fondo no se veía. */
+:root[data-theme="dark"] .top .plat i.x {
+  background: var(--fg);
+}
 .user-wrap {
   position: relative;
 }
@@ -1635,6 +1639,7 @@ footer.foot {
   box-shadow: 0 0 0 4px color-mix(in oklab, var(--accent) 18%, transparent);
 }
 .urlbar .btn.primary {
+  justify-content: center; /* en celular ocupa todo el ancho */
   padding: 11px 18px;
   border-radius: 12px;
 }
@@ -2582,7 +2587,8 @@ pre.report a {
   padding: 4px 6px;
 }
 .tabulator .tabulator-placeholder,
-.tabulator .tabulator-placeholder span {
+.tabulator .tabulator-placeholder span,
+.tabulator .tabulator-tableholder .tabulator-placeholder .tabulator-placeholder-contents {
   color: var(--muted);
 }
 .tabulator .tabulator-loader {
@@ -2869,9 +2875,11 @@ pre.report a {
   color: var(--muted);
   white-space: nowrap;
 }
+/* El ámbar de texto legible (--warn-ink), no el --c5 de la maqueta: sobre
+   blanco se leía mal. */
 .feed-metrics-date.stale,
 .feed-pop-mt-date.stale {
-  color: var(--c5);
+  color: var(--warn-ink);
 }
 .feed-metric {
   display: inline-flex;
@@ -3432,6 +3440,12 @@ html.feed-pop-lock body {
 .leaflet-bar a:hover {
   background: var(--surface2);
 }
+/* "−" con el zoom mínimo (o "+" con el máximo): Leaflet lo pinta gris claro. */
+.leaflet-bar a.leaflet-disabled,
+.leaflet-bar a.leaflet-disabled:hover {
+  background: var(--surface);
+  color: var(--line2);
+}
 .leaflet-control-attribution {
   background: color-mix(in oklab, var(--surface) 85%, transparent) !important;
   color: var(--muted);
@@ -3668,10 +3682,12 @@ html.feed-pop-lock body {
   color: var(--fg2);
   white-space: nowrap;
 }
+/* Con un aro fino: el negro de "Varias categorías" se ve también en oscuro. */
 .claims-leyenda-punto {
   width: 10px;
   height: 10px;
   border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--line2);
   flex: 0 0 auto;
 }
 .claims-leyenda-n {

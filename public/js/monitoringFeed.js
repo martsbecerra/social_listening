@@ -88,9 +88,10 @@ function feedReasonParts(reason) {
 // Un posteo sin tipo detectado no lleva etiqueta de tipo.
 const FEED_TYPE_LABELS = { reel: 'Reel', imagen: 'Imagen', carrusel: 'Carrusel' };
 const FEED_REACH_LABELS = { alto: 'Alcance alto', medio: 'Alcance medio', bajo: 'Alcance bajo' };
-// Colores del avatar de la maqueta. El color sale del nombre de la cuenta,
-// así cada cuenta se ve siempre igual.
-const FEED_PALETTE = ['#12805f', '#c4522c', '#2f6f9e', '#8a5a10', '#6b4c8f', '#a8324f', '#4f7a3a', '#3f6f6a'];
+// Colores del avatar, de la paleta de la maqueta v4 (en su tono oscuro, para
+// la inicial en blanco). El color sale del nombre de la cuenta, así cada
+// cuenta se ve siempre igual.
+const FEED_PALETTE = ['#199e70', '#d04a4a', '#2a78d6', '#c98500', '#6250d6', '#0b7fc4', '#d95926', '#5466b8'];
 
 function feedHash(text) {
   let hash = 7;
