@@ -138,9 +138,13 @@ function openSourceFromHash({ onLoad = false } = {}) {
   return true;
 }
 
+// Un enlace a otra solapa (el pie, con la página bajada) la abre desde
+// arriba: el navegador no salta solo porque la solapa estaba oculta.
 window.addEventListener('hashchange', () => {
   if (openSourceFromHash()) return;
-  if (location.hash.startsWith('#tab-')) openTab(location.hash.slice('#tab-'.length), { updateHash: false });
+  if (location.hash.startsWith('#tab-') && openTab(location.hash.slice('#tab-'.length), { updateHash: false })) {
+    window.scrollTo(0, 0);
+  }
 });
 
 // ---------------------------------------------------------------------------
