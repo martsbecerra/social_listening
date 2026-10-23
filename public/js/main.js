@@ -135,6 +135,37 @@ function goToSourceBox(box, smooth) {
   if (input) input.focus({ preventScroll: true });
 }
 
+// Al llegar desde otra página, los KPI, las fuentes y las alertas se dibujan
+// cuando llegan los posteos y la config, después del load: lo de arriba
+// crece y la caja (sobre todo Cuentas, al pie de la columna derecha) se iría
+// de la pantalla. Unos segundos, mientras la persona no toque nada, la caja
+// se vuelve a poner arriba (a su scroll-margin-top) si no está ahí. Se mira
+// su posición y no el alto de la solapa: la última tarjeta de cada columna
+// se estira, así que Cuentas sube o baja sin que la solapa cambie de alto;
+// y con la página todavía corta el salto no llega, y después el navegador
+// mantiene esa posición aunque crezca lo de arriba. Escribir en el campo de
+// la caja no cuenta como tocar. Va con un intervalo y no con
+// requestAnimationFrame, que no corre con la pestaña en segundo plano.
+const SOURCE_BOX_HOLD_MS = 8000;
+const SOURCE_BOX_CHECK_MS = 100;
+const SOURCE_BOX_RELEASE = ['wheel', 'touchstart', 'pointerdown', 'keydown'];
+
+function holdSourceBox(box) {
+  const until = performance.now() + SOURCE_BOX_HOLD_MS;
+  const wanted = parseFloat(getComputedStyle(box).scrollMarginTop) || 0;
+  const release = (e) => {
+    if (e && e.type === 'keydown' && box.contains(e.target)) return;
+    clearInterval(timer);
+    for (const type of SOURCE_BOX_RELEASE) window.removeEventListener(type, release, true);
+  };
+  const check = () => {
+    if (performance.now() >= until) release();
+    else if (Math.abs(box.getBoundingClientRect().top - wanted) > 2) box.scrollIntoView({ block: 'start', behavior: 'auto' });
+  };
+  const timer = setInterval(check, SOURCE_BOX_CHECK_MS);
+  for (const type of SOURCE_BOX_RELEASE) window.addEventListener(type, release, { capture: true, passive: true });
+}
+
 // Al cargar la página (onLoad), el salto espera al load y es inmediato: si
 // no, el navegador corta el desplazamiento y el campo pierde el foco cuando
 // se llega desde un enlace de otra página.
@@ -144,9 +175,16 @@ function openSourceFromHash({ onLoad = false } = {}) {
   const box = document.getElementById(SOURCE_BOXES[match[1]]);
   if (!box || !openTab('monitoring', { updateHash: false })) return false;
   history.replaceState(null, '', '#tab-monitoring');
-  if (!onLoad) goToSourceBox(box, true);
-  else if (document.readyState === 'complete') goToSourceBox(box, false);
-  else window.addEventListener('load', () => goToSourceBox(box, false), { once: true });
+  if (!onLoad) {
+    goToSourceBox(box, true);
+    return true;
+  }
+  const jump = () => {
+    goToSourceBox(box, false);
+    holdSourceBox(box);
+  };
+  if (document.readyState === 'complete') jump();
+  else window.addEventListener('load', jump, { once: true });
   return true;
 }
 
