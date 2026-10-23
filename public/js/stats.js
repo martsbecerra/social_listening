@@ -227,6 +227,9 @@ function statsIsStale() {
 function openStats() {
   const range = statsRange();
   statsPaintPeriod();
+  // Un Desde → Hasta mal escrito quedó atrás: el aviso vuelve a ser el de
+  // los datos a la vista.
+  statsShowPeriodNote(statsPeriodNoteText());
   if (!statsData || statsDataRange !== `${range.desde}/${range.hasta}` || statsIsStale()) statsLoad();
   // Si los datos llegaron con la solapa oculta, la nube no se pudo medir.
   else if (statsCloudEl.clientWidth !== statsCloudWidth) statsBuildCloud();
@@ -244,10 +247,47 @@ function statsPctText(part, total) {
   return pct === null ? '—' : `${pct} %`;
 }
 
-// La línea de una tarjeta sin publicaciones en el período.
+// El período no tiene ningún día con datos (es entero de antes de la
+// primera publicación guardada): no es lo mismo que días sin publicaciones.
+function statsNoData() {
+  return statsData.periodo.diasEfectivos === 0;
+}
+
+// ¿Hay con qué comparar? El anterior tiene que tener datos todos sus días:
+// si la base arranca a mitad de ese período, comparar el período entero con
+// unos pocos días inflaría todo ("+919 %", todos los temas en "Pico"). El
+// backend cuenta lo que hay; la pantalla no lo compara.
+function statsHasPrevious() {
+  return statsData.anterior.diasEfectivos === statsData.periodo.dias;
+}
+
+// Lo que dice una tarjeta sin nada que mostrar.
+function statsEmptyText() {
+  return statsNoData() ? 'Sin datos de esas fechas.' : `Sin publicaciones ${statsRangeWords(statsData.periodo)}.`;
+}
+
 function statsEmptyLine() {
-  const periodo = statsData.periodo;
-  return statsNode('p', 'stats-empty', `Sin publicaciones ${statsRangeWords(periodo)}.`);
+  return statsNode('p', 'stats-empty', statsEmptyText());
+}
+
+// La línea debajo de la cabecera: desde cuándo hay datos o por qué no se
+// compara con el período anterior ('' si no hace falta).
+function statsPeriodNoteText() {
+  if (!statsData) return '';
+  const { periodo, anterior } = statsData;
+  if (statsNoData()) {
+    return periodo.primerDia
+      ? `No hay datos de esas fechas: las publicaciones guardadas empiezan el ${statsShort(periodo.primerDia)}.`
+      : 'Todavía no hay publicaciones guardadas.';
+  }
+  const notes = [];
+  if (periodo.desdeEfectivo > periodo.desde) {
+    notes.push(`Hay publicaciones guardadas desde el ${statsShort(periodo.desdeEfectivo)}: el período cuenta desde ahí.`);
+  }
+  if (anterior.diasEfectivos > 0 && !statsHasPrevious()) {
+    notes.push(`El período anterior tiene datos de ${anterior.diasEfectivos} de sus ${periodo.dias} días: no se compara.`);
+  }
+  return notes.join(' ');
 }
 
 // Después de dibujar, las barras crecen de 0 a su ancho (sin movimiento:
@@ -285,22 +325,28 @@ function statsRenderKpis() {
   const negativas = statsSum(statsData.porDia, 'negativo');
   const positivas = statsSum(statsData.porDia, 'positivo');
   const pctFormat = (n) => `${Math.round(n)} %`;
-  const conversation = kpiDelta(r.conversacion, r.conversacionAnterior);
+  // Sin un anterior completo, nada se compara (ver statsHasPrevious).
+  const before = (value) => (statsHasPrevious() ? value : null);
+  // Sin datos de esas fechas, los números no son 0: "—".
+  const noData = statsNoData();
+  const shown = (value) => (noData ? null : value);
+  const detail = (normal) => (noData ? [statsNode('b', 'flat', 'sin datos'), ' de esas fechas'] : normal);
+  const conversation = kpiDelta(r.conversacion, before(r.conversacionAnterior));
   // Sin publicaciones, los tramos son todos cero: no hay trazo.
   const spark = (values) => (r.relevantes ? values : null);
   statsKpisEl.replaceChildren(
     kpiCard({
       id: 'stats-relevantes',
       label: 'Publicaciones relevantes',
-      value: r.relevantes,
-      detail: kpiDelta(r.relevantes, r.relevantesAnterior),
+      value: shown(r.relevantes),
+      detail: detail(kpiDelta(r.relevantes, before(r.relevantesAnterior))),
       spark: spark(t.relevantes),
     }),
     kpiCard({
       id: 'stats-altos',
       label: 'Se despegaron',
-      value: r.seDespegaron,
-      detail: kpiDelta(r.seDespegaron, r.seDespegaronAnterior),
+      value: shown(r.seDespegaron),
+      detail: detail(kpiDelta(r.seDespegaron, before(r.seDespegaronAnterior))),
       spark: spark(t.seDespegaron),
     }),
     kpiCard({
@@ -308,7 +354,7 @@ function statsRenderKpis() {
       label: 'Negativo',
       value: r.negativoPct,
       format: pctFormat,
-      detail: statsToneDetail(r.negativoPctAnterior, negativas, r.negativoPct !== null && r.negativoPct > r.negativoPctAnterior),
+      detail: detail(statsToneDetail(before(r.negativoPctAnterior), negativas, r.negativoPct !== null && r.negativoPct > r.negativoPctAnterior)),
       spark: spark(t.negativo),
     }),
     kpiCard({
@@ -316,15 +362,15 @@ function statsRenderKpis() {
       label: 'Positivo',
       value: r.positivoPct,
       format: pctFormat,
-      detail: statsToneDetail(r.positivoPctAnterior, positivas, r.positivoPct !== null && r.positivoPct < r.positivoPctAnterior),
+      detail: detail(statsToneDetail(before(r.positivoPctAnterior), positivas, r.positivoPct !== null && r.positivoPct < r.positivoPctAnterior)),
       spark: spark(t.positivo),
     }),
     kpiCard({
       id: 'stats-conv',
       label: 'Conversación',
-      value: r.conversacion,
+      value: shown(r.conversacion),
       format: statsConversationFormat(r.conversacion),
-      detail: [...conversation, statsNode('br'), 'likes + comentarios'],
+      detail: detail([...conversation, statsNode('br'), 'likes + comentarios']),
       spark: spark(t.conversacion),
     })
   );
@@ -372,7 +418,7 @@ function statsBuildCloud() {
   const value = (word) => (positives ? word.positivas : word.n);
   const words = statsData.palabras.filter((w) => w.n >= 2 && (!positives || w.positivas > 0)).sort((a, b) => value(b) - value(a));
   if (!words.length) {
-    let text = `Sin publicaciones ${statsRangeWords(statsData.periodo)}.`;
+    let text = statsEmptyText();
     if (statsData.resumen.relevantes) {
       text = positives ? 'Ninguna palabra repetida tiene publicaciones positivas en el período.' : 'Ninguna palabra se repite en las publicaciones del período.';
     }
@@ -576,7 +622,7 @@ const STATS_TOPICS_MAX = 9;
 // doble que antes. En alza: más de +20 %. Baja: menos de −20 %. Si no,
 // Estable.
 function statsTopicBadge(topic) {
-  if (topic.anterior === null) return null;
+  if (topic.anterior === null || !statsHasPrevious()) return null;
   const stable = { label: 'Estable', cls: 'st', color: 'var(--neu)' };
   if (topic.anterior === 0) return topic.n >= 3 ? { label: 'Nuevo', cls: 'new', color: 'var(--c3)' } : stable;
   const change = ((topic.n - topic.anterior) / topic.anterior) * 100;
@@ -587,7 +633,7 @@ function statsTopicBadge(topic) {
 }
 
 function statsTopicChange(topic) {
-  if (!topic.anterior) return '—';
+  if (!topic.anterior || !statsHasPrevious()) return '—';
   const change = Math.round(((topic.n - topic.anterior) / topic.anterior) * 100);
   return `${change > 0 ? '+' : ''}${change} %`;
 }
@@ -649,7 +695,7 @@ function statsTopicCard(topic) {
   const best = topic.destacada;
   if (best && best.titulo) {
     const quote = statsNode('p', 'q', `“${best.titulo}”`);
-    quote.dataset.tipTitle = `La que más se despegó en ${topic.tema}`;
+    quote.dataset.tipTitle = best.nivel === 'alto' ? `La que más se despegó en ${topic.tema}` : `La de mayor alcance en ${topic.tema}`;
     quote.dataset.tip = `${best.cuenta ? `@${best.cuenta} · ` : ''}${formatBenchmarkRatio(best.razon)}× en ${best.metrica}`;
     card.appendChild(quote);
   }
@@ -717,6 +763,8 @@ function statsRenderHeat() {
 // publicaciones no tiene punto (no es un cero).
 // -------------------------------------------------------------------------
 const statsNetEl = document.getElementById('statsNet');
+const statsNetTitleEl = document.getElementById('statsNetTitle');
+const statsNetNoteEl = document.getElementById('statsNetNote');
 const STATS_WEEKDAY_OF = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 
 function statsWeekday(fecha) {
@@ -735,6 +783,8 @@ function statsSvgText(attrs, text, color = 'var(--muted)') {
 function statsRenderNet() {
   const tramos = statsData.semanas;
   const daily = tramos.length > 0 && tramos.every((t) => t.desde === t.hasta);
+  statsNetTitleEl.textContent = daily ? 'Tono neto por día' : 'Tono neto por semana';
+  statsNetNoteEl.textContent = `Arriba de cero, ${daily ? 'el día' : 'la semana'} cerró con más elogios que críticas.`;
   const points = tramos.map((t) => {
     const days = statsData.porDia.filter((d) => d.fecha >= t.desde && d.fecha <= t.hasta);
     const total = statsSum(days, 'total');
@@ -743,7 +793,7 @@ function statsRenderNet() {
   });
   const known = points.filter((p) => p.net !== null);
   if (!known.length) {
-    statsNetEl.replaceChildren(statsSvgText({ x: 160, y: 94, 'text-anchor': 'middle', 'font-size': 11 }, `Sin publicaciones ${statsRangeWords(statsData.periodo)}`));
+    statsNetEl.replaceChildren(statsSvgText({ x: 160, y: 94, 'text-anchor': 'middle', 'font-size': 11 }, statsEmptyText()));
     statsNetEl.setAttribute('aria-label', 'Sin publicaciones en el período');
     return;
   }
@@ -795,7 +845,11 @@ function statsRenderNet() {
   const lastName = daily ? (endsToday ? 'hoy' : 'último día') : endsToday ? 'esta semana' : 'última semana';
   const lastValue = last.net === null ? 'sin publicaciones' : `${last.net > 0 ? '+' : ''}${last.net}`;
   const lastY = last.net === null ? y(0) : y(last.net);
-  nodes.push(statsSvgText({ x: x(n - 1), y: lastY + 16, 'text-anchor': 'end', 'font-size': 10 }, `${lastName}: ${lastValue}`, 'var(--fg)'));
+  // Cerca del borde izquierdo (un solo tramo), hacia la derecha: si no, se
+  // sale del gráfico.
+  const lastX = x(n - 1);
+  const lastAttrs = lastX < 140 ? { x: lastX + 8, 'text-anchor': 'start' } : { x: lastX, 'text-anchor': 'end' };
+  nodes.push(statsSvgText({ ...lastAttrs, y: lastY + 16, 'font-size': 10 }, `${lastName}: ${lastValue}`, 'var(--fg)'));
   statsNetEl.replaceChildren(...nodes);
   statsNetEl.setAttribute(
     'aria-label',
@@ -892,6 +946,7 @@ function statsRankButton(item, index, ids) {
   const post = statsPostOf(item.id);
   const button = statsNode('button', 'rk');
   button.type = 'button';
+  button.dataset.id = String(item.id);
   const thumb = statsNode('span', 'th');
   const src = post ? feedImageUrl(post) : null;
   if (src) {
@@ -918,28 +973,34 @@ function statsRankButton(item, index, ids) {
   return button;
 }
 
+// Solo las que se despegaron (nivel alto): con pocas en el período, la
+// lista del endpoint sigue con las de nivel medio o bajo, y esas no van
+// debajo de este título.
 function statsRenderRanking() {
-  const list = statsData.ranking.slice(0, STATS_RANK_SHOWN);
+  const list = statsData.ranking.filter((item) => item.nivel === 'alto').slice(0, STATS_RANK_SHOWN);
+  // Si el foco estaba en una fila (volvió ahí al cerrar el pop-up), pasa a la
+  // misma fila rehecha: si no, caería en <body>.
+  const active = document.activeElement;
+  const focusedId = active && statsRankEl.contains(active) ? active.dataset.id || '' : null;
   if (!list.length) {
     statsRankEl.replaceChildren(
-      statsData.resumen.relevantes ? statsNode('p', 'stats-empty', 'Ninguna publicación del período tiene con qué compararse en su cuenta.') : statsEmptyLine()
+      statsData.resumen.relevantes ? statsNode('p', 'stats-empty', 'Ninguna publicación del período se despegó de lo habitual de su cuenta.') : statsEmptyLine()
     );
     return;
   }
   const ids = list.map((item) => String(item.id));
   statsRankEl.replaceChildren(...list.map((item, i) => statsRankButton(item, i, ids)));
+  if (focusedId !== null) {
+    const buttons = [...statsRankEl.querySelectorAll('.rk')];
+    (buttons.find((b) => b.dataset.id === focusedId) || buttons[0]).focus({ preventScroll: true });
+  }
 }
 
 // -------------------------------------------------------------------------
 // Todo el período.
 // -------------------------------------------------------------------------
 function statsRender() {
-  const { periodo } = statsData;
-  statsShowPeriodNote(
-    periodo.desdeEfectivo && periodo.desdeEfectivo > periodo.desde
-      ? `Hay publicaciones guardadas desde el ${statsShort(periodo.desdeEfectivo)}: el período cuenta desde ahí.`
-      : ''
-  );
+  statsShowPeriodNote(statsPeriodNoteText());
   statsRenderKpis();
   statsRenderCloud();
   statsRenderMentions();

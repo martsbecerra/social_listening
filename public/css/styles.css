@@ -3977,6 +3977,13 @@ svg.line {
   color: var(--neg);
 }
 
+/* Entre 981 y 1200 px, cinco KPI en fila dejan el detalle en 50 px y pisan
+   el trazo: van de a tres. */
+@media (min-width: 981px) and (max-width: 1200px) {
+  #statsKpis {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
 @media (max-width: 1100px) {
   .stats3 {
     grid-template-columns: 1fr 1fr;
