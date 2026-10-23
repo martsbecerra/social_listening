@@ -162,9 +162,11 @@ uno genérico con el contador, y `startPhase(..., { summary: false })` no
 deja ninguno. Una fase nueva tiene que dejar el suyo. "Nuevo" es una sola
 cosa en toda la pantalla (`monitor.isNewPost`: ni en `detected_posts` ni en
 `search_seen`); el ciclo lo cuenta sin repetidos, antes del detalle, en
-`porPlataforma.<red>.newCandidates`, y el recuadro cierra con "Listo: N
-relevantes guardados de M nuevos". SDD en
-`openspec/changes/monitoreo-progreso-lista/`.
+`porPlataforma.<red>.newCandidates` (el scheduler guarda la suma en
+`monitoring_runs.new_candidates`, ver "Diseño v4"), y el recuadro cierra con
+"✓ Corrida terminada · HH:MM · duración" y la línea "Resultado · N
+relevantes guardados de M nuevos"; se va solo a los 9 s (con un error queda
+hasta "Ocultar"). SDD en `openspec/changes/monitoreo-progreso-lista/`.
 Las fases de fotos son la excepción al porcentaje: se anuncian con su
 contador pero `startPhase(..., { countsInPercent: false })` las deja fuera
 del total global (si no, la barra volvía de 100 % a la mitad al final del
@@ -389,17 +391,23 @@ rama y un PR por fase: A `sistema-visual-v4` (el marco en todas las
 páginas), B `monitoreo-v4`, C `estadisticas`, D `inicio-y-login`, E
 `analisis-v4`. El estado anterior (riel, radar y las maquetas viejas) quedó
 en el tag `v3-riel-radar`. SDD de la fase A en
-`openspec/changes/sistema-visual-v4/`.
+`openspec/changes/sistema-visual-v4/`; de la B, en
+`openspec/changes/monitoreo-v4/`.
 
 - **Sistema visual** (`public/css/styles.css`, en tres partes comentadas):
   1) los tokens y componentes de la maqueta tal cual (`--bg`, `--surface`,
   `--accent`, `--glow`, `--pos`/`--neu`/`--neg`, `--c1`…`--c5`; `.card`,
   `.chip`, `.kpi`, `.seg`, `.btn`, `.field`, `.tip`; `rise` escalonado por
   `.rv`, `fadeIn`, `pop`, `slideIn`, `ping`, `draw`), con Sora, IBM Plex
-  Sans e IBM Plex Mono de Google Fonts; 2) el marco; 3) lo que la maqueta no
-  dibuja o que todavía no se rehizo (progreso, fuentes, filtros, Tabulator,
-  feed, pop-up, modales, análisis, mapa, inicio, login), con los mismos
-  tokens y las mismas clases de antes. Todo color sale de los tokens: los únicos sueltos son los de marca de cada
+  Sans e IBM Plex Mono de Google Fonts. Una excepción: `--muted` del tema
+  claro es `#626d8c` y no el `#7c87a4` de la maqueta (mismo tono, más
+  oscuro), para pasar 4,5:1 sobre `--surface` (5,14) y `--surface2`
+  (4,55); el de oscuro sigue siendo el de la maqueta; 2) el marco; 3) los componentes de
+  la app: el Monitoreo de la maqueta (`.mon`, `.srcbox`, `.flowcard`/`.fl`,
+  `.pipe`, `.al`, `.fbar`, `.combo`, `.fstatus`, `.ups`/`.up`, `.reach`) y,
+  con los mismos tokens, lo que la maqueta no dibuja o que todavía no se
+  rehizo (progreso, Tabulator, feed, pop-up, modales, análisis, mapa,
+  inicio, login, el Monitoreo de X). Todo color sale de los tokens: los únicos sueltos son los de marca de cada
   red, los de las categorías del mapa y el negro de las fotos. Los tokens
   viejos (`--jade-*`, `--clay-*`, `--coral-*`) ya no existen. No hay estilo
   global de `<button>`: cada botón lleva su clase (`.btn`, `.btn.primary`,
@@ -431,8 +439,11 @@ en el tag `v3-riel-radar`. SDD de la fase A en
   con `aria-disabled` y "pronto" hasta la fase C. X: Monitoreo, Mapa y
   Análisis, sin Estadísticas, y abre en Análisis. `main.js` también mide
   `--top` y atiende `#fuentes-busquedas` / `-cuentas` / `-palabras` /
-  `-hashtags` (abre el Monitoreo, baja a esa caja y enfoca su campo; al
-  cargar la página, recién en `load` y sin animación).
+  `-hashtags` (abre el Monitoreo, baja a esa caja, abre su campo de agregar
+  con `panelOpenAdd` y lo enfoca; al cargar la página, recién en `load` y
+  sin animación, y durante 8 s `holdSourceBox` la vuelve a poner arriba si
+  se movió, porque el panel se dibuja después del `load`; lo suelta la
+  rueda, un toque, un clic o una tecla fuera de la caja).
 - **Estado de la escucha** (`public/js/topbar.js`): la hora de la última
   corrida TERMINADA (`GET /api/monitoring/status`, `lastRunAt`): de esa
   plataforma en `instagram.html` y `x.html` (`db.getLastFinishedRunAt`); en
@@ -451,13 +462,71 @@ en el tag `v3-riel-radar`. SDD de la fase A en
   y `corridasPorDia` de `/api/footer-stats` (sin dato, la línea no sale),
   columnas Secciones / Fuentes / Plataformas / Cuenta y la línea final.
   Estadísticas, Facebook y TikTok van "· pronto", sin enlace.
-- **Monitoreo de Instagram entre la fase A y la B**: cabecera con "▶
-  Actualizar ahora", el recuadro de progreso de siempre (`.run-card`), tres
-  cajas de fuentes (`.src-grid`: búsquedas, palabras clave y hashtags,
-  cuentas; mismos ids, `data-full`, contadores en `[data-src-count]`),
-  "Se despegaron" en 2 x 2, y la lista con filtros, feed y tabla como
-  antes. Ya no hay riel, panel de fuentes, franja ni radar (`rail.js` y
-  `monitoringRadar.js` se borraron). La fase B arma la solapa de la maqueta.
+- **Monitoreo de Instagram** (fase B): la solapa de la maqueta, con datos
+  reales y casi todo del lado del cliente sobre los posteos de la tabla
+  (`monitoringTable.getData()`). X conserva su layout (solo comparte el
+  recuadro de progreso).
+  - **Período** (`periodSeg`): Hoy / 7 días / 30 días por `posted_at` en
+    hora de Argentina ("Hoy" desde las 00:00; "7 días" desde las 00:00 de
+    seis días antes; `argentinaDayStart` resta días de 24 h: Argentina no
+    tiene horario de verano). En `localStorage` `sl.monitoreo.periodo`;
+    sin nada, Hoy. Va dentro de `postMatchesFilters` (`periodFrom`) y
+    filtra todo; el resto usa `postInPeriod` / `monitorPeriodPosts`. Sin
+    publicaciones del período, `buildEmptyListLine` dice "Todavía no hay
+    publicaciones de hoy · ver 7 días" (con el enlace). `monitorPeriodDays`
+    es 0 en X: ahí no se filtra nada por período.
+  - **Panel** (`public/js/monitoringPanel.js`, prefijo `panel`): los
+    cuatro KPI con `countUp` (publicaciones con sparkline y variación contra
+    el período anterior del mismo largo; tono neto sobre los clasificados,
+    con anillo; "Se despegaron" con "la mayor: 15,37× en comentarios, de
+    @cuenta"; conversación), los chips de búsquedas / palabras clave /
+    hashtags (conteo del período y barrita de tono; búsqueda = su
+    `matched_reason`, palabra o hashtag = escrita en título o texto; clic =
+    filtrar la lista con `setSourceFilter`, que se ve como pastilla con ✕;
+    la ✕ del chip pide "¿Sacar «x»? Sí / No" en el mismo chip; "+" abre
+    `.kw-add`; 8 y 6 a la vista con "Ver las N →"), las cuentas seguidas
+    (4, mismas reglas; clic elige la cuenta en el filtro), el pulso de 7
+    días por hora (SVG con `createElementNS`, al ancho real, una franja por
+    hora con `data-tip`), el Pipeline y las alertas de hoy (volumen ≥ 1,5 ×
+    la mediana diaria de los 30 días anteriores; la que más se despegó; un
+    tema con 2 o más negativas; clic = filtros + período Hoy + bajar a la
+    lista). Redibuja solo si cambia la firma (período, ids, sentimiento,
+    likes, comentarios); si cambia solo la fuente, solo las fuentes. Los
+    hashtags son keywords con "#" (misma lista y endpoint; `addHashtag` le
+    pone el "#"). Ya no hay modales "Ver todas" en Instagram.
+  - **Pipeline**: `GET /api/monitoring/status?plataforma=` suma `lastRun`
+    (`src/lastRun.js`: `finishedAt`, `durationSec`, `fetched` = ítems de
+    las consultas de detección de esa red en la corrida, `newCandidates` =
+    `monitoring_runs.new_candidates`, `saved` = `new_posts`, `highlighted` =
+    guardados en la ventana de la corrida con `top.level === 'alto'`, `usd`;
+    null sin corridas) y `model` (`getAnalysisModel`). La columna es
+    anulable: las corridas anteriores muestran "—".
+  - **Flujo en vivo** (`public/js/monitoringFlow.js`, prefijo `flow`): las
+    publicaciones del período por `detected_at`, tantas como entran (la
+    tarjeta `.flowcard` tiene el alto de la fila y su contenido es una capa
+    absoluta: nunca crece); el término de la búsqueda va en `<mark>` armado
+    con nodos (`flowFindTerm`, sin mayúsculas ni acentos). Durante una
+    corrida no se redibuja; con `{ run: 'end', newIds }` las nuevas entran
+    de a una con "ahora" (el primer minuto; las horas se rehacen solas cada
+    30 s); con el mouse encima esperan en una cola, y un redibujo mientras
+    tanto las saltea (si no, quedaban repetidas). Un término lejos del
+    principio recorta el título adelante ("…de octubre GCBA").
+  - **Filtros**: ocho controles con nombre en `.fbar` (Buscar, Tono,
+    Alcance, Tema con `temas` de `/api/monitoring/config`, el combo de
+    Cuenta `HAS_ACC_COMBO` con buscador y conteo del período, Desde, Hasta,
+    Orden con "Más comentarios"). En la vista Tabla, Orden queda
+    deshabilitado con el aviso en la etiqueta (un control deshabilitado no
+    recibe el mouse). "Mostrando N de M publicaciones del período";
+    "Limpiar filtros" (`.f-clear.on`) solo con algo puesto, y no toca el
+    período. La placa vacía de Tabulator es un nodo propio
+    (`tablePlaceholderEl`) que `applyFilters` tiene al día.
+  - **Avisos y carga**: `notifyMonitoringViews({ config })` cuando llega
+    la config (null si falló). La config y los posteos pueden llegar antes
+    de que se cargue un script de los de abajo: cada uno arranca con
+    `monitoringConfig` (undefined: todavía no) y `monitoringTable` si ya
+    están.
+  - Los colores de los temas (`temaColor`, `buildTemaTag`) son los
+    `--cat-N` por el lugar del tema en la config.
 - **Mapa**: mosaicos de OpenStreetMap claros también en oscuro; controles,
   leyenda, popups y tooltips de Leaflet con los tokens. Los colores de
   categoría (`--cat-1` … `--cat-12`) salen de la paleta de la maqueta, en su
@@ -492,34 +561,48 @@ principio (`feedScrollToStart`). Un filtro nuevo va en ese predicado; si su
 control existe solo en `instagram.html` (como `fAlcanceEl`), en X es null y
 hay que tratarlo así. `monitoring.js` avisa los cambios con
 `notifyMonitoringViews(change)` (sin argumento = redibujar;
-`{ ignoredId }`; `{ goToId }`, que quedó como respaldo: ver "Se despegaron"
-más abajo; `{ run }`, para la barra superior, `topbar.js`). El alcance de la
+`{ ignoredId }`; `{ goToId }`, que quedó como respaldo de X; `{ config }`;
+`{ run }`, para la barra superior, el panel y el flujo). El alcance de la
 tarjeta y del filtro "Alcance" es `postReach`: combina los niveles que ya
 manda el backend en `benchmark.likes` y `benchmark.comments` (vale el
 mejor de los dos; "normal" se muestra "medio"; sin ninguna métrica con
 referencia el medidor muestra "—") y no recalcula nada ni conoce ningún corte (ver
 "Alcance: la regla del colchón"). El orden "Mayor alcance" va primero por
 la etiqueta y, dentro de cada una, por la razón. Todo dato del posteo entra
-por `textContent`, nunca como HTML. Son cientos de tarjetas sin paginar: el
-redibujo es completo, con espera de 150 ms y `content-visibility: auto`.
+por `textContent`, nunca como HTML. El alcance se ve con el `.reach` de la
+maqueta (`buildReachMeter`: cinco barras; alto en el acento, latiendo, con
+la razón; medio en ámbar; bajo gris; "—" sin referencia) en la tabla, el
+feed, el flujo y "Se despegaron"; con alcance alto la foto lleva "N,NN× se
+despegó". Filas completas: se dibujan 3 filas según las columnas reales de
+la grilla (`feedColumns`) y, si hay más, la última celda es "+N · Ver 12
+más" (`feedRows` suma otra tanda); otro filtro u orden vuelve a 3, otro
+ancho con otras columnas las completa. El redibujo es completo, con espera
+de 150 ms y `content-visibility: auto`; `feedVisibleIds` guarda la lista
+entera (filtrada y ordenada) para el pop-up.
 Toda la tarjeta abre un pop-up con el posteo completo: un clic en cualquier
 parte, o Enter / Espacio con el foco en ella (`tabindex="0"`, aro de foco
 visible). No lo abren sus controles (`FEED_CARD_CONTROLS`: la ✕ de ignorar,
 el selector de sentimiento, "Abrir ↗") ni soltar el mouse después de marcar
 texto (`feedSelectingIn`); un control nuevo en la tarjeta tiene que entrar
-en esa lista. Ya no hay botón "Ver más". El pop-up es
-`public/js/monitoringFeedPopup.js` (también solo `instagram.html`, después
-del feed; prefijo `feedPop`), un `<dialog>` que se rellena con la fila de
-Tabulator, recorre las tarjetas en pantalla (← →) y usa `updateSentiment` y
-`confirmIgnore` tal como están; el feed le avisa los cambios de la lista con
-`feedListListeners`; al cerrarse devuelve el foco a la tarjeta. Un clic en
-un destacado de "Se despegaron" (`openHighlight` en `monitoring.js`) abre
-ese posteo SOLO (`openFeedPopSolo`, estado `feedPopSolo`): sin flechas ni
-contador, igual en Tabla y en Feed y aunque un filtro lo tape; por eso el
-pop-up busca el posteo por su fila (`feedPopRow`), no por la tarjeta, que
-puede no existir. Todo lo que el pop-up haga con el posteo abierto tiene
-que andar sin tarjeta. Donde no hay pop-up (`x.html`) queda lo anterior, ir
-a la fila (`highlightGoToRow`). La foto
+en esa lista. El pop-up es `public/js/monitoringFeedPopup.js` (también
+solo `instagram.html`, después del feed; prefijo `feedPop`), un `<dialog>`
+que recorre una LISTA de ids (`openFeedPopList(ids, id, opener)`): desde
+una tarjeta, toda la del feed (`feedVisibleIds`, no solo las filas a la
+vista); desde una línea del flujo, el flujo; desde una tira de "Se
+despegaron" (`openHighlight`, `highlightIds`), solo las tiras. Los datos
+salen siempre de la fila de Tabulator por id (`feedPopRowOf`): todo lo que
+el pop-up haga con el posteo abierto tiene que andar sin tarjeta. Contador
+"3 / 40", flechas y ← →; usa `updateSentiment` y `confirmIgnore` tal como
+están; al ignorar pasa al siguiente de la lista; al cerrarse el foco vuelve
+a lo que lo abrió (o a la tarjeta del último visto si se navegó desde el
+feed y está dibujada). Alto fijo `min(720px, 92vh)`, la foto a todo lo
+alto, solo el texto se desplaza (`.feed-pop-scrollwrap.more` pone el
+degradé de abajo; la rueda sobre la foto mueve el texto), chips `.chip-r`
+(alcance), `.chip-t` (tipo) y `.tema`, likes y comentarios en recuadros
+contra la mediana de la cuenta, pie fijo con el tono, "Ignorar",
+"Analizar comentarios" (cierra, abre Análisis con el link en `#url`, sin
+analizar) y "Abrir en Instagram ↗". Donde no hay pop-up (`x.html`) queda
+lo anterior, ir a la fila (`highlightGoToRow`). La foto
 llega en `image` del listado (ver "Fotos de los posteos") y el frontend la
 lee solo en `feedImageUrl` (tarjeta, miniatura), `feedPopImageUrl` (pop-up,
 imagen grande) y `feedImageFailed`: sin intento de descarga, "Sin foto" en
@@ -540,11 +623,16 @@ el medidor de alcance (`buildFeedFoot`). El hover
 (sube, borde del color del sentimiento, foto que se acerca) va solo con
 mouse (`hover: hover`) y el movimiento se apaga con
 `prefers-reduced-motion`.
+"Se despegaron" muestra hasta cuatro tiras del período (`.up`), con la
+línea "Ninguna publicación del período se despegó de lo habitual de su
+cuenta" si no hay. El selector de sentimiento de tarjetas, tiras y pop-up
+sigue siendo el desplegable pastilla (no los botones de la maqueta), y la
+fila de la tabla sigue desplegando el detalle (decisiones del dueño).
 Las maquetas originales (`design/monitoreo-feed.html` y
 `design/monitoreo-popup.html`) quedaron en el tag `v3-riel-radar`; la
-vigente es `design/social-listening-v4.html`, que la fase B aplica al feed y
-al pop-up. SDD en `openspec/changes/monitoreo-feed/` y
-`openspec/changes/monitoreo-popup/`. La suite no cubre el frontend: se
+vigente es `design/social-listening-v4.html`. SDD en
+`openspec/changes/monitoreo-feed/`, `openspec/changes/monitoreo-popup/` y
+`openspec/changes/monitoreo-v4/`. La suite no cubre el frontend: se
 prueba en el navegador con un servidor de prueba aparte (otro puerto, copia
 de la base, sin scheduler ni Apify).
 

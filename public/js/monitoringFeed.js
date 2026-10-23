@@ -14,6 +14,7 @@
 const feedContainerEl = document.getElementById('monitoringFeed');
 const feedViewSegEl = document.getElementById('viewSeg');
 const feedOrderEl = document.getElementById('fOrden');
+const feedOrderWrapEl = feedOrderEl.closest('.f');
 const feedTableWrapEl = document.getElementById('monitoringTable').closest('.tbl-wrap');
 
 // Última vista elegida; si no hay ninguna, el feed.
@@ -68,36 +69,12 @@ function feedAgo(iso) {
   return `hace ${days} ${days === 1 ? 'día' : 'días'}`;
 }
 
-// Motivo corto para el pie de la tarjeta, a partir de matched_reason (lo arma
-// src/monitor.js): "búsqueda <término>", "palabra clave <término>" o "cuenta
-// trackeada". Lo que viene después de " · " es el motivo del clasificador y
-// no entra acá. Una forma desconocida se muestra tal cual.
-function feedReasonParts(reason) {
-  const base = String(reason || '').split(' · ')[0].trim();
-  let match = base.match(/^Búsqueda:\s*(.+?)(?:\s+\(|\s+—\s|$)/);
-  if (match) return { text: 'búsqueda', term: match[1] };
-  match = base.match(/^Coincidencia con palabra clave:\s*"?(.+?)"?$/);
-  if (match) return { text: 'palabra clave', term: match[1] };
-  if (base.startsWith('Cuenta trackeada')) return { text: 'cuenta trackeada', term: null };
-  return { text: base, term: null };
-}
-
 // -------------------------------------------------------------------------
 // Recuadro de la imagen.
 // -------------------------------------------------------------------------
 // Un posteo sin tipo detectado no lleva etiqueta de tipo.
 const FEED_TYPE_LABELS = { reel: 'Reel', imagen: 'Imagen', carrusel: 'Carrusel' };
 const FEED_REACH_LABELS = { alto: 'Alcance alto', medio: 'Alcance medio', bajo: 'Alcance bajo' };
-// Colores del avatar, de la paleta de la maqueta v4 (en su tono oscuro, para
-// la inicial en blanco). El color sale del nombre de la cuenta, así cada
-// cuenta se ve siempre igual.
-const FEED_PALETTE = ['#199e70', '#d04a4a', '#2a78d6', '#c98500', '#6250d6', '#0b7fc4', '#d95926', '#5466b8'];
-
-function feedHash(text) {
-  let hash = 7;
-  for (const ch of String(text || '')) hash = (hash * 31 + ch.codePointAt(0)) >>> 0;
-  return hash;
-}
 
 // Foto del posteo. El listado manda `image` (src/postImageRoutes.js):
 // thumbUrl y fullUrl, las direcciones de las dos copias guardadas en el
@@ -165,7 +142,14 @@ function buildFeedMedia(post, reach) {
 
   const typeLabel = FEED_TYPE_LABELS[post.post_type];
   if (typeLabel) media.appendChild(feedNode('span', 'feed-badge type', typeLabel));
-  // El alcance va en el pie, con el medidor (buildFeedFoot).
+  // Alcance alto: la razón arriba a la derecha, "1,56× se despegó" (la razón
+  // lleva colchón: no es "N veces lo habitual"). El medidor va en el pie
+  // (buildFeedFoot).
+  if (reach && reach.level === 'alto') {
+    const hot = feedNode('span', 'feed-badge hot', `${formatBenchmarkRatio(reach.ratio)}× se despegó`);
+    hot.title = `Razón de alcance por ${reach.label}: ${benchmarkRatioBasis(reach.metric)}`;
+    media.appendChild(hot);
+  }
   return media;
 }
 
@@ -178,7 +162,7 @@ function buildFeedHead(post) {
   const account = post.account && post.account !== 'N/D' ? post.account : null;
 
   const avatar = feedNode('div', 'feed-av', account ? account[0].toUpperCase() : '?');
-  avatar.style.background = FEED_PALETTE[feedHash(account) % FEED_PALETTE.length];
+  avatar.style.background = accountColor(account);
   avatar.setAttribute('aria-hidden', 'true');
 
   const who = feedNode('div', 'feed-who');
@@ -260,7 +244,7 @@ function buildFeedFoot(post, reach) {
   const foot = feedNode('div', 'feed-foot');
 
   const why = feedNode('span', 'feed-why');
-  const { text, term } = feedReasonParts(post.matched_reason);
+  const { text, term } = postReasonParts(post.matched_reason);
   why.append(term ? `${text} ` : text);
   if (term) why.appendChild(feedNode('code', '', term));
   why.title = post.matched_reason || '';
@@ -326,21 +310,8 @@ function feedSorter(order, reachById) {
     return (a, b) => feedDescending(level(a), level(b)) || feedDescending(ratio(a), ratio(b)) || recent(a, b);
   }
   if (order === 'likes') return (a, b) => feedDescending(a.likes, b.likes) || recent(a, b);
+  if (order === 'comments') return (a, b) => feedDescending(a.comments, b.comments) || recent(a, b);
   return recent;
-}
-
-// -------------------------------------------------------------------------
-// Aviso de que cambia la lista de tarjetas. El pop-up del posteo
-// (monitoringFeedPopup.js, que se carga después) se anota acá para no quedar
-// mostrando un posteo que ya no está. "change" dice qué pasó:
-//   (nada)         la lista ya cambió: se redibujó entera o salió una tarjeta.
-//   { removing }   esa tarjeta está por salir (se ignoró su posteo) y todavía
-//                  ocupa su lugar.
-// -------------------------------------------------------------------------
-const feedListListeners = [];
-
-function notifyFeedList(change) {
-  for (const listener of feedListListeners) listener(change);
 }
 
 // -------------------------------------------------------------------------
@@ -348,6 +319,11 @@ function notifyFeedList(change) {
 // orden (monitoring.js avisa por monitoringViewListeners, ver
 // scheduleFeedRender). Solo si el feed es la vista elegida: en la vista
 // Tabla no se arma ninguna tarjeta.
+//
+// Filas completas: a la vista van FEED_ROWS_STEP filas (según cuántas
+// columnas tiene la grilla de verdad) y, si hay más, la última celda es
+// "+N · Ver 12 más", que suma otras tantas. Con otros filtros u otro orden
+// se vuelve a las primeras filas.
 // -------------------------------------------------------------------------
 let feedRenderTimer = null;
 // Filtros y orden del último dibujo. Si el siguiente llega con otros, la
@@ -355,6 +331,34 @@ let feedRenderTimer = null;
 // feedScrollToStart); si son los mismos (llegaron datos nuevos), la página
 // se queda donde está. null: todavía no se dibujó desde que se entró al feed.
 let feedLastQuery = null;
+// Los ids de toda la lista del feed (filtrada y ordenada), no solo de las
+// tarjetas a la vista: el pop-up abierto desde una tarjeta la recorre
+// entera.
+let feedVisibleIds = [];
+const FEED_ROWS_STEP = 3;
+let feedRows = FEED_ROWS_STEP;
+// Columnas del último dibujo: si cambian (otro ancho de ventana), se rehace.
+let feedLastColumns = 0;
+
+// Cuántas columnas tiene la grilla del feed (auto-fill de 240 px).
+function feedColumns() {
+  const template = getComputedStyle(feedContainerEl).gridTemplateColumns;
+  return Math.max(1, template.split(' ').filter((part) => part.endsWith('px')).length);
+}
+
+// La última celda cuando hay más de las que entran: "+N" grande, "Ver 12
+// más" (una tanda de filas, o las que queden) y cuántas se ven.
+function buildFeedMore(rest, step, shown, total) {
+  const more = feedNode('button', 'feed-more');
+  more.type = 'button';
+  more.dataset.act = 'more';
+  more.append(
+    feedNode('span', 'n', `+${rest.toLocaleString('es-AR')}`),
+    feedNode('span', 'l', `Ver ${Math.min(rest, step).toLocaleString('es-AR')} más`),
+    feedNode('small', '', `${shown.toLocaleString('es-AR')} de ${total.toLocaleString('es-AR')}`)
+  );
+  return more;
+}
 
 function renderFeed() {
   clearTimeout(feedRenderTimer);
@@ -362,6 +366,7 @@ function renderFeed() {
   if (feedCurrentView !== 'feed' || !monitoringTable) return;
   const query = JSON.stringify([readFilterValues(), feedOrderEl.value]);
   const listChanged = feedLastQuery !== null && query !== feedLastQuery;
+  if (listChanged) feedRows = FEED_ROWS_STEP;
   feedLastQuery = query;
   // Los posteos a mostrar son las filas "activas" de la tabla: las que dejó
   // pasar la barra de filtros la última vez que se aplicó (applyFilters, con
@@ -374,21 +379,28 @@ function renderFeed() {
   const visible = monitoringTable.getData('active');
   const reachById = new Map(visible.map((post) => [post.id, postReach(post)]));
   visible.sort(feedSorter(feedOrderEl.value, reachById));
+  feedVisibleIds = visible.map((post) => String(post.id));
+
+  const columns = feedColumns();
+  feedLastColumns = columns;
+  let cap = columns * feedRows;
+  if (visible.length > cap) cap -= 1; // la última celda es "Ver más"
+  const shown = visible.slice(0, cap);
 
   const fragment = document.createDocumentFragment();
-  for (const post of visible) fragment.appendChild(buildFeedCard(post, reachById.get(post.id)));
+  for (const post of shown) fragment.appendChild(buildFeedCard(post, reachById.get(post.id)));
+  if (visible.length > shown.length) {
+    fragment.appendChild(buildFeedMore(visible.length - shown.length, columns * FEED_ROWS_STEP, shown.length, visible.length));
+  }
   if (!visible.length) {
-    fragment.appendChild(
-      feedNode(
-        'div',
-        'feed-empty',
-        monitoringTable.getDataCount() ? 'No hay publicaciones con esos filtros.' : 'Todavía no se detectó ningún posteo.'
-      )
-    );
+    // "No hay publicaciones con esos filtros", o el período vacío con el
+    // enlace al siguiente (buildEmptyListLine en monitoring.js).
+    const empty = feedNode('div', 'feed-empty');
+    empty.appendChild(buildEmptyListLine());
+    fragment.appendChild(empty);
   }
   feedContainerEl.replaceChildren(fragment);
   if (listChanged) feedScrollToStart();
-  notifyFeedList();
 }
 
 // Los avisos de monitoring.js llegan de a uno por tecla del buscador. Rehacer
@@ -420,7 +432,18 @@ function setFeedView(view, { save = true } = {}) {
   }
   feedTableWrapEl.classList.toggle('hidden', isFeed);
   feedContainerEl.classList.toggle('hidden', !isFeed);
-  feedOrderEl.classList.toggle('hidden', !isFeed);
+  // "Orden" es del feed: en la tabla se ordena con el encabezado de cada
+  // columna. Queda a la vista, deshabilitado y con el aviso.
+  feedOrderEl.disabled = !isFeed;
+  if (feedOrderWrapEl) {
+    if (isFeed) {
+      delete feedOrderWrapEl.dataset.tipTitle;
+      delete feedOrderWrapEl.dataset.tip;
+    } else {
+      feedOrderWrapEl.dataset.tipTitle = 'Orden de la tabla';
+      feedOrderWrapEl.dataset.tip = 'En la tabla se ordena con el encabezado de cada columna.';
+    }
+  }
 
   if (isFeed) {
     renderFeed();
@@ -443,7 +466,6 @@ feedViewSegEl.addEventListener('click', (e) => {
   const button = e.target.closest('button[data-view]');
   if (button) setFeedView(button.dataset.view);
 });
-feedOrderEl.addEventListener('change', renderFeed);
 
 // -------------------------------------------------------------------------
 // Acciones de la tarjeta: las mismas de la fila de la tabla, con los mismos
@@ -472,6 +494,9 @@ function feedSetSentiment(card, sentiment, select) {
   // que leen los filtros y "Se despegaron".
   if (row) row.update({ sentiment });
   if (monitoringTable) renderHighlightCards(monitoringTable.getData());
+  // El panel (tono de las fuentes, KPI) y el flujo, al día; el feed se
+  // rehace con el color nuevo.
+  notifyMonitoringViews();
 }
 
 feedContainerEl.addEventListener('change', (e) => {
@@ -494,7 +519,20 @@ function feedSelectingIn(card) {
   return card.contains(selection.anchorNode) || card.contains(selection.focusNode);
 }
 
+// "Ver 12 más": otra tanda de filas. El foco pasa a la primera tarjeta nueva.
+function showMoreFeed() {
+  const before = feedContainerEl.querySelectorAll('.feed-card').length;
+  feedRows += FEED_ROWS_STEP;
+  renderFeed();
+  const first = feedContainerEl.querySelectorAll('.feed-card')[before];
+  if (first) first.focus({ preventScroll: true });
+}
+
 feedContainerEl.addEventListener('click', (e) => {
+  if (e.target.closest('.feed-more')) {
+    showMoreFeed();
+    return;
+  }
   const card = e.target.closest('.feed-card');
   if (!card) return;
   if (e.target.closest('.feed-head .ico.del')) {
@@ -521,39 +559,40 @@ feedContainerEl.addEventListener('keydown', (e) => {
   openFeedPop(e.target);
 });
 
-// Se ignoró un posteo: sale solo su tarjeta, sin rehacer el resto (así la
-// página no salta). Si era la última queda el cartel de "no hay".
-function removeFeedCard(id) {
-  const card = feedCardById(id);
-  if (!card) return;
-  // Antes de sacarla, mientras todavía ocupa su lugar: si el pop-up está
-  // mostrando ese posteo, pasa al de la tarjeta de al lado.
-  notifyFeedList({ removing: card });
-  card.remove();
-  // Si no quedó ninguna, el cartel de "no hay" (renderFeed ya avisa el cambio).
-  if (!feedContainerEl.querySelector('.feed-card')) renderFeed();
-  else notifyFeedList();
+// Se ignoró un posteo: el feed se rehace con las mismas filas (la que sigue
+// ocupa su lugar y "Ver más" cuenta una menos). Si era la última queda el
+// cartel de "no hay". El pop-up, si estaba abierto, ya pasó al siguiente de
+// su lista (monitoringFeedPopup.js).
+function removeFeedCard() {
+  renderFeed();
 }
 
-// Hasta dónde tapa la barra de filtros, que queda pegada arriba al bajar.
+// Con otro ancho la grilla puede tener otra cantidad de columnas: las filas
+// se vuelven a completar.
+window.addEventListener('resize', () => {
+  if (feedCurrentView === 'feed' && feedContainerEl.firstChild && feedColumns() !== feedLastColumns) scheduleFeedRender();
+});
+
+// Hasta dónde tapa la barra superior, que en escritorio queda fija arriba al
+// bajar (en celular va en su lugar y no tapa nada).
 function feedBarBottom() {
-  const bar = document.querySelector('.filters');
-  return bar ? (parseFloat(getComputedStyle(bar).top) || 0) + bar.offsetHeight : 0;
+  const top = document.querySelector('header.top');
+  if (!top) return 0;
+  const position = getComputedStyle(top).position;
+  return position === 'sticky' || position === 'fixed' ? top.offsetHeight : 0;
 }
 
-// Deja la tarjeta justo debajo de la barra de filtros. De un salto, sin
+// Deja la tarjeta justo debajo de la barra superior. De un salto, sin
 // animar: las tarjetas que todavía no se dibujaron tienen un alto estimado y
 // un scroll animado caería en otro lado.
 function feedScrollToCard(card) {
   window.scrollTo({ top: card.getBoundingClientRect().top + window.scrollY - feedBarBottom() - 12 });
 }
 
-// La barra de filtros queda pegada arriba, así que se puede filtrar, ordenar
-// o cambiar de vista desde cualquier altura de la lista. Si se estaba más
-// abajo que el principio de los resultados ("el": el feed o la tabla), se
-// vuelve ahí: sin esto se quedaba mirando la mitad de la lista nueva, o su
-// final si era más corta. Si el principio ya está a la vista, la página no
-// se mueve.
+// Si se cambia un filtro, el orden o la vista con la página más abajo que el
+// principio de los resultados ("el": el feed o la tabla), se vuelve ahí: sin
+// esto se quedaba mirando la mitad de la lista nueva, o su final si era más
+// corta. Si el principio ya está a la vista, la página no se mueve.
 function feedScrollToStart(el = feedContainerEl) {
   const top = el.getBoundingClientRect().top;
   const limit = feedBarBottom() + 12;
@@ -582,9 +621,9 @@ function feedGoToCard(id) {
 
 // Aviso de monitoring.js (ver monitoringViewListeners).
 function onMonitoringChange(change) {
-  // Los avisos de "Actualizar ahora" no son para el feed: se redibuja con el
-  // aviso de los datos nuevos, que llega aparte.
-  if (change && change.run) return false;
+  // Los avisos de "Actualizar ahora" y de la config no son para el feed: se
+  // redibuja con el aviso de los datos nuevos, que llega aparte.
+  if (change && (change.run || 'config' in change)) return false;
   if (change && change.goToId !== undefined) return feedGoToCard(change.goToId);
   if (change && change.ignoredId !== undefined) {
     removeFeedCard(change.ignoredId);

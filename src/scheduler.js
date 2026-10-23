@@ -268,10 +268,14 @@ async function runCycleUnlocked(plataformas, trigger = 'manual') {
   postImageSync.takeCycleSummary(); // la cuenta de fotos arranca en cero
   const heartbeat = startHeartbeat();
   let newCount = 0;
+  // Nuevos sin repetidos de todas las redes del ciclo (newCandidates de cada
+  // una); null si el ciclo se cayó antes de contarlos.
+  let newCandidates = null;
   let cycleError = null;
   try {
     const result = await runCyclePhases(plataformas, runId, trigger);
     newCount = result.newCount;
+    newCandidates = Object.values(result.porPlataforma || {}).reduce((sum, p) => sum + (Number(p && p.newCandidates) || 0), 0);
     return result;
   } catch (err) {
     cycleError = err;
@@ -291,7 +295,7 @@ async function runCycleUnlocked(plataformas, trigger = 'manual') {
     if (fotos) console.log(fotos);
     if (runId != null) {
       try {
-        console.log(formatCycleCostLine(db.finishMonitoringRun(runId, { newPosts: newCount })));
+        console.log(formatCycleCostLine(db.finishMonitoringRun(runId, { newPosts: newCount, newCandidates })));
       } catch (err) {
         console.error('[costo] No se pudo cerrar el registro del ciclo:', err.message);
       }

@@ -30,7 +30,9 @@
   --line2: #c9d2e6;
   --fg: #141a2b;
   --fg2: #49546f;
-  --muted: #7c87a4;
+  /* Más oscuro que el #7c87a4 de la maqueta, mismo tono: 5,14:1 sobre
+     --surface y 4,55:1 sobre --surface2 (la maqueta daba 3,58 y 3,17). */
+  --muted: #626d8c;
   --accent: #0b7fc4;
   --accent-ink: #ffffff;
   --glow: #5b4fd6;
@@ -1304,11 +1306,14 @@ footer.foot {
   font-size: 13.5px;
 }
 
-/* ---------- progreso de "Actualizar ahora" ----------
-   Con el look del recuadro de la maqueta (.progress): borde con brillo,
-   barra en degradé. Arriba qué se está haciendo y su contador; debajo, las
-   líneas del ciclo que arma el backend (src/monitoringProgress.js) y dibuja
-   public/js/monitoring.js. */
+/* ---------- progreso de "Actualizar ahora" (Instagram y X) ----------
+   El recuadro .progress de la maqueta: borde con brillo, arriba qué se está
+   haciendo con su contador y el porcentaje, la barra en degradé y la lista
+   de líneas del ciclo que arma el backend (src/monitoringProgress.js) y
+   dibuja public/js/monitoring.js, cada una con su punto: en curso (late),
+   bien o con error. Cada línea toma el ancho de su texto y, si no entra,
+   baja de renglón: el término de una búsqueda nunca se corta. Al terminar:
+   "✓ Corrida terminada", la hora y la duración. */
 .run-card {
   margin-top: 14px;
   border: 1px solid color-mix(in oklab, var(--glow) 50%, var(--line));
@@ -1319,6 +1324,9 @@ footer.foot {
 }
 .run-card:not(.hidden) {
   animation: fadeIn 0.3s both;
+}
+.run-card.leaving {
+  animation: fadeOut 0.4s both;
 }
 .run-progress {
   color: var(--fg2);
@@ -1350,10 +1358,9 @@ footer.foot {
 .run-progress-count {
   font: 500 12px/1.45 var(--mono);
   color: var(--muted);
-  white-space: nowrap;
 }
 .run-progress-count::before {
-  content: "· ";
+  content: " · ";
 }
 .run-progress-count:empty {
   display: none;
@@ -1363,6 +1370,10 @@ footer.foot {
   margin-left: auto;
   font: 500 12px/1 var(--mono);
   color: var(--muted);
+  white-space: nowrap;
+}
+.run-progress-pct:empty {
+  display: none;
 }
 /* ✓ o ✕ del final, en el lugar de la ruedita. */
 .run-progress-mark {
@@ -1389,6 +1400,7 @@ footer.foot {
   padding: 4px 10px;
   font-size: 12px;
   color: var(--fg2);
+  cursor: pointer;
 }
 .run-progress-hide:hover {
   border-color: var(--accent);
@@ -1408,63 +1420,67 @@ footer.foot {
   list-style: none;
   margin: 0;
   padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 4px 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
   font-size: 12.5px;
 }
 .run-progress-list:empty {
   display: none;
 }
 .run-progress-list li {
+  flex: 1 1 auto;
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 8px;
-  min-width: 0;
+  min-width: min(100%, 200px);
+  max-width: 100%;
   color: var(--muted);
 }
+/* El punto de cada línea (la maqueta): gris, verde si salió bien, rojo si
+   falló; el de lo que está en curso late en el color de acento. */
 .run-progress-list .i {
   flex: none;
-  width: 14px;
-  text-align: center;
-  font-weight: 700;
-  line-height: 1;
+  align-self: center;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--line2);
 }
 .run-progress-list .t {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
   color: var(--fg);
 }
 .run-progress-list .d {
   flex: none;
   margin-left: auto;
-  font: 500 11px/1 var(--mono);
+  font: 500 11px/1.4 var(--mono);
   white-space: nowrap;
 }
 .run-progress-list .d:empty {
   display: none;
 }
 .run-progress-list li.ok .i {
-  color: var(--pos);
+  background: var(--pos);
 }
-.run-progress-list li.err .i,
+.run-progress-list li.err .i {
+  background: var(--neg);
+}
 .run-progress-list li.err .d {
   color: var(--neg);
 }
-/* En curso: una ruedita chica en el lugar del ícono. */
 .run-progress-list li.run .i {
-  width: 11px;
-  height: 11px;
-  margin: 0 1.5px;
-  border: 2px solid var(--line2);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+  animation: ping 1.2s infinite;
 }
 .run-progress-list li.run .t {
   color: var(--fg2);
+}
+/* La línea del resultado, al final. */
+.run-progress-list li.sum .t {
+  font-weight: 600;
 }
 
 /* ---------- fuentes del monitoreo: agregar, chips, "Ver todas" ---------- */
@@ -1736,43 +1752,7 @@ pre.report a {
   }
 }
 
-/* ---------- Monitoreo: las fuentes ----------
-   Instagram: tres cajas (búsquedas, palabras clave y hashtags, cuentas) en
-   la parte de arriba de la solapa, con las listas completas. La fase B las
-   pasa a la columna izquierda. X: las dos columnas de siempre (.config). */
-.src-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  margin-top: 14px;
-}
-.src-box {
-  display: flex;
-  flex-direction: column;
-  scroll-margin-top: calc(var(--top) + 12px);
-}
-.src-box h2 {
-  font-size: 15px;
-}
-.src-box .note {
-  margin: -4px 0 10px;
-}
-.src-box .error {
-  margin: 8px 0 0;
-  padding: 8px 10px;
-  font-size: 12.5px;
-}
-/* Las listas van completas: con muchas, la caja no crece sin fin. */
-.src-box .chips {
-  max-height: 212px;
-  overflow: auto;
-  align-content: flex-start;
-  scrollbar-width: thin;
-  scrollbar-color: var(--line2) transparent;
-}
-@media (max-width: 980px) {
-  .src-grid {
-    grid-template-columns: 1fr;
-  }
-}
+/* ---------- Monitoreo de X: las fuentes en dos columnas (.config) ---------- */
 .card.config {
   padding: 0;
   display: grid;
@@ -1823,7 +1803,10 @@ pre.report a {
   font-weight: 600;
 }
 
-/* ---------- "Se despegaron": tiras (aspecto de .up de la maqueta) ---------- */
+/* ---------- "Se despegaron" ----------
+   Instagram: hasta 4 tiras del período (.up de la maqueta), de a dos por
+   renglón. X: la cabecera y la grilla de siempre (.sec-head, .cards; hoy X
+   no muestra destacados: renderHighlightCards deja la sección oculta). */
 .sec-head {
   display: flex;
   align-items: baseline;
@@ -1835,64 +1818,45 @@ pre.report a {
   font-size: 20px;
   white-space: nowrap;
 }
-.sec-head span,
-.hl-sub {
+.sec-head span {
   font-size: 13px;
   color: var(--fg2);
 }
-.hl-head .hl-count {
-  display: inline-grid;
-  place-items: center;
-  min-width: 24px;
-  height: 24px;
-  padding: 0 7px;
-  border-radius: 7px;
-  background: var(--surface2);
-  color: var(--fg2);
-  font: 500 12px/1 var(--mono);
-}
-.hl-head .hl-count:empty {
-  display: none;
-}
-/* Hasta 4 tiras, de a dos por renglón (2 x 2), como .ups de la maqueta.
-   .cards es el contenedor de x.html (hoy X no muestra destacados:
-   renderHighlightCards deja la sección oculta). */
-.hl-tops,
+.ups,
 .cards {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 14px;
 }
-.hl-strip {
-  position: relative;
+.ups .empty {
+  grid-column: 1 / -1;
+}
+.up {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  gap: 4px 16px;
+  gap: 16px;
   align-items: center;
-  padding: 14px 16px;
-  border-radius: var(--r);
-  border: 1px solid var(--line);
-  background: var(--surface);
-  box-shadow: var(--shadow);
   cursor: pointer;
   transition:
     transform 0.2s,
     border-color 0.2s;
 }
-.hl-strip:hover {
+.up:hover {
   transform: translateY(-2px);
   border-color: var(--accent);
 }
-.hl-strip.neg:hover {
+.up.neg:hover {
   border-color: var(--neg);
 }
-.hl-strip:focus-visible {
+.up:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
-.hl-strip-ratio {
-  grid-row: 1 / span 2;
+.up .rz {
   text-align: center;
+}
+.up .rz b {
+  display: block;
   font: 700 34px/1 var(--display);
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
@@ -1901,67 +1865,46 @@ pre.report a {
   background-clip: text;
   color: transparent;
 }
-.hl-strip-ratio small {
+.up .rz small {
   display: block;
   margin-top: 5px;
   font: 400 11px/1.3 var(--mono);
-  letter-spacing: 0;
   color: var(--muted);
-  -webkit-text-fill-color: var(--muted);
 }
-.hl-strip-title {
-  margin: 0;
+.up h3 {
   font-size: 15px;
   line-height: 1.3;
 }
-.hl-strip-who {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px 10px;
+.up .meta {
+  margin-top: 4px;
   font-size: 12px;
   color: var(--muted);
 }
-.hl-strip-who b {
+.up .meta b {
   font-weight: 600;
   color: var(--fg);
 }
-.hl-strip-who .mono {
+.up .meta .num {
   color: var(--fg2);
-  font-variant-numeric: tabular-nums;
 }
-.hl-strip-who .sentiment-select {
-  margin-left: auto;
+.up .row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
 }
-@media (max-width: 900px) {
-  .hl-tops,
+@media (max-width: 800px) {
+  .ups,
   .cards {
     grid-template-columns: 1fr;
   }
-  .hl-strip-ratio {
+  .up .rz b {
     font-size: 30px;
   }
 }
 
-/* ---------- "Publicaciones detectadas": cabecera y filtros ---------- */
-.list-head {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin: 26px 0 12px;
-}
-.list-head h2 {
-  font-size: 20px;
-}
-.list-count {
-  font: 400 12.5px/1 var(--mono);
-  color: var(--muted);
-}
-.list-count b {
-  font-weight: 500;
-  color: var(--fg);
-}
+/* ---------- Monitoreo de X: la barra de filtros ---------- */
 /* La barra se pega justo debajo de la barra superior (su alto lo mide
    main.js en --top). En celular queda en su lugar: pegada taparía las
    tarjetas. */
@@ -2143,30 +2086,6 @@ pre.report a {
   font-size: 12px;
   color: var(--muted);
 }
-/* Feed / Tabla: el .seg de la maqueta. */
-.view-seg {
-  display: inline-flex;
-  flex: none;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  overflow: hidden;
-  background: var(--surface);
-}
-.view-seg button {
-  border: 0;
-  background: transparent;
-  padding: 8px 12px;
-  color: var(--fg2);
-  font-weight: 500;
-  white-space: nowrap;
-  transition: 0.2s;
-}
-.view-seg button.on {
-  background: var(--surface2);
-  color: var(--fg);
-  box-shadow: inset 0 -2px 0 var(--accent);
-}
-
 /* ---------- tabla (Tabulator) ---------- */
 .card.tbl-wrap {
   padding: 0;
@@ -2600,70 +2519,972 @@ pre.report a {
   display: none !important;
 }
 
-/* ---------- el medidor de alcance (columna "Alcance" y pie de la tarjeta) ----
-   Cinco barras con el criterio de .reach de la maqueta: alto en el color de
-   acento, latiendo; medio en ámbar; bajo gris. */
-.reach-cell {
+/* ---------- el medidor de alcance (.reach de la maqueta) ----------
+   Cinco barras y una palabra, en la tabla, el feed, el flujo y "Se
+   despegaron": alto en el color de acento, latiendo, con la razón al lado;
+   medio en ámbar (el texto, en el ámbar legible); bajo gris; "—" sin
+   referencia. */
+.reach {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   font: 500 11px/1 var(--mono);
   color: var(--muted);
   white-space: nowrap;
 }
-.reach-cell:has(.reach-meter.alto) {
-  color: var(--accent);
-}
-.reach-cell:has(.reach-meter.medio) {
-  color: var(--warn-ink);
-}
-.reach-meter {
+.reach .bars {
   display: inline-flex;
   align-items: flex-end;
   gap: 2px;
   height: 12px;
 }
-.reach-meter i {
+.reach .bars i {
   display: block;
   width: 3px;
   border-radius: 1px;
   background: var(--line2);
   transform-origin: bottom;
 }
-.reach-meter i:nth-child(1) {
+.reach .bars i:nth-child(1) {
   height: 4px;
 }
-.reach-meter i:nth-child(2) {
+.reach .bars i:nth-child(2) {
   height: 6px;
 }
-.reach-meter i:nth-child(3) {
+.reach .bars i:nth-child(3) {
   height: 8px;
 }
-.reach-meter i:nth-child(4) {
+.reach .bars i:nth-child(4) {
   height: 10px;
 }
-.reach-meter i:nth-child(5) {
+.reach .bars i:nth-child(5) {
   height: 12px;
 }
-.reach-meter.medio i:nth-child(-n + 3) {
-  background: var(--c5);
+.reach.alto {
+  color: var(--accent);
 }
-.reach-meter.alto i {
+.reach.alto .bars i {
   background: var(--accent);
   box-shadow: 0 0 6px color-mix(in oklab, var(--accent) 60%, transparent);
   animation: reachBeat 1.3s ease-in-out infinite;
 }
-.reach-meter.alto i:nth-child(2) {
+.reach.alto .bars i:nth-child(2) {
   animation-delay: 0.1s;
 }
-.reach-meter.alto i:nth-child(3) {
+.reach.alto .bars i:nth-child(3) {
   animation-delay: 0.2s;
 }
-.reach-meter.alto i:nth-child(4) {
+.reach.alto .bars i:nth-child(4) {
   animation-delay: 0.3s;
 }
-.reach-meter.alto i:nth-child(5) {
+.reach.alto .bars i:nth-child(5) {
   animation-delay: 0.4s;
+}
+.reach.medio {
+  color: var(--warn-ink);
+}
+.reach.medio .bars i:nth-child(-n + 3) {
+  background: var(--c5);
+}
+
+/* ==========================================================================
+   Monitoreo de Instagram (diseño v4, fase B): la solapa de la maqueta.
+   KPI arriba; tres columnas (fuentes | flujo en vivo | pulso, pipeline,
+   alertas y cuentas); "Se despegaron"; la lista con su barra de filtros.
+   Lo dibujan public/js/monitoringPanel.js, monitoringFlow.js,
+   monitoringFeed.js y monitoring.js.
+   ========================================================================== */
+#monKpis {
+  margin-top: 14px;
+}
+.kpi .d {
+  min-height: 18px;
+}
+.kpi .v.na {
+  color: var(--muted);
+}
+.mon {
+  grid-template-columns: 280px minmax(0, 1fr) 320px;
+  align-items: stretch;
+  margin-top: 14px;
+}
+.mon .col {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+/* La última tarjeta de cada costado se estira hasta el alto de la fila. */
+.mon .col > .card:last-child {
+  flex: 1;
+}
+/* Cabeceras de "Se despegaron" y "Publicaciones detectadas". */
+.head.sec {
+  margin: 26px 0 12px;
+  align-items: flex-end;
+}
+.head.sec h2 {
+  font-size: 20px;
+}
+.cnt {
+  display: inline-grid;
+  place-items: center;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 7px;
+  margin-left: 6px;
+  border-radius: 7px;
+  background: var(--surface2);
+  color: var(--fg2);
+  font: 500 12px/1 var(--mono);
+  vertical-align: middle;
+}
+
+/* ---------- cajas de fuentes ---------- */
+.srcbox {
+  scroll-margin-top: calc(var(--top) + 12px);
+}
+.srcbox h2 {
+  font-size: 15px;
+}
+.srcbox .ct .hint {
+  margin-left: auto;
+}
+.srcbox .plus {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--line2);
+  border-radius: 8px;
+  background: var(--surface2);
+  color: var(--accent);
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    transform 0.2s;
+}
+.srcbox .plus:hover {
+  border-color: var(--accent);
+}
+.srcbox.adding .plus {
+  transform: rotate(45deg);
+}
+.kw-add {
+  display: none;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.srcbox.adding .kw-add {
+  display: flex;
+  animation: fadeIn 0.2s both;
+}
+.kw-add input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--line2);
+  background: var(--surface2);
+  color: var(--fg);
+  border-radius: 9px;
+  padding: 8px 10px;
+  font: inherit;
+}
+.kw-add input::placeholder {
+  color: var(--muted);
+}
+.kw-add input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 18%, transparent);
+}
+.kw-add button {
+  flex: none;
+  min-width: 36px;
+  border: 0;
+  border-radius: 9px;
+  padding: 0 12px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+  cursor: pointer;
+}
+.kw-add button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.srcbox .error {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  font-size: 12.5px;
+}
+.srcbox .note {
+  margin: 10px 0 0;
+}
+.kw-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.kw-list .chip {
+  animation: pop 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.4) both;
+}
+.kw-list .chip .w {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* La ✕ de cada chip es un botón propio (la maqueta usa un span). */
+.kw-list .chip .x {
+  border: 0;
+  background: transparent;
+  padding: 2px;
+  margin: -2px -2px -2px 0;
+  border-radius: 50%;
+  cursor: pointer;
+}
+/* El chip que está filtrando la lista. */
+.kw-list .chip.on {
+  border-color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 12%, var(--surface2));
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 14%, transparent);
+}
+/* Pedido de confirmación para sacar una fuente, en el mismo chip. */
+.chip.ask {
+  cursor: default;
+  border-color: var(--neg);
+  background: color-mix(in oklab, var(--neg) 8%, var(--surface));
+}
+.chip.ask:hover {
+  transform: none;
+  box-shadow: none;
+}
+.chip.ask .q {
+  color: var(--fg);
+}
+.chip.ask button {
+  width: auto;
+  height: auto;
+  border: 0;
+  border-radius: 999px;
+  padding: 3px 8px;
+  font: 600 11.5px/1 var(--body);
+  cursor: pointer;
+}
+.chip.ask .yes {
+  background: var(--neg);
+  color: #fff;
+}
+.chip.ask .no {
+  background: var(--surface2);
+  color: var(--fg2);
+}
+/* Desplegada ("Ver las 63 →"), con columnas al lado, la lista no estira la
+   fila (y con ella el flujo y la última tarjeta del otro costado): se
+   desplaza adentro. El relleno deja entero el aro del chip o de la cuenta
+   activos; el margen negativo lo compensa. */
+@media (min-width: 761px) {
+  .kw-list.expanded,
+  .accts.expanded {
+    max-height: 320px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 4px 6px;
+    margin-inline: -6px;
+  }
+}
+.kw-more {
+  display: block;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px 0;
+  margin-top: 6px;
+}
+.kw-more:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.srcbox .empty {
+  padding: 6px 0;
+  text-align: left;
+}
+
+/* Cuentas seguidas: una fila por cuenta. */
+.accts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+.acct {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  font-size: 12.5px;
+}
+.acct .av {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  color: #fff;
+  font: 600 11px/1 var(--mono);
+}
+.acct .nm {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.acct .m {
+  margin-left: auto;
+  font: 500 11px/1 var(--mono);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.acct .x {
+  flex: none;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: 500 11px/1 var(--mono);
+  padding: 4px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.acct .x:hover {
+  color: var(--neg);
+  background: var(--surface2);
+}
+/* La cuenta que está filtrando la lista, como el chip activo (el margen
+   negativo compensa el relleno: la fila no se corre). */
+.acct.on {
+  margin: -4px -6px;
+  padding: 4px 6px;
+  border-radius: 10px;
+  background: color-mix(in oklab, var(--accent) 12%, var(--surface2));
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.acct.ask {
+  padding: 4px 6px;
+  border-radius: 10px;
+  background: color-mix(in oklab, var(--neg) 8%, var(--surface));
+}
+.acct.ask button {
+  border: 0;
+  border-radius: 999px;
+  padding: 3px 8px;
+  font: 600 11.5px/1 var(--body);
+  cursor: pointer;
+}
+.acct.ask .yes {
+  margin-left: auto;
+  background: var(--neg);
+  color: #fff;
+}
+.acct.ask .no {
+  background: var(--surface2);
+  color: var(--fg2);
+}
+
+/* ---------- flujo en vivo ---------- */
+/* La tarjeta tiene el alto de la fila (el de las columnas de los costados) y
+   nunca crece: el contenido va en una capa absoluta y entran las líneas que
+   caben. */
+.flowcard {
+  position: relative;
+  min-height: 380px;
+}
+.flowcard .inner {
+  position: absolute;
+  inset: 16px;
+  display: flex;
+  flex-direction: column;
+}
+.flowcard .inner .ct {
+  flex: none;
+}
+.flow {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.flow .empty {
+  padding: 40px 10px;
+}
+.fl {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto auto auto auto;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+  padding: 6px 10px 6px 6px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface2);
+  cursor: pointer;
+  animation: slideIn 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  transition:
+    transform 0.2s,
+    border-color 0.2s;
+}
+.fl:hover {
+  transform: translateX(3px);
+  border-color: var(--accent);
+}
+.fl:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.fl.out {
+  animation: fadeOut 0.4s both;
+}
+/* La foto chiquita: la miniatura recortada, o la inicial sobre el degradé. */
+.fl .th {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  overflow: hidden;
+  border-radius: 7px;
+  background: linear-gradient(135deg, var(--accent), var(--glow));
+  color: #fff;
+  font: 600 11px/1 var(--mono);
+}
+.fl .th img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.fl .l1 {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+.fl .l1 b {
+  font-weight: 600;
+}
+.fl mark {
+  padding: 0 3px;
+  border-radius: 4px;
+  background: color-mix(in oklab, var(--accent) 22%, transparent);
+  color: var(--fg);
+}
+.fl .lbl {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 6px;
+  border-radius: 6px;
+  background: var(--surface);
+}
+.fl .lbl i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+/* Sin clasificar: el punto gris. */
+.fl .lbl i:not([class]) {
+  background: var(--line2);
+}
+.fl .t {
+  font: 400 11px/1 var(--mono);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.fl .t.now {
+  color: var(--accent);
+  font-weight: 500;
+}
+@media (max-width: 700px) {
+  .fl {
+    grid-template-columns: 28px minmax(0, 1fr) auto auto;
+  }
+  .fl > .tema,
+  .fl > .reach {
+    display: none;
+  }
+}
+
+/* Tema de un posteo: punto de color y nombre. */
+.tema {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 150px;
+  padding: 4px 7px;
+  border-radius: 6px;
+  background: var(--surface2);
+  color: var(--fg2);
+  font: 500 11px/1 var(--mono);
+  white-space: nowrap;
+}
+.tema i {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--c3);
+}
+.tema span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fl .tema {
+  background: var(--surface);
+}
+
+/* ---------- pulso del tono ---------- */
+.pulse-chart {
+  display: block;
+  width: 100%;
+  height: 150px;
+}
+.pulse-chart .hr {
+  fill: transparent;
+}
+.pulse-chart .hr:hover {
+  fill: color-mix(in oklab, var(--fg) 6%, transparent);
+}
+.pulse-chart text {
+  font: 400 9px var(--mono);
+}
+.card .legend {
+  margin-top: 8px;
+}
+
+/* ---------- pipeline ---------- */
+.pipe {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: 6px;
+}
+.pipe .st {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+}
+.pipe .st .ic {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  margin: 0 auto 6px;
+  border-radius: 12px;
+  border: 1px solid var(--line2);
+  background: var(--surface2);
+  font: 600 11px/1 var(--mono);
+}
+.pipe .st .ic.ai {
+  color: var(--glow);
+}
+.pipe .st small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--muted);
+}
+.pipe .st .num {
+  display: block;
+  font: 600 15px/1.4 var(--display);
+}
+.pipe .st .lb {
+  display: block;
+  font-size: 10.5px;
+  color: var(--muted);
+}
+.pipe .lnk {
+  position: relative;
+  flex: 0 0 34px;
+  height: 2px;
+  margin-bottom: 28px;
+  background: var(--line2);
+}
+.pipe .lnk i {
+  position: absolute;
+  top: -3px;
+  left: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent);
+  animation: flow 1.6s linear infinite;
+}
+.pipe .lnk i:nth-child(2) {
+  animation-delay: 0.8s;
+}
+/* Sin corridas no hay nada que fluya. */
+.pipe.idle .lnk i {
+  display: none;
+}
+@keyframes flow {
+  from {
+    left: -4px;
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
+  }
+  to {
+    left: calc(100% - 4px);
+    opacity: 0;
+  }
+}
+.pipe-note {
+  margin: 12px 0 0;
+  text-align: center;
+}
+.pipe-note:empty {
+  display: none;
+}
+
+/* ---------- alertas ---------- */
+.alerts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.al {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface2);
+  color: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+.al:hover {
+  border-color: var(--accent);
+}
+.al i {
+  flex: 0 0 8px;
+  width: 8px;
+  height: 8px;
+  margin-top: 6px;
+  border-radius: 50%;
+}
+.al b {
+  display: block;
+  font-weight: 600;
+}
+.al small {
+  display: block;
+  color: var(--muted);
+}
+.alerts .empty {
+  padding: 18px 6px;
+}
+
+@media (max-width: 1100px) {
+  .mon {
+    grid-template-columns: 260px minmax(0, 1fr);
+  }
+  .mon > :nth-child(3) {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    align-items: start;
+  }
+  .mon > :nth-child(3) > .card:last-child {
+    flex: none;
+  }
+  .flowcard {
+    min-height: 520px;
+  }
+}
+@media (max-width: 760px) {
+  .mon {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .flowcard {
+    min-height: 430px;
+  }
+}
+
+/* ---------- "Publicaciones detectadas": filtros y estado ---------- */
+.fbar {
+  display: grid;
+  grid-template-columns: 2fr repeat(7, minmax(0, 1fr));
+  gap: 10px;
+  align-items: end;
+}
+.fbar .f {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  margin: 0;
+}
+.fbar .f > span {
+  padding-left: 2px;
+  font: 500 10px/1 var(--body);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.fbar .field {
+  width: 100%;
+  height: 38px;
+  padding: 0 10px;
+  border-radius: 10px;
+  font-size: 13px;
+  outline: none;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s,
+    background-color 0.15s;
+}
+.fbar select.field {
+  padding-right: 28px;
+  cursor: pointer;
+}
+.fbar input[type="date"].field {
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+.fbar .field:hover {
+  border-color: var(--accent);
+}
+.fbar .field:focus,
+.fbar .field:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 18%, transparent);
+}
+/* Un filtro puesto se marca. */
+.fbar .field.on {
+  border-color: var(--accent);
+  background-color: color-mix(in oklab, var(--accent) 9%, var(--surface));
+  font-weight: 500;
+}
+.fbar select.field option {
+  background: var(--surface);
+  color: var(--fg);
+  font-weight: 400;
+}
+/* "Orden" en la vista Tabla: a la vista pero apagado; el aviso lo da la
+   etiqueta (un control deshabilitado no recibe el mouse). */
+.fbar .field:disabled {
+  opacity: 0.5;
+  cursor: default;
+  pointer-events: none;
+}
+.combo {
+  position: relative;
+}
+.combo-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  text-align: left;
+  cursor: pointer;
+}
+.combo-btn b {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: inherit;
+}
+.combo-btn i {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--muted);
+}
+.combo-panel {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 6px);
+  z-index: 30;
+  width: max(100%, 260px);
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  animation: fadeIn 0.15s both;
+}
+.combo-panel .field {
+  height: 34px;
+  margin-bottom: 6px;
+}
+.combo-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 260px;
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line2) transparent;
+}
+.combo-list button {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--fg);
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.combo-list button:hover,
+.combo-list button:focus-visible,
+.combo-list button.on {
+  background: var(--surface2);
+}
+.combo-list button.on .nm {
+  color: var(--accent);
+  font-weight: 600;
+}
+.combo-list .av {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  color: #fff;
+  font: 600 9px/1 var(--mono);
+}
+.combo-list .nm {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.combo-list small {
+  font: 400 11px/1 var(--mono);
+  color: var(--muted);
+}
+.combo-none {
+  margin: 6px 8px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.fstatus {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin: 12px 0 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  font: 400 12px/1.4 var(--mono);
+  color: var(--muted);
+}
+.fstatus .count b {
+  font-weight: 500;
+  color: var(--fg);
+}
+/* El filtro por fuente, con su ✕. */
+.f-source {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--accent);
+  background: color-mix(in oklab, var(--accent) 10%, var(--surface));
+  color: var(--fg2);
+  font: 500 12px/1 var(--body);
+}
+.f-source code {
+  font-family: var(--mono);
+  color: var(--fg);
+}
+.f-source button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 2px 4px;
+  border-radius: 50%;
+  cursor: pointer;
+}
+.f-source button:hover {
+  color: var(--neg);
+}
+.fstatus .f-clear {
+  margin-left: auto;
+  visibility: hidden;
+}
+.fstatus .f-clear.on {
+  visibility: visible;
+}
+/* En el celular la línea se parte y el botón oculto ocupaba un renglón
+   propio (un hueco antes de la lista): ahí no ocupa lugar. */
+@media (max-width: 760px) {
+  .fstatus .f-clear:not(.on) {
+    display: none;
+  }
+}
+/* Un enlace que es un botón ("ver 7 días"). */
+.link-btn {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.pubs-card .tbl-wrap {
+  margin: 0 -16px -16px;
+  border-top: 1px solid var(--line);
+  border-radius: 0 0 var(--r) var(--r);
+  overflow: hidden;
+}
+.tbl-empty {
+  padding: 28px 10px;
+  text-align: center;
+  font-size: 13px;
+}
+@media (max-width: 1200px) {
+  .fbar {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .fbar .f-q {
+    grid-column: 1 / -1;
+  }
+}
+@media (max-width: 700px) {
+  .fbar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 /* ---------- Monitoreo: vista Feed (solo Instagram, public/js/monitoringFeed.js) ----
@@ -2833,6 +3654,65 @@ pre.report a {
 .feed-badge.type {
   left: 8px;
 }
+/* Alcance alto: "1,56× se despegó", en el degradé del acento. */
+.feed-badge.hot {
+  right: 8px;
+  background: linear-gradient(135deg, var(--accent), var(--glow));
+  color: var(--accent-ink);
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  box-shadow: 0 0 14px color-mix(in oklab, var(--accent) 60%, transparent);
+}
+/* La última celda de la grilla cuando hay más: "+N · Ver 12 más". */
+.feed-more {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 240px;
+  padding: 20px;
+  border: 1px dashed var(--line2);
+  border-radius: 12px;
+  background: var(--surface2);
+  color: var(--fg2);
+  font: inherit;
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    transform 0.2s,
+    box-shadow 0.2s;
+}
+.feed-more:hover {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 14%, transparent);
+}
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .feed-more:hover {
+    transform: translateY(-2px);
+  }
+}
+.feed-more:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+.feed-more .n {
+  font: 700 34px/1 var(--display);
+  letter-spacing: -0.02em;
+  background: linear-gradient(135deg, var(--accent), var(--glow));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.feed-more .l {
+  font-weight: 600;
+  color: var(--accent);
+}
+.feed-more small {
+  font: 400 11px/1 var(--mono);
+  color: var(--muted);
+}
 /* Sin foto ("Sin foto" o "Imagen no disponible"): el mismo cuadrado, rayado. */
 .feed-media.empty {
   background: repeating-linear-gradient(45deg, var(--surface2), var(--surface2) 10px, var(--line) 10px, var(--line) 20px);
@@ -2961,7 +3841,7 @@ pre.report a {
   grid-row: 2;
   justify-self: start;
 }
-.feed-foot .reach-cell {
+.feed-foot .reach {
   grid-column: 2;
   grid-row: 2;
   justify-self: end;
@@ -2969,7 +3849,10 @@ pre.report a {
 
 /* ---------- pop-up del posteo (public/js/monitoringFeedPopup.js) ----------
    Un <dialog> abierto con showModal(): el elemento es el fondo y la ventana
-   es .feed-pop-box, con la foto entera sobre negro a la izquierda. */
+   es .feed-pop-box (el .pop .dlg de la maqueta): alto fijo, la foto entera
+   sobre negro ocupando todo el alto a la izquierda; a la derecha la
+   cabecera, el texto (lo único que se desplaza, con un degradé abajo cuando
+   sigue) y el pie fijo con las acciones. */
 html.feed-pop-lock {
   overflow: hidden;
 }
@@ -2987,7 +3870,7 @@ html.feed-pop-lock body {
   max-width: none;
   max-height: none;
   margin: 0;
-  padding: 24px;
+  padding: 20px;
   border: 0;
   overflow: hidden;
   background: rgba(10, 14, 30, 0.55);
@@ -3008,10 +3891,10 @@ html.feed-pop-lock body {
   --s: var(--line2);
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 440px;
-  width: min(1100px, 100%);
-  height: min(720px, calc(100vh - 48px));
-  height: min(720px, calc(100dvh - 48px));
+  grid-template-columns: minmax(0, 1.3fr) minmax(360px, 1fr);
+  width: min(980px, 100%);
+  height: min(720px, 92vh);
+  height: min(720px, 92dvh);
   overflow: hidden;
   background: var(--surface);
   border: 1px solid var(--line);
@@ -3019,6 +3902,10 @@ html.feed-pop-lock body {
   border-radius: 18px;
   box-shadow: 0 40px 80px -30px rgba(0, 0, 0, 0.6);
   animation: rise 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+/* Al pasar al anterior o al siguiente. */
+.feed-pop-box.swap {
+  animation: rise 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 .feed-pop-box[data-s="positivo"] {
   --s: var(--pos);
@@ -3047,6 +3934,7 @@ html.feed-pop-lock body {
   color: #fff;
   font-size: 30px;
   line-height: 1;
+  cursor: pointer;
   transform: translateY(-50%);
   transition:
     background 0.2s,
@@ -3058,10 +3946,10 @@ html.feed-pop-lock body {
   transform: translateY(-50%) scale(1.06);
 }
 .feed-pop-nav.prev {
-  left: max(12px, calc(50% - 550px - 70px));
+  left: max(12px, calc(50% - 490px - 70px));
 }
 .feed-pop-nav.next {
-  right: max(12px, calc(50% - 550px - 70px));
+  right: max(12px, calc(50% - 490px - 70px));
 }
 .feed-pop-nav:disabled,
 .feed-pop-icon:disabled {
@@ -3145,6 +4033,7 @@ html.feed-pop-lock body {
   color: var(--muted);
   font-size: 15px;
   line-height: 1;
+  cursor: pointer;
 }
 .feed-pop-icon:hover:not(:disabled) {
   color: var(--fg);
@@ -3160,110 +4049,159 @@ html.feed-pop-lock body {
   color: var(--muted);
   white-space: nowrap;
 }
+/* El texto, lo único que se desplaza. Abajo, un degradé si queda texto
+   por leer (.more, monitoringFeedPopup.js). */
+.feed-pop-scrollwrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.feed-pop-scrollwrap::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 8px;
+  bottom: 0;
+  height: 34px;
+  background: linear-gradient(to bottom, transparent, var(--surface));
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.feed-pop-scrollwrap.more::after {
+  opacity: 1;
+}
 .feed-pop-scroll {
   flex: 1;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
   overflow: auto;
   overscroll-behavior: contain;
   padding: 14px 18px 22px;
   scrollbar-width: thin;
   scrollbar-color: var(--line2) transparent;
 }
+.feed-pop-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.feed-pop-scroll::-webkit-scrollbar-thumb {
+  background: var(--line2);
+  border-radius: 3px;
+}
 .feed-pop-chips {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 6px;
-  margin-bottom: 12px;
 }
-.feed-pop-chip {
+/* Alcance (la etiqueta de la tarjeta) y tipo. El tema es .tema. */
+.chip-r {
   padding: 6px 9px;
   border-radius: 7px;
   background: var(--surface2);
   color: var(--fg2);
   font: 500 11.5px/1 var(--mono);
 }
-.feed-pop-chip.reach.alto {
+.chip-r.alto {
   background: color-mix(in oklab, var(--accent) 14%, transparent);
   color: var(--accent);
 }
-.feed-pop-chip.reach.medio {
+.chip-r.medio {
   background: color-mix(in oklab, var(--c5) 16%, transparent);
   color: var(--warn-ink);
 }
-.feed-pop-chip.reach.sinref {
+.chip-r.sinref {
   color: var(--muted);
 }
-.feed-pop-chip.type {
-  font-size: 10.5px;
+.chip-t {
+  padding: 6px 8px;
+  border-radius: 7px;
+  background: var(--surface2);
+  color: var(--fg2);
+  font: 500 10.5px/1 var(--mono);
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 .feed-pop-title {
-  margin: 0 0 10px;
+  margin: 0;
   font: 600 21px/1.25 var(--display);
   color: var(--fg);
   overflow-wrap: anywhere;
 }
 .feed-pop-cap {
-  margin: 0 0 16px;
+  margin: 0;
   color: var(--fg2);
   font-size: 14px;
   line-height: 1.55;
   white-space: pre-line;
   overflow-wrap: anywhere;
 }
-.feed-pop-mt {
-  margin-bottom: 14px;
-  padding: 4px 12px;
+/* Likes y comentarios, cada uno en su recuadro, contra lo habitual de la
+   cuenta (su mediana). */
+.feed-pop-mets {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.feed-pop-mbox {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px 12px;
   border-radius: 10px;
   background: var(--surface2);
 }
-.feed-pop-mt-row {
-  display: grid;
-  grid-template-columns: 1fr auto auto;
-  align-items: baseline;
-  gap: 4px 12px;
-  padding: 8px 0;
+.feed-pop-mbox.hit {
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 45%, transparent);
 }
-.feed-pop-mt-row + .feed-pop-mt-row {
-  border-top: 1px solid var(--line);
+.feed-pop-mbox b {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font: 600 20px/1.1 var(--display);
+  font-variant-numeric: tabular-nums;
 }
-.feed-pop-mt-row .k {
-  color: var(--fg2);
-  font-weight: 500;
+.feed-pop-mbox b svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
 }
-.feed-pop-mt-row .v {
-  font: 600 17px/1.1 var(--display);
-  text-align: right;
+.feed-pop-mbox.likes b svg {
+  color: var(--neg);
 }
-.feed-pop-mt-row .x {
-  min-width: 46px;
-  font: 500 12px/1 var(--mono);
-  color: var(--muted);
-  text-align: right;
-}
-.feed-pop-mt-row .x.up {
+.feed-pop-mbox.comments b svg {
   color: var(--accent);
 }
-.feed-pop-mt-row .sub {
-  grid-column: 1 / -1;
-  margin-top: -2px;
-  font-size: 11.5px;
+.feed-pop-mbox .x {
+  margin-left: auto;
+  font: 500 12px/1 var(--mono);
+  color: var(--muted);
+}
+.feed-pop-mbox .x.up {
+  color: var(--accent);
+}
+.feed-pop-mbox small {
+  font-size: 11px;
   color: var(--muted);
 }
 .feed-pop-mt-date {
-  margin: -8px 0 14px;
+  margin: -4px 0 0;
   padding: 0 2px;
   font: 400 11px/1.3 var(--mono);
   color: var(--muted);
 }
 .feed-pop-hit {
-  margin-left: 4px;
+  align-self: flex-start;
   padding: 2px 6px;
   border-radius: 5px;
   background: color-mix(in oklab, var(--accent) 14%, transparent);
   color: var(--accent);
-  font: 500 10px/1 var(--mono);
+  font: 500 10px/1.2 var(--mono);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   white-space: nowrap;
@@ -3286,13 +4224,6 @@ html.feed-pop-lock body {
 .feed-pop-dl dd a {
   color: var(--accent);
   text-underline-offset: 3px;
-}
-.feed-pop-dl code {
-  font-family: var(--mono);
-  background: var(--surface2);
-  padding: 1px 5px;
-  border-radius: 4px;
-  color: var(--fg2);
 }
 .feed-pop-foot {
   position: relative;
@@ -3327,8 +4258,15 @@ html.feed-pop-lock body {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 16%, transparent);
 }
-.feed-pop-btn.primary {
+/* "Analizar comentarios" y "Abrir en Instagram", juntas a la derecha. */
+.feed-pop-acts {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
   margin-left: auto;
+}
+.feed-pop-btn.primary {
   border-color: var(--fg);
   background: var(--fg);
   color: var(--bg);
@@ -3339,6 +4277,8 @@ html.feed-pop-lock body {
   color: var(--accent-ink);
 }
 .feed-pop-btn.danger {
+  border-color: transparent;
+  background: transparent;
   color: var(--neg);
 }
 .feed-pop-btn.danger:hover:not(:disabled) {
@@ -3373,7 +4313,9 @@ html.feed-pop-lock body {
   font-size: 13px;
   color: var(--fg2);
 }
-@media (max-width: 1240px) {
+/* Donde las flechas de los costados no entran, van las chicas de la
+   cabecera. */
+@media (max-width: 1120px) {
   .feed-pop-nav {
     display: none;
   }
@@ -3404,10 +4346,18 @@ html.feed-pop-lock body {
   .feed-pop-dl {
     grid-template-columns: 92px 1fr;
   }
-  .feed-pop-btn.primary {
+  .feed-pop-acts {
     flex: 1 0 100%;
     margin-left: 0;
+  }
+  .feed-pop-acts .feed-pop-btn {
+    flex: 1;
     justify-content: center;
+  }
+}
+@media (max-width: 420px) {
+  .feed-pop-mets {
+    grid-template-columns: 1fr;
   }
 }
 
