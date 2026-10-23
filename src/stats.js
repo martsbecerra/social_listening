@@ -528,18 +528,20 @@ function contarMenciones(posts, { ignorados = [], descartados = [] } = {}) {
 // ---- Temas, cuentas y ranking ----
 
 /**
- * Los tramos de la evolución de los temas: por día hasta 14 días; más
- * largo, de a 7 días contados desde el primero (el último puede ser más
- * corto).
+ * Los tramos de la evolución de los temas y del tono neto por semana: por
+ * día hasta 14 días; más largo, de a 7 días contados hacia atrás desde el
+ * último, así el último tramo son los últimos 7 días ("esta semana") y el
+ * que puede quedar más corto es el primero. En orden, del más viejo al más
+ * nuevo.
  * @returns {{desde: string, hasta: string}[]}
  */
 function tramosDeTemas(rango) {
   if (!rango) return [];
   const paso = rango.dias <= DIAS_TEMAS_POR_DIA ? 1 : 7;
   const tramos = [];
-  for (let desde = rango.desde; desde <= rango.hasta; desde = sumarDias(desde, paso)) {
-    const fin = sumarDias(desde, paso - 1);
-    tramos.push({ desde, hasta: fin < rango.hasta ? fin : rango.hasta });
+  for (let hasta = rango.hasta; hasta >= rango.desde; hasta = sumarDias(hasta, -paso)) {
+    const inicio = sumarDias(hasta, -(paso - 1));
+    tramos.unshift({ desde: inicio > rango.desde ? inicio : rango.desde, hasta });
   }
   return tramos;
 }

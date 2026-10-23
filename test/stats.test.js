@@ -297,16 +297,22 @@ describe('stats: bloques', () => {
     assert.equal(stats.habitualDe([]), null);
   });
 
-  test('tramos de los temas: por día hasta 14 días; más, de a 7 desde el primero', () => {
+  test('tramos de los temas: por día hasta 14 días; más, de a 7 hacia atrás desde el último', () => {
     assert.deepEqual(stats.tramosDeTemas({ desde: '2026-10-01', hasta: '2026-10-03', dias: 3 }), [
       { desde: '2026-10-01', hasta: '2026-10-01' },
       { desde: '2026-10-02', hasta: '2026-10-02' },
       { desde: '2026-10-03', hasta: '2026-10-03' },
     ]);
+    // El último son los últimos 7 días; el corto queda primero.
     assert.deepEqual(stats.tramosDeTemas({ desde: '2026-10-01', hasta: '2026-10-16', dias: 16 }), [
-      { desde: '2026-10-01', hasta: '2026-10-07' },
-      { desde: '2026-10-08', hasta: '2026-10-14' },
-      { desde: '2026-10-15', hasta: '2026-10-16' },
+      { desde: '2026-10-01', hasta: '2026-10-02' },
+      { desde: '2026-10-03', hasta: '2026-10-09' },
+      { desde: '2026-10-10', hasta: '2026-10-16' },
+    ]);
+    assert.deepEqual(stats.tramosDeTemas({ desde: '2026-10-03', hasta: '2026-10-23', dias: 21 }), [
+      { desde: '2026-10-03', hasta: '2026-10-09' },
+      { desde: '2026-10-10', hasta: '2026-10-16' },
+      { desde: '2026-10-17', hasta: '2026-10-23' },
     ]);
     assert.deepEqual(stats.tramosDeTemas(null), []);
   });
