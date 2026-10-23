@@ -3634,7 +3634,7 @@ pre.report a {
 }
 .rows .row .nm {
   font-weight: 600;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 .rows .row .nm small {
   display: block;
@@ -3707,7 +3707,7 @@ pre.report a {
   border-radius: 3px;
 }
 .donut .lg span {
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 
 /* ---------- de qué se habla ---------- */
@@ -3856,7 +3856,7 @@ svg.line {
 .acc-row b {
   font-weight: 600;
   display: block;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 .acc-row small {
   color: var(--muted);
@@ -3942,7 +3942,7 @@ svg.line {
   font-weight: 600;
   display: block;
   line-height: 1.3;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 .rk small {
   color: var(--muted);
@@ -4015,6 +4015,20 @@ svg.line {
   }
   .acc-row > :nth-child(5) {
     display: none;
+  }
+  /* La razón baja a su propio renglón, debajo del título. */
+  .rk {
+    grid-template-columns: 22px 40px minmax(0, 1fr);
+  }
+  .rk .rz {
+    grid-column: 3;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    text-align: left;
+  }
+  .rk .rz small {
+    display: inline;
   }
 }
 @media (max-width: 640px) {

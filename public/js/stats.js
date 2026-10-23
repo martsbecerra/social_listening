@@ -215,6 +215,8 @@ function statsTabVisible() {
 function statsIsStale() {
   if (statsDataPosts === '') {
     statsDataPosts = statsPostsKey();
+    // Llegó la tabla: el ranking ya puede mostrar las fotos y el tema.
+    if (statsDataPosts && statsData) statsRenderRanking();
     return false;
   }
   return statsDataPosts !== statsPostsKey();
@@ -800,6 +802,133 @@ function statsRenderNet() {
 }
 
 // -------------------------------------------------------------------------
+// Quién habla de nosotros: las 10 cuentas con más impacto (likes +
+// comentarios de sus publicaciones), más publicaciones o más seguidores.
+// -------------------------------------------------------------------------
+const statsAccRowsEl = document.getElementById('statsAccRows');
+const statsAccSegEl = document.getElementById('statsAccSeg');
+const STATS_ACCOUNTS_MAX = 10;
+const STATS_COMPACT = new Intl.NumberFormat('es-AR', { notation: 'compact', maximumFractionDigits: 1 });
+const STATS_ACC_SORTS = {
+  impacto: { label: 'Impacto', value: (a) => a.impacto, text: (a) => STATS_INT.format(a.impacto) },
+  publicaciones: { label: 'Publicaciones', value: (a) => a.publicaciones, text: (a) => STATS_INT.format(a.publicaciones) },
+  // Sin seguidores conocidos, al final.
+  seguidores: { label: 'Seguidores', value: (a) => a.seguidores, text: (a) => (a.seguidores === null ? '—' : STATS_COMPACT.format(a.seguidores)) },
+};
+let statsAccSort = 'impacto';
+
+function statsFollowersText(account) {
+  return account.seguidores === null ? 'seguidores sin dato' : statsPlural(account.seguidores, 'seguidor', 'seguidores');
+}
+
+function statsRenderAccounts() {
+  const sort = STATS_ACC_SORTS[statsAccSort];
+  const key = (a) => (sort.value(a) === null ? -1 : sort.value(a));
+  const list = [...statsData.cuentas]
+    .sort((a, b) => key(b) - key(a) || b.publicaciones - a.publicaciones || a.cuenta.localeCompare(b.cuenta, 'es'))
+    .slice(0, STATS_ACCOUNTS_MAX);
+  if (!list.length) {
+    statsAccRowsEl.replaceChildren(statsEmptyLine());
+    return;
+  }
+  const max = Math.max(1, ...list.map((a) => sort.value(a) || 0));
+  const head = statsNode('div', 'acc-row hdr');
+  head.append(statsNode('span'), statsNode('span', '', 'Cuenta'), statsNode('span', '', sort.label), statsRightCell('Publ.'), statsRightCell('Tono'));
+  const rows = list.map((a) => {
+    const row = statsNode('div', 'acc-row');
+    const best = a.mejorRazon === null ? '' : ` (la mejor, ${formatBenchmarkRatio(a.mejorRazon)}×)`;
+    row.dataset.tipTitle = `@${a.cuenta}`;
+    row.dataset.tip =
+      `${statsPlural(a.publicaciones, 'publicación', 'publicaciones')} · ${STATS_INT.format(a.impacto)} de impacto · ${statsFollowersText(a)}\n` +
+      `${statsPlural(a.seDespego, 'se despegó', 'se despegaron')}${best}`;
+    const avatar = statsNode('span', 'av', a.cuenta[0].toUpperCase());
+    avatar.setAttribute('aria-hidden', 'true');
+    avatar.style.background = accountColor(a.cuenta);
+    const name = statsNode('span');
+    const detail = a.seDespego ? ` · ${a.seDespego} ${a.seDespego === 1 ? 'se despegó' : 'se despegaron'}` : '';
+    name.append(statsNode('b', '', `@${a.cuenta}`), statsNode('small', '', `${statsFollowersText(a)}${detail}`));
+    const value = statsNode('span');
+    const bar = statsNode('div', 'bar');
+    bar.setAttribute('aria-hidden', 'true');
+    const fill = statsNode('i');
+    fill.dataset.w = (((sort.value(a) || 0) / max) * 100).toFixed(1);
+    bar.appendChild(fill);
+    value.append(bar, statsNode('small', 'num', sort.text(a)));
+    const tone = statsRightCell('');
+    const stack = statsNode('span', 'stack');
+    stack.setAttribute('aria-hidden', 'true');
+    for (const [cls, n] of [['bg-pos', a.positivo], ['bg-neu', a.neutral], ['bg-neg', a.negativo]]) {
+      const part = statsNode('i', cls);
+      part.style.width = `${(n / a.publicaciones) * 100}%`;
+      stack.appendChild(part);
+    }
+    tone.appendChild(stack);
+    row.append(avatar, name, value, statsNode('span', 'num', STATS_INT.format(a.publicaciones)), tone);
+    return row;
+  });
+  statsAccRowsEl.replaceChildren(head, ...rows);
+  statsGrowBars(statsAccRowsEl);
+}
+
+// -------------------------------------------------------------------------
+// Las que más se despegaron: las 6 de mayor razón (el endpoint manda 10).
+// La razón lleva colchón: va con su métrica y su valor, nunca como "veces lo
+// habitual". Un clic abre el pop-up del posteo, que recorre estas 6.
+// -------------------------------------------------------------------------
+const statsRankEl = document.getElementById('statsRank');
+const STATS_RANK_SHOWN = 6;
+const STATS_RANK_DATE = new Intl.DateTimeFormat('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', day: '2-digit', month: '2-digit' });
+
+// La fila de la tabla del posteo (foto, tema y lo que usa el pop-up), o null
+// si no está cargada.
+function statsPostOf(id) {
+  const row = feedPopRowOf(id);
+  return row ? row.getData() : null;
+}
+
+function statsRankButton(item, index, ids) {
+  const post = statsPostOf(item.id);
+  const button = statsNode('button', 'rk');
+  button.type = 'button';
+  const thumb = statsNode('span', 'th');
+  const src = post ? feedImageUrl(post) : null;
+  if (src) {
+    const img = document.createElement('img');
+    img.src = src;
+    img.alt = '';
+    img.loading = 'lazy';
+    img.addEventListener('error', () => img.remove());
+    thumb.appendChild(img);
+  }
+  const title = item.titulo || 'Sin título';
+  const account = item.cuenta ? `@${item.cuenta}` : 'una cuenta sin identificar';
+  const when = Number.isFinite(Date.parse(item.fecha)) ? STATS_RANK_DATE.format(new Date(item.fecha)) : '';
+  const text = statsNode('span');
+  text.append(statsNode('b', '', title), statsNode('small', '', [account, when, post && post.tema].filter(Boolean).join(' · ')));
+  const ratio = `${formatBenchmarkRatio(item.razon)}×`;
+  const value = statsNode('span', 'rz', ratio);
+  value.appendChild(statsNode('small', '', `${STATS_INT.format(item.valor)} ${item.metrica}`));
+  button.append(statsNode('span', 'pos', String(index + 1)), thumb, text, value);
+  button.dataset.tipTitle = title;
+  button.dataset.tip = `${STATS_INT.format(item.valor)} ${item.metrica} contra una mediana de ${STATS_INT.format(item.mediana)} en ${account} · ${item.sentimiento || 'sin tono'}`;
+  button.setAttribute('aria-label', `${index + 1}. ${title}, de ${account}: ${ratio} en ${item.metrica}. Abrir la publicación`);
+  button.addEventListener('click', () => openFeedPopList(ids.filter((id) => statsPostOf(id)), item.id, button));
+  return button;
+}
+
+function statsRenderRanking() {
+  const list = statsData.ranking.slice(0, STATS_RANK_SHOWN);
+  if (!list.length) {
+    statsRankEl.replaceChildren(
+      statsData.resumen.relevantes ? statsNode('p', 'stats-empty', 'Ninguna publicación del período tiene con qué compararse en su cuenta.') : statsEmptyLine()
+    );
+    return;
+  }
+  const ids = list.map((item) => String(item.id));
+  statsRankEl.replaceChildren(...list.map((item, i) => statsRankButton(item, i, ids)));
+}
+
+// -------------------------------------------------------------------------
 // Todo el período.
 // -------------------------------------------------------------------------
 function statsRender() {
@@ -816,6 +945,8 @@ function statsRender() {
   statsRenderTopics();
   statsRenderHeat();
   statsRenderNet();
+  statsRenderAccounts();
+  statsRenderRanking();
 }
 
 // -------------------------------------------------------------------------
@@ -855,6 +986,17 @@ statsCloudSegEl.addEventListener('click', (e) => {
     b.setAttribute('aria-pressed', String(b === button));
   }
   if (statsData) statsBuildCloud();
+});
+
+statsAccSegEl.addEventListener('click', (e) => {
+  const button = e.target.closest('button[data-sort]');
+  if (!button || button.dataset.sort === statsAccSort) return;
+  statsAccSort = button.dataset.sort;
+  for (const b of statsAccSegEl.querySelectorAll('button[data-sort]')) {
+    b.classList.toggle('on', b === button);
+    b.setAttribute('aria-pressed', String(b === button));
+  }
+  if (statsData) statsRenderAccounts();
 });
 
 // Otro ancho, otra nube.
