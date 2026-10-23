@@ -20,7 +20,7 @@ La solapa Estadísticas de Instagram del diseño v4 (`design/social-listening-v4
 
 ### Requirement: REQ-EST-02 — Período y anterior
 
-El período MUST resolverse en hora de Argentina y el anterior MUST tener el mismo largo, pegado antes. El período efectivo MUST arrancar en el primer día con datos de la plataforma y terminar hoy; si el anterior queda entero fuera de los datos, cada campo `*Anterior` del resumen y `temas[].anterior` MUST ir en null. La respuesta MUST traer el primer día con datos (`periodo.primerDia`).
+El período MUST resolverse en hora de Argentina y el anterior MUST tener el mismo largo, pegado antes. El período efectivo MUST arrancar en el primer día con datos de la plataforma y terminar hoy. Se MUST comparar con el anterior siempre que empiece en o después del primer día con datos (un día sin publicaciones vale cero); si empieza antes, `anterior.comparable` MUST ser false y cada campo `*Anterior` del resumen y `temas[].anterior` MUST ir en null. La respuesta MUST traer el primer día con datos (`periodo.primerDia`) y en cuántos días del anterior hubo corridas (`anterior.diasConCorridas`, con los rastros de detección antes de que existiera `monitoring_runs`).
 
 #### Scenario: Base nueva
 
@@ -80,7 +80,7 @@ MUST contar los posteos visibles (`ignored = 0`) por `posted_at`. Un posteo sin 
 
 ### Requirement: REQ-EST-10 — Solapa y carga
 
-Estadísticas MUST ser la cuarta solapa de `instagram.html` (tecla 4, `#tab-stats`) y el pie MUST enlazarla. Si el anterior no tiene datos todos sus días, la pantalla MUST NOT comparar (los KPI sin comparación, temas sin badge ni variación) y MUST decir por qué. Un período sin ningún día con datos MUST mostrar "—" y "Sin datos de esas fechas", con desde cuándo hay. MUST pedir los datos la primera vez que se abre y al cambiar el período (7 / 30 / 90 días hasta hoy o Desde → Hasta, recordado en `sl.stats.periodo`, con try/catch; sin nada, 30). Mientras llegan, lo anterior MUST quedar tenue; una respuesta de un período que ya no es el elegido MUST descartarse; un error MUST mostrar un aviso con "Reintentar". Si cambian los posteos de la tabla del Monitoreo (una corrida, ignorar, otro tono), MUST volver a pedirlos. Un Desde → Hasta mal escrito (o con "Hasta" posterior a hoy) MUST avisarse sin pedir nada.
+Estadísticas MUST ser la cuarta solapa de `instagram.html` (tecla 4, `#tab-stats`) y el pie MUST enlazarla. Sin anterior comparable, los KPI MUST decir "sin datos del período anterior" y los temas MUST ir sin badge ni variación. Si el anterior tuvo corridas en menos de la mitad de sus días, MUST avisar "Período anterior con pocas corridas" sin dejar de comparar. Un período sin ningún día con datos MUST mostrar "—" y "Sin datos de esas fechas", con desde cuándo hay. MUST pedir los datos la primera vez que se abre y al cambiar el período (7 / 30 / 90 días hasta hoy o Desde → Hasta, recordado en `sl.stats.periodo`, con try/catch; sin nada, 30). Mientras llegan, lo anterior MUST quedar tenue; una respuesta de un período que ya no es el elegido MUST descartarse; un error MUST mostrar un aviso con "Reintentar". Si cambian los posteos de la tabla del Monitoreo (una corrida, ignorar, otro tono), MUST volver a pedirlos. Un Desde → Hasta mal escrito (o con "Hasta" posterior a hoy) MUST avisarse sin pedir nada.
 
 ---
 
@@ -128,4 +128,4 @@ Un clic en una palabra o un tema MUST abrir el Monitoreo con el período de Esta
 
 ### Requirement: REQ-EST-17 — Datos, movimiento y contraste
 
-Todo dato MUST entrar por `textContent`; los gráficos MUST armarse con nodos (`createElementNS`). Con `prefers-reduced-motion: reduce` MUST NOT haber movimiento. El texto de los badges MUST pasar 4,5:1 en los dos temas, y `--muted` oscuro MUST pasar 4,5:1 sobre `--surface` y `--surface2`.
+Todo dato MUST entrar por `textContent`; los gráficos MUST armarse con nodos (`createElementNS`). Con `prefers-reduced-motion: reduce` MUST NOT haber movimiento. El texto de los badges MUST pasar 4,5:1 en los dos temas, y `--muted` oscuro MUST pasar 4,5:1 sobre `--surface` y `--surface2`. Todo texto que iba en `--accent` / `--pos` / `--neg` / `--neu` MUST ir en su tinta (`--accent-text`, `--pos-text`, `--neg-text`, `--neu-text`), que MUST pasar 4,5:1 sobre `--surface` y `--surface2` en los dos temas; rellenos, barras, puntos e íconos MAY seguir con la base. Las palabras de la nube MUST pasar 4,5:1 también sobre el centro de su degradé.

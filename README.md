@@ -1045,7 +1045,9 @@ riel lateral, la franja con el radar y las maquetas viejas) quedó guardado
 en el tag `v3-riel-radar`.
 
 - **Aspecto nuevo**: Sora, IBM Plex Sans e IBM Plex Mono; tarjetas, chips,
-  botones y campos de la maqueta. La app arranca **siempre clara**; el botón
+  botones y campos de la maqueta. Los textos de color (enlaces, variaciones,
+  razones, tonos, la nube) van en tintas un poco más oscuras en claro, para
+  leerse bien (4,5:1 o más). La app arranca **siempre clara**; el botón
   luna / sol de la barra superior la pasa a oscura y la elección queda en
   ese navegador. Tabulator, Leaflet, los modales y los formularios de X van
   con los mismos colores, también en oscuro (los mosaicos del mapa quedan
@@ -1096,10 +1098,13 @@ en el tag `v3-riel-radar`.
   la solapa de la maqueta con los números de `GET /api/monitoring/stats`.
   - Arriba, **7 / 30 / 90 días** o **Desde → Hasta** (se recuerda en el
     navegador). Todo va sobre el mismo período y se compara con el anterior
-    del mismo largo; si la base no tiene datos de todos los días de ese
-    anterior, no compara y dice "sin datos" (no 0). Si el período arranca
-    antes de la primera publicación guardada, lo avisa; si es entero de
-    antes, dice desde cuándo hay datos.
+    del mismo largo, siempre que ese anterior empiece en o después del
+    primer día con datos (un día sin publicaciones cuenta como cero); si
+    empieza antes, dice "sin datos del período anterior" (no 0). Si el
+    anterior tuvo corridas en menos de la mitad de sus días, avisa
+    "Período anterior con pocas corridas" y compara igual. Si el período
+    arranca antes de la primera publicación guardada, lo avisa; si es entero
+    de antes, dice desde cuándo hay datos.
   - **Cinco KPI**: publicaciones relevantes, cuántas se despegaron (las
     mismas que en el Monitoreo), % negativo, % positivo y conversación.
   - **Nube de menciones** (Volumen o Positivos reales; "Jorge Macri",

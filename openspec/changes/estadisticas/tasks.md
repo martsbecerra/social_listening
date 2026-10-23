@@ -37,6 +37,11 @@ un servidor de prueba en otro puerto y una copia de la base.
 - [x] 2.8 `stats.js`: temas, horas y tono neto (REQ-EST-14, REQ-EST-15)
 - [x] 2.9 `stats.js`: cuentas y ranking (REQ-EST-15)
 
+## Phase 2b: decisiones del dueño (23/10/2026)
+
+- [x] 2b.1 Se compara si el anterior empieza en o después del primer día con datos; si no, sin comparación; aviso "pocas corridas" con menos de la mitad de sus días con corridas (REQ-EST-02, REQ-EST-10)
+- [x] 2b.2 Tintas para texto `--accent-text`, `--pos-text`, `--neg-text`, `--neu-text` en todo texto de color de la app (48 reglas; 7 de íconos siguen con la base) y en la nube, que con las tintas pasa 4,5:1 en cualquier tamaño (REQ-EST-17)
+
 ## Phase 3: prueba y documentación
 
 - [x] 3.1 `CLAUDE.md`, `README.md` y este registro

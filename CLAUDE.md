@@ -402,12 +402,19 @@ días (si no, 400 con `userMessage`). Con la base real tarda unos 50 ms con
   mismo largo y pegado antes. Los días antes del primer posteo de la base no
   son días sin publicaciones: no hay datos. El período efectivo
   (`rangoEfectivo`) arranca en el primer día con datos y termina hoy (la
-  mediana de lo habitual sale de esos días); si el anterior queda entero
-  fuera, sus `*Anterior` van en null (la pantalla dice "sin datos", no 0).
-  Si queda fuera en parte, el backend cuenta lo que hay (`anterior.diasEfectivos`)
-  y la PANTALLA no compara (ver "Estadísticas de Instagram").
-  `periodo.primerDia` es el primer día con datos de la plataforma (null sin
-  posteos).
+  mediana de lo habitual sale de esos días). `periodo.primerDia` es el
+  primer día con datos de la plataforma (null sin posteos).
+- **Comparación con el anterior** (regla del dueño, 23/10/2026): se compara
+  siempre que el anterior empiece en o después del primer día con datos (y
+  termine antes de hoy): un día sin publicaciones vale cero, es un dato. Si
+  empieza antes, `anterior.comparable` es false y sus `*Anterior` y
+  `temas[].anterior` van en null (la pantalla dice "sin datos del período
+  anterior" y los temas van sin badge). `anterior.diasConCorridas`: en
+  cuántos de sus días hubo corridas (`db.listRunTracesForStats`: corridas
+  terminadas de la plataforma y, como `monitoring_runs` existe desde el
+  23/9/2026, también días en que se detectó un posteo o se vio un resultado
+  de búsqueda). Con menos de la mitad, la pantalla avisa "Período anterior
+  con pocas corridas" sin dejar de comparar.
 - Cuentan los posteos visibles (`ignored = 0`) por `posted_at`.
   Sentimiento null = neutral; tema null = "Coyuntura / Otros"
   (`CATEGORIA_FALLBACK`).
@@ -469,7 +476,17 @@ en el tag `v3-riel-radar`. SDD de la fase A en
   Sans e IBM Plex Mono de Google Fonts. Una excepción: `--muted` no es el
   de la maqueta, para pasar 4,5:1 sobre `--surface` y `--surface2` con el
   mismo tono: en claro `#626d8c`, más oscuro que `#7c87a4` (5,14 y 4,55);
-  en oscuro `#808aa5`, más claro que `#6f7b99` (5,03 y 4,51); 2) el marco;
+  en oscuro `#808aa5`, más claro que `#6f7b99` (5,03 y 4,51). **Tintas para
+  texto** (decisión del dueño, 23/10/2026): `--accent-text`, `--pos-text`,
+  `--neg-text` y `--neu-text` van en TODO texto que antes iba en `--accent`
+  / `--pos` / `--neg` / `--neu` (enlaces, deltas de los KPI, razones,
+  positivas, la nube, errores, ✕ al pasar el mouse…); rellenos, barras,
+  puntos, bordes e íconos SVG siguen con la base. En claro son más oscuras,
+  mismo tono, y pasan 4,5:1 sobre `--surface` y `--surface2` (y sobre el
+  centro del degradé de la nube): `#0a6fac`, `#14794f`, `#c63333`,
+  `#5365b8`. En oscuro las bases ya pasaban (la más justa, `--neg`, 4,80
+  sobre `--surface2`): la tinta es la misma base, en su token. Un color de
+  texto nuevo usa la tinta, nunca la base; 2) el marco;
   3) los componentes de
   la app: el Monitoreo de la maqueta (`.mon`, `.srcbox`, `.flowcard`/`.fl`,
   `.pipe`, `.al`, `.fbar`, `.combo`, `.fstatus`, `.ups`/`.up`, `.reach`),
@@ -627,12 +644,13 @@ en el tag `v3-riel-radar`. SDD de la fase A en
     tema, `statsPostsKey`: una corrida, ignorar, otro tono) se vuelve a
     pedir: ya, si la solapa está a la vista y el pop-up cerrado (si no, al
     cerrarlo o al volver).
-  - **Sin con qué comparar**: si el período anterior no tiene datos todos
-    sus días (`statsHasPrevious`: la base arranca a mitad de ese período),
-    la pantalla no compara: KPI "sin datos del período anterior" (Negativo y
-    Positivo, sin el "antes N %"), temas sin badge ni variación, y el aviso "El período anterior tiene datos de N de
-    sus M días: no se compara." (comparar el período entero con unos pocos
-    días daba "+919 %" y todos los temas en "Pico"). Un período entero
+  - **Comparación**: si el backend dice que el anterior no es comparable
+    (`statsHasPrevious` = `anterior.comparable`: empieza antes del primer
+    día con datos), KPI "sin datos del período anterior" (Negativo y
+    Positivo, sin el "antes N %") y temas sin badge ni variación. Si es
+    comparable pero tuvo corridas en menos de la mitad de sus días, el aviso
+    "Período anterior con pocas corridas: hubo en N de sus M días." y se
+    compara igual. Un período entero
     antes de la primera publicación (`diasEfectivos` 0) muestra "—" (también
     en el centro de la dona), "Sin datos de esas fechas." y "No hay datos de esas fechas: las publicaciones
     guardadas empiezan el 29/7." (`periodo.primerDia`). El aviso sale de los
