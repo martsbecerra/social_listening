@@ -803,10 +803,25 @@ const getLastFinishedRunAtAnyStmt = db.prepare(`
 // posted_at se guarda en ISO UTC con milisegundos ("2026-10-13T16:12:21.000Z"),
 // así que el rango se compara como texto, como en el resto de este archivo.
 const listPostsForStatsStmt = db.prepare(`
-  SELECT id, account, title, caption, sentiment, tema, likes, comments, followers, post_type, posted_at
+  SELECT id, account, title, caption, sentiment, tema, likes, comments, followers, post_type, posted_at, matched_reason
   FROM detected_posts
   WHERE plataforma = ? AND ignored = 0 AND posted_at >= ? AND posted_at < ?
   ORDER BY posted_at
+`);
+// Las menciones por término de Estadísticas cuentan también lo que no quedó:
+// los ignorados (por posted_at, como el resto) y los resultados de búsqueda
+// descartados. search_seen no guarda posted_at: los descartados van por
+// first_seen_at, el día en que se pagó su detalle (con la ventana dinámica
+// de la detección, el mismo día de la publicación o el siguiente).
+const listIgnoredPostsForStatsStmt = db.prepare(`
+  SELECT matched_reason FROM detected_posts
+  WHERE plataforma = ? AND ignored = 1 AND posted_at >= ? AND posted_at < ?
+`);
+const countDiscardedSearchesForStatsStmt = db.prepare(`
+  SELECT term, COUNT(*) AS n FROM search_seen
+  WHERE plataforma = ? AND outcome = 'descartado' AND term IS NOT NULL
+    AND first_seen_at >= ? AND first_seen_at < ?
+  GROUP BY term
 `);
 // El primer posteo visible de la plataforma: antes de ese día no hay datos,
 // que no es lo mismo que un día sin publicaciones.
@@ -1665,11 +1680,34 @@ function getLastFinishedRunAtAny() {
  * Estadísticas (src/stats.js), que cuenta y calcula el alcance de cada uno.
  * @returns {{id: string, account: string|null, title: string|null, caption: string|null,
  *   sentiment: string|null, tema: string|null, likes: number|null, comments: number|null,
- *   followers: number|null, post_type: string|null, posted_at: string}[]}
+ *   followers: number|null, post_type: string|null, posted_at: string,
+ *   matched_reason: string|null}[]}
  */
 function listPostsForStats({ plataforma, desdeIso, hastaIso }) {
   requirePlataforma(plataforma, 'listPostsForStats');
   return listPostsForStatsStmt.all(plataforma, desdeIso, hastaIso);
+}
+
+/**
+ * El motivo (matched_reason) de los posteos ignorados de una plataforma
+ * publicados entre desdeIso (incluido) y hastaIso (excluido): las menciones
+ * de Estadísticas los cuentan como detectados por su término.
+ * @returns {(string|null)[]}
+ */
+function listIgnoredPostsForStats({ plataforma, desdeIso, hastaIso }) {
+  requirePlataforma(plataforma, 'listIgnoredPostsForStats');
+  return listIgnoredPostsForStatsStmt.all(plataforma, desdeIso, hastaIso).map((row) => row.matched_reason);
+}
+
+/**
+ * Resultados de búsqueda descartados por el clasificador (search_seen con
+ * outcome 'descartado'), por término, vistos por primera vez entre desdeIso
+ * (incluido) y hastaIso (excluido).
+ * @returns {{term: string, n: number}[]}
+ */
+function countDiscardedSearchesForStats({ plataforma, desdeIso, hastaIso }) {
+  requirePlataforma(plataforma, 'countDiscardedSearchesForStats');
+  return countDiscardedSearchesForStatsStmt.all(plataforma, desdeIso, hastaIso).map((row) => ({ term: row.term, n: Number(row.n) }));
 }
 
 /** @returns {string|null} posted_at (ISO) del primer posteo visible de la plataforma, o null si no hay ninguno. */
@@ -2024,6 +2062,8 @@ module.exports = {
   getLastFinishedRun,
   listPostsDetectedBetween,
   listPostsForStats,
+  listIgnoredPostsForStats,
+  countDiscardedSearchesForStats,
   getFirstPostedAt,
   listFollowersForStats,
   sumApifyCallsSince,

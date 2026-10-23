@@ -71,7 +71,39 @@ describe('db: lecturas para Estadísticas', { concurrency: false }, () => {
     assert.deepEqual(filas.map((f) => f.id), [b, a]);
     assert.deepEqual(
       Object.keys(filas[0]).sort(),
-      ['account', 'caption', 'comments', 'followers', 'id', 'likes', 'post_type', 'posted_at', 'sentiment', 'tema', 'title'].sort()
+      ['account', 'caption', 'comments', 'followers', 'id', 'likes', 'matched_reason', 'post_type', 'posted_at', 'sentiment', 'tema', 'title'].sort()
+    );
+  });
+
+  test('listIgnoredPostsForStats: el motivo de los ignorados del rango, de esa plataforma', () => {
+    const adentro = guardar({ matchedReason: 'Búsqueda: macri · no relevante', postedAt: '2026-10-02T15:00:00.000Z' });
+    const afuera = guardar({ matchedReason: 'Búsqueda: macri', postedAt: '2026-10-09T15:00:00.000Z' });
+    const deX = guardar({ plataforma: 'x', matchedReason: 'Búsqueda: macri', postedAt: '2026-10-02T15:00:00.000Z' });
+    for (const [id, plataforma] of [[adentro, 'instagram'], [afuera, 'instagram'], [deX, 'x']]) assert.equal(db.ignorePost(id, plataforma), true);
+
+    // El ignorado del test anterior (13:00 del 2/10, "Búsqueda: x") también entra.
+    const motivos = db.listIgnoredPostsForStats({ plataforma: 'instagram', desdeIso: '2026-10-01T03:00:00.000Z', hastaIso: '2026-10-03T03:00:00.000Z' });
+    assert.deepEqual(motivos.sort(), ['Búsqueda: macri · no relevante', 'Búsqueda: x']);
+  });
+
+  test('countDiscardedSearchesForStats: descartados por término, por el día en que se vieron', () => {
+    const marcar = (postId, term, outcome, firstSeenAt, plataforma = 'instagram') =>
+      db.markSearchSeen({ postId, plataforma, term, outcome, firstSeenAt });
+    marcar('d1', 'macri', 'descartado', '2026-10-01T10:00:00.000Z');
+    marcar('d2', 'macri', 'descartado', '2026-10-02T10:00:00.000Z');
+    marcar('d3', 'PDLC', 'descartado', '2026-10-02T11:00:00.000Z');
+    marcar('d4', 'macri', 'guardado', '2026-10-02T12:00:00.000Z'); // guardado: está en detected_posts
+    marcar('d5', 'macri', 'sin_caption', '2026-10-02T12:00:00.000Z');
+    marcar('d6', 'macri', 'descartado', '2026-10-05T10:00:00.000Z'); // fuera del rango
+    marcar('d7', 'macri', 'descartado', '2026-10-02T10:00:00.000Z', 'x');
+
+    const porTermino = db.countDiscardedSearchesForStats({ plataforma: 'instagram', desdeIso: '2026-10-01T03:00:00.000Z', hastaIso: '2026-10-03T03:00:00.000Z' });
+    assert.deepEqual(
+      porTermino.sort((a, b) => a.term.localeCompare(b.term)),
+      [
+        { term: 'macri', n: 2 },
+        { term: 'PDLC', n: 1 },
+      ]
     );
   });
 
@@ -102,6 +134,8 @@ describe('db: lecturas para Estadísticas', { concurrency: false }, () => {
     assert.throws(() => db.listPostsForStats({ desdeIso: 'a', hastaIso: 'b' }), /falta plataforma/);
     assert.throws(() => db.getFirstPostedAt(), /falta plataforma/);
     assert.throws(() => db.listFollowersForStats(''), /falta plataforma/);
+    assert.throws(() => db.listIgnoredPostsForStats({ desdeIso: 'a', hastaIso: 'b' }), /falta plataforma/);
+    assert.throws(() => db.countDiscardedSearchesForStats({ desdeIso: 'a', hastaIso: 'b' }), /falta plataforma/);
   });
 });
 
