@@ -230,16 +230,39 @@ describe('stats: bloques', () => {
     assert.equal(stats.contarPalabras([preparar({ caption })]).length, 60);
   });
 
-  test('menciones: Jorge Macri, la Ciudad y los dos, por palabra entera y con hashtags o menciones', () => {
+  test('terminoDeBusqueda: el término del motivo base, como lo lee la pantalla', () => {
+    assert.equal(stats.terminoDeBusqueda('Búsqueda: macri'), 'macri');
+    assert.equal(stats.terminoDeBusqueda('Búsqueda: gobierno de la ciudad · habla de la gestión porteña'), 'gobierno de la ciudad');
+    assert.equal(stats.terminoDeBusqueda('Búsqueda: GCBA (coincidencia: "gcba") · anuncio'), 'GCBA');
+    assert.equal(stats.terminoDeBusqueda('Búsqueda: macri — sin clasificar (falló el clasificador, relevancia sin verificar)'), 'macri');
+    assert.equal(stats.terminoDeBusqueda('Cuenta trackeada: @diario'), null);
+    assert.equal(stats.terminoDeBusqueda('Coincidencia con palabra clave: "Jorge Macri"'), null);
+    assert.equal(stats.terminoDeBusqueda(null), null);
+  });
+
+  test('menciones: por término, con ignorados y descartados en detectadas; sin tildes ni mayúsculas', () => {
     const posts = [
-      'Jorge Macri recorrió la plaza',
-      'El GCBA anunció obras',
-      'Blackri en la Ciudad',
-      '#JorgeMacri y @gcba',
-      'Una cabaña en Bariloche',
-      'El jefe de gobierno habló',
-    ].map((caption) => preparar({ caption }));
-    assert.deepEqual(stats.contarMenciones(posts), { jorge: 4, ciudad: 3, ambos: 2 });
+      preparar({ matched_reason: 'Búsqueda: macri · elogio', sentiment: 'positivo' }),
+      preparar({ matched_reason: 'Búsqueda: macri · crítica', sentiment: 'negativo' }),
+      preparar({ matched_reason: 'Búsqueda: Macri', sentiment: null }), // mismo término: se juntan
+      preparar({ matched_reason: 'Búsqueda: gobierno porteño (coincidencia: "x")', sentiment: 'positivo' }),
+      preparar({ matched_reason: 'Cuenta trackeada: @diario', sentiment: 'positivo' }), // no vino por búsqueda
+    ];
+    const menciones = stats.contarMenciones(posts, {
+      ignorados: ['Búsqueda: gobierno porteño · no relevante', 'Cuenta trackeada', null],
+      descartados: [
+        { term: 'macri', n: 4 },
+        { term: 'Gobierno Porteno', n: 1 },
+        { term: 'PDLC', n: 2 },
+        { term: 'nada', n: 0 },
+      ],
+    });
+    assert.deepEqual(menciones, [
+      { termino: 'macri', detectadas: 7, relevantes: 3, positivas: 1 },
+      { termino: 'gobierno porteño', detectadas: 3, relevantes: 1, positivas: 1 },
+      { termino: 'PDLC', detectadas: 2, relevantes: 0, positivas: 0 },
+    ]);
+    assert.deepEqual(stats.contarMenciones([]), []);
   });
 
   test('picos: días con el doble de lo habitual; con lo habitual en 0 no hay picos', () => {
@@ -311,7 +334,17 @@ describe('stats: la respuesta armada desde la base', { concurrency: false }, () 
   ];
   const ids = {};
 
-  test('carga: posteos, medianas de la cuenta y seguidores', () => {
+  // Los de diario llegaron por la búsqueda "macri"; los de vecina, por
+  // "GCBA", salvo el primero, que es de una cuenta trackeada (no entra en
+  // las menciones).
+  const motivoDe = (fecha, account) =>
+    account === 'diario'
+      ? 'Búsqueda: macri · menciona a Jorge Macri'
+      : fecha === '2026-03-12'
+        ? 'Cuenta trackeada: @vecina'
+        : 'Búsqueda: GCBA (coincidencia: "gcba") · habla de la Ciudad';
+
+  test('carga: posteos, medianas de la cuenta, seguidores, un ignorado y descartados', () => {
     for (const [fecha, hora, minuto, account, likes, comments, sentiment, tema, caption] of FIXTURE) {
       const id = guardar({
         account,
@@ -321,6 +354,7 @@ describe('stats: la respuesta armada desde la base', { concurrency: false }, () 
         tema,
         caption,
         title: caption,
+        matchedReason: motivoDe(fecha, account),
         postType: 'imagen',
         followers: account === 'diario' ? 900 : 50,
         postedAt: enArgentina(fecha, hora, minuto),
@@ -329,6 +363,17 @@ describe('stats: la respuesta armada desde la base', { concurrency: false }, () 
     }
     db.upsertAccountStats({ account: 'diario', plataforma: 'instagram', postType: null, nPosts: 10, medianLikes: 100, medianComments: 10 });
     db.upsertAccountFollowers({ account: 'diario', plataforma: 'instagram', followers: 1000 });
+    const ignorado = guardar({ account: 'diario', matchedReason: 'Búsqueda: macri · otro Macri', postedAt: enArgentina('2026-03-14', 10) });
+    assert.equal(db.ignorePost(ignorado, 'instagram'), true);
+    for (const [postId, term, outcome, firstSeenAt] of [
+      ['marzo-1', 'macri', 'descartado', enArgentina('2026-03-15', 9)],
+      ['marzo-2', 'macri', 'descartado', enArgentina('2026-03-18', 9)],
+      ['marzo-3', 'PDLC', 'descartado', enArgentina('2026-03-19', 9)],
+      ['marzo-4', 'GCBA', 'guardado', enArgentina('2026-03-19', 9)], // guardado: ya cuenta como relevante
+      ['febrero-1', 'macri', 'descartado', enArgentina('2026-02-01', 9)], // antes del período de 30 días
+    ]) {
+      db.markSearchSeen({ postId, plataforma: 'instagram', term, outcome, firstSeenAt });
+    }
     assert.equal(db.getFirstPostedAt('instagram'), enArgentina('2026-03-12', 10));
   });
 
@@ -439,7 +484,15 @@ describe('stats: la respuesta armada desde la base', { concurrency: false }, () 
       { palabra: 'plaza', n: 4 },
     ]);
     assert.ok(r.palabras.some((p) => p.palabra === 'gobierno de la ciudad' && p.n === 1));
-    assert.deepEqual(r.menciones, { jorge: 4, ciudad: 3, ambos: 0 });
+
+    // macri: 10 relevantes (4 positivas) + el ignorado + 2 descartados del
+    // período. GCBA: 6 (el de la cuenta trackeada no entra). PDLC: solo un
+    // descartado.
+    assert.deepEqual(r.menciones, [
+      { termino: 'macri', detectadas: 13, relevantes: 10, positivas: 4 },
+      { termino: 'GCBA', detectadas: 6, relevantes: 6, positivas: 1 },
+      { termino: 'PDLC', detectadas: 1, relevantes: 0, positivas: 0 },
+    ]);
   });
 
   test('el período anterior con datos en parte: cuenta solo lo que hay, y el posteo de las 23:30 del 15 queda en el 15', () => {

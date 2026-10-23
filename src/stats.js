@@ -23,6 +23,14 @@
 //     publicaciones: no hay datos. El período efectivo arranca en el primer
 //     día con datos y termina hoy (un día futuro tampoco tiene datos). Si el
 //     período anterior queda entero fuera, sus campos *Anterior van en null.
+//   - Menciones, por término de búsqueda (el de "Búsqueda: <término>" del
+//     motivo): `detectadas` cuenta también lo que no quedó (los ignorados y
+//     los resultados descartados por el clasificador, de search_seen, por el
+//     día en que se vieron), `relevantes` lo guardado y visible, `positivas`
+//     las positivas de esas. Los posteos que no llegaron por una búsqueda
+//     (cuentas y hashtags, antes de septiembre de 2026) no entran. El share
+//     of voice de la pantalla sale de acá: las relevantes de cada término
+//     sobre la suma de todas.
 //
 // Las razones de alcance (mejorRazon, razon del ranking) van sin redondear:
 // la pantalla las corta a dos decimales (formatBenchmarkRatio), y redondear
@@ -46,16 +54,6 @@ const PICOS_MAX = 3;
 const PALABRAS_MAX = 60;
 const RANKING_MAX = 10;
 const DIAS_TEMAS_POR_DIA = 14; // hasta 14 días, la evolución de los temas va por día; más, por semana
-
-// Quién nombra a Jorge Macri y quién habla de la Ciudad. Se compara sin
-// tildes ni mayúsculas y por palabras enteras ("caba" no cuenta en
-// "cabaña"); un hashtag o una mención cuentan igual ("#JorgeMacri",
-// "@jorgemacri"). Los conteos son inclusivos: `jorge` incluye a los que
-// también hablan de la Ciudad, y `ambos` es la intersección.
-const MENCIONES = {
-  jorge: ['jorge macri', 'blackri', 'blacri', 'jorgemacri', 'jefe de gobierno'],
-  ciudad: ['ciudad', 'gcba', 'gobierno porteño', 'pdlc', 'caba', 'gobierno de la ciudad'],
-};
 
 // --------------------------------------------------------------------------
 // Fechas en hora de Argentina
@@ -391,18 +389,13 @@ function prepararFrases(frases) {
   return indice;
 }
 
-/** Clave de una palabra para comparar con una lista: con quitarPrefijo, "#jorgemacri" y "@jorgemacri" valen "jorgemacri". */
-function claveDe(token, quitarPrefijo) {
-  return quitarPrefijo ? token.clave.replace(/^[#@]/, '') : token.clave;
-}
-
 /** La frase de la lista que empieza en la palabra i, o null. */
-function fraseEn(tokens, i, indice, quitarPrefijo = false) {
-  const candidatas = indice.get(claveDe(tokens[i], quitarPrefijo));
+function fraseEn(tokens, i, indice) {
+  const candidatas = indice.get(tokens[i].clave);
   if (!candidatas) return null;
   return (
     candidatas.find(
-      (claves) => i + claves.length <= tokens.length && claves.every((clave, k) => claveDe(tokens[i + k], quitarPrefijo) === clave)
+      (claves) => i + claves.length <= tokens.length && claves.every((clave, k) => tokens[i + k].clave === clave)
     ) || null
   );
 }
@@ -474,32 +467,53 @@ function contarPalabras(posts, frases = []) {
     .map(([clave, n]) => ({ palabra: formaMasUsada(clave), n }));
 }
 
-const TERMINOS_MENCIONES = {
-  jorge: prepararFrases(MENCIONES.jorge),
-  ciudad: prepararFrases(MENCIONES.ciudad),
-};
-
-function menciona(tokens, terminos) {
-  for (let i = 0; i < tokens.length; i++) {
-    if (fraseEn(tokens, i, terminos, true)) return true;
-  }
-  return false;
+/**
+ * El término de búsqueda de un motivo ("Búsqueda: macri · <motivo del
+ * modelo>" → "macri"), o null si el posteo no llegó por una búsqueda. Lee
+ * el motivo base igual que la pantalla (postReasonParts en
+ * public/js/monitoring.js): corta en " · ", " (" o " — ".
+ */
+function terminoDeBusqueda(motivo) {
+  const base = String(motivo || '').split(' · ')[0].trim();
+  const m = base.match(/^Búsqueda:\s*(.+?)(?:\s+\(|\s+—\s|$)/);
+  return m ? m[1].trim() : null;
 }
 
-/** Posteos que nombran a Jorge Macri, los que hablan de la Ciudad y los que hacen las dos cosas. */
-function contarMenciones(posts) {
-  let jorge = 0;
-  let ciudad = 0;
-  let ambos = 0;
+/**
+ * Menciones por término de búsqueda, de más detectadas a menos: una fila por
+ * término con algo en el período (esté o no en la config hoy). Los términos
+ * se juntan sin tildes ni mayúsculas y se muestran como llegaron primero.
+ * @param {object[]} posts los del período, preparados (visibles)
+ * @param {{ ignorados?: (string|null)[], descartados?: {term: string, n: number}[] }} [otros]
+ *   el motivo de los ignorados del período y los descartados por término
+ * @returns {{termino: string, detectadas: number, relevantes: number, positivas: number}[]}
+ */
+function contarMenciones(posts, { ignorados = [], descartados = [] } = {}) {
+  const porTermino = new Map();
+  const fila = (termino) => {
+    const clave = sinTildes(termino);
+    if (!porTermino.has(clave)) porTermino.set(clave, { termino, detectadas: 0, relevantes: 0, positivas: 0 });
+    return porTermino.get(clave);
+  };
   for (const post of posts) {
-    const tokens = tokenizar(textoDe(post));
-    const j = menciona(tokens, TERMINOS_MENCIONES.jorge);
-    const c = menciona(tokens, TERMINOS_MENCIONES.ciudad);
-    if (j) jorge++;
-    if (c) ciudad++;
-    if (j && c) ambos++;
+    const termino = terminoDeBusqueda(post.matched_reason);
+    if (!termino) continue;
+    const f = fila(termino);
+    f.detectadas++;
+    f.relevantes++;
+    if (post.sentimiento === 'positivo') f.positivas++;
   }
-  return { jorge, ciudad, ambos };
+  for (const motivo of ignorados) {
+    const termino = terminoDeBusqueda(motivo);
+    if (termino) fila(termino).detectadas++;
+  }
+  for (const { term, n } of descartados) {
+    const termino = String(term || '').trim();
+    if (termino && n > 0) fila(termino).detectadas += n;
+  }
+  return [...porTermino.values()].sort(
+    (a, b) => b.detectadas - a.detectadas || b.relevantes - a.relevantes || a.termino.localeCompare(b.termino, 'es')
+  );
 }
 
 // ---- Temas, cuentas y ranking ----
@@ -650,6 +664,11 @@ function armarEstadisticas({ plataforma, desde, hasta, frases = [], conAlcance =
     ? calcularTendencias(actuales, inicioDelDia(efectivo.desde), Math.min(inicioDelDia(sumarDias(efectivo.hasta, 1)), ahora))
     : calcularTendencias([], 0, 0);
   const tramos = tramosDeTemas(efectivo);
+  const rangoDelPeriodo = {
+    plataforma,
+    desdeIso: new Date(inicioPeriodo).toISOString(),
+    hastaIso: new Date(inicioDelDia(sumarDias(periodo.hasta, 1))).toISOString(),
+  };
 
   return {
     periodo: {
@@ -670,7 +689,10 @@ function armarEstadisticas({ plataforma, desde, hasta, frases = [], conAlcance =
     picos: calcularPicos(porDia, habitual, actuales),
     porHora: mapaPorHora(actuales),
     palabras: contarPalabras(actuales, frases),
-    menciones: contarMenciones(actuales),
+    menciones: contarMenciones(actuales, {
+      ignorados: db.listIgnoredPostsForStats(rangoDelPeriodo),
+      descartados: db.countDiscardedSearchesForStats(rangoDelPeriodo),
+    }),
     semanas: tramos,
     temas: contarTemas(actuales, tramos),
     cuentas: contarCuentas(actuales, db.listFollowersForStats(plataforma)),
@@ -691,11 +713,11 @@ module.exports = {
   calcularResumen,
   contarPalabras,
   contarMenciones,
+  terminoDeBusqueda,
   tramosDeTemas,
   contarTemas,
   contarCuentas,
   calcularRanking,
   partesArgentina,
   inicioDelDia,
-  MENCIONES,
 };
