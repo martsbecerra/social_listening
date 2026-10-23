@@ -627,7 +627,13 @@ function afterFeedPopClose({ restoreFocus = true } = {}) {
       return;
     }
   }
-  const back = opener && opener.isConnected ? opener : feedPopFindIn(openerBox, openerId);
+  // Si lo que lo abrió ya no está (se ignoró), el foco va al posteo que se
+  // estaba viendo o, si tampoco está, al primero de esa lista: nunca a
+  // <body>, donde las teclas dejan de llegar a algún lado.
+  const back =
+    (opener && opener.isConnected ? opener : feedPopFindIn(openerBox, openerId)) ||
+    feedPopFindIn(openerBox, lastId) ||
+    (openerBox && openerBox.isConnected ? openerBox.querySelector('[tabindex="0"]') : null);
   if (back) back.focus({ preventScroll: true });
 }
 

@@ -457,6 +457,23 @@ function panelFocusSource(kind, value, act) {
   (target || node).focus({ preventScroll: true });
 }
 
+// Después de sacar una fuente, el foco pasa a la que quedó en su lugar (o
+// al "+" de la caja, si era la única): cuando llega la config nueva la lista
+// se redibuja sin ella y el foco quedaba en <body>. Solo si nadie lo movió.
+let panelFocusAfter = null;
+
+function panelRestoreFocus() {
+  if (!panelFocusAfter) return;
+  const active = document.activeElement;
+  if (active && active !== document.body) return;
+  const { kind, index } = panelFocusAfter;
+  const source = PANEL_SOURCES[kind];
+  const nodes = [...source.listEl.children].filter((el) => el.dataset.kind === kind);
+  const box = source.listEl.closest('.srcbox');
+  const target = nodes[Math.min(index, nodes.length - 1)] || (box && box.querySelector('.plus'));
+  if (target) target.focus({ preventScroll: true });
+}
+
 // Pide confirmación (ask), la cancela (no) o saca la fuente (yes).
 async function panelSourceAction(kind, value, act) {
   if (act === 'ask') {
@@ -472,6 +489,7 @@ async function panelSourceAction(kind, value, act) {
     return;
   }
   if (act !== 'yes' || panelRemoving) return;
+  const index = [...PANEL_SOURCES[kind].listEl.children].findIndex((el) => el.dataset.kind === kind && el.dataset.value === value);
   panelRemoving = true;
   panelRenderSourcesNow();
   // Si era el filtro de la lista, el filtro sale con ella.
@@ -481,8 +499,11 @@ async function panelSourceAction(kind, value, act) {
   panelRemoving = false;
   panelAsking = null;
   // La config nueva llega por el aviso { config } y redibuja; por las dudas
-  // (si falló) se redibuja igual.
+  // (si falló) se redibuja igual. Hasta que llegue, el foco queda en la
+  // misma fuente.
   panelRenderSourcesNow();
+  panelFocusAfter = { kind, index: Math.max(0, index) };
+  panelRestoreFocus();
 }
 
 // Un clic en un chip (no en la ✕): filtra la lista por esa fuente, o saca
@@ -903,6 +924,8 @@ monitoringViewListeners.push((change) => {
     panelLastSources = null;
     panelRender();
     if (!monitoringTable) panelRenderSources([]);
+    panelRestoreFocus();
+    panelFocusAfter = null;
     return false;
   }
   if (change && change.run === 'end') {
