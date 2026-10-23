@@ -561,7 +561,9 @@ function tramosDeTemas(rango) {
  * primero. `anterior`: cuántos tuvo en el período anterior (null si ese
  * período no tiene datos: la pantalla no pone badge). `destacada`: la
  * publicación del tema con mayor razón de alcance, para la cita de la
- * tarjeta (a igual razón, la más nueva); null si ninguna tiene referencia.
+ * tarjeta (a igual razón, la más nueva), con su `nivel` (puede no haberse
+ * despegado: la de mayor razón de un tema chico puede ser "bajo"); null si
+ * ninguna tiene referencia.
  * @param {object[]} posts los del período, preparados
  * @param {{desde: string, hasta: string}[]} tramos
  * @param {object[]|null} [anteriores] los del período anterior (null sin datos)
@@ -588,7 +590,9 @@ function contarTemas(posts, tramos, anteriores = null) {
   for (const t of porTema.values()) {
     t.anterior = anteriores ? antes.get(t.tema) || 0 : null;
     const p = mejor.get(t.tema);
-    t.destacada = p ? { id: p.id, titulo: p.title || null, cuenta: p.account || null, razon: p.top.ratio, metrica: p.top.label } : null;
+    t.destacada = p
+      ? { id: p.id, titulo: p.title || null, cuenta: p.account || null, razon: p.top.ratio, metrica: p.top.label, nivel: p.top.level }
+      : null;
   }
   return [...porTema.values()].sort((a, b) => b.n - a.n || a.tema.localeCompare(b.tema, 'es'));
 }
@@ -628,7 +632,11 @@ function contarCuentas(posts, seguidores = new Map()) {
   return [...porCuenta.values()].sort((a, b) => b.publicaciones - a.publicaciones || a.cuenta.localeCompare(b.cuenta, 'es'));
 }
 
-/** Los 10 posteos con mayor razón de alcance, con la métrica que decidió, su valor y la mediana usada. */
+/**
+ * Los 10 posteos con mayor razón de alcance, con la métrica que decidió, su
+ * valor, la mediana usada y su `nivel` (con pocas publicaciones altas, la
+ * lista sigue con las de nivel medio o bajo).
+ */
 function calcularRanking(posts) {
   return posts
     .filter((p) => p.top)
@@ -645,6 +653,7 @@ function calcularRanking(posts) {
         valor: metrica.value,
         mediana: metrica.median,
         razon: p.top.ratio,
+        nivel: p.top.level,
         sentimiento: p.sentimiento,
       };
     });
@@ -718,6 +727,9 @@ function armarEstadisticas({ plataforma, desde, hasta, frases = [], conAlcance =
       desdeEfectivo: efectivo ? efectivo.desde : null,
       hastaEfectivo: efectivo ? efectivo.hasta : null,
       diasEfectivos: efectivo ? efectivo.dias : 0,
+      // El primer día con datos de la plataforma (null sin ningún posteo):
+      // con un período entero antes, la pantalla dice desde cuándo hay.
+      primerDia,
     },
     anterior: {
       ...anterior,

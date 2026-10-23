@@ -367,7 +367,7 @@ describe('stats: bloques', () => {
     const transporte = temas.find((t) => t.tema === 'Transporte');
     assert.equal(seguridad.anterior, 1);
     assert.equal(transporte.anterior, 0); // con datos antes, pero ninguna de ese tema
-    assert.deepEqual(seguridad.destacada, { id: fuerte.id, titulo: 'La más fuerte', cuenta: 'diario', razon: 3.2, metrica: 'comentarios' });
+    assert.deepEqual(seguridad.destacada, { id: fuerte.id, titulo: 'La más fuerte', cuenta: 'diario', razon: 3.2, metrica: 'comentarios', nivel: 'alto' });
     assert.equal(transporte.destacada, null);
     assert.ok(!temas.some((t) => t.tema === 'Salud'), 'un tema que solo estuvo antes no aparece');
 
@@ -461,6 +461,7 @@ describe('stats: la respuesta armada desde la base', { concurrency: false }, () 
       desdeEfectivo: '2026-03-12',
       hastaEfectivo: '2026-03-20',
       diasEfectivos: 9,
+      primerDia: '2026-03-12',
     });
     assert.deepEqual(r.anterior, { desde: '2026-01-20', hasta: '2026-02-18', desdeEfectivo: null, hastaEfectivo: null, diasEfectivos: 0 });
 
@@ -550,6 +551,7 @@ describe('stats: la respuesta armada desde la base', { concurrency: false }, () 
       valor: 5000,
       mediana: 100,
       razon: r.ranking[0].razon,
+      nivel: 'alto',
       sentimiento: 'negativo',
     });
     assert.ok(Math.abs(r.ranking[0].razon - 7000 / 2100) < 1e-9);
@@ -613,6 +615,7 @@ describe('stats: la respuesta armada desde la base', { concurrency: false }, () 
   test('un período sin datos (todo antes del primer posteo): bloques vacíos, nunca días en cero', () => {
     const r = stats.armarEstadisticas({ plataforma: 'instagram', desde: '2026-02-01', hasta: '2026-02-07', conAlcance: true, ahora: AHORA });
     assert.equal(r.periodo.diasEfectivos, 0);
+    assert.equal(r.periodo.primerDia, '2026-03-12'); // la pantalla dice desde cuándo hay datos
     assert.deepEqual(r.porDia, []);
     assert.equal(r.habitual, null);
     assert.deepEqual(r.picos, []);
