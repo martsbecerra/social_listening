@@ -331,16 +331,19 @@ function panelChip(kind, value, posts) {
 }
 
 // Una cuenta seguida: inicial, @cuenta, publicaciones del período y ✕. Un
-// clic la elige en el filtro de Cuenta.
+// clic la elige en el filtro de Cuenta; la que está elegida se marca como un
+// chip activo.
 function panelAccountRow(account, posts) {
   if (panelAsking && panelAsking.kind === 'account' && panelAsking.value === account) {
     return panelAskNode('div', 'account', account, `@${account}`);
   }
-  const row = panelNode('div', 'acct');
+  const active = fAccValue === account;
+  const row = panelNode('div', `acct${active ? ' on' : ''}`);
   row.dataset.kind = 'account';
   row.dataset.value = account;
   row.tabIndex = 0;
   row.setAttribute('role', 'button');
+  row.setAttribute('aria-pressed', String(active));
   const followers = posts.reduce((max, post) => (Number.isFinite(Number(post.followers)) && post.followers != null ? Math.max(max, Number(post.followers)) : max), -1);
   row.dataset.tipTitle = `@${account}`;
   row.dataset.tip =
@@ -449,7 +452,7 @@ function panelFocusSource(kind, value, act) {
   const node = [...source.listEl.children].find((el) => el.dataset.kind === kind && el.dataset.value === value);
   if (!node) return;
   const target = act ? node.querySelector(`[data-act="${act}"]`) : node;
-  (target || node).focus();
+  (target || node).focus({ preventScroll: true });
 }
 
 // Pide confirmación (ask), la cancela (no) o saca la fuente (yes).
@@ -471,7 +474,7 @@ async function panelSourceAction(kind, value, act) {
   panelRenderSourcesNow();
   // Si era el filtro de la lista, el filtro sale con ella.
   if (kind !== 'account' && panelIsActive(kind, value)) setSourceFilter(null);
-  if (kind === 'account' && fAccValue === value) selectAccount('', ACC_ALL_LABEL);
+  if (kind === 'account' && fAccValue === value) selectAccount('', ACC_ALL_LABEL, { focus: false });
   await PANEL_SOURCES[kind].remove(value);
   panelRemoving = false;
   panelAsking = null;
@@ -482,12 +485,15 @@ async function panelSourceAction(kind, value, act) {
 
 // Un clic en un chip (no en la ✕): filtra la lista por esa fuente, o saca
 // el filtro si ya era ese. En una cuenta, la elige en el filtro de Cuenta.
+// Las fuentes se redibujan (cambia cuál está activa): el foco vuelve a la
+// misma, sin mover la página.
 function panelToggleFilter(kind, value) {
   if (kind === 'account') {
-    selectAccount(fAccValue === value ? '' : value, fAccValue === value ? ACC_ALL_LABEL : `@${value}`);
-    return;
+    selectAccount(fAccValue === value ? '' : value, fAccValue === value ? ACC_ALL_LABEL : `@${value}`, { focus: false });
+  } else {
+    setSourceFilter(panelIsActive(kind, value) ? null : { kind: panelFilterKind(kind), term: value });
   }
-  setSourceFilter(panelIsActive(kind, value) ? null : { kind: panelFilterKind(kind), term: value });
+  panelFocusSource(kind, value);
 }
 
 for (const [kind, source] of Object.entries(PANEL_SOURCES)) {
@@ -870,7 +876,7 @@ function panelRender() {
   const from = monitorPeriodStart(now);
   const all = monitoringTable.getData();
   const dataKey = panelDataKey(all, from);
-  const sourcesKey = `${dataKey}|${sourceFilterKey(monitorSourceFilter)}|${panelConfig === undefined ? 'u' : panelConfig === null ? 'n' : 'c'}`;
+  const sourcesKey = `${dataKey}|${sourceFilterKey(monitorSourceFilter)}|${fAccValue}|${panelConfig === undefined ? 'u' : panelConfig === null ? 'n' : 'c'}`;
   if (dataKey !== panelLastData) {
     panelLastData = dataKey;
     const posts = all.filter((post) => postInPeriod(post, from));

@@ -1352,11 +1352,13 @@ function setAccountLabel(label) {
 
 const ACC_ALL_LABEL = HAS_ACC_COMBO ? 'Todas' : 'Cuenta';
 
-function selectAccount(value, label) {
+// "focus": el foco vuelve al combo (al elegir en su panel). Desde
+// "Cuentas seguidas" no: la página saltaba hasta la barra de filtros.
+function selectAccount(value, label, { focus = true } = {}) {
   fAccValue = value;
   setAccountLabel(label);
   closeAccPanel();
-  if (HAS_ACC_COMBO) fAccBtnEl.focus();
+  if (HAS_ACC_COMBO && focus) fAccBtnEl.focus();
   applyFilters();
 }
 
