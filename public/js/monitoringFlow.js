@@ -34,8 +34,12 @@ let flowQueueTimer = null;
 // Hay una corrida en curso: los datos nuevos que lleguen antes de que
 // termine se dibujan al final, para hacer entrar las publicaciones nuevas.
 let flowRunning = false;
-// Las que entraron en vivo en esta visita: dicen "ahora" en lugar de "hace".
-const flowLiveIds = new Set();
+// Las que entraron en vivo en esta visita, con la hora en que entraron:
+// dicen "ahora" el primer minuto y después "hace N", como las demás. Las
+// horas se rehacen solas cada FLOW_TICK_MS, sin esperar un cambio de datos.
+const flowLiveIds = new Map();
+const FLOW_NOW_MS = 60 * 1000;
+const FLOW_TICK_MS = 30 * 1000;
 let flowLastKey = null;
 let flowLastHeight = 0;
 
@@ -101,7 +105,16 @@ function flowThumb(post) {
   return th;
 }
 
+// "hace 0 min" (detectada hace menos de medio minuto) también es "ahora".
+function flowWhenText(id, detectedAt) {
+  const entered = flowLiveIds.get(String(id));
+  if (entered !== undefined && Date.now() - entered < FLOW_NOW_MS) return 'ahora';
+  const ago = feedAgo(detectedAt);
+  return ago === 'hace 0 min' ? 'ahora' : ago;
+}
+
 function flowLine(post, { live = false } = {}) {
+  if (live && !flowLiveIds.has(String(post.id))) flowLiveIds.set(String(post.id), Date.now());
   const el = document.createElement('div');
   el.className = 'fl';
   el.dataset.id = post.id;
@@ -123,8 +136,9 @@ function flowLine(post, { live = false } = {}) {
   tone.appendChild(dot);
 
   const when = document.createElement('span');
-  when.className = live ? 't now' : 't';
-  when.textContent = live ? 'ahora' : feedAgo(post.detected_at);
+  when.textContent = flowWhenText(post.id, post.detected_at);
+  when.className = when.textContent === 'ahora' ? 't now' : 't';
+  when.dataset.detected = post.detected_at || '';
   const { date, time } = formatFullDateTime(post.posted_at);
   when.title = `Publicada el ${time ? `${date} · ${time}` : date}`;
 
@@ -132,8 +146,18 @@ function flowLine(post, { live = false } = {}) {
   const tema = buildTemaTag(post.tema);
   el.appendChild(tema || document.createElement('span'));
   el.append(buildReachMeter(postReach(post)), when);
-  if (live) flowLiveIds.add(String(post.id));
   return el;
+}
+
+// Las horas ("ahora", "hace N min") y el ritmo, al día sin redibujar.
+function flowTick() {
+  if (!flowEl || !monitoringTable || document.hidden) return;
+  for (const when of flowEl.querySelectorAll('.fl .t')) {
+    const text = flowWhenText(when.closest('.fl').dataset.id, when.dataset.detected);
+    if (when.textContent !== text) when.textContent = text;
+    when.classList.toggle('now', text === 'ahora');
+  }
+  flowRenderRate(flowPosts().length);
 }
 
 // Las publicaciones del período, la última detectada primero (a igual
@@ -304,6 +328,8 @@ if (flowEl) {
       else flowRender({ animate: false });
     }).observe(flowEl);
   }
+
+  setInterval(flowTick, FLOW_TICK_MS);
 
   // Los posteos pudieron llegar antes de que se cargara este archivo.
   if (monitoringTable) {
