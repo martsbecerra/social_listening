@@ -300,6 +300,34 @@ describe('stats: bloques', () => {
     ]);
     assert.deepEqual(stats.tramosDeTemas(null), []);
   });
+
+  test('temas: cuántos tuvo cada uno en el período anterior y la publicación destacada', () => {
+    const conRazon = (campos, ratio) => stats.prepararPosteo(
+      { id: String(siguienteId++), account: 'cuenta', likes: 0, comments: 0, sentiment: 'neutral', posted_at: enArgentina('2026-10-01', 12), ...campos },
+      { top: { ratio, level: ratio >= 1.5 ? 'alto' : 'bajo', label: 'comentarios', metric: 'comments' } }
+    );
+    const tramos = [{ desde: '2026-10-01', hasta: '2026-10-01' }];
+    const fuerte = conRazon({ tema: 'Seguridad', title: 'La más fuerte', account: 'diario' }, 3.2);
+    const posts = [
+      conRazon({ tema: 'Seguridad', title: 'Otra' }, 1.2),
+      fuerte,
+      preparar({ tema: 'Seguridad' }), // sin referencia: no compite
+      preparar({ tema: 'Transporte' }),
+    ];
+    const anteriores = [preparar({ tema: 'Seguridad' }), preparar({ tema: 'Salud' })];
+
+    const temas = stats.contarTemas(posts, tramos, anteriores);
+    const seguridad = temas.find((t) => t.tema === 'Seguridad');
+    const transporte = temas.find((t) => t.tema === 'Transporte');
+    assert.equal(seguridad.anterior, 1);
+    assert.equal(transporte.anterior, 0); // con datos antes, pero ninguna de ese tema
+    assert.deepEqual(seguridad.destacada, { id: fuerte.id, titulo: 'La más fuerte', cuenta: 'diario', razon: 3.2, metrica: 'comentarios' });
+    assert.equal(transporte.destacada, null);
+    assert.ok(!temas.some((t) => t.tema === 'Salud'), 'un tema que solo estuvo antes no aparece');
+
+    // Sin período anterior con datos: anterior va en null.
+    assert.ok(stats.contarTemas(posts, tramos, null).every((t) => t.anterior === null));
+  });
 });
 
 describe('stats: la respuesta armada desde la base', { concurrency: false }, () => {
@@ -447,6 +475,12 @@ describe('stats: la respuesta armada desde la base', { concurrency: false }, () 
     const otros = r.temas.find((t) => t.tema === CATEGORIA_FALLBACK);
     assert.deepEqual([otros.negativo, otros.neutral, otros.positivo], [1, 2, 0]);
     assert.deepEqual(otros.porSemana, [1, 0, 0, 1, 0, 0, 1, 0, 0]);
+    assert.ok(r.temas.every((t) => t.anterior === null), 'sin datos antes del 12/3, sin comparación');
+    const seguridad = r.temas.find((t) => t.tema === 'Seguridad');
+    assert.equal(seguridad.destacada.id, ids['2026-03-16 diario 5000']);
+    assert.equal(seguridad.destacada.metrica, 'likes');
+    assert.ok(Math.abs(seguridad.destacada.razon - 7000 / 2100) < 1e-9);
+    assert.equal(r.temas.find((t) => t.tema === 'Transporte').destacada.id, ids['2026-03-16 diario 3500']);
 
     const diario = r.cuentas.find((c) => c.cuenta === 'diario');
     const vecina = r.cuentas.find((c) => c.cuenta === 'vecina');
@@ -503,6 +537,15 @@ describe('stats: la respuesta armada desde la base', { concurrency: false }, () 
     assert.equal(r.resumen.seDespegaronAnterior, 0);
     assert.equal(r.resumen.negativoPctAnterior, 33.3); // 2 de 6
     assert.equal(r.porDia[0].fecha, '2026-03-16');
+    // Del 12 al 15: dos de Transporte, dos de Seguridad y dos sin tema.
+    assert.deepEqual(
+      r.temas.map((t) => [t.tema, t.n, t.anterior]),
+      [
+        ['Seguridad', 5, 2],
+        ['Transporte', 5, 2],
+        [CATEGORIA_FALLBACK, 1, 2],
+      ]
+    );
   });
 
   test('un período anterior con datos pero sin posteos da 0, no null (y los porcentajes, null)', () => {

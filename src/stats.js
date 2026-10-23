@@ -535,9 +535,19 @@ function tramosDeTemas(rango) {
   return tramos;
 }
 
-/** Temas del período con su tono y su evolución por tramo, los más frecuentes primero. */
-function contarTemas(posts, tramos) {
+/**
+ * Temas del período con su tono y su evolución por tramo, los más frecuentes
+ * primero. `anterior`: cuántos tuvo en el período anterior (null si ese
+ * período no tiene datos: la pantalla no pone badge). `destacada`: la
+ * publicación del tema con mayor razón de alcance, para la cita de la
+ * tarjeta (a igual razón, la más nueva); null si ninguna tiene referencia.
+ * @param {object[]} posts los del período, preparados
+ * @param {{desde: string, hasta: string}[]} tramos
+ * @param {object[]|null} [anteriores] los del período anterior (null sin datos)
+ */
+function contarTemas(posts, tramos, anteriores = null) {
   const porTema = new Map();
+  const mejor = new Map();
   for (const post of posts) {
     if (!porTema.has(post.temaNombre)) {
       porTema.set(post.temaNombre, { tema: post.temaNombre, n: 0, negativo: 0, neutral: 0, positivo: 0, porSemana: tramos.map(() => 0) });
@@ -547,6 +557,17 @@ function contarTemas(posts, tramos) {
     t[post.sentimiento]++;
     const i = tramos.findIndex((tr) => post.fecha >= tr.desde && post.fecha <= tr.hasta);
     if (i >= 0) t.porSemana[i]++;
+    const actual = mejor.get(post.temaNombre);
+    if (post.top && (!actual || post.top.ratio > actual.top.ratio || (post.top.ratio === actual.top.ratio && post.ms > actual.ms))) {
+      mejor.set(post.temaNombre, post);
+    }
+  }
+  const antes = new Map();
+  for (const post of anteriores || []) antes.set(post.temaNombre, (antes.get(post.temaNombre) || 0) + 1);
+  for (const t of porTema.values()) {
+    t.anterior = anteriores ? antes.get(t.tema) || 0 : null;
+    const p = mejor.get(t.tema);
+    t.destacada = p ? { id: p.id, titulo: p.title || null, cuenta: p.account || null, razon: p.top.ratio, metrica: p.top.label } : null;
   }
   return [...porTema.values()].sort((a, b) => b.n - a.n || a.tema.localeCompare(b.tema, 'es'));
 }
@@ -694,7 +715,7 @@ function armarEstadisticas({ plataforma, desde, hasta, frases = [], conAlcance =
       descartados: db.countDiscardedSearchesForStats(rangoDelPeriodo),
     }),
     semanas: tramos,
-    temas: contarTemas(actuales, tramos),
+    temas: contarTemas(actuales, tramos, anteriores),
     cuentas: contarCuentas(actuales, db.listFollowersForStats(plataforma)),
     ranking: calcularRanking(actuales),
   };
