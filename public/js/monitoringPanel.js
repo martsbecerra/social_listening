@@ -364,12 +364,14 @@ function panelEmptyNote(text) {
 }
 
 // "Ver las 63 →" / "Ver menos" debajo de una caja que tiene más de las que
-// muestra.
+// muestra. Desplegada, la lista lleva "expanded" (con columnas, se desplaza
+// adentro en lugar de estirar la fila).
 function panelMore(kind, total) {
   const source = PANEL_SOURCES[kind];
   if (!source.moreEl) return;
   const hidden = total <= source.show;
   source.moreEl.classList.toggle('hidden', hidden);
+  source.listEl.classList.toggle('expanded', !hidden && panelExpanded[kind]);
   if (hidden) return;
   const plural = kind === 'hashtag' ? 'los' : 'las';
   source.moreEl.textContent = panelExpanded[kind] ? 'Ver menos' : `Ver ${plural} ${total} →`;

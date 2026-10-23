@@ -2779,6 +2779,20 @@ pre.report a {
   background: var(--surface2);
   color: var(--fg2);
 }
+/* Desplegada ("Ver las 63 →"), con columnas al lado, la lista no estira la
+   fila (y con ella el flujo y la última tarjeta del otro costado): se
+   desplaza adentro. El relleno deja entero el aro del chip o de la cuenta
+   activos; el margen negativo lo compensa. */
+@media (min-width: 761px) {
+  .kw-list.expanded,
+  .accts.expanded {
+    max-height: 320px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 4px 6px;
+    margin-inline: -6px;
+  }
+}
 .kw-more {
   display: block;
   border: 0;
