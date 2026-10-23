@@ -464,7 +464,8 @@ function statsBuildCloud() {
     button.style.left = `${x}px`;
     button.style.top = `${y}px`;
     button.style.fontSize = `${size}px`;
-    button.style.color = `var(--${statsWordTone(word)})`;
+    // La tinta de texto del tono (pasa 4,5:1 en cualquier tamaño).
+    button.style.color = `var(--${statsWordTone(word)}-text)`;
     if (!statsReducedMotion.matches) button.style.transitionDelay = `${buttons.length * 35}ms`;
     const counts = `${statsPlural(word.n, 'publicación', 'publicaciones')} · ${statsPlural(word.positivas, 'positiva', 'positivas')} · ${statsPlural(word.negativas, 'negativa', 'negativas')}`;
     button.dataset.tipTitle = word.palabra;

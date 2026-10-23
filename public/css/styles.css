@@ -39,6 +39,15 @@
   --pos: #1a9c66;
   --neu: #5466b8;
   --neg: #d04a4a;
+  /* Tintas para TEXTO del acento y los tonos (rellenos, barras, puntos e
+     íconos siguen con la base): mismo tono, más oscuras, para pasar 4,5:1
+     sobre --surface y --surface2 (y sobre el centro del degradé de la nube
+     de Estadísticas). La base daba 4,33 / 3,51 / 4,41 / 5,29 sobre
+     --surface y 3,83 / 3,10 / 3,90 / 4,68 sobre --surface2. */
+  --accent-text: #0a6fac; /* 5,41 y 4,79 */
+  --pos-text: #14794f; /* 5,42 y 4,79 */
+  --neg-text: #c63333; /* 5,35 y 4,74 */
+  --neu-text: #5365b8; /* 5,36 y 4,74 */
   --c1: #2a78d6;
   --c2: #eb6834;
   --c3: #6250d6;
@@ -77,6 +86,13 @@
   --pos: #1fae72;
   --neu: #7a8fd1;
   --neg: #e66767;
+  /* En oscuro las cuatro bases ya pasan 4,5:1 sobre --surface y --surface2
+     (la más justa, --neg: 5,36 y 4,80; sobre el centro de la nube, 4,64):
+     la tinta es la misma base, en su propio token para poder ajustarla. */
+  --accent-text: #5cc8ff;
+  --pos-text: #1fae72;
+  --neg-text: #e66767;
+  --neu-text: #7a8fd1;
   --c1: #3987e5;
   --c2: #d95926;
   --c3: #9085e9;
@@ -139,7 +155,7 @@ h3 {
   color: var(--muted);
 }
 a {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 button {
   font: inherit;
@@ -322,10 +338,10 @@ select.field {
   padding-right: 100px;
 }
 .kpi .d b {
-  color: var(--pos);
+  color: var(--pos-text);
 }
 .kpi .d b.neg {
-  color: var(--neg);
+  color: var(--neg-text);
 }
 .kpi .d b.flat {
   color: var(--fg2);
@@ -394,16 +410,16 @@ select.field {
   margin-left: 2px;
 }
 .chip .x:hover {
-  color: var(--neg);
+  color: var(--neg-text);
 }
 .sent-pos {
-  color: var(--pos);
+  color: var(--pos-text);
 }
 .sent-neg {
-  color: var(--neg);
+  color: var(--neg-text);
 }
 .sent-neu {
-  color: var(--neu);
+  color: var(--neu-text);
 }
 .bg-pos {
   background: var(--pos);
@@ -843,7 +859,7 @@ nav.tabs button .soon {
 }
 .user-dropdown .logout-btn:hover {
   border-color: var(--neg);
-  color: var(--neg);
+  color: var(--neg-text);
 }
 /* Botón de tema (public/js/theme.js): luna en claro, sol en oscuro. */
 .theme-btn {
@@ -1080,7 +1096,7 @@ footer.foot {
   text-decoration: none;
 }
 .foot a:hover {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .foot .off {
   color: var(--muted);
@@ -1095,7 +1111,7 @@ footer.foot {
   cursor: pointer;
 }
 .foot .foot-logout:hover {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .foot .about p {
   margin: 8px 0 0;
@@ -1217,14 +1233,14 @@ footer.foot {
   cursor: default;
 }
 .btn-copy {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .btn-clear {
   color: var(--fg2);
 }
 .btn-clear:hover:not(:disabled) {
   border-color: var(--neg);
-  color: var(--neg);
+  color: var(--neg-text);
   box-shadow: 0 0 0 3px color-mix(in oklab, var(--neg) 14%, transparent);
 }
 /* WhatsApp lleva el verde de su marca. */
@@ -1300,7 +1316,7 @@ footer.foot {
 /* ---------- errores ---------- */
 .error {
   margin-top: 14px;
-  color: var(--neg);
+  color: var(--neg-text);
   background: color-mix(in oklab, var(--neg) 9%, var(--surface));
   border: 1px solid color-mix(in oklab, var(--neg) 32%, var(--line));
   border-radius: 10px;
@@ -1470,7 +1486,7 @@ footer.foot {
   background: var(--neg);
 }
 .run-progress-list li.err .d {
-  color: var(--neg);
+  color: var(--neg-text);
 }
 .run-progress-list li.run .i {
   background: var(--accent);
@@ -1552,13 +1568,13 @@ footer.foot {
   font: 500 10px/1 var(--mono);
 }
 .chip button:hover {
-  color: var(--neg);
+  color: var(--neg-text);
   background: color-mix(in oklab, var(--neg) 12%, transparent);
 }
 .chip-more {
   border: 1px dashed var(--line2);
   background: transparent;
-  color: var(--accent);
+  color: var(--accent-text);
   border-radius: 999px;
   padding: 5px 10px;
   font-size: 12.5px;
@@ -1689,7 +1705,7 @@ pre.report {
   color: var(--fg);
 }
 pre.report a {
-  color: var(--accent);
+  color: var(--accent-text);
   text-underline-offset: 2px;
   overflow-wrap: anywhere;
   word-break: break-word;
@@ -2053,7 +2069,7 @@ pre.report a {
 }
 .acc-select-option.sel {
   background: var(--surface2);
-  color: var(--accent);
+  color: var(--accent-text);
   font-weight: 600;
 }
 .f-count {
@@ -2069,7 +2085,7 @@ pre.report a {
 .f-clear {
   border: 0;
   background: transparent;
-  color: var(--accent);
+  color: var(--accent-text);
   font: 500 12.5px/1 var(--body);
   padding: 4px 2px;
   cursor: pointer;
@@ -2120,7 +2136,7 @@ pre.report a {
   text-decoration: none;
 }
 .c-acc:hover {
-  color: var(--accent);
+  color: var(--accent-text);
   text-decoration: underline;
   text-underline-offset: 3px;
 }
@@ -2210,7 +2226,7 @@ pre.report a {
 /* Niveles: alto en el color de acento (mucha interacción, no es "malo"),
    medio en ámbar, bajo atenuado. */
 .bn.alto strong {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .bn.normal strong {
   color: var(--warn-ink);
@@ -2242,7 +2258,7 @@ pre.report a {
 }
 .dt-links a:hover {
   border-color: var(--accent);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .dt-meta {
   margin-top: 10px;
@@ -2271,7 +2287,7 @@ pre.report a {
 .badge-yes,
 .badge-positivo {
   background: color-mix(in oklab, var(--pos) 14%, transparent);
-  color: var(--pos);
+  color: var(--pos-text);
 }
 .badge-no {
   background: var(--surface2);
@@ -2283,7 +2299,7 @@ pre.report a {
 }
 .badge-negativo {
   background: color-mix(in oklab, var(--neg) 14%, transparent);
-  color: var(--neg);
+  color: var(--neg-text);
 }
 /* Selector de sentimiento: pastilla del color del tono + una marca de forma
    (círculo, raya, triángulo), para que se lea sin color. La forma va como
@@ -2313,7 +2329,7 @@ pre.report a {
 }
 .sentiment-select.sentiment-positivo {
   background-color: color-mix(in oklab, var(--pos) 15%, var(--surface));
-  color: var(--pos);
+  color: var(--pos-text);
   border-color: color-mix(in oklab, var(--pos) 30%, transparent);
   background-image:
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath fill='%231a9c66' d='M1 1l5 5 5-5'/%3E%3C/svg%3E"),
@@ -2329,7 +2345,7 @@ pre.report a {
 }
 .sentiment-select.sentiment-negativo {
   background-color: color-mix(in oklab, var(--neg) 14%, var(--surface));
-  color: var(--neg);
+  color: var(--neg-text);
   border-color: color-mix(in oklab, var(--neg) 30%, transparent);
   background-image:
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath fill='%23d04a4a' d='M1 1l5 5 5-5'/%3E%3C/svg%3E"),
@@ -2418,7 +2434,7 @@ pre.report a {
 .tabulator .tabulator-col[aria-sort="desc"] .tabulator-col-title,
 .tabulator .tabulator-col[aria-sort="ascending"] .tabulator-col-title,
 .tabulator .tabulator-col[aria-sort="descending"] .tabulator-col-title {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .tabulator .tabulator-header .tabulator-col-sorter {
   width: auto;
@@ -2563,7 +2579,7 @@ pre.report a {
   height: 12px;
 }
 .reach.alto {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .reach.alto .bars i {
   background: var(--accent);
@@ -2660,7 +2676,7 @@ pre.report a {
   border: 1px solid var(--line2);
   border-radius: 8px;
   background: var(--surface2);
-  color: var(--accent);
+  color: var(--accent-text);
   font-weight: 600;
   line-height: 1;
   cursor: pointer;
@@ -2801,7 +2817,7 @@ pre.report a {
   display: block;
   border: 0;
   background: transparent;
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 12px;
   cursor: pointer;
   padding: 4px 0;
@@ -2863,7 +2879,7 @@ pre.report a {
   cursor: pointer;
 }
 .acct .x:hover {
-  color: var(--neg);
+  color: var(--neg-text);
   background: var(--surface2);
 }
 /* La cuenta que está filtrando la lista, como el chip activo (el margen
@@ -3011,7 +3027,7 @@ pre.report a {
   white-space: nowrap;
 }
 .fl .t.now {
-  color: var(--accent);
+  color: var(--accent-text);
   font-weight: 500;
 }
 @media (max-width: 700px) {
@@ -3370,7 +3386,7 @@ pre.report a {
   background: var(--surface2);
 }
 .combo-list button.on .nm {
-  color: var(--accent);
+  color: var(--accent-text);
   font-weight: 600;
 }
 .combo-list .av {
@@ -3437,7 +3453,7 @@ pre.report a {
   cursor: pointer;
 }
 .f-source button:hover {
-  color: var(--neg);
+  color: var(--neg-text);
 }
 .fstatus .f-clear {
   margin-left: auto;
@@ -3458,7 +3474,7 @@ pre.report a {
   border: 0;
   padding: 0;
   background: transparent;
-  color: var(--accent);
+  color: var(--accent-text);
   font: inherit;
   cursor: pointer;
   text-decoration: underline;
@@ -3604,6 +3620,11 @@ pre.report a {
 .cloud button:focus-visible {
   filter: brightness(1.3) drop-shadow(0 0 10px currentColor);
   z-index: 2;
+}
+/* En claro, aclarar la palabra le bajaba el contraste: se oscurece. */
+:root:not([data-theme="dark"]) .cloud button:hover,
+:root:not([data-theme="dark"]) .cloud button:focus-visible {
+  filter: brightness(0.85) drop-shadow(0 0 8px currentColor);
 }
 .cloud button:focus-visible {
   outline: 2px solid var(--accent);
@@ -3950,7 +3971,7 @@ svg.line {
 }
 .rk .rz {
   font: 600 14px/1 var(--mono);
-  color: var(--accent);
+  color: var(--accent-text);
   text-align: right;
 }
 .rk .rz small {
@@ -3974,7 +3995,7 @@ svg.line {
   color: var(--muted);
 }
 .seg button.range:hover i {
-  color: var(--neg);
+  color: var(--neg-text);
 }
 
 /* Entre 981 y 1200 px, cinco KPI en fila dejan el detalle en 50 px y pisan
@@ -4276,7 +4297,7 @@ svg.line {
 }
 .feed-more .l {
   font-weight: 600;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .feed-more small {
   font: 400 11px/1 var(--mono);
@@ -4358,7 +4379,7 @@ svg.line {
   color: var(--muted);
 }
 .feed-x.up {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 /* Pie en dos renglones: el motivo y "Abrir ↗"; debajo, el selector de tono y
    el medidor de alcance. */
@@ -4677,7 +4698,7 @@ html.feed-pop-lock body {
 }
 .chip-r.alto {
   background: color-mix(in oklab, var(--accent) 14%, transparent);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .chip-r.medio {
   background: color-mix(in oklab, var(--c5) 16%, transparent);
@@ -4752,7 +4773,7 @@ html.feed-pop-lock body {
   color: var(--muted);
 }
 .feed-pop-mbox .x.up {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .feed-pop-mbox small {
   font-size: 11px;
@@ -4769,7 +4790,7 @@ html.feed-pop-lock body {
   padding: 2px 6px;
   border-radius: 5px;
   background: color-mix(in oklab, var(--accent) 14%, transparent);
-  color: var(--accent);
+  color: var(--accent-text);
   font: 500 10px/1.2 var(--mono);
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -4791,7 +4812,7 @@ html.feed-pop-lock body {
   overflow-wrap: anywhere;
 }
 .feed-pop-dl dd a {
-  color: var(--accent);
+  color: var(--accent-text);
   text-underline-offset: 3px;
 }
 .feed-pop-foot {
@@ -4848,7 +4869,7 @@ html.feed-pop-lock body {
 .feed-pop-btn.danger {
   border-color: transparent;
   background: transparent;
-  color: var(--neg);
+  color: var(--neg-text);
 }
 .feed-pop-btn.danger:hover:not(:disabled) {
   border-color: var(--neg);
@@ -4866,7 +4887,7 @@ html.feed-pop-lock body {
 }
 .feed-pop-error {
   font-size: 12.5px;
-  color: var(--neg);
+  color: var(--neg-text);
 }
 .feed-pop-confirm {
   display: flex;
@@ -4970,7 +4991,7 @@ html.feed-pop-lock body {
   color: var(--muted);
 }
 .leaflet-control-attribution a {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 /* Por encima de la tarjeta del mapa: las dos llevan .rv y la animación
    (transform) le da a cada una su propia capa; sin esto, los desplegables de
@@ -5311,7 +5332,7 @@ html.feed-pop-lock body {
   color: var(--fg2);
 }
 .claims-popup a {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .claims-popup-desglose {
   display: flex;
@@ -5572,7 +5593,7 @@ body.login-page {
   line-height: 1.4;
 }
 .login-status.is-error {
-  color: var(--neg);
+  color: var(--neg-text);
 }
 /* Cuenta regresiva del reenvío: informativa y apagada. */
 .login-cooldown {
