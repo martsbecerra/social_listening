@@ -332,8 +332,16 @@ feedPopPhotoEl.addEventListener(
 // -------------------------------------------------------------------------
 // Anterior y siguiente, sobre la lista con la que se abrió.
 // -------------------------------------------------------------------------
-function feedPopRowOf(id) {
-  return (id !== null && id !== undefined && monitoringTable && monitoringTable.getRow(id)) || null;
+// Los ids que siguen en la tabla. getRow de Tabulator deja un aviso en la
+// consola si el id ya no está (un posteo recién ignorado): se pregunta acá
+// antes. Quien recorre una lista entera arma el conjunto una sola vez.
+function feedPopTableIds() {
+  return new Set(monitoringTable ? monitoringTable.getData().map((post) => String(post.id)) : []);
+}
+
+function feedPopRowOf(id, ids = feedPopTableIds()) {
+  if (id === null || id === undefined || !monitoringTable || !ids.has(String(id))) return null;
+  return monitoringTable.getRow(id) || null;
 }
 
 // La fila de Tabulator del posteo que se está mostrando.
@@ -381,8 +389,9 @@ function showFeedPopAt(index) {
 
 // Al de antes (-1) o al de después (1); si alguno ya no está, se lo saltea.
 function stepFeedPop(step) {
+  const ids = feedPopTableIds();
   for (let i = feedPopIndex + step; i >= 0 && i < feedPopList.length; i += step) {
-    if (!feedPopRowOf(feedPopList[i])) continue;
+    if (!feedPopRowOf(feedPopList[i], ids)) continue;
     showFeedPopAt(i);
     feedPopBoxEl.classList.remove('swap');
     void feedPopBoxEl.offsetWidth; // reinicia la animación del cambio
@@ -698,7 +707,8 @@ monitoringViewListeners.push((change) => {
     return false;
   }
   const current = feedPopId;
-  feedPopList = feedPopList.filter((id) => id === current || feedPopRowOf(id));
+  const ids = feedPopTableIds();
+  feedPopList = feedPopList.filter((id) => id === current || ids.has(String(id)));
   feedPopIndex = feedPopList.indexOf(current);
   updateFeedPopPosition();
   return false;
