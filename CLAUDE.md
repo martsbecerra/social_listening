@@ -629,12 +629,12 @@ en el tag `v3-riel-radar`. SDD de la fase A en
     cerrarlo o al volver).
   - **Sin con qué comparar**: si el período anterior no tiene datos todos
     sus días (`statsHasPrevious`: la base arranca a mitad de ese período),
-    la pantalla no compara: KPI "sin datos del período anterior", temas sin
-    badge ni variación, y el aviso "El período anterior tiene datos de N de
+    la pantalla no compara: KPI "sin datos del período anterior" (Negativo y
+    Positivo, sin el "antes N %"), temas sin badge ni variación, y el aviso "El período anterior tiene datos de N de
     sus M días: no se compara." (comparar el período entero con unos pocos
     días daba "+919 %" y todos los temas en "Pico"). Un período entero
-    antes de la primera publicación (`diasEfectivos` 0) muestra "—", "Sin
-    datos de esas fechas." y "No hay datos de esas fechas: las publicaciones
+    antes de la primera publicación (`diasEfectivos` 0) muestra "—" (también
+    en el centro de la dona), "Sin datos de esas fechas." y "No hay datos de esas fechas: las publicaciones
     guardadas empiezan el 29/7." (`periodo.primerDia`). El aviso sale de los
     datos a la vista (`statsPeriodNoteText`), también al volver a la solapa.
   - **Bloques**: cinco KPI (`kpi.js`; "sin datos" si el anterior no tiene);
@@ -655,14 +655,18 @@ en el tag `v3-riel-radar`. SDD de la fase A en
     (`monitoring.js`): el Monitoreo con este período como rango y la
     palabra (por sus `ids`; con "Positivos reales", además Tono positivo) o
     el tema, los demás filtros en blanco, y baja a la lista, que muestra el
-    mismo número que la tarjeta; el foco pasa a la ✕ de la pastilla o al
-    filtro Tema. La ✕ del rango (`leaveMonitorRange`) lo deja en el botón
+    mismo número que la tarjeta; el foco pasa al título de la lista
+    (`focusMonitoringList`, `#pubsTitle` con tabindex -1: no a un control,
+    así una tecla no saca el filtro ni cambia el tema), igual que al sacar
+    la pastilla de la fuente o al aplicar una alerta. La ✕ del rango (`leaveMonitorRange`) lo deja en el botón
     del período que queda prendido, y una alerta del Monitoreo saca el rango
     (va a Hoy). Con un rango cuyo anterior arranca antes del primer posteo
     cargado, el KPI del Monitoreo dice "sin datos del período anterior",
     como Estadísticas. El ranking abre el pop-up (`openFeedPopList`)
     recorriendo esos 6, con la foto y el tema de la fila de la tabla; si se
-    rehace con el foco en una fila, el foco pasa a la misma fila nueva.
+    rehace con el foco en una fila, el foco pasa a la misma fila nueva (sin
+    filas, al título de la tarjeta). Desde → Hasta no acepta un "Hasta"
+    posterior a hoy.
 - **Mapa**: mosaicos de OpenStreetMap claros también en oscuro; controles,
   leyenda, popups y tooltips de Leaflet con los tokens. Los colores de
   categoría (`--cat-1` … `--cat-12`) salen de la paleta de la maqueta, en su
@@ -699,7 +703,8 @@ hay que tratarlo así. `monitoring.js` avisa los cambios con
 `notifyMonitoringViews(change)` (sin argumento = redibujar;
 `{ ignoredId }`; `{ goToId }`, que quedó como respaldo de X; `{ config }`;
 `{ run }`, para la barra superior, el panel y el flujo; Estadísticas
-escucha todos para saber si sus datos quedaron viejos). El alcance de la
+escucha los demás —todos salvo `{ config }` y `{ run: 'start' }`— para
+saber si sus datos quedaron viejos). El alcance de la
 tarjeta y del filtro "Alcance" es `postReach`: combina los niveles que ya
 manda el backend en `benchmark.likes` y `benchmark.comments` (vale el
 mejor de los dos; "normal" se muestra "medio"; sin ninguna métrica con

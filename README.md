@@ -1110,7 +1110,8 @@ en el tag `v3-riel-radar`.
   - **De qué se habla**: los 9 temas con más publicaciones, con su badge
     (Pico, En alza, Nuevo, Baja o Estable contra el período anterior), su
     tono, su evolución y la publicación de mayor alcance.
-  - **Cuándo se habla** (día y hora), el **tono neto por semana**, **quién
+  - **Cuándo se habla** (día y hora), el **tono neto** por día (hasta 14
+    días) o por semana, **quién
     habla de nosotros** (por impacto, publicaciones o seguidores) y **las 6
     que más se despegaron** (solo las de alcance alto), que abren el pop-up
     del posteo.
