@@ -213,9 +213,9 @@ describe('stats: bloques', () => {
     ];
     const palabras = stats.contarPalabras(posts, ['Jorge Macri', '#JorgeMacri', 'gobierno de la ciudad']);
     assert.deepEqual(palabras.slice(0, 3), [
-      { palabra: 'Jorge Macri', n: 2 },
-      { palabra: 'plaza', n: 2 },
-      { palabra: 'vecinos', n: 2 },
+      { palabra: 'Jorge Macri', n: 2, positivas: 0, negativas: 0 },
+      { palabra: 'plaza', n: 2, positivas: 0, negativas: 0 },
+      { palabra: 'vecinos', n: 2, positivas: 0, negativas: 0 },
     ]);
     const mostradas = palabras.map((p) => p.palabra.toLowerCase());
     assert.ok(mostradas.includes('#jorgemacri'), 'un hashtag de la lista cuenta');
@@ -223,6 +223,16 @@ describe('stats: bloques', () => {
       assert.ok(!mostradas.includes(fuera), `no cuenta "${fuera}"`);
     }
     assert.ok(mostradas.includes('obras'));
+  });
+
+  test('palabras: cuántos de los posteos que la usan son positivos y negativos (una vez por posteo)', () => {
+    const posts = [
+      preparar({ caption: 'Subte nuevo, subte rápido', sentiment: 'positivo' }), // "subte" dos veces: un posteo
+      preparar({ caption: 'Otra vez el subte parado', sentiment: 'negativo' }),
+      preparar({ caption: 'El subte de siempre', sentiment: null }), // sin tono: neutral
+    ];
+    const subte = stats.contarPalabras(posts).find((p) => p.palabra.toLowerCase() === 'subte');
+    assert.deepEqual(subte, { palabra: subte.palabra, n: 3, positivas: 1, negativas: 1 });
   });
 
   test('palabras: a lo sumo 60', () => {
@@ -513,9 +523,9 @@ describe('stats: la respuesta armada desde la base', { concurrency: false }, () 
     // "Jorge Macri", "operativo" y "plaza" están en 4 posteos cada una: a igual
     // cantidad, en orden alfabético.
     assert.deepEqual(r.palabras.slice(0, 3), [
-      { palabra: 'Jorge Macri', n: 4 },
-      { palabra: 'operativo', n: 4 },
-      { palabra: 'plaza', n: 4 },
+      { palabra: 'Jorge Macri', n: 4, positivas: 1, negativas: 2 },
+      { palabra: 'operativo', n: 4, positivas: 0, negativas: 3 },
+      { palabra: 'plaza', n: 4, positivas: 0, negativas: 3 },
     ]);
     assert.ok(r.palabras.some((p) => p.palabra === 'gobierno de la ciudad' && p.n === 1));
 

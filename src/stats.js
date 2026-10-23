@@ -415,10 +415,13 @@ function cantidadDeLetras(texto) {
  * o más que no sean palabras vacías (src/stopwords.js). Hashtags,
  * menciones (@usuario), links y números no cuentan, salvo que estén en la
  * lista. Se compara sin tildes ni mayúsculas y se muestra la forma más usada.
+ * `positivas` y `negativas`: cuántos de esos posteos son de cada tono (el
+ * modo "Positivos reales" de la nube y su color, el tono que predomina).
  */
 function contarPalabras(posts, frases = []) {
   const indiceFrases = prepararFrases(frases);
   const posteosPorClave = new Map();
+  const tonoPorClave = new Map();
   const formasPorClave = new Map();
 
   const anotarForma = (clave, forma) => {
@@ -446,7 +449,13 @@ function contarPalabras(posts, frases = []) {
       enEstePosteo.add(clave);
       anotarForma(clave, original);
     }
-    for (const clave of enEstePosteo) posteosPorClave.set(clave, (posteosPorClave.get(clave) || 0) + 1);
+    for (const clave of enEstePosteo) {
+      posteosPorClave.set(clave, (posteosPorClave.get(clave) || 0) + 1);
+      if (!tonoPorClave.has(clave)) tonoPorClave.set(clave, { positivas: 0, negativas: 0 });
+      const tono = tonoPorClave.get(clave);
+      if (post.sentimiento === 'positivo') tono.positivas++;
+      if (post.sentimiento === 'negativo') tono.negativas++;
+    }
   }
 
   const formaMasUsada = (clave) => {
@@ -464,7 +473,7 @@ function contarPalabras(posts, frases = []) {
   return [...posteosPorClave]
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'es'))
     .slice(0, PALABRAS_MAX)
-    .map(([clave, n]) => ({ palabra: formaMasUsada(clave), n }));
+    .map(([clave, n]) => ({ palabra: formaMasUsada(clave), n, ...tonoPorClave.get(clave) }));
 }
 
 /**
