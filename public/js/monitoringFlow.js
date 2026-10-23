@@ -176,6 +176,8 @@ function flowRenderRate(count) {
 }
 
 // Dibuja el flujo entero (sin las de "skip", que van a entrar de a una).
+// Las que siguen en la cola tampoco: si no, al salir el mouse entrarían de
+// nuevo y quedarían repetidas.
 function flowRender({ animate = true, skip = null } = {}) {
   if (!flowEl || !monitoringTable) return;
   const height = flowEl.clientHeight;
@@ -183,6 +185,10 @@ function flowRender({ animate = true, skip = null } = {}) {
   const posts = flowPosts();
   flowRenderRate(posts.length);
   if (!height) return; // solapa oculta: se dibuja al verse (ResizeObserver)
+  if (flowQueue.length) {
+    skip = new Set(skip || []);
+    for (const post of flowQueue) skip.add(String(post.id));
+  }
   const shown = skip ? posts.filter((post) => !skip.has(String(post.id))) : posts;
   if (!shown.length && !(skip && skip.size)) {
     const empty = document.createElement('div');
