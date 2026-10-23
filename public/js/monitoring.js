@@ -1277,7 +1277,9 @@ function postMatchesFilters(data, filters) {
 
 // La placa de "no hay nada" de la tabla (placeholder de Tabulator): el
 // mismo texto que la del feed (buildEmptyListLine), al día con el período y
-// los filtros.
+// los filtros. Se llena por primera vez antes de crear la tabla: Tabulator
+// mide el placeholder al armarse y, vacío, el texto que entraba después
+// quedaba cortado.
 const tablePlaceholderEl = document.createElement('div');
 tablePlaceholderEl.className = 'tbl-empty';
 
@@ -1740,6 +1742,7 @@ function ensureMonitoringTable(posts) {
     return;
   }
 
+  tablePlaceholderEl.replaceChildren(buildEmptyListLine());
   monitoringTable = new Tabulator('#monitoringTable', {
     data: posts,
     index: 'id',
