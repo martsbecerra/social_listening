@@ -3815,7 +3815,10 @@ pre.report a {
 
 /* ---------- pop-up del posteo (public/js/monitoringFeedPopup.js) ----------
    Un <dialog> abierto con showModal(): el elemento es el fondo y la ventana
-   es .feed-pop-box, con la foto entera sobre negro a la izquierda. */
+   es .feed-pop-box (el .pop .dlg de la maqueta): alto fijo, la foto entera
+   sobre negro ocupando todo el alto a la izquierda; a la derecha la
+   cabecera, el texto (lo único que se desplaza, con un degradé abajo cuando
+   sigue) y el pie fijo con las acciones. */
 html.feed-pop-lock {
   overflow: hidden;
 }
@@ -3833,7 +3836,7 @@ html.feed-pop-lock body {
   max-width: none;
   max-height: none;
   margin: 0;
-  padding: 24px;
+  padding: 20px;
   border: 0;
   overflow: hidden;
   background: rgba(10, 14, 30, 0.55);
@@ -3854,10 +3857,10 @@ html.feed-pop-lock body {
   --s: var(--line2);
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 440px;
-  width: min(1100px, 100%);
-  height: min(720px, calc(100vh - 48px));
-  height: min(720px, calc(100dvh - 48px));
+  grid-template-columns: minmax(0, 1.3fr) minmax(360px, 1fr);
+  width: min(980px, 100%);
+  height: min(720px, 92vh);
+  height: min(720px, 92dvh);
   overflow: hidden;
   background: var(--surface);
   border: 1px solid var(--line);
@@ -3865,6 +3868,10 @@ html.feed-pop-lock body {
   border-radius: 18px;
   box-shadow: 0 40px 80px -30px rgba(0, 0, 0, 0.6);
   animation: rise 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+/* Al pasar al anterior o al siguiente. */
+.feed-pop-box.swap {
+  animation: rise 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 .feed-pop-box[data-s="positivo"] {
   --s: var(--pos);
@@ -3893,6 +3900,7 @@ html.feed-pop-lock body {
   color: #fff;
   font-size: 30px;
   line-height: 1;
+  cursor: pointer;
   transform: translateY(-50%);
   transition:
     background 0.2s,
@@ -3904,10 +3912,10 @@ html.feed-pop-lock body {
   transform: translateY(-50%) scale(1.06);
 }
 .feed-pop-nav.prev {
-  left: max(12px, calc(50% - 550px - 70px));
+  left: max(12px, calc(50% - 490px - 70px));
 }
 .feed-pop-nav.next {
-  right: max(12px, calc(50% - 550px - 70px));
+  right: max(12px, calc(50% - 490px - 70px));
 }
 .feed-pop-nav:disabled,
 .feed-pop-icon:disabled {
@@ -3991,6 +3999,7 @@ html.feed-pop-lock body {
   color: var(--muted);
   font-size: 15px;
   line-height: 1;
+  cursor: pointer;
 }
 .feed-pop-icon:hover:not(:disabled) {
   color: var(--fg);
@@ -4006,110 +4015,159 @@ html.feed-pop-lock body {
   color: var(--muted);
   white-space: nowrap;
 }
+/* El texto, lo único que se desplaza. Abajo, un degradé si queda texto
+   por leer (.more, monitoringFeedPopup.js). */
+.feed-pop-scrollwrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.feed-pop-scrollwrap::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 8px;
+  bottom: 0;
+  height: 34px;
+  background: linear-gradient(to bottom, transparent, var(--surface));
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.feed-pop-scrollwrap.more::after {
+  opacity: 1;
+}
 .feed-pop-scroll {
   flex: 1;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
   overflow: auto;
   overscroll-behavior: contain;
   padding: 14px 18px 22px;
   scrollbar-width: thin;
   scrollbar-color: var(--line2) transparent;
 }
+.feed-pop-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.feed-pop-scroll::-webkit-scrollbar-thumb {
+  background: var(--line2);
+  border-radius: 3px;
+}
 .feed-pop-chips {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 6px;
-  margin-bottom: 12px;
 }
-.feed-pop-chip {
+/* Alcance (la etiqueta de la tarjeta) y tipo. El tema es .tema. */
+.chip-r {
   padding: 6px 9px;
   border-radius: 7px;
   background: var(--surface2);
   color: var(--fg2);
   font: 500 11.5px/1 var(--mono);
 }
-.feed-pop-chip.reach.alto {
+.chip-r.alto {
   background: color-mix(in oklab, var(--accent) 14%, transparent);
   color: var(--accent);
 }
-.feed-pop-chip.reach.medio {
+.chip-r.medio {
   background: color-mix(in oklab, var(--c5) 16%, transparent);
   color: var(--warn-ink);
 }
-.feed-pop-chip.reach.sinref {
+.chip-r.sinref {
   color: var(--muted);
 }
-.feed-pop-chip.type {
-  font-size: 10.5px;
+.chip-t {
+  padding: 6px 8px;
+  border-radius: 7px;
+  background: var(--surface2);
+  color: var(--fg2);
+  font: 500 10.5px/1 var(--mono);
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 .feed-pop-title {
-  margin: 0 0 10px;
+  margin: 0;
   font: 600 21px/1.25 var(--display);
   color: var(--fg);
   overflow-wrap: anywhere;
 }
 .feed-pop-cap {
-  margin: 0 0 16px;
+  margin: 0;
   color: var(--fg2);
   font-size: 14px;
   line-height: 1.55;
   white-space: pre-line;
   overflow-wrap: anywhere;
 }
-.feed-pop-mt {
-  margin-bottom: 14px;
-  padding: 4px 12px;
+/* Likes y comentarios, cada uno en su recuadro, contra lo habitual de la
+   cuenta (su mediana). */
+.feed-pop-mets {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.feed-pop-mbox {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px 12px;
   border-radius: 10px;
   background: var(--surface2);
 }
-.feed-pop-mt-row {
-  display: grid;
-  grid-template-columns: 1fr auto auto;
-  align-items: baseline;
-  gap: 4px 12px;
-  padding: 8px 0;
+.feed-pop-mbox.hit {
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 45%, transparent);
 }
-.feed-pop-mt-row + .feed-pop-mt-row {
-  border-top: 1px solid var(--line);
+.feed-pop-mbox b {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font: 600 20px/1.1 var(--display);
+  font-variant-numeric: tabular-nums;
 }
-.feed-pop-mt-row .k {
-  color: var(--fg2);
-  font-weight: 500;
+.feed-pop-mbox b svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
 }
-.feed-pop-mt-row .v {
-  font: 600 17px/1.1 var(--display);
-  text-align: right;
+.feed-pop-mbox.likes b svg {
+  color: var(--neg);
 }
-.feed-pop-mt-row .x {
-  min-width: 46px;
-  font: 500 12px/1 var(--mono);
-  color: var(--muted);
-  text-align: right;
-}
-.feed-pop-mt-row .x.up {
+.feed-pop-mbox.comments b svg {
   color: var(--accent);
 }
-.feed-pop-mt-row .sub {
-  grid-column: 1 / -1;
-  margin-top: -2px;
-  font-size: 11.5px;
+.feed-pop-mbox .x {
+  margin-left: auto;
+  font: 500 12px/1 var(--mono);
+  color: var(--muted);
+}
+.feed-pop-mbox .x.up {
+  color: var(--accent);
+}
+.feed-pop-mbox small {
+  font-size: 11px;
   color: var(--muted);
 }
 .feed-pop-mt-date {
-  margin: -8px 0 14px;
+  margin: -4px 0 0;
   padding: 0 2px;
   font: 400 11px/1.3 var(--mono);
   color: var(--muted);
 }
 .feed-pop-hit {
-  margin-left: 4px;
+  align-self: flex-start;
   padding: 2px 6px;
   border-radius: 5px;
   background: color-mix(in oklab, var(--accent) 14%, transparent);
   color: var(--accent);
-  font: 500 10px/1 var(--mono);
+  font: 500 10px/1.2 var(--mono);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   white-space: nowrap;
@@ -4132,13 +4190,6 @@ html.feed-pop-lock body {
 .feed-pop-dl dd a {
   color: var(--accent);
   text-underline-offset: 3px;
-}
-.feed-pop-dl code {
-  font-family: var(--mono);
-  background: var(--surface2);
-  padding: 1px 5px;
-  border-radius: 4px;
-  color: var(--fg2);
 }
 .feed-pop-foot {
   position: relative;
@@ -4173,8 +4224,15 @@ html.feed-pop-lock body {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 16%, transparent);
 }
-.feed-pop-btn.primary {
+/* "Analizar comentarios" y "Abrir en Instagram", juntas a la derecha. */
+.feed-pop-acts {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
   margin-left: auto;
+}
+.feed-pop-btn.primary {
   border-color: var(--fg);
   background: var(--fg);
   color: var(--bg);
@@ -4185,6 +4243,8 @@ html.feed-pop-lock body {
   color: var(--accent-ink);
 }
 .feed-pop-btn.danger {
+  border-color: transparent;
+  background: transparent;
   color: var(--neg);
 }
 .feed-pop-btn.danger:hover:not(:disabled) {
@@ -4219,7 +4279,9 @@ html.feed-pop-lock body {
   font-size: 13px;
   color: var(--fg2);
 }
-@media (max-width: 1240px) {
+/* Donde las flechas de los costados no entran, van las chicas de la
+   cabecera. */
+@media (max-width: 1120px) {
   .feed-pop-nav {
     display: none;
   }
@@ -4250,10 +4312,18 @@ html.feed-pop-lock body {
   .feed-pop-dl {
     grid-template-columns: 92px 1fr;
   }
-  .feed-pop-btn.primary {
+  .feed-pop-acts {
     flex: 1 0 100%;
     margin-left: 0;
+  }
+  .feed-pop-acts .feed-pop-btn {
+    flex: 1;
     justify-content: center;
+  }
+}
+@media (max-width: 420px) {
+  .feed-pop-mets {
+    grid-template-columns: 1fr;
   }
 }
 

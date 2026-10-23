@@ -435,8 +435,10 @@
   </div>
 
   <!-- Pop-up del posteo (public/js/monitoringFeedPopup.js, solo en
-       Instagram): el posteo completo, con la foto a la izquierda. El
-       <dialog> es el fondo oscuro; la ventana es .feed-pop-box. -->
+       Instagram): el posteo completo, con la foto a la izquierda, y ← → por
+       la lista desde la que se abrió (el feed, el flujo o "Se
+       despegaron"). El <dialog> es el fondo oscuro; la ventana es
+       .feed-pop-box. Solo el texto se desplaza; el pie queda fijo. -->
   <dialog id="feedPop" class="feed-pop" aria-labelledby="feedPopTitle">
     <button type="button" class="feed-pop-nav prev" id="feedPopPrev" aria-label="Posteo anterior">‹</button>
     <div class="feed-pop-box" id="feedPopBox">
@@ -450,7 +452,9 @@
           <button type="button" class="feed-pop-icon step" id="feedPopNextSmall" aria-label="Posteo siguiente">›</button>
           <button type="button" class="feed-pop-icon" id="feedPopClose" aria-label="Cerrar">✕</button>
         </div>
-        <div class="feed-pop-scroll" id="feedPopScroll"></div>
+        <div class="feed-pop-scrollwrap" id="feedPopScrollWrap">
+          <div class="feed-pop-scroll" id="feedPopScroll"></div>
+        </div>
         <div class="feed-pop-foot" id="feedPopFoot"></div>
       </div>
     </div>

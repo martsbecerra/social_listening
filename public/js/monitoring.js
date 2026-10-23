@@ -867,7 +867,6 @@ function highlightSetSentiment(strip, select) {
 // el posteo, queda lo de antes: ir a su fila.
 function openHighlight(id, strip) {
   if (typeof openFeedPopList === 'function' && openFeedPopList(highlightIds, id, strip)) return;
-  if (typeof openFeedPopSolo === 'function' && openFeedPopSolo(id)) return;
   highlightGoToRow(id);
 }
 

@@ -245,8 +245,7 @@ function flowKey() {
 // Abre el pop-up sobre la lista del flujo, en el orden en que se ve.
 function flowOpen(line) {
   const ids = [...flowEl.querySelectorAll('.fl:not(.out)')].map((el) => el.dataset.id);
-  if (typeof openFeedPopList === 'function') openFeedPopList(ids, line.dataset.id, line);
-  else openFeedPopSolo(line.dataset.id);
+  openFeedPopList(ids, line.dataset.id, line);
 }
 
 if (flowEl) {

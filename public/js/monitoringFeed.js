@@ -315,20 +315,6 @@ function feedSorter(order, reachById) {
 }
 
 // -------------------------------------------------------------------------
-// Aviso de que cambia la lista de tarjetas. El pop-up del posteo
-// (monitoringFeedPopup.js, que se carga después) se anota acá para no quedar
-// mostrando un posteo que ya no está. "change" dice qué pasó:
-//   (nada)         la lista ya cambió: se redibujó entera o salió una tarjeta.
-//   { removing }   esa tarjeta está por salir (se ignoró su posteo) y todavía
-//                  ocupa su lugar.
-// -------------------------------------------------------------------------
-const feedListListeners = [];
-
-function notifyFeedList(change) {
-  for (const listener of feedListListeners) listener(change);
-}
-
-// -------------------------------------------------------------------------
 // Dibujo. Se rehace entero cada vez que cambian los datos, los filtros o el
 // orden (monitoring.js avisa por monitoringViewListeners, ver
 // scheduleFeedRender). Solo si el feed es la vista elegida: en la vista
@@ -415,7 +401,6 @@ function renderFeed() {
   }
   feedContainerEl.replaceChildren(fragment);
   if (listChanged) feedScrollToStart();
-  notifyFeedList();
 }
 
 // Los avisos de monitoring.js llegan de a uno por tecla del buscador. Rehacer
@@ -576,12 +561,9 @@ feedContainerEl.addEventListener('keydown', (e) => {
 
 // Se ignoró un posteo: el feed se rehace con las mismas filas (la que sigue
 // ocupa su lugar y "Ver más" cuenta una menos). Si era la última queda el
-// cartel de "no hay".
-function removeFeedCard(id) {
-  const card = feedCardById(id);
-  // Antes de sacarla, mientras todavía ocupa su lugar: si el pop-up está
-  // mostrando ese posteo, pasa al de al lado.
-  if (card) notifyFeedList({ removing: card });
+// cartel de "no hay". El pop-up, si estaba abierto, ya pasó al siguiente de
+// su lista (monitoringFeedPopup.js).
+function removeFeedCard() {
   renderFeed();
 }
 
