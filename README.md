@@ -29,6 +29,12 @@ App web que:
    guardan reclamos con ubicación en `geo_status = 'pendiente'`; un worker los
    geocodifica con USIG después, sin bloquear la respuesta) y el importador
    genérico de Excel/CSV (`scripts/import-reclamos.js`).
+5. Muestra la solapa **Estadísticas** de Instagram: para un período (7, 30
+   o 90 días, o Desde → Hasta) y contra el anterior del mismo largo, las
+   publicaciones relevantes, cuántas se despegaron de lo habitual de su
+   cuenta, el tono, la conversación, la nube de palabras, qué trajo cada
+   búsqueda, de qué temas se habla, cuándo y quién (`GET
+   /api/monitoring/stats`).
 
 ---
 
@@ -72,6 +78,9 @@ social_listening_app/
 │   ├── notify.js             # Orquesta las notificaciones (email + WhatsApp a futuro).
 │   ├── scheduler.js          # Agenda el monitoreo (node-cron; default 8, 12, 16 y 20 h).
 │   ├── lastRun.js            # Resumen de la última corrida (traídas, nuevas, guardadas, destacadas, costo) para el Pipeline.
+│   ├── stats.js              # Estadísticas: todos los bloques de un período (y el anterior) desde la base.
+│   ├── statsRoutes.js        # GET /api/monitoring/stats.
+│   ├── stopwords.js          # Palabras vacías que no cuentan en la nube de Estadísticas.
 │   ├── keepAwake.js          # Windows: lanza scripts/keep-awake.ps1 para que la máquina no se suspenda.
 │   ├── concurrencyLimiter.js # Cola FIFO para los runs simultáneos de Apify.
 │   ├── usageContext.js       # En qué ciclo y fase estamos (AsyncLocalStorage), para medir Apify.
@@ -91,7 +100,7 @@ social_listening_app/
 │   ├── index.html            # Login (pide un magic link por email).
 │   ├── login-verify.html     # Confirma el link (POST, un solo uso).
 │   ├── dashboard.html        # Selector de red social.
-│   ├── instagram.html        # App Instagram: monitoreo + mapa de reclamos + análisis (píldora de solapas).
+│   ├── instagram.html        # App Instagram: monitoreo + mapa de reclamos + análisis + estadísticas (píldora de solapas).
 │   ├── x.html                # App X: análisis (Grok) + monitoreo + mapa de reclamos.
 │   ├── css/styles.css        # Estilos del diseño v4 (tokens claro / oscuro de design/social-listening-v4.html).
 │   └── js/
@@ -109,6 +118,8 @@ social_listening_app/
 │       ├── monitoringFeedPopup.js # Pop-up del posteo (feed, flujo y "Se despegaron"). Solo Instagram.
 │       ├── monitoringPanel.js # KPI, fuentes, pulso, pipeline y alertas del Monitoreo. Solo Instagram.
 │       ├── monitoringFlow.js # Flujo en vivo del Monitoreo. Solo Instagram.
+│       ├── kpi.js            # Tarjetas KPI (número, trazo, anillo, variación) del Monitoreo y Estadísticas. Solo Instagram.
+│       ├── stats.js          # Solapa Estadísticas (GET /api/monitoring/stats). Solo Instagram.
 │       └── claimsMap.js      # Mapa de reclamos (Leaflet, filtrado por plataforma).
 ├── scripts/
 │   ├── import-reclamos.js       # Importador genérico de Excel/CSV (solo CLI).
@@ -1041,7 +1052,7 @@ en el tag `v3-riel-radar`.
   claros).
 - **Barra superior**, igual en Instagram y X: la marca (vuelve al inicio),
   la píldora con las solapas (Monitoreo, Mapa, Análisis de publicación y
-  Estadísticas, atenuada con "pronto" hasta la fase C; teclas 1 a 4), la
+  Estadísticas; teclas 1 a 4), la
   plataforma (va al inicio), "escuchando · HH:MM" y el usuario. La hora es
   la de la última corrida terminada: verde si fue hace menos de 5 horas;
   si no, en gris "última corrida · dd/mm HH:MM", o "todavía no corrió". En
@@ -1075,6 +1086,34 @@ en el tag `v3-riel-radar`.
   - "Se despegaron" con hasta cuatro tiras del período y la lista con Feed
     | Tabla y ocho filtros con nombre (Buscar, Tono, Alcance, Tema, Cuenta
     con buscador, Desde, Hasta, Orden).
+  - Al llegar desde Estadísticas (un clic en una palabra o un tema), el
+    período es el de allá, "24/9 → 23/10" con una ✕ para volver a Hoy / 7
+    / 30, y todo lo sigue; la lista muestra exactamente las publicaciones
+    que contó la tarjeta (la palabra, como "palabra de la nube", o el
+    tema). Elegir "Coyuntura / Otros" en Tema trae también las que no
+    tienen tema.
+- **Estadísticas de Instagram** (fase C, `openspec/changes/estadisticas/`):
+  la solapa de la maqueta con los números de `GET /api/monitoring/stats`.
+  - Arriba, **7 / 30 / 90 días** o **Desde → Hasta** (se recuerda en el
+    navegador). Todo va sobre el mismo período y se compara con el anterior
+    del mismo largo; si la base no tiene datos de ese anterior, dice "sin
+    datos" (no 0), y si el período arranca antes de la primera publicación
+    guardada, lo avisa.
+  - **Cinco KPI**: publicaciones relevantes, cuántas se despegaron (las
+    mismas que en el Monitoreo), % negativo, % positivo y conversación.
+  - **Nube de menciones** (Volumen o Positivos reales; "Jorge Macri",
+    "Buenos Aires" y las frases de las palabras clave y búsquedas cuentan
+    como una), **menciones por búsqueda** (detectadas, relevantes y
+    positivas de cada término) y la **dona** con lo que se lleva cada
+    búsqueda.
+  - **De qué se habla**: los 9 temas con más publicaciones, con su badge
+    (Pico, En alza, Nuevo, Baja o Estable contra el período anterior), su
+    tono, su evolución y la publicación que más se despegó.
+  - **Cuándo se habla** (día y hora), el **tono neto por semana**, **quién
+    habla de nosotros** (por impacto, publicaciones o seguidores) y **las 6
+    que más se despegaron**, que abren el pop-up del posteo.
+  - Un clic en una palabra o un tema abre el Monitoreo con ese período y
+    esas publicaciones.
 - **El pie** (`public/js/footer.js`): la marca, el texto de la Dirección
   General de Análisis y Datos, "4 corridas por día · 8, 12, 16 y 20 h" (de
   la expresión del cron real), Secciones, Fuentes (cada una baja a su caja
@@ -1083,6 +1122,33 @@ en el tag `v3-riel-radar`.
   el formulario del link mágico de siempre). La parte animada llega en la
   fase D; el login sigue por link mágico.
 - **Favicon** nuevo: el ◎ de la marca.
+
+### Estadísticas: `GET /api/monitoring/stats` (octubre 2026)
+
+`GET /api/monitoring/stats?plataforma=instagram&desde=AAAA-MM-DD&hasta=AAAA-MM-DD`
+devuelve en una sola respuesta todos los bloques de un período (sin fechas,
+los últimos 30 días; hasta 366), con el mismo login que el resto de
+`/api/monitoring`. Lo arma `src/stats.js` leyendo la base; nada se guarda
+y no hay caché (unos 50 ms con 30 días). Las reglas:
+
+- Fechas en hora de Argentina, por la fecha de publicación; cuentan las
+  publicaciones visibles (no ignoradas). Sin tono = neutral; sin tema =
+  "Coyuntura / Otros".
+- El período anterior tiene el mismo largo. Los días antes de la primera
+  publicación guardada no cuentan como días sin publicaciones: no hay
+  datos, y si el anterior queda entero ahí, sus números van en null.
+- "Se despegó" es la misma regla del alcance del listado y del Monitoreo
+  (`top.level === 'alto'`, con colchón): los dos dan el mismo número.
+- La nube cuenta, por palabra, en cuántas publicaciones aparece (título y
+  texto), con las frases de las palabras clave y búsquedas y "Buenos Aires"
+  enteras, sin palabras vacías (`src/stopwords.js`), hashtags, menciones,
+  links ni números; trae los ids de esas publicaciones.
+- Las menciones van por término de búsqueda: `detectadas` suma también lo
+  que el clasificador descartó (`search_seen`, que por eso se purga a los
+  100 días) y lo ignorado; `relevantes` y `positivas`, lo guardado.
+- Los temas y el tono neto van por tramo: por día hasta 14 días; más, por
+  semanas contadas hacia atrás desde "hasta".
+- Tests en `test/stats.test.js`.
 
 ### Vista Feed del Monitoreo de Instagram (octubre 2026)
 
