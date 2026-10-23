@@ -235,6 +235,19 @@ describe('stats: bloques', () => {
     assert.deepEqual(subte, { palabra: subte.palabra, n: 3, positivas: 1, negativas: 1 });
   });
 
+  test('palabras: "Buenos Aires" cuenta como una frase aunque no esté en las listas', () => {
+    const posts = [
+      preparar({ caption: 'Vecinos de Buenos Aires en la plaza' }),
+      preparar({ caption: 'buenos aires, la ciudad. Buenos días a todos' }), // "Buenos días" no es la frase
+    ];
+    const palabras = stats.contarPalabras(posts);
+    assert.deepEqual(palabras.find((p) => p.palabra === 'Buenos Aires'), { palabra: 'Buenos Aires', n: 2, positivas: 0, negativas: 0 });
+    const mostradas = palabras.map((p) => p.palabra.toLowerCase());
+    assert.ok(!mostradas.includes('aires'), '"Aires" no sale suelta');
+    assert.ok(mostradas.includes('buenos'), '"Buenos días" sigue contando "Buenos"');
+    assert.equal(palabras.find((p) => p.palabra.toLowerCase() === 'buenos').n, 1);
+  });
+
   test('palabras: a lo sumo 60', () => {
     const caption = Array.from({ length: 80 }, (_, i) => `palabra${String.fromCharCode(97 + (i % 26))}${String.fromCharCode(97 + Math.floor(i / 26))}`).join(' ');
     assert.equal(stats.contarPalabras([preparar({ caption })]).length, 60);

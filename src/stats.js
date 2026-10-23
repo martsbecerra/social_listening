@@ -54,6 +54,9 @@ const PICOS_MAX = 3;
 const PALABRAS_MAX = 60;
 const RANKING_MAX = 10;
 const DIAS_TEMAS_POR_DIA = 14; // hasta 14 días, la evolución de los temas va por día; más, por semana
+// Frases de la nube que cuentan como una aunque no estén en las listas del
+// monitoreo (sin esto, "Buenos Aires" salía partida en "Buenos" y "Aires").
+const FRASES_FIJAS = ['Buenos Aires'];
 
 // --------------------------------------------------------------------------
 // Fechas en hora de Argentina
@@ -411,7 +414,8 @@ function cantidadDeLetras(texto) {
 /**
  * Las 60 palabras más usadas: `n` es la cantidad de posteos que la usan
  * (título y texto). Primero se buscan las frases de las listas del monitoreo
- * (así "Jorge Macri" cuenta como una); después, palabras sueltas de 3 letras
+ * y las fijas (FRASES_FIJAS: así "Jorge Macri" y "Buenos Aires" cuentan como
+ * una); después, palabras sueltas de 3 letras
  * o más que no sean palabras vacías (src/stopwords.js). Hashtags,
  * menciones (@usuario), links y números no cuentan, salvo que estén en la
  * lista. Se compara sin tildes ni mayúsculas y se muestra la forma más usada.
@@ -419,7 +423,7 @@ function cantidadDeLetras(texto) {
  * modo "Positivos reales" de la nube y su color, el tono que predomina).
  */
 function contarPalabras(posts, frases = []) {
-  const indiceFrases = prepararFrases(frases);
+  const indiceFrases = prepararFrases([...FRASES_FIJAS, ...frases]);
   const posteosPorClave = new Map();
   const tonoPorClave = new Map();
   const formasPorClave = new Map();
