@@ -3533,6 +3533,11 @@ pre.report a {
 .stats-body > * + * {
   margin-top: 14px;
 }
+/* Con cinco KPI la tarjeta es angosta: el número no deja lugar al trazo
+   (que va abajo, al lado del detalle), así "356,1 mil" entra en un renglón. */
+#statsKpis .kpi.has-sp .v {
+  padding-right: 0;
+}
 /* Mientras llegan los datos de otro período, lo anterior queda tenue. */
 .stats-body {
   transition: opacity 0.2s;
@@ -3984,7 +3989,19 @@ svg.line {
     grid-column: auto;
   }
   .rows .row {
-    grid-template-columns: 100px 1fr 60px 76px;
+    grid-template-columns: 100px 1fr 64px 76px;
+  }
+  /* En el celular el rótulo de las barras no entra (la leyenda de abajo
+     dice qué es cada una) y los otros van más apretados. */
+  .rows .hdr {
+    font-size: 9.5px;
+    letter-spacing: 0.04em;
+  }
+  .rows .hdr span:nth-child(2) {
+    visibility: hidden;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
   }
   .heat {
     font-size: 8px;

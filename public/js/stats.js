@@ -226,6 +226,8 @@ function openStats() {
   const range = statsRange();
   statsPaintPeriod();
   if (!statsData || statsDataRange !== `${range.desde}/${range.hasta}` || statsIsStale()) statsLoad();
+  // Si los datos llegaron con la solapa oculta, la nube no se pudo medir.
+  else if (statsCloudEl.clientWidth !== statsCloudWidth) statsBuildCloud();
 }
 
 // -------------------------------------------------------------------------
@@ -325,6 +327,238 @@ function statsRenderKpis() {
 }
 
 // -------------------------------------------------------------------------
+// Nube: las palabras más usadas (tamaño = publicaciones que la usan; color =
+// el tono que predomina entre ellas), en espiral desde el centro, cada una
+// medida con un canvas para que no se pisen. "Positivos reales": tamaño =
+// las positivas, solo las que tienen alguna. Como en la maqueta, van las que
+// están en dos publicaciones o más; la que no entra, no va. Un clic abre el
+// Monitoreo con exactamente esas publicaciones (sus ids; con "Positivos
+// reales", solo las positivas).
+// -------------------------------------------------------------------------
+const statsCloudEl = document.getElementById('statsCloud');
+const statsCloudSegEl = document.getElementById('statsCloudSeg');
+const statsMeasure = document.createElement('canvas').getContext('2d');
+let statsCloudMode = 'vol';
+let statsCloudWidth = 0;
+
+function statsWordTone(word) {
+  if (word.positivas > word.negativas) return 'pos';
+  return word.negativas > word.positivas ? 'neg' : 'neu';
+}
+
+function statsPlural(n, one, many) {
+  return `${STATS_INT.format(n)} ${n === 1 ? one : many}`;
+}
+
+function statsShowWord(word) {
+  const { desde, hasta } = statsData.periodo;
+  showInMonitoring({
+    range: { desde, hasta },
+    palabra: { term: word.palabra, ids: word.ids },
+    sentiment: statsCloudMode === 'pos' ? 'positivo' : '',
+  });
+}
+
+function statsBuildCloud() {
+  const width = statsCloudEl.clientWidth;
+  const height = statsCloudEl.clientHeight;
+  statsCloudWidth = width;
+  if (!width || !height) return;
+  const positives = statsCloudMode === 'pos';
+  const value = (word) => (positives ? word.positivas : word.n);
+  const words = statsData.palabras.filter((w) => w.n >= 2 && (!positives || w.positivas > 0)).sort((a, b) => value(b) - value(a));
+  if (!words.length) {
+    let text = `Sin publicaciones ${statsRangeWords(statsData.periodo)}.`;
+    if (statsData.resumen.relevantes) {
+      text = positives ? 'Ninguna palabra repetida tiene publicaciones positivas en el período.' : 'Ninguna palabra se repite en las publicaciones del período.';
+    }
+    statsCloudEl.replaceChildren(statsNode('div', 'ph', text));
+    return;
+  }
+  const family = getComputedStyle(document.documentElement).getPropertyValue('--display').trim() || 'sans-serif';
+  const max = value(words[0]);
+  const min = value(words[words.length - 1]);
+  const cx = width / 2;
+  const cy = height / 2;
+  const placed = [];
+  const buttons = [];
+  for (const word of words) {
+    const size = Math.round(13 + (width < 560 ? 30 : 46) * Math.sqrt((value(word) - min) / (max - min || 1)));
+    statsMeasure.font = `600 ${size}px ${family}`;
+    const w = statsMeasure.measureText(word.palabra).width + 10;
+    const h = size * 1.05;
+    let angle = 0;
+    let radius = 0;
+    let x = cx;
+    let y = cy;
+    let fits = false;
+    for (let k = 0; k < 600 && !fits; k++) {
+      angle += 0.35;
+      radius += 1.3;
+      x = cx + radius * Math.cos(angle) * 1.25;
+      y = cy + radius * Math.sin(angle) * 0.8;
+      fits =
+        x - w / 2 > 4 &&
+        x + w / 2 < width - 4 &&
+        y - h / 2 > 4 &&
+        y + h / 2 < height - 4 &&
+        !placed.some((p) => Math.abs(p.x - x) * 2 < p.w + w && Math.abs(p.y - y) * 2 < p.h + h);
+    }
+    if (!fits) continue;
+    placed.push({ x, y, w, h });
+    const button = statsNode('button', '', word.palabra);
+    button.type = 'button';
+    button.style.left = `${x}px`;
+    button.style.top = `${y}px`;
+    button.style.fontSize = `${size}px`;
+    button.style.color = `var(--${statsWordTone(word)})`;
+    if (!statsReducedMotion.matches) button.style.transitionDelay = `${buttons.length * 35}ms`;
+    const counts = `${statsPlural(word.n, 'publicación', 'publicaciones')} · ${statsPlural(word.positivas, 'positiva', 'positivas')} · ${statsPlural(word.negativas, 'negativa', 'negativas')}`;
+    button.dataset.tipTitle = word.palabra;
+    button.dataset.tip = `${counts}\nClic: ${positives ? 'ver las positivas' : 'verlas'} en el Monitoreo`;
+    button.setAttribute('aria-label', `${word.palabra}: ${counts}. ${positives ? 'Ver las positivas' : 'Verlas'} en el Monitoreo`);
+    button.addEventListener('click', () => statsShowWord(word));
+    buttons.push(button);
+  }
+  statsCloudEl.replaceChildren(...buttons);
+  const show = () => buttons.forEach((button) => button.classList.add('in'));
+  if (statsReducedMotion.matches) show();
+  else requestAnimationFrame(() => requestAnimationFrame(show));
+}
+
+// La nube se mide con la tipografía de los títulos: si todavía no cargó,
+// se arma cuando llega.
+function statsRenderCloud() {
+  if (document.fonts && document.fonts.status !== 'loaded') {
+    statsCloudEl.replaceChildren(statsNode('div', 'ph', 'Armando la nube…'));
+    document.fonts.ready.then(() => statsData && statsBuildCloud());
+    return;
+  }
+  statsBuildCloud();
+}
+
+// -------------------------------------------------------------------------
+// Menciones por búsqueda: detectadas (también lo que no quedó: ignorado o
+// descartado por el clasificador), relevantes y positivas de cada término,
+// y la dona con lo que se lleva cada uno de las relevantes (share of voice).
+// Las publicaciones que no llegaron por una búsqueda no entran.
+// -------------------------------------------------------------------------
+const statsRowsEl = document.getElementById('statsRows');
+const statsDonutEl = document.getElementById('statsDonut');
+const statsDonutLgEl = document.getElementById('statsDonutLg');
+const STATS_DONUT_COLORS = ['--c1', '--c2', '--c3', '--c4', '--c5', '--neu', '--pos', '--line2'];
+
+function statsRightCell(text) {
+  const cell = statsNode('span', '', text);
+  cell.style.textAlign = 'right';
+  return cell;
+}
+
+function statsRenderMentions() {
+  const list = statsData.menciones;
+  if (!list.length) {
+    statsRowsEl.replaceChildren(
+      statsData.resumen.relevantes ? statsNode('p', 'stats-empty', 'Ninguna búsqueda trajo publicaciones en el período.') : statsEmptyLine()
+    );
+    return;
+  }
+  const max = Math.max(1, ...list.map((m) => m.detectadas));
+  const head = statsNode('div', 'row hdr');
+  head.append(statsNode('span', '', 'Búsqueda'), statsNode('span', '', 'Detectadas · relevantes · positivas'), statsRightCell('Relevantes'), statsRightCell('Positivas'));
+  const rows = list.map((m) => {
+    const row = statsNode('div', 'row');
+    row.dataset.tipTitle = m.termino;
+    row.dataset.tip =
+      `${statsPlural(m.detectadas, 'publicación detectada', 'publicaciones detectadas')} · ` +
+      `${STATS_INT.format(m.relevantes)} relevantes (${statsPctText(m.relevantes, m.detectadas)}) · ` +
+      `${STATS_INT.format(m.positivas)} positivas (${statsPctText(m.positivas, m.relevantes)} de las relevantes)`;
+    const name = statsNode('span', 'nm', m.termino);
+    name.appendChild(statsNode('small', '', `${STATS_INT.format(m.detectadas)} detectadas`));
+    const bars = statsNode('span', 'bars');
+    bars.setAttribute('aria-hidden', 'true');
+    for (const n of [m.detectadas, m.relevantes, m.positivas]) {
+      const bar = statsNode('i');
+      bar.dataset.w = ((n / max) * 100).toFixed(1);
+      bars.appendChild(bar);
+    }
+    const relevant = statsNode('span', 'num', statsPctText(m.relevantes, m.detectadas));
+    relevant.appendChild(statsNode('small', '', STATS_INT.format(m.relevantes)));
+    const positive = statsNode('span', 'num sent-pos', STATS_INT.format(m.positivas));
+    positive.appendChild(statsNode('small', '', `${statsPctText(m.positivas, m.relevantes)} reales`));
+    row.append(name, bars, relevant, positive);
+    return row;
+  });
+  statsRowsEl.replaceChildren(head, ...rows);
+  statsGrowBars(statsRowsEl);
+}
+
+function statsRenderDonut() {
+  const slices = statsData.menciones
+    .filter((m) => m.relevantes > 0)
+    .sort((a, b) => b.relevantes - a.relevantes || a.termino.localeCompare(b.termino, 'es'))
+    .map((m, i) => ({ name: m.termino, n: m.relevantes, color: `var(${STATS_DONUT_COLORS[i % STATS_DONUT_COLORS.length]})` }));
+  const total = slices.reduce((sum, s) => sum + s.n, 0);
+  const circumference = 2 * Math.PI * 58;
+  const track = statsSvg('circle', { cx: 75, cy: 75, r: 58, fill: 'none', 'stroke-width': 18 });
+  track.style.stroke = 'var(--line)';
+  const arcs = [];
+  let offset = 0;
+  for (const slice of slices) {
+    const length = Math.max(0, (slice.n / total) * circumference - 2);
+    const arc = statsSvg('circle', {
+      cx: 75,
+      cy: 75,
+      r: 58,
+      fill: 'none',
+      'stroke-width': 18,
+      'stroke-dasharray': `0 ${circumference}`,
+      'stroke-dashoffset': -offset,
+      transform: 'rotate(-90 75 75)',
+    });
+    arc.style.stroke = slice.color;
+    arc.style.transition = `stroke-dasharray 1.2s ${arcs.length * 0.08}s cubic-bezier(.2,.8,.2,1)`;
+    arc.dataset.tipTitle = slice.name;
+    arc.dataset.tip = `${statsPlural(slice.n, 'publicación relevante', 'publicaciones relevantes')} · ${statsPctText(slice.n, total)}`;
+    arc.dataset.len = String(length);
+    arcs.push(arc);
+    offset += (slice.n / total) * circumference;
+  }
+  const value = statsSvg('text', { x: 75, y: 71, 'text-anchor': 'middle', 'font-size': 20, 'font-weight': 600 });
+  value.style.fill = 'var(--fg)';
+  value.style.fontFamily = 'var(--display)';
+  value.textContent = STATS_INT.format(total);
+  const caption = statsSvg('text', { x: 75, y: 88, 'text-anchor': 'middle', 'font-size': 9 });
+  caption.style.fill = 'var(--muted)';
+  caption.style.fontFamily = 'var(--mono)';
+  // No dice "relevantes" como la maqueta: no son todas las del KPI (las que
+  // no llegaron por una búsqueda no entran).
+  caption.textContent = 'por búsqueda';
+  statsDonutEl.replaceChildren(track, ...arcs, value, caption);
+  const grow = () => arcs.forEach((arc) => arc.setAttribute('stroke-dasharray', `${arc.dataset.len} ${circumference}`));
+  if (statsReducedMotion.matches) grow();
+  else setTimeout(grow, 80);
+  statsDonutEl.setAttribute(
+    'aria-label',
+    total
+      ? `Relevantes por búsqueda: ${slices.map((s) => `${s.name} ${statsPctText(s.n, total)}`).join(', ')}`
+      : 'Ninguna búsqueda trajo publicaciones relevantes en el período'
+  );
+  if (!total) {
+    statsDonutLgEl.replaceChildren(statsData.resumen.relevantes ? statsNode('p', 'stats-empty', 'Ninguna búsqueda trajo publicaciones relevantes.') : statsEmptyLine());
+    return;
+  }
+  statsDonutLgEl.replaceChildren(
+    ...slices.map((slice) => {
+      const row = statsNode('div');
+      const dot = statsNode('i');
+      dot.style.background = slice.color;
+      row.append(dot, statsNode('span', '', slice.name), statsNode('b', 'num', statsPctText(slice.n, total)));
+      return row;
+    })
+  );
+}
+
+// -------------------------------------------------------------------------
 // Todo el período.
 // -------------------------------------------------------------------------
 function statsRender() {
@@ -335,6 +569,9 @@ function statsRender() {
       : ''
   );
   statsRenderKpis();
+  statsRenderCloud();
+  statsRenderMentions();
+  statsRenderDonut();
 }
 
 // -------------------------------------------------------------------------
@@ -364,6 +601,26 @@ function statsOnDates() {
 statsFromEl.addEventListener('change', statsOnDates);
 statsToEl.addEventListener('change', statsOnDates);
 statsRetryEl.addEventListener('click', statsLoad);
+
+statsCloudSegEl.addEventListener('click', (e) => {
+  const button = e.target.closest('button[data-mode]');
+  if (!button || button.dataset.mode === statsCloudMode) return;
+  statsCloudMode = button.dataset.mode;
+  for (const b of statsCloudSegEl.querySelectorAll('button[data-mode]')) {
+    b.classList.toggle('on', b === button);
+    b.setAttribute('aria-pressed', String(b === button));
+  }
+  if (statsData) statsBuildCloud();
+});
+
+// Otro ancho, otra nube.
+let statsResizeTimer = null;
+window.addEventListener('resize', () => {
+  clearTimeout(statsResizeTimer);
+  statsResizeTimer = setTimeout(() => {
+    if (statsData && statsTabVisible() && statsCloudEl.clientWidth !== statsCloudWidth) statsBuildCloud();
+  }, 150);
+});
 
 // Cambiaron los posteos de la tabla: se vuelve a pedir ya si la solapa está
 // a la vista (y el pop-up cerrado, para no rehacer lo que está debajo); si
