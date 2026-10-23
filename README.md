@@ -71,6 +71,7 @@ social_listening_app/
 │   ├── auth/                 # Allowlist, magic link, sesión, rate limit, gate.
 │   ├── notify.js             # Orquesta las notificaciones (email + WhatsApp a futuro).
 │   ├── scheduler.js          # Agenda el monitoreo (node-cron; default 8, 12, 16 y 20 h).
+│   ├── lastRun.js            # Resumen de la última corrida (traídas, nuevas, guardadas, destacadas, costo) para el Pipeline.
 │   ├── keepAwake.js          # Windows: lanza scripts/keep-awake.ps1 para que la máquina no se suspenda.
 │   ├── concurrencyLimiter.js # Cola FIFO para los runs simultáneos de Apify.
 │   ├── usageContext.js       # En qué ciclo y fase estamos (AsyncLocalStorage), para medir Apify.
@@ -104,8 +105,10 @@ social_listening_app/
 │       ├── x-analysis.js     # Análisis de publicación de X (`/api/x/analyze`).
 │       ├── temasEditor.js    # Temas emergentes editables (antes de copiar/WhatsApp).
 │       ├── monitoring.js     # Monitoreo en vivo (parametrizado por data-platform).
-│       ├── monitoringFeed.js # Vista Feed del Monitoreo (tarjetas). Solo Instagram.
-│       ├── monitoringFeedPopup.js # Pop-up del posteo, desde el feed. Solo Instagram.
+│       ├── monitoringFeed.js # Vista Feed del Monitoreo (tarjetas en filas completas). Solo Instagram.
+│       ├── monitoringFeedPopup.js # Pop-up del posteo (feed, flujo y "Se despegaron"). Solo Instagram.
+│       ├── monitoringPanel.js # KPI, fuentes, pulso, pipeline y alertas del Monitoreo. Solo Instagram.
+│       ├── monitoringFlow.js # Flujo en vivo del Monitoreo. Solo Instagram.
 │       └── claimsMap.js      # Mapa de reclamos (Leaflet, filtrado por plataforma).
 ├── scripts/
 │   ├── import-reclamos.js       # Importador genérico de Excel/CSV (solo CLI).
@@ -936,8 +939,12 @@ que avanza sola.
   ("✓ Relevancia · 4 relevantes, 7 descartados", "✓ Métricas · 148
   actualizadas, 2 sin respuesta"). Las líneas las arma y las elige el
   backend; el frontend solo las dibuja.
-- Al terminar, el recuadro queda a la vista: "✓ Listo: 4 relevantes
-  guardados de 11 nuevos" (o "✕ Error: …"), con un botón "Ocultar".
+- Al terminar: "✓ Corrida terminada · 16:02 · 3 min 12 s", las líneas y,
+  al final, "Resultado · 4 relevantes guardados de 11 nuevos". Se va solo
+  a los 9 s (antes con "Ocultar"; si el mouse o el foco están encima,
+  espera). Si falla, "✕ La corrida falló · …" queda hasta "Ocultar".
+- Cada línea lleva un punto (en curso late; verde, bien; rojo, falló) y
+  toma el ancho de su texto: si no entra baja de renglón, nunca se corta.
 
 "Nuevos" quiere decir lo mismo en todos lados: posteos que no estaban
 guardados ni se habían evaluado antes (`monitor.isNewPost`). Cada búsqueda
@@ -1040,11 +1047,34 @@ en el tag `v3-riel-radar`.
   si no, en gris "última corrida · dd/mm HH:MM", o "todavía no corrió". En
   el inicio cuenta cualquier red. X tiene las mismas solapas sin
   Estadísticas y sigue abriendo en Análisis.
-- **Monitoreo de Instagram, hasta la fase B**: arriba "▶ Actualizar ahora"
-  con su recuadro de progreso, y las tres cajas de fuentes (búsquedas,
-  palabras clave y hashtags, cuentas seguidas) con las listas completas;
-  debajo, "Se despegaron" en 2 x 2 y las publicaciones con Feed | Tabla como
-  antes.
+- **Monitoreo de Instagram** (fase B, `openspec/changes/monitoreo-v4/`): la
+  solapa de la maqueta con datos reales.
+  - Arriba, **Hoy / 7 días / 30 días** (por la fecha de publicación, en
+    hora de Argentina; se recuerda en el navegador y filtra toda la solapa)
+    y "▶ Actualizar ahora" con su recuadro de progreso, que al terminar
+    dice "✓ Corrida terminada · HH:MM · duración" y se va solo a los 9 s.
+  - **Cuatro KPI** del período: publicaciones (con su curva y la variación
+    contra el período anterior), tono neto, cuántas se despegaron ("la
+    mayor: 15,37× en comentarios, de @cuenta") y conversación (likes +
+    comentarios).
+  - **Izquierda**: búsquedas, palabras clave y hashtags como chips, con
+    cuántas publicaciones del período trajo cada uno y una barrita con su
+    tono. Un clic filtra la lista; la ✕ pide confirmación en el mismo chip;
+    el "+" abre el campo de agregar. Palabras clave y hashtags muestran 8 y
+    6, con "Ver las N →".
+  - **Centro**: el **flujo en vivo**, una línea por publicación (la última
+    detectada arriba), con el término de la búsqueda resaltado; al terminar
+    una corrida las nuevas entran de a una con "ahora". Pasar el mouse lo
+    pausa; un clic abre la publicación.
+  - **Derecha**: el pulso del tono (por hora del día, últimos 7 días), el
+    **Pipeline** de la última corrida (traídas por las búsquedas, nuevas
+    que clasificó el modelo, relevantes guardadas, cuántas se despegaron y
+    el costo; "—" donde una corrida vieja no tiene el dato), las
+    **alertas** de hoy (volumen alto, la que más se despegó, un tema con
+    negativas) y las cuentas seguidas.
+  - "Se despegaron" con hasta cuatro tiras del período y la lista con Feed
+    | Tabla y ocho filtros con nombre (Buscar, Tono, Alcance, Tema, Cuenta
+    con buscador, Desde, Hasta, Orden).
 - **El pie** (`public/js/footer.js`): la marca, el texto de la Dirección
   General de Análisis y Datos, "4 corridas por día · 8, 12, 16 y 20 h" (de
   la expresión del cron real), Secciones, Fuentes (cada una baja a su caja
@@ -1065,10 +1095,13 @@ vista elegida en ese navegador; sin nada guardado, el Feed.
 
 - **Mismos datos y mismos filtros.** El feed no pide nada al servidor:
   dibuja los posteos que la tabla ya trajo y ya filtró
-  (`postMatchesFilters` en `public/js/monitoring.js`). Sentimiento, Alcance,
-  Cuenta, Desde / Hasta, el buscador y el contador "N de M" valen para las
-  dos vistas. Si se filtra, se ordena o se cambia de vista con la
-  página bajada, los resultados se muestran desde el principio.
+  (`postMatchesFilters` en `public/js/monitoring.js`). El período, Tono,
+  Alcance, Tema, Cuenta, Desde / Hasta, el buscador, el filtro por fuente y
+  el contador "Mostrando N de M publicaciones del período" valen para las
+  dos vistas. Si se filtra, se ordena o se cambia de vista con la página
+  bajada, los resultados se muestran desde el principio.
+- **Filas completas.** El feed muestra tres filas (según cuántas columnas
+  entran) y, si hay más, la última celda es "+N · Ver 12 más".
 - **Alcance (alto / medio / bajo).** Sale del benchmark que calcula el
   backend para likes y para comentarios, con la regla del colchón (ver
   `src/accountStats.js` más arriba): alto desde 1,5 y medio desde 1,1 sobre
@@ -1077,15 +1110,17 @@ vista elegida en ese navegador; sin nada guardado, el Feed.
   bajo solo si los dos dan bajo, medio en el resto. Si una métrica no tiene
   referencia (likes ocultos, cuenta con pocos posteos) decide la otra; si
   ninguna la tiene, el medidor muestra "—" y el posteo solo aparece con el
-  filtro "Alcance" en blanco. El nivel se ve con un medidor de cinco barras
-  (`buildReachMeter`): en alto laten las cinco, en medio respira la tercera,
-  en bajo queda quieto. La tarjeta muestra la razón ("1,10×") al lado
+  filtro "Alcance" en blanco. El nivel se ve con el medidor de cinco barras
+  de la maqueta (`buildReachMeter`): en alto laten las cinco en el color de
+  acento y al lado va la razón, en medio van tres en ámbar, en bajo quedan
+  grises; con alcance alto la foto de la tarjeta lleva "N,NN× se despegó".
+  La tarjeta muestra la razón ("1,10×") al lado
   de la métrica que decidió la etiqueta, con dos decimales cortados (no
   redondeados), para que el número nunca quede del otro lado del corte que
   su etiqueta.
 - **Orden** (solo en Feed): más recientes, mayor alcance (primero la
-  etiqueta y, dentro de cada una, la razón) o más likes. La tabla sigue
-  ordenando por encabezado.
+  etiqueta y, dentro de cada una, la razón), más likes o más comentarios.
+  La tabla sigue ordenando por encabezado: ahí "Orden" queda apagado.
 - **Acciones**: corregir el sentimiento e ignorar, con los mismos endpoints
   y el mismo cartel de confirmación que la fila de la tabla.
 - **La tarjeta.** Likes y comentarios van en una franja propia, con su
@@ -1104,19 +1139,23 @@ vista elegida en ese navegador; sin nada guardado, el Feed.
   con el teclado, Tab lleva el foco a la tarjeta (con un aro visible) y
   Enter o Espacio la abren. No lo abren la ✕ de ignorar, el selector de
   sentimiento ni "Abrir ↗", ni soltar el mouse después de marcar texto.
-  Muestra el posteo completo: la foto a la izquierda y, a la derecha, el
-  texto entero, likes y comentarios con su razón, la mediana real de la
-  cuenta y el colchón con el que se calculó, el alcance con su razón y la
-  métrica que lo decidió, la fecha y hora, el motivo completo de detección
-  y el perfil. Se pasa al posteo anterior y al siguiente de la lista filtrada
-  con las flechas o con ← →, y se cierra con la ✕, con Esc o con un clic
-  afuera. Desde ahí también se corrige el sentimiento y se ignora (la
-  confirmación va adentro; al ignorar pasa al posteo siguiente). En celular
-  ocupa la pantalla completa.
-- **Desde "Se despegaron".** Un clic en un destacado abre el pop-up de ese
-  posteo solo: sin flechas ni contador, igual en la vista Tabla y en el
-  Feed, y aunque un filtro lo esté tapando. Al ignorarlo se cierra; al
-  cerrar, el foco vuelve al destacado.
+  Muestra el posteo completo, con alto fijo: la foto a todo lo alto a la
+  izquierda y, a la derecha, el alcance, el tipo y el tema, el texto entero
+  (lo único que se desplaza, con un degradé abajo cuando sigue; la rueda
+  del mouse sobre la foto también lo mueve), likes y comentarios contra la
+  mediana de la cuenta con su razón, la fecha de las métricas, el motivo
+  completo de detección y el perfil. Se pasa al posteo anterior y al
+  siguiente de la lista desde la que se abrió (contador "3 / 40") con las
+  flechas o con ← →, y se cierra con la ✕, con Esc o con un clic afuera.
+  El pie queda fijo: el sentimiento, "Ignorar" (la confirmación va adentro;
+  al ignorar pasa al siguiente), "Analizar comentarios" (cierra, abre la
+  solapa Análisis con el link ya cargado y no gasta nada hasta que se
+  aprieta Analizar) y "Abrir en Instagram ↗". En celular ocupa la pantalla
+  completa.
+- **Las tres listas del pop-up.** Desde una tarjeta recorre toda la lista
+  del feed (no solo las filas a la vista); desde una línea del flujo, el
+  flujo; desde "Se despegaron", solo esas tiras. Al cerrar, el foco vuelve
+  a lo que lo abrió.
 - **Imagen**: la tarjeta muestra la miniatura de la foto guardada y el
   pop-up la imagen grande (ver "Fotos de los posteos", acá abajo). En la
   tarjeta el recuadro es un cuadrado del ancho de la tarjeta, igual para
