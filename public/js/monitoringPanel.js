@@ -4,8 +4,9 @@
 // clave, hashtags y cuentas seguidas), el pulso del tono, el pipeline de la
 // última corrida y las alertas. Estilos en public/css/styles.css.
 //
-// Lo carga SOLO instagram.html, después de monitoring.js, monitoringFeed.js
-// y monitoringFeedPopup.js, y se apoya en lo que ya definen: los posteos
+// Lo carga SOLO instagram.html, después de monitoring.js, monitoringFeed.js,
+// monitoringFeedPopup.js y kpi.js (las tarjetas KPI, compartidas con
+// Estadísticas), y se apoya en lo que ya definen: los posteos
 // salen de la tabla (monitoringTable), el período de monitorPeriodStart /
 // postInPeriod, el filtro por fuente de setSourceFilter, y agregar o sacar
 // una fuente usa las mismas funciones y endpoints de siempre (addSearch,
@@ -15,7 +16,6 @@
 // --------------------------------------------------------------------
 const panelKpisEl = document.getElementById('monKpis');
 const panelReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
-const PANEL_SVG = 'http://www.w3.org/2000/svg';
 const PANEL_TZ = 'America/Argentina/Buenos_Aires';
 const PANEL_TIME = new Intl.DateTimeFormat('es-AR', { timeZone: PANEL_TZ, hour: '2-digit', minute: '2-digit', hour12: false });
 const PANEL_DATE = new Intl.DateTimeFormat('es-AR', { timeZone: PANEL_TZ, day: '2-digit', month: '2-digit' });
@@ -24,35 +24,9 @@ const PANEL_INT = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 });
 const PANEL_ONE = new Intl.NumberFormat('es-AR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const PANEL_USD = new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-function panelNode(tag, className, text) {
-  const node = document.createElement(tag);
-  if (className) node.className = className;
-  if (text !== undefined) node.textContent = text;
-  return node;
-}
-
-function panelSvg(tag, attrs = {}) {
-  const node = document.createElementNS(PANEL_SVG, tag);
-  for (const [name, value] of Object.entries(attrs)) node.setAttribute(name, String(value));
-  return node;
-}
-
-// Sube de 0 al número en un instante, como en la maqueta (sin movimiento:
-// directo al final).
-function panelCountUp(el, target, format) {
-  if (panelReducedMotion.matches) {
-    el.textContent = format(target);
-    return;
-  }
-  const started = performance.now();
-  const tick = (now) => {
-    const k = Math.min(1, (now - started) / 1000);
-    const eased = 1 - Math.pow(1 - k, 3);
-    el.textContent = format(target * eased);
-    if (k < 1) requestAnimationFrame(tick);
-  };
-  requestAnimationFrame(tick);
-}
+// Los de kpi.js, con el nombre de siempre en este archivo.
+const panelNode = kpiNode;
+const panelSvg = kpiSvg;
 
 // Doce tramos iguales entre "from" y "to": cuántas publicaciones (o la suma
 // de "weight") cayeron en cada uno, por fecha de publicación.
@@ -89,91 +63,7 @@ const panelPct = (share) => `${Math.round(share * 100)} %`;
 // KPI.
 // -------------------------------------------------------------------------
 
-// El trazo chico de la esquina, con su relleno en degradé.
-function panelSparkline(values, id) {
-  const w = 92;
-  const h = 34;
-  const max = Math.max(...values);
-  const min = Math.min(...values);
-  const points = values.map((v, i) => [(i / (values.length - 1)) * w, h - 4 - ((v - min) / (max - min || 1)) * (h - 8)]);
-  const d = `M${points.map((p) => p.map((n) => n.toFixed(1)).join(',')).join('L')}`;
-  const svg = panelSvg('svg', { class: 'sp', viewBox: `0 0 ${w} ${h}`, preserveAspectRatio: 'none', 'aria-hidden': 'true' });
-  const gradient = panelSvg('linearGradient', { id, x1: 0, x2: 0, y1: 0, y2: 1 });
-  gradient.append(
-    panelSvg('stop', { offset: 0, 'stop-color': 'var(--accent)', 'stop-opacity': 0.45 }),
-    panelSvg('stop', { offset: 1, 'stop-color': 'var(--accent)', 'stop-opacity': 0 })
-  );
-  const defs = panelSvg('defs');
-  defs.appendChild(gradient);
-  const area = panelSvg('path', { d: `${d}L${w},${h}L0,${h}Z`, fill: `url(#${id})` });
-  const line = panelSvg('path', { d, fill: 'none', 'stroke-width': 2, 'stroke-linejoin': 'round', pathLength: 1 });
-  line.style.stroke = 'var(--accent)';
-  line.style.strokeDasharray = '1';
-  line.style.strokeDashoffset = '1';
-  line.style.animation = 'draw 1.4s ease forwards';
-  const last = points[points.length - 1];
-  const dot = panelSvg('circle', { cx: last[0], cy: last[1], r: 3 });
-  dot.style.fill = 'var(--accent)';
-  svg.append(defs, area, line, dot);
-  return svg;
-}
-
-// El anillo del tono neto: qué parte de 100 puntos ocupa, en verde o rojo.
-function panelRing(share, color) {
-  const svg = panelSvg('svg', { class: 'ring', viewBox: '0 0 52 52', 'aria-hidden': 'true' });
-  const track = panelSvg('circle', { cx: 26, cy: 26, r: 21, fill: 'none', 'stroke-width': 6 });
-  track.style.stroke = 'var(--line)';
-  const value = panelSvg('circle', {
-    cx: 26,
-    cy: 26,
-    r: 21,
-    fill: 'none',
-    'stroke-width': 6,
-    'stroke-linecap': 'round',
-    'stroke-dasharray': 132,
-    'stroke-dashoffset': 132,
-    transform: 'rotate(-90 26 26)',
-  });
-  value.style.stroke = color;
-  value.style.transition = 'stroke-dashoffset 1.2s cubic-bezier(.2,.8,.2,1)';
-  svg.append(track, value);
-  requestAnimationFrame(() => requestAnimationFrame(() => value.setAttribute('stroke-dashoffset', String(132 - 132 * share))));
-  return svg;
-}
-
-// "+12 % vs. período anterior" contra el período anterior del mismo largo.
-function panelDelta(current, previous) {
-  const b = panelNode('b');
-  if (!previous) {
-    b.className = 'flat';
-    b.textContent = current ? 'sin publicaciones' : '—';
-    return [b, ' en el período anterior'];
-  }
-  const change = Math.round(((current - previous) / previous) * 100);
-  if (change === 0) {
-    b.className = 'flat';
-    b.textContent = 'igual';
-    return [b, ' que el período anterior'];
-  }
-  if (change < 0) b.className = 'neg';
-  b.textContent = `${change > 0 ? '+' : ''}${change} %`;
-  return [b, ' vs. período anterior'];
-}
-
-// Una tarjeta KPI: rótulo, número (sube de 0), detalle y, en la esquina, el
-// trazo de los doce tramos o el anillo. value null: "—" (sin dato).
-function panelKpiCard({ id, label, value, format = (n) => PANEL_INT.format(Math.round(n)), detail, spark, ring }) {
-  const card = panelNode('div', `card kpi${spark ? ' has-sp' : ''}`);
-  const v = panelNode('div', 'v num', value === null ? '—' : format(0));
-  if (value === null) v.classList.add('na');
-  const d = panelNode('div', 'd');
-  d.append(...detail);
-  card.append(panelNode('div', 'eyebrow', label), v, d);
-  if (spark) card.appendChild(panelSparkline(spark, `panelSpark-${id}`));
-  if (ring) card.appendChild(panelRing(ring.share, ring.color));
-  if (value !== null) panelCountUp(v, value, format);
-  return card;
-}
+// La tarjeta, el trazo, el anillo, countUp y la variación están en kpi.js.
 
 function panelRenderKpis(posts, previous, from, now) {
   if (!panelKpisEl) return;
@@ -205,14 +95,14 @@ function panelRenderKpis(posts, previous, from, now) {
   const comments = posts.reduce((sum, post) => sum + (Number(post.comments) || 0), 0);
 
   panelKpisEl.replaceChildren(
-    panelKpiCard({
+    kpiCard({
       id: 'pubs',
       label: `Publicaciones ${label}`,
       value: posts.length,
-      detail: panelDelta(posts.length, previous.length),
+      detail: kpiDelta(posts.length, previous === null ? null : previous.length),
       spark: panelBuckets(posts, from, now),
     }),
-    panelKpiCard({
+    kpiCard({
       id: 'tono',
       label: 'Tono neto',
       value: net,
@@ -220,14 +110,14 @@ function panelRenderKpis(posts, previous, from, now) {
       detail: toneDetail,
       ring: net === null ? null : { share: Math.min(1, Math.abs(net) / 100), color: net >= 0 ? 'var(--pos)' : 'var(--neg)' },
     }),
-    panelKpiCard({
+    kpiCard({
       id: 'altos',
       label: 'Se despegaron',
       value: altos.length,
       detail: altoDetail,
       spark: panelBuckets(altos.map((entry) => entry.post), from, now),
     }),
-    panelKpiCard({
+    kpiCard({
       id: 'conv',
       label: 'Conversación',
       value: likes + comments,
@@ -794,9 +684,14 @@ function panelApplyAlert(filters) {
   if (filters.q) qEl.value = filters.q;
   if (filters.sentiment) fSentEl.value = filters.sentiment;
   if (filters.tema && fTemaEl) fTemaEl.value = filters.tema;
-  if (monitorPeriodDays !== 1) setMonitorPeriod(1);
+  // Hoy, aunque hubiera un rango de Estadísticas (setMonitorPeriod lo saca
+  // también si el período guardado ya era Hoy).
+  setMonitorPeriod(1);
   applyFilters();
   panelGoToList();
+  // Las alertas se rehacen con el período nuevo: la que tenía el foco ya no
+  // está.
+  focusMonitoringList();
 }
 
 function panelRenderAlerts(all, now) {
@@ -883,8 +778,19 @@ function panelRenderAlerts(all, now) {
 let panelLastData = null;
 let panelLastSources = null;
 
-function panelDataKey(all, from) {
-  return `${from}|${all.map((p) => `${p.id}:${p.sentiment || ''}:${p.likes}:${p.comments}`).join(',')}`;
+// Las 00:00 (Argentina) del día del primer posteo cargado; Infinity sin
+// ninguno.
+function panelFirstDayStart(all) {
+  let first = Infinity;
+  for (const post of all) {
+    const ms = postPostedMs(post);
+    if (ms !== null && ms < first) first = ms;
+  }
+  return Number.isFinite(first) ? argentinaDayStart(first, 0) : Infinity;
+}
+
+function panelDataKey(all, from, to) {
+  return `${from}-${to}|${all.map((p) => `${p.id}:${p.sentiment || ''}:${p.likes}:${p.comments}`).join(',')}`;
 }
 
 function panelRenderSourcesNow() {
@@ -897,24 +803,31 @@ function panelRender() {
   if (!monitoringTable) return;
   const now = Date.now();
   const from = monitorPeriodStart(now);
+  const to = monitorPeriodEnd();
   const all = monitoringTable.getData();
-  const dataKey = panelDataKey(all, from);
+  const dataKey = panelDataKey(all, from, to);
   const sourcesKey = `${dataKey}|${sourceFilterKey(monitorSourceFilter)}|${fAccValue}|${panelConfig === undefined ? 'u' : panelConfig === null ? 'n' : 'c'}`;
   if (dataKey !== panelLastData) {
     panelLastData = dataKey;
-    const posts = all.filter((post) => postInPeriod(post, from));
-    const length = now - from;
+    const posts = all.filter((post) => postInPeriod(post, from, to));
+    // El anterior, del mismo largo: con Hoy / 7 / 30, lo que va del período;
+    // con un rango de Estadísticas, sus días enteros (el mismo anterior que
+    // allá). Los tramos del trazo llegan hasta ahora o hasta el fin del rango.
+    const length = (to === null ? now : to) - from;
     const previous = all.filter((post) => {
       const ms = postPostedMs(post);
       return ms !== null && ms >= from - length && ms < from;
     });
-    panelRenderKpis(posts, previous, from, now);
+    // Con un rango cuyo anterior arranca antes del primer posteo cargado, no
+    // hay con qué comparar ("sin datos", null), como en Estadísticas.
+    const complete = to === null || from - length >= panelFirstDayStart(all);
+    panelRenderKpis(posts, complete ? previous : null, from, to === null ? now : Math.min(to, now));
     panelRenderPulse(all, now);
     panelRenderAlerts(all, now);
   }
   if (sourcesKey !== panelLastSources) {
     panelLastSources = sourcesKey;
-    panelRenderSources(all.filter((post) => postInPeriod(post, from)));
+    panelRenderSources(all.filter((post) => postInPeriod(post, from, to)));
   }
 }
 

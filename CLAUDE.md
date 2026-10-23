@@ -103,7 +103,9 @@ fachada expone con apidojo activo. Tope por ciclo `SEARCH_ENRICH_LIMIT`
 si la búsqueda lo vuelve a traer: por eso es holgado).
 `search_seen` anota lo ya pagado (`guardado` | `descartado` | `sin_caption`
 | `sin_detalle`): un descartado no se vuelve a consultar ni a evaluar; se
-purga a los 30 días. Si el run falla entero no se anota nada.
+purga a los 100 días (`SEARCH_SEEN_TTL_DAYS`; era 30: Estadísticas cuenta
+los descartados por término en períodos de hasta 90 días). Si el run falla
+entero no se anota nada.
 
 ## Modelo de costo (`src/apifyCost.js`)
 
@@ -367,9 +369,9 @@ devuelve el modelo pasa por `normalizeClasificacion` (acentos, mayúsculas y
 alias; lo que no existe o falta → "Coyuntura / Otros", con aviso
 `[categorias]`); caption vacío → "Coyuntura / Otros" sin llamar al modelo.
 Fallo o schema roto → `tema` null, como `title` y `sentiment`. Se guarda en
-`detected_posts.tema` (TEXT, anulable, sin CHECK); null es "sin dato" (la
-sección Estadísticas, cuando exista, lo va a contar como "Coyuntura /
-Otros").
+`detected_posts.tema` (TEXT, anulable, sin CHECK); null es "sin dato":
+Estadísticas lo cuenta como "Coyuntura / Otros", y elegir ese tema en el
+filtro del Monitoreo también lo trae (ver "Diseño v4").
 
 **Backfill** (`POST /api/monitoring/backfill-classification`,
 `monitor.backfillClassification`): levanta los posteos no ignorados de la
@@ -382,6 +384,78 @@ llamada al LLM por posteo, de a una (avance por consola cada 50); devuelve
 `{ classified, temasCompletados, stillPending }`. Lo corre el dueño, nunca
 un agente: cuesta una clasificación por posteo pendiente.
 
+## Estadísticas (`src/stats.js`)
+
+`GET /api/monitoring/stats?plataforma=&desde=AAAA-MM-DD&hasta=AAAA-MM-DD`
+(`src/statsRoutes.js`, montada desde `server.js` bajo `/api/monitoring`:
+mismo login y plataforma obligatoria) devuelve en UNA respuesta todos los
+bloques del período, así la pantalla muestra el mismo recorte en todos.
+Sin fechas, los últimos 30 días hasta hoy; van las dos o ninguna, hasta 366
+días (si no, 400 con `userMessage`). Con la base real tarda unos 50 ms con
+30 días y 80 con 90: no hay caché. Lee la base con lecturas propias de
+`db.js` (`listPostsForStats`, `listIgnoredPostsForStats`,
+`countDiscardedSearchesForStats`, `getFirstPostedAt`,
+`listFollowersForStats`). SDD en `openspec/changes/estadisticas/`; tests en
+`test/stats.test.js`.
+
+- **Período** en hora de Argentina (`resolverPeriodo`) y el anterior, del
+  mismo largo y pegado antes. Los días antes del primer posteo de la base no
+  son días sin publicaciones: no hay datos. El período efectivo
+  (`rangoEfectivo`) arranca en el primer día con datos y termina hoy (la
+  mediana de lo habitual sale de esos días). `periodo.primerDia` es el
+  primer día con datos de la plataforma (null sin posteos).
+- **Comparación con el anterior** (regla del dueño, 23/10/2026): se compara
+  siempre que el anterior empiece en o después del primer día con datos (y
+  termine antes de hoy): un día sin publicaciones vale cero, es un dato. Si
+  empieza antes, `anterior.comparable` es false y sus `*Anterior` y
+  `temas[].anterior` van en null (la pantalla dice "sin datos del período
+  anterior" y los temas van sin badge). `anterior.diasConCorridas`: en
+  cuántos de sus días hubo corridas (`db.listRunTracesForStats`: corridas
+  terminadas de la plataforma y, como `monitoring_runs` existe desde el
+  23/9/2026, también días en que se detectó un posteo o se vio un resultado
+  de búsqueda). Con menos de la mitad, la pantalla avisa "Período anterior
+  con pocas corridas" sin dejar de comparar.
+- Cuentan los posteos visibles (`ignored = 0`) por `posted_at`.
+  Sentimiento null = neutral; tema null = "Coyuntura / Otros"
+  (`CATEGORIA_FALLBACK`).
+- **"Se despegó"** = `top.level === 'alto'` con
+  `accountStats.classifyPostAgainstBenchmark`, calculado al armar la
+  respuesta como en el listado: el KPI del Monitoreo y el de Estadísticas
+  dan lo mismo para el mismo período (con la base real, 55 de 296 en 30
+  días, los mismos posteos). Las razones van sin redondear (la pantalla las
+  corta con `formatBenchmarkRatio`). La de un pico (`picos`, días con el
+  doble de lo habitual o más) es publicaciones del día / la mediana diaria,
+  sin colchón: esa sí puede decir "× lo habitual".
+- **Bloques**: `resumen` (relevantes, se despegaron, % negativo y positivo,
+  conversación, cada uno con su `*Anterior` y 12 cubetas en `tendencias`;
+  un % de una cubeta vacía es null), `porDia`, `habitual`, `picos`,
+  `porHora` (7 × 24, lunes primero), `palabras`, `menciones`, `semanas`
+  (los tramos: por día hasta 14 días; más, de a 7 contados hacia atrás desde
+  `hasta`, así el último son los últimos 7 días y el corto queda primero),
+  `temas`, `cuentas` y `ranking`.
+- **`palabras`**: las 60 más usadas en título y texto. Primero las frases de
+  las palabras clave y búsquedas de la plataforma y `FRASES_FIJAS` ("Buenos
+  Aires"), enteras; después palabras de 3 letras o más que no estén en
+  `src/stopwords.js` (hashtags, menciones, links y números no, salvo que
+  estén en la lista). `n` es la cantidad de posteos; además `positivas`,
+  `negativas` e `ids` (los posteos contados: un clic en la palabra los
+  muestra en el Monitoreo; buscar el texto traería otros).
+- **`menciones`**: una fila por término de búsqueda con algo en el período
+  (el de "Búsqueda: <término>" del motivo, leído como `postReasonParts`).
+  `detectadas` suma también los ignorados y los descartados por el
+  clasificador (`search_seen`, por `first_seen_at`: no guarda
+  `posted_at`); `relevantes`, lo guardado y visible; `positivas`, de esas.
+  Lo que no llegó por una búsqueda (cuentas y hashtags, antes de septiembre
+  de 2026) no entra. El share of voice de la pantalla sale de acá.
+- **`temas`**: por tramo, con `anterior` (null si el período anterior no
+  tiene datos) y `destacada` (la de mayor razón; a igual razón, la más
+  nueva; con su `nivel`, que puede no ser alto). **`cuentas`**: impacto
+  (likes + comentarios), seguidores (el último conocido o null), cuántas se
+  despegaron y la mejor razón. **`ranking`**: las 10 de mayor razón, con la
+  métrica que decidió, su valor, la mediana y su `nivel`.
+- Sin benchmark (X, `conAlcance` falso) no hay alcance: 0 se despegaron y
+  ranking vacío.
+
 ## Diseño v4
 
 Desde octubre 2026 el frontend se rehace sobre UNA maqueta,
@@ -392,19 +466,33 @@ páginas), B `monitoreo-v4`, C `estadisticas`, D `inicio-y-login`, E
 `analisis-v4`. El estado anterior (riel, radar y las maquetas viejas) quedó
 en el tag `v3-riel-radar`. SDD de la fase A en
 `openspec/changes/sistema-visual-v4/`; de la B, en
-`openspec/changes/monitoreo-v4/`.
+`openspec/changes/monitoreo-v4/`; de la C, en `openspec/changes/estadisticas/`.
 
 - **Sistema visual** (`public/css/styles.css`, en tres partes comentadas):
   1) los tokens y componentes de la maqueta tal cual (`--bg`, `--surface`,
   `--accent`, `--glow`, `--pos`/`--neu`/`--neg`, `--c1`…`--c5`; `.card`,
   `.chip`, `.kpi`, `.seg`, `.btn`, `.field`, `.tip`; `rise` escalonado por
   `.rv`, `fadeIn`, `pop`, `slideIn`, `ping`, `draw`), con Sora, IBM Plex
-  Sans e IBM Plex Mono de Google Fonts. Una excepción: `--muted` del tema
-  claro es `#626d8c` y no el `#7c87a4` de la maqueta (mismo tono, más
-  oscuro), para pasar 4,5:1 sobre `--surface` (5,14) y `--surface2`
-  (4,55); el de oscuro sigue siendo el de la maqueta; 2) el marco; 3) los componentes de
+  Sans e IBM Plex Mono de Google Fonts. Una excepción: `--muted` no es el
+  de la maqueta, para pasar 4,5:1 sobre `--surface` y `--surface2` con el
+  mismo tono: en claro `#626d8c`, más oscuro que `#7c87a4` (5,14 y 4,55);
+  en oscuro `#808aa5`, más claro que `#6f7b99` (5,03 y 4,51). **Tintas para
+  texto** (decisión del dueño, 23/10/2026): `--accent-text`, `--pos-text`,
+  `--neg-text` y `--neu-text` van en TODO texto que antes iba en `--accent`
+  / `--pos` / `--neg` / `--neu` (enlaces, deltas de los KPI, razones,
+  positivas, la nube, errores, ✕ al pasar el mouse…); rellenos, barras,
+  puntos, bordes e íconos SVG siguen con la base. En claro son más oscuras,
+  mismo tono, y pasan 4,5:1 sobre `--surface` y `--surface2` (y sobre el
+  centro del degradé de la nube): `#0a6fac`, `#14794f`, `#c63333`,
+  `#5365b8`. En oscuro las bases ya pasaban (la más justa, `--neg`, 4,80
+  sobre `--surface2`): la tinta es la misma base, en su token. Un color de
+  texto nuevo usa la tinta, nunca la base; 2) el marco;
+  3) los componentes de
   la app: el Monitoreo de la maqueta (`.mon`, `.srcbox`, `.flowcard`/`.fl`,
-  `.pipe`, `.al`, `.fbar`, `.combo`, `.fstatus`, `.ups`/`.up`, `.reach`) y,
+  `.pipe`, `.al`, `.fbar`, `.combo`, `.fstatus`, `.ups`/`.up`, `.reach`),
+  las Estadísticas (`.cloud`, `.rows`, `.donut`, `.topic`, `.heat`,
+  `.acc-row`, `.rk`; los badges de los temas llevan la tinta oscura donde
+  el blanco de la maqueta no pasaba 4,5:1) y,
   con los mismos tokens, lo que la maqueta no dibuja o que todavía no se
   rehizo (progreso, Tabulator, feed, pop-up, modales, análisis, mapa,
   inicio, login, el Monitoreo de X). Todo color sale de los tokens: los únicos sueltos son los de marca de cada
@@ -421,7 +509,7 @@ en el tag `v3-riel-radar`. SDD de la fase A en
   (nunca lo deja vacío) y la elección queda en `localStorage`
   (`sl.tema`: `oscuro` | `claro`, con try/catch; sin almacenamiento vale la
   clara). El login no tiene botón pero respeta lo elegido. Los valores
-  oscuros son los de la maqueta (`:root[data-theme="dark"]`); no hay
+  oscuros son los de la maqueta, salvo `--muted` (`:root[data-theme="dark"]`); no hay
   `prefers-color-scheme` en styles.css.
 - **Barra superior** (`header.top`, igual en `instagram.html`, `x.html` y,
   sin solapas, `dashboard.html`): marca (vuelve al inicio), la píldora de
@@ -435,8 +523,9 @@ en el tag `v3-riel-radar`. SDD de la fase A en
   `.tab-panel` (`#tab-<nombre>`, con `hidden`) y repite las `.rv`; el hash
   sigue siendo `#tab-monitoring` / `#tab-claims-map` / `#tab-analysis`.
   Teclas 1-4 (el número de la solapa; no mientras se escribe ni con un
-  pop-up o modal abierto) y ← → con el foco en la píldora. Estadísticas va
-  con `aria-disabled` y "pronto" hasta la fase C. X: Monitoreo, Mapa y
+  pop-up o modal abierto) y ← → con el foco en la píldora. Estadísticas es
+  la 4 (solo Instagram): al abrirla, `openTab` llama a `openStats`, como al
+  Mapa con `refreshClaimsMap`; un botón con `aria-disabled` no abre nada. X: Monitoreo, Mapa y
   Análisis, sin Estadísticas, y abre en Análisis. `main.js` también mide
   `--top` y atiende `#fuentes-busquedas` / `-cuentas` / `-palabras` /
   `-hashtags` (abre el Monitoreo, baja a esa caja, abre su campo de agregar
@@ -461,7 +550,7 @@ en el tag `v3-riel-radar`. SDD de la fase A en
   nunca "DGAND"), "4 corridas por día · 8, 12, 16 y 20 h" desde `runHours`
   y `corridasPorDia` de `/api/footer-stats` (sin dato, la línea no sale),
   columnas Secciones / Fuentes / Plataformas / Cuenta y la línea final.
-  Estadísticas, Facebook y TikTok van "· pronto", sin enlace.
+  Facebook y TikTok van "· pronto", sin enlace.
 - **Monitoreo de Instagram** (fase B): la solapa de la maqueta, con datos
   reales y casi todo del lado del cliente sobre los posteos de la tabla
   (`monitoringTable.getData()`). X conserva su layout (solo comparte el
@@ -475,11 +564,20 @@ en el tag `v3-riel-radar`. SDD de la fase A en
     publicaciones del período, `buildEmptyListLine` dice "Todavía no hay
     publicaciones de hoy · ver 7 días" (con el enlace). `monitorPeriodDays`
     es 0 en X: ahí no se filtra nada por período.
+    Un clic en una palabra o un tema de Estadísticas trae ese período como
+    rango temporal (`monitorPeriodRange`, lo pone `showInMonitoring`):
+    "24/9 → 23/10" con ✕ en `periodSeg`, Hoy / 7 / 30 apagados, sin
+    guardarse. `monitorPeriodEnd` es su fin (null con Hoy / 7 / 30) y
+    `postInPeriod` lo respeta, así lo siguen los KPI (su anterior son los
+    días enteros, el mismo de Estadísticas), las fuentes, el flujo, "Se
+    despegaron" y la lista. La ✕ o elegir Hoy / 7 / 30 lo saca.
   - **Panel** (`public/js/monitoringPanel.js`, prefijo `panel`): los
-    cuatro KPI con `countUp` (publicaciones con sparkline y variación contra
-    el período anterior del mismo largo; tono neto sobre los clasificados,
-    con anillo; "Se despegaron" con "la mayor: 15,37× en comentarios, de
-    @cuenta"; conversación), los chips de búsquedas / palabras clave /
+    cuatro KPI (publicaciones con sparkline y variación contra el período
+    anterior del mismo largo; tono neto sobre los clasificados, con anillo;
+    "Se despegaron" con "la mayor: 15,37× en comentarios, de @cuenta";
+    conversación), con las tarjetas de `public/js/kpi.js` (prefijo `kpi`,
+    compartidas con Estadísticas: `kpiCard`, `kpiDelta`, el trazo, el
+    anillo y `kpiCountUp`), los chips de búsquedas / palabras clave /
     hashtags (conteo del período y barrita de tono; búsqueda = su
     `matched_reason`, palabra o hashtag = escrita en título o texto; clic =
     filtrar la lista con `setSourceFilter`, que se ve como pastilla con ✕;
@@ -519,7 +617,12 @@ en el tag `v3-riel-radar`. SDD de la fase A en
     recibe el mouse). "Mostrando N de M publicaciones del período";
     "Limpiar filtros" (`.f-clear.on`) solo con algo puesto, y no toca el
     período. La placa vacía de Tabulator es un nodo propio
-    (`tablePlaceholderEl`) que `applyFilters` tiene al día.
+    (`tablePlaceholderEl`) que `applyFilters` tiene al día. El filtro por
+    fuente suma `palabra` (un clic en la nube de Estadísticas): los posteos
+    que la nube contó (los `ids` de esa palabra), con la pastilla "palabra
+    de la nube «x»". Elegir "Coyuntura / Otros" en Tema trae también los
+    posteos sin tema (`temaSinDato` de `/api/monitoring/config`), como los
+    cuenta Estadísticas.
   - **Avisos y carga**: `notifyMonitoringViews({ config })` cuando llega
     la config (null si falló). La config y los posteos pueden llegar antes
     de que se cargue un script de los de abajo: cada uno arranca con
@@ -527,6 +630,61 @@ en el tag `v3-riel-radar`. SDD de la fase A en
     están.
   - Los colores de los temas (`temaColor`, `buildTemaTag`) son los
     `--cat-N` por el lugar del tema en la config.
+- **Estadísticas de Instagram** (fase C, `public/js/stats.js`, prefijo
+  `stats`; solo `instagram.html`, después del flujo): la solapa de la
+  maqueta con los números de `GET /api/monitoring/stats` (ver
+  "Estadísticas"); el frontend no cuenta nada.
+  - **Carga**: la primera vez que se abre la solapa (`openStats`) y al
+    cambiar el período: 7 / 30 / 90 días hasta hoy o Desde → Hasta (si
+    termina hoy y tiene 7, 30 o 90 días, es ese botón), en
+    `sl.stats.periodo` (`"30"` o `"AAAA-MM-DD/AAAA-MM-DD"`; sin nada, 30).
+    Mientras llega, lo anterior queda tenue (`.stats-body.loading`) y una
+    respuesta de otro período se descarta (`statsRequest`); un error deja el
+    aviso con "Reintentar". Si cambian los posteos de la tabla (ids, tono o
+    tema, `statsPostsKey`: una corrida, ignorar, otro tono) se vuelve a
+    pedir: ya, si la solapa está a la vista y el pop-up cerrado (si no, al
+    cerrarlo o al volver).
+  - **Comparación**: si el backend dice que el anterior no es comparable
+    (`statsHasPrevious` = `anterior.comparable`: empieza antes del primer
+    día con datos), KPI "sin datos del período anterior" (Negativo y
+    Positivo, sin el "antes N %") y temas sin badge ni variación. Si es
+    comparable pero tuvo corridas en menos de la mitad de sus días, el aviso
+    "Período anterior con pocas corridas: hubo en N de sus M días." y se
+    compara igual. Un período entero
+    antes de la primera publicación (`diasEfectivos` 0) muestra "—" (también
+    en el centro de la dona), "Sin datos de esas fechas." y "No hay datos de esas fechas: las publicaciones
+    guardadas empiezan el 29/7." (`periodo.primerDia`). El aviso sale de los
+    datos a la vista (`statsPeriodNoteText`), también al volver a la solapa.
+  - **Bloques**: cinco KPI (`kpi.js`; "sin datos" si el anterior no tiene);
+    la nube en espiral medida con canvas (Volumen / Positivos reales; las de
+    dos publicaciones o más; color = el tono que predomina); menciones por
+    búsqueda y la dona; los 9 temas con su badge (sin datos del anterior,
+    ninguno; Nuevo: 0 antes y 3 o más; Pico: 5 o más y al menos el doble;
+    En alza: más de +20 %; Baja: menos de −20 %; si no, Estable), su
+    evolución y la cita "N,NN× en <métrica>" ("La que más se despegó" si su
+    `nivel` es alto; si no, "La de mayor alcance"); el mapa de día y hora;
+    el tono neto por tramo (por día o por semana, también en el título; sin
+    punto en un tramo sin publicaciones); las 10 cuentas (Impacto /
+    Publicaciones / Seguidores) y las 6 que más se despegaron (solo las de
+    nivel alto; sin ninguna, "Ninguna publicación del período se despegó de
+    lo habitual de su cuenta"). Con cinco KPI, entre 981 y 1200 px van de a
+    tres.
+  - **Clics**: una palabra o un tema llaman a `showInMonitoring`
+    (`monitoring.js`): el Monitoreo con este período como rango y la
+    palabra (por sus `ids`; con "Positivos reales", además Tono positivo) o
+    el tema, los demás filtros en blanco, y baja a la lista, que muestra el
+    mismo número que la tarjeta; el foco pasa al título de la lista
+    (`focusMonitoringList`, `#pubsTitle` con tabindex -1: no a un control,
+    así una tecla no saca el filtro ni cambia el tema), igual que al sacar
+    la pastilla de la fuente o al aplicar una alerta. La ✕ del rango (`leaveMonitorRange`) lo deja en el botón
+    del período que queda prendido, y una alerta del Monitoreo saca el rango
+    (va a Hoy). Con un rango cuyo anterior arranca antes del primer posteo
+    cargado, el KPI del Monitoreo dice "sin datos del período anterior",
+    como Estadísticas. El ranking abre el pop-up (`openFeedPopList`)
+    recorriendo esos 6, con la foto y el tema de la fila de la tabla; si se
+    rehace con el foco en una fila, el foco pasa a la misma fila nueva (sin
+    filas, al título de la tarjeta). Desde → Hasta no acepta un "Hasta"
+    posterior a hoy.
 - **Mapa**: mosaicos de OpenStreetMap claros también en oscuro; controles,
   leyenda, popups y tooltips de Leaflet con los tokens. Los colores de
   categoría (`--cat-1` … `--cat-12`) salen de la paleta de la maqueta, en su
@@ -562,7 +720,9 @@ control existe solo en `instagram.html` (como `fAlcanceEl`), en X es null y
 hay que tratarlo así. `monitoring.js` avisa los cambios con
 `notifyMonitoringViews(change)` (sin argumento = redibujar;
 `{ ignoredId }`; `{ goToId }`, que quedó como respaldo de X; `{ config }`;
-`{ run }`, para la barra superior, el panel y el flujo). El alcance de la
+`{ run }`, para la barra superior, el panel y el flujo; Estadísticas
+escucha los demás —todos salvo `{ config }` y `{ run: 'start' }`— para
+saber si sus datos quedaron viejos). El alcance de la
 tarjeta y del filtro "Alcance" es `postReach`: combina los niveles que ya
 manda el backend en `benchmark.likes` y `benchmark.comments` (vale el
 mejor de los dos; "normal" se muestra "medio"; sin ninguna métrica con

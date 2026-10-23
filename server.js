@@ -56,8 +56,9 @@ const { processPendingReclamosInBackground } = require('./src/geoWorker');
 const accountStats = require('./src/accountStats');
 const postImageRoutes = require('./src/postImageRoutes');
 const { buildLastRun } = require('./src/lastRun');
+const statsRoutes = require('./src/statsRoutes');
 const { CATEGORIAS_RECLAMO, ESTADOS_RECLAMO, isValidEstado } = require('./src/categoriaReclamo');
-const { subcategoriasDe, CATEGORIAS: TEMAS_POSTEO } = require('./src/categoriasConfig');
+const { subcategoriasDe, CATEGORIAS: TEMAS_POSTEO, CATEGORIA_FALLBACK } = require('./src/categoriasConfig');
 const { parseReclamosFilters, isValidReclamosPlataforma } = require('./src/reclamosQuery');
 const { normalizeEmail, isEmailAllowed } = require('./src/auth/allowlist');
 const { issueMagicLink, redeemMagicLink } = require('./src/auth/magicLink');
@@ -500,11 +501,23 @@ app.get('/api/monitoring/posts', (req, res) => {
 // GET /api/monitoring/posts/:id/image?plataforma=instagram&size=thumb|full
 postImageRoutes.register(app);
 
+// Estadísticas: todos los bloques del período en una sola respuesta, con la
+// plataforma ya validada por el middleware de arriba:
+// GET /api/monitoring/stats?plataforma=instagram&desde=AAAA-MM-DD&hasta=AAAA-MM-DD
+// Las frases de la nube de palabras son las palabras clave y búsquedas de la
+// plataforma; el alcance, solo donde el adapter tiene benchmark.
+statsRoutes.register(app, {
+  configFor: (plataforma) => monitor.loadConfig(plataforma),
+  conAlcance: (plataforma) => Boolean(getPlatform(plataforma).capabilities?.benchmark),
+});
+
 // Las fuentes de la plataforma y, para el filtro "Tema" del Monitoreo, los
 // temas posibles de un posteo: las categorías de primer nivel del mapa de
-// reclamos, en el orden del JSON (ver "Tema" en CLAUDE.md).
+// reclamos, en el orden del JSON (ver "Tema" en CLAUDE.md). `temaSinDato`
+// es el tema que vale para un posteo sin tema ("Coyuntura / Otros"), como
+// lo cuenta Estadísticas: el filtro lo incluye al elegir ese tema.
 app.get('/api/monitoring/config', (req, res) => {
-  res.json({ ...monitor.loadConfig(monitoringPlataforma(req)), temas: TEMAS_POSTEO });
+  res.json({ ...monitor.loadConfig(monitoringPlataforma(req)), temas: TEMAS_POSTEO, temaSinDato: CATEGORIA_FALLBACK });
 });
 
 // Estado de la escucha para "Monitoreo en vivo": la próxima corrida y las

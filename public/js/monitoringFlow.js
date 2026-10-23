@@ -203,11 +203,13 @@ function flowTrim({ animate = false } = {}) {
 }
 
 // "N,N publicaciones/hora": las del período sobre las horas que van del
-// período.
+// período (con un rango de Estadísticas, hasta su fin).
 function flowRenderRate(count) {
   if (!flowRateEl) return;
   const from = monitorPeriodStart();
-  const hours = from === null ? 0 : (Date.now() - from) / 3600e3;
+  const to = monitorPeriodEnd();
+  const now = Date.now();
+  const hours = from === null ? 0 : ((to === null ? now : Math.min(to, now)) - from) / 3600e3;
   flowRateEl.textContent = hours > 0 ? FLOW_RATE.format(count / hours) : '—';
 }
 
@@ -278,7 +280,7 @@ function flowRunEnded(newIds) {
 }
 
 function flowKey() {
-  return `${monitorPeriodStart()}|${flowPosts()
+  return `${monitorPeriodStart()}-${monitorPeriodEnd()}|${flowPosts()
     .slice(0, 40)
     .map((p) => `${p.id}:${p.sentiment || ''}:${p.tema || ''}:${p.likes}:${p.comments}`)
     .join(',')}`;

@@ -997,6 +997,9 @@ function reachSortValue(post) {
 // "Se despegaron" y la lista (va dentro de postMatchesFilters). Se recuerda
 // en el navegador; sin nada guardado, "Hoy". En x.html no hay período
 // (monitorPeriodDays 0) y no se filtra nada por acá.
+// Un clic en una palabra o un tema de Estadísticas trae su período como
+// rango (monitorPeriodRange, "24/9 → 23/10"): manda sobre Hoy / 7 / 30
+// hasta su ✕ o hasta que se elija otro, y no se guarda.
 // -------------------------------------------------------------------------
 const PERIOD_KEY = 'sl.monitoreo.periodo';
 const PERIOD_OPTIONS = [1, 7, 30];
@@ -1013,6 +1016,8 @@ function readSavedPeriod() {
 }
 
 let monitorPeriodDays = periodSegEl ? readSavedPeriod() : 0;
+// { desde, hasta } ('AAAA-MM-DD', los dos días incluidos) o null.
+let monitorPeriodRange = null;
 
 // Las 00:00 en Argentina del día que está "days - 1" días antes de "now".
 // Argentina no tiene horario de verano desde 2009: siempre UTC−3, y restar
@@ -1023,12 +1028,39 @@ function argentinaDayStart(now, daysBack = 0) {
 
 // Desde cuándo cuenta el período elegido (ms), o null si no hay período.
 function monitorPeriodStart(now = Date.now()) {
+  if (monitorPeriodRange) return Date.parse(`${monitorPeriodRange.desde}T00:00:00-03:00`);
   return monitorPeriodDays ? argentinaDayStart(now, monitorPeriodDays - 1) : null;
 }
 
-// El período en palabras: "hoy", "7 días", "30 días".
-function monitorPeriodLabel(days = monitorPeriodDays) {
+// Hasta cuándo cuenta (ms, sin incluirlo): el fin del último día del rango,
+// o null si el período llega hasta ahora (Hoy / 7 / 30).
+function monitorPeriodEnd() {
+  return monitorPeriodRange ? Date.parse(`${monitorPeriodRange.hasta}T00:00:00-03:00`) + DAY_MS : null;
+}
+
+// "2026-09-24" → "24/9".
+function shortDay(fecha) {
+  const [, m, d] = fecha.split('-').map(Number);
+  return `${d}/${m}`;
+}
+
+// Hoy / 7 / 30 en palabras: "hoy", "7 días", "30 días".
+function periodDaysLabel(days) {
   return days === 1 ? 'hoy' : `${days} días`;
+}
+
+// El período en palabras: "hoy", "7 días", "30 días" o el rango, "24/9 → 23/10"
+// ("23/10" si es un solo día).
+function monitorPeriodLabel() {
+  if (!monitorPeriodRange) return periodDaysLabel(monitorPeriodDays);
+  const { desde, hasta } = monitorPeriodRange;
+  return desde === hasta ? shortDay(desde) : `${shortDay(desde)} → ${shortDay(hasta)}`;
+}
+
+// El rango en una frase: "del 24/9 al 23/10" o "del 23/10".
+function monitorRangeWords() {
+  const { desde, hasta } = monitorPeriodRange;
+  return desde === hasta ? `del ${shortDay(desde)}` : `del ${shortDay(desde)} al ${shortDay(hasta)}`;
 }
 
 function postPostedMs(post) {
@@ -1037,31 +1069,67 @@ function postPostedMs(post) {
 }
 
 // ¿El posteo es del período? Sin fecha de publicación no es de ninguno.
-function postInPeriod(post, from = monitorPeriodStart()) {
+function postInPeriod(post, from = monitorPeriodStart(), to = monitorPeriodEnd()) {
   if (from === null) return true;
   const ms = postPostedMs(post);
-  return ms !== null && ms >= from;
+  return ms !== null && ms >= from && (to === null || ms < to);
 }
 
 // Los posteos del período, de todos los cargados (sin los demás filtros).
 function monitorPeriodPosts() {
   if (!monitoringTable) return [];
   const from = monitorPeriodStart();
-  return monitoringTable.getData().filter((post) => postInPeriod(post, from));
+  const to = monitorPeriodEnd();
+  return monitoringTable.getData().filter((post) => postInPeriod(post, from, to));
 }
 
+// Con un rango, Hoy / 7 / 30 quedan apagados y se suma el botón del rango:
+// su ✕ vuelve al que había.
 function paintPeriodSeg() {
   if (!periodSegEl) return;
   for (const button of periodSegEl.querySelectorAll('button[data-days]')) {
-    const on = Number(button.dataset.days) === monitorPeriodDays;
+    const on = !monitorPeriodRange && Number(button.dataset.days) === monitorPeriodDays;
     button.classList.toggle('on', on);
     button.setAttribute('aria-pressed', String(on));
   }
+  let rangeBtn = periodSegEl.querySelector('button.range');
+  if (!monitorPeriodRange) {
+    if (rangeBtn) rangeBtn.remove();
+    return;
+  }
+  if (!rangeBtn) {
+    rangeBtn = document.createElement('button');
+    rangeBtn.type = 'button';
+    rangeBtn.className = 'range on';
+    rangeBtn.setAttribute('aria-pressed', 'true');
+    rangeBtn.dataset.tipTitle = 'Período de Estadísticas';
+    rangeBtn.addEventListener('click', leaveMonitorRange);
+    periodSegEl.appendChild(rangeBtn);
+  }
+  const label = monitorPeriodLabel();
+  const back = periodDaysLabel(monitorPeriodDays);
+  const close = document.createElement('i');
+  close.setAttribute('aria-hidden', 'true');
+  close.textContent = '✕';
+  rangeBtn.replaceChildren(label, close);
+  rangeBtn.dataset.tip = `Las publicaciones ${monitorRangeWords()}, como en Estadísticas.\nClic: volver a ${back}.`;
+  rangeBtn.setAttribute('aria-label', `Período de Estadísticas, ${label}. Quitarlo y volver a ${back}`);
+}
+
+// Saca el rango y vuelve a Hoy / 7 / 30. El botón del rango (o el enlace de
+// la lista vacía) desaparece: el foco pasa al botón del período que queda
+// prendido, para no caer en <body>.
+function leaveMonitorRange() {
+  setMonitorPeriod(monitorPeriodDays);
+  const on = periodSegEl && periodSegEl.querySelector('button[data-days].on');
+  if (on) on.focus({ preventScroll: true });
 }
 
 function setMonitorPeriod(days) {
-  if (!periodSegEl || !PERIOD_OPTIONS.includes(days) || days === monitorPeriodDays) return;
+  if (!periodSegEl || !PERIOD_OPTIONS.includes(days)) return;
+  if (days === monitorPeriodDays && !monitorPeriodRange) return;
   monitorPeriodDays = days;
+  monitorPeriodRange = null;
   try {
     window.localStorage.setItem(PERIOD_KEY, String(days));
   } catch (err) {
@@ -1087,6 +1155,16 @@ function buildEmptyListLine({ filtered = true } = {}) {
   const inPeriod = monitorPeriodDays ? monitorPeriodPosts().length : total;
   if (inPeriod > 0) {
     line.textContent = filtered ? 'No hay publicaciones con esos filtros.' : 'No hay publicaciones para mostrar.';
+    return line;
+  }
+  if (monitorPeriodRange) {
+    line.textContent = `No hay publicaciones ${monitorRangeWords()} · `;
+    const back = document.createElement('button');
+    back.type = 'button';
+    back.className = 'link-btn';
+    back.textContent = `volver a ${periodDaysLabel(monitorPeriodDays)}`;
+    back.addEventListener('click', leaveMonitorRange);
+    line.appendChild(back);
     return line;
   }
   const next = PERIOD_OPTIONS[PERIOD_OPTIONS.indexOf(monitorPeriodDays) + 1];
@@ -1120,24 +1198,44 @@ function normalizeSearch(text) {
 // abajo) — reemplaza a fAccEl.value de un <select> nativo.
 let fAccValue = '';
 
-// Filtro por fuente: { kind: 'search' | 'keyword', term } o null. Lo pone un
-// clic en un chip de las cajas de fuentes (setSourceFilter, desde
-// monitoringPanel.js). "search": los posteos que trajo esa búsqueda
+// Filtro por fuente: { kind: 'search' | 'keyword' | 'palabra', term, ids } o
+// null. Lo pone un clic en un chip de las cajas de fuentes (setSourceFilter,
+// desde monitoringPanel.js) o en una palabra de la nube de Estadísticas
+// (showInMonitoring). "search": los posteos que trajo esa búsqueda
 // (matched_reason "Búsqueda: <término>"); "keyword": los que tienen esa
-// palabra o hashtag escrita en el título o el texto.
+// palabra o hashtag escrita en el título o el texto; "palabra": los que la
+// nube contó para esa palabra (ids, del endpoint de Estadísticas: buscar el
+// texto traería otros, como "Macri" dentro de "Jorge Macri").
 let monitorSourceFilter = null;
 
 function sourceFilterKey(source) {
   return source ? `${source.kind}:${normalizeSearch(source.term)}` : '';
 }
 
+function sourceFilterOf(source) {
+  if (!source || !source.term) return null;
+  if (source.kind === 'palabra') return { kind: 'palabra', term: source.term, ids: new Set((source.ids || []).map(String)) };
+  return { kind: source.kind === 'search' ? 'search' : 'keyword', term: source.term };
+}
+
 function setSourceFilter(source) {
-  monitorSourceFilter = source && source.term ? { kind: source.kind === 'search' ? 'search' : 'keyword', term: source.term } : null;
+  monitorSourceFilter = sourceFilterOf(source);
   applyFilters();
+}
+
+// El título de la lista ("Publicaciones detectadas", tabindex -1): adonde va
+// el foco cuando lo que lo tenía desaparece o queda oculto (llegar desde
+// Estadísticas, sacar la pastilla de la fuente, una alerta). No es un
+// control: Espacio y las flechas siguen moviendo la página y las teclas de
+// las solapas siguen andando.
+function focusMonitoringList() {
+  const title = document.getElementById('pubsTitle');
+  if (title) title.focus({ preventScroll: true });
 }
 
 // ¿El posteo vino por esa fuente? Ver monitorSourceFilter.
 function postMatchesSource(post, source) {
+  if (source.kind === 'palabra') return source.ids.has(String(post.id));
   const term = normalizeSearch(source.term).trim();
   if (!term) return true;
   if (source.kind === 'search') {
@@ -1186,14 +1284,17 @@ function renderSourcePill() {
   fSourceEl.classList.toggle('hidden', !monitorSourceFilter);
   if (!monitorSourceFilter) return;
   const label = document.createElement('span');
-  label.textContent = monitorSourceFilter.kind === 'search' ? 'búsqueda ' : 'contiene ';
+  label.textContent = { search: 'búsqueda ', keyword: 'contiene ', palabra: 'palabra de la nube ' }[monitorSourceFilter.kind];
   const term = document.createElement('code');
   term.textContent = monitorSourceFilter.term;
   const close = document.createElement('button');
   close.type = 'button';
   close.textContent = '✕';
   close.setAttribute('aria-label', 'Sacar el filtro por fuente');
-  close.addEventListener('click', () => setSourceFilter(null));
+  close.addEventListener('click', () => {
+    setSourceFilter(null);
+    focusMonitoringList(); // la pastilla (y su ✕) ya no está
+  });
   fSourceEl.append(label, term, close);
 }
 
@@ -1236,7 +1337,11 @@ function readFilterValues() {
     hasta: fHastaEl.value,
     q: normalizeSearch(qEl.value.trim()),
     periodFrom: monitorPeriodStart(), // ms, o null sin período (x.html)
+    periodTo: monitorPeriodEnd(), // ms (sin incluirlo) o null: hasta ahora
     source: monitorSourceFilter,
+    // El tema de un posteo sin tema ("Coyuntura / Otros"): elegirlo en el
+    // filtro también los trae, como los cuenta Estadísticas.
+    temaSinDato: (monitoringConfig && monitoringConfig.temaSinDato) || null,
   };
 }
 
@@ -1245,15 +1350,15 @@ function readFilterValues() {
 // las dos muestran siempre el mismo conjunto. "filters" es lo que devuelve
 // readFilterValues().
 function postMatchesFilters(data, filters) {
-  const { sentiment, reach, tema, account, desde, hasta, q, periodFrom, source } = filters;
-  if (periodFrom != null && !postInPeriod(data, periodFrom)) return false;
+  const { sentiment, reach, tema, account, desde, hasta, q, periodFrom, periodTo = null, source, temaSinDato = null } = filters;
+  if (periodFrom != null && !postInPeriod(data, periodFrom, periodTo)) return false;
   // "sin_clasificar" no es un valor guardado: es la ausencia de valor.
   if (sentiment === SENTIMENT_UNSET) {
     if (data.sentiment) return false;
   } else if (sentiment && data.sentiment !== sentiment) {
     return false;
   }
-  if (tema && data.tema !== tema) return false;
+  if (tema && (data.tema || temaSinDato) !== tema) return false;
   if (account && data.account !== account) return false;
   if (source && !postMatchesSource(data, source)) return false;
   // Alcance: la etiqueta de postReach. Un posteo sin etiqueta (ninguna de sus
@@ -1505,6 +1610,11 @@ function ensureAccountFilterOptions(posts) {
 // recientes"; el período no es un filtro y queda como está. El orden de la
 // tabla queda en sus headers.
 function resetFilters() {
+  clearFilterControls();
+  applyFilters();
+}
+
+function clearFilterControls() {
   fSentEl.value = '';
   if (fAlcanceEl) fAlcanceEl.value = '';
   if (fTemaEl) fTemaEl.value = '';
@@ -1518,7 +1628,38 @@ function resetFilters() {
   fDesdeEl.classList.remove('on');
   fHastaEl.classList.remove('on');
   qEl.value = '';
+}
+
+// Desde Estadísticas (public/js/stats.js): el Monitoreo con el período de
+// allá como rango y una palabra (los posteos que contó la nube; con
+// `sentiment`, solo los de ese tono) o un tema, con los demás filtros en
+// blanco. Abre la solapa y baja a la lista. Fechas 'AAAA-MM-DD'.
+function showInMonitoring({ range, palabra = null, tema = '', sentiment = '' } = {}) {
+  if (!periodSegEl || !monitoringTable) return;
+  clearFilterControls();
+  if (sentiment) fSentEl.value = sentiment;
+  if (tema && fTemaEl) {
+    // Un tema que ya no está en la config (se renombró) igual se puede elegir.
+    if (![...fTemaEl.options].some((opt) => opt.value === tema)) {
+      const opt = document.createElement('option');
+      opt.value = tema;
+      opt.textContent = tema;
+      fTemaEl.appendChild(opt);
+    }
+    fTemaEl.value = tema;
+  }
+  if (palabra) monitorSourceFilter = sourceFilterOf({ kind: 'palabra', term: palabra.term, ids: palabra.ids });
+  const valid = (fecha) => typeof fecha === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(fecha);
+  monitorPeriodRange =
+    range && valid(range.desde) && valid(range.hasta) && range.desde <= range.hasta ? { desde: range.desde, hasta: range.hasta } : null;
+  paintPeriodSeg();
   applyFilters();
+  renderHighlightCards(monitoringTable.getData());
+  if (typeof openTab === 'function') openTab('monitoring');
+  if (typeof panelGoToList === 'function') panelGoToList();
+  // El foco estaba en Estadísticas, que quedó oculta: pasa al título de la
+  // lista (no a un control, así una tecla no saca el filtro ni cambia el tema).
+  focusMonitoringList();
 }
 
 // Par de flechas asc/desc que Tabulator pinta en cada header sortable.

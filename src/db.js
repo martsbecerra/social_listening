@@ -647,8 +647,9 @@ const setRefreshStateStmt = db.prepare(`
 // uno nuevo cuesta una consulta de detalle; esta tabla evita pagarla dos
 // veces por un posteo que terminó descartado (los guardados ya están en
 // detected_posts). outcome: guardado | descartado | sin_caption |
-// sin_detalle. Se purga a los 30 días: la búsqueda trae contenido de la
-// ventana del ciclo, un id viejo no vuelve.
+// sin_detalle. Se purga a los 100 días (SEARCH_SEEN_TTL_DAYS en monitor.js):
+// la búsqueda trae contenido de la ventana del ciclo, un id viejo no vuelve,
+// y Estadísticas cuenta los descartados de períodos de hasta 90 días.
 db.exec(`
   CREATE TABLE IF NOT EXISTS search_seen (
     post_id TEXT NOT NULL,
@@ -797,6 +798,65 @@ const getLastFinishedRunAtAnyStmt = db.prepare(`
   WHERE finished_at IS NOT NULL
   ORDER BY finished_at DESC
   LIMIT 1
+`);
+// Estadísticas (src/stats.js): los posteos visibles de una plataforma
+// publicados en un rango, con lo justo para contar y calcular el alcance.
+// posted_at se guarda en ISO UTC con milisegundos ("2026-10-13T16:12:21.000Z"),
+// así que el rango se compara como texto, como en el resto de este archivo.
+const listPostsForStatsStmt = db.prepare(`
+  SELECT id, account, title, caption, sentiment, tema, likes, comments, followers, post_type, posted_at, matched_reason
+  FROM detected_posts
+  WHERE plataforma = ? AND ignored = 0 AND posted_at >= ? AND posted_at < ?
+  ORDER BY posted_at
+`);
+// Las menciones por término de Estadísticas cuentan también lo que no quedó:
+// los ignorados (por posted_at, como el resto) y los resultados de búsqueda
+// descartados. search_seen no guarda posted_at: los descartados van por
+// first_seen_at, el día en que se pagó su detalle (con la ventana dinámica
+// de la detección, el mismo día de la publicación o el siguiente).
+const listIgnoredPostsForStatsStmt = db.prepare(`
+  SELECT matched_reason FROM detected_posts
+  WHERE plataforma = ? AND ignored = 1 AND posted_at >= ? AND posted_at < ?
+`);
+const countDiscardedSearchesForStatsStmt = db.prepare(`
+  SELECT term, COUNT(*) AS n FROM search_seen
+  WHERE plataforma = ? AND outcome = 'descartado' AND term IS NOT NULL
+    AND first_seen_at >= ? AND first_seen_at < ?
+  GROUP BY term
+`);
+// Rastros de corridas de una plataforma en un rango, para contar en cuántos
+// días hubo alguna (el aviso "período anterior con pocas corridas" de
+// Estadísticas): el arranque de cada corrida terminada y, como
+// monitoring_runs existe recién desde el 23/9/2026, también cuándo se
+// detectó un posteo (visible o ignorado) o se vio un resultado de búsqueda:
+// eso solo pasa en una corrida.
+const listRunTracesForStatsStmt = db.prepare(`
+  SELECT started_at AS t FROM monitoring_runs
+  WHERE finished_at IS NOT NULL AND started_at >= ? AND started_at < ?
+    AND (plataforma = 'todas' OR (',' || plataforma || ',') LIKE ('%,' || ? || ',%'))
+  UNION
+  SELECT detected_at FROM detected_posts WHERE plataforma = ? AND detected_at >= ? AND detected_at < ?
+  UNION
+  SELECT first_seen_at FROM search_seen WHERE plataforma = ? AND first_seen_at >= ? AND first_seen_at < ?
+`);
+// El primer posteo visible de la plataforma: antes de ese día no hay datos,
+// que no es lo mismo que un día sin publicaciones.
+const getFirstPostedAtStmt = db.prepare(
+  'SELECT MIN(posted_at) AS first FROM detected_posts WHERE plataforma = ? AND ignored = 0 AND posted_at IS NOT NULL'
+);
+// Seguidores por cuenta para Estadísticas: la caché account_followers y, de
+// respaldo, el número del posteo más reciente de la cuenta que lo trae.
+const listCachedFollowersStmt = db.prepare(
+  'SELECT account, followers FROM account_followers WHERE plataforma = ? AND followers IS NOT NULL'
+);
+const listLatestPostFollowersStmt = db.prepare(`
+  SELECT account, followers FROM (
+    SELECT account, followers,
+      ROW_NUMBER() OVER (PARTITION BY account ORDER BY detected_at DESC, posted_at DESC) AS n
+    FROM detected_posts
+    WHERE plataforma = ? AND followers IS NOT NULL AND account IS NOT NULL
+  )
+  WHERE n = 1
 `);
 // Conciliación del costo real (apifyCost.reconcileRealCosts): llamadas con
 // run de Apify conocido y sin usd_real todavía, en una ventana de antigüedad.
@@ -1630,6 +1690,77 @@ function getLastFinishedRunAtAny() {
   return row ? row.finished_at : null;
 }
 
+/**
+ * Posteos visibles (ignored = 0) de una plataforma publicados entre desdeIso
+ * (incluido) y hastaIso (excluido), en orden de publicación. Para
+ * Estadísticas (src/stats.js), que cuenta y calcula el alcance de cada uno.
+ * @returns {{id: string, account: string|null, title: string|null, caption: string|null,
+ *   sentiment: string|null, tema: string|null, likes: number|null, comments: number|null,
+ *   followers: number|null, post_type: string|null, posted_at: string,
+ *   matched_reason: string|null}[]}
+ */
+function listPostsForStats({ plataforma, desdeIso, hastaIso }) {
+  requirePlataforma(plataforma, 'listPostsForStats');
+  return listPostsForStatsStmt.all(plataforma, desdeIso, hastaIso);
+}
+
+/**
+ * El motivo (matched_reason) de los posteos ignorados de una plataforma
+ * publicados entre desdeIso (incluido) y hastaIso (excluido): las menciones
+ * de Estadísticas los cuentan como detectados por su término.
+ * @returns {(string|null)[]}
+ */
+function listIgnoredPostsForStats({ plataforma, desdeIso, hastaIso }) {
+  requirePlataforma(plataforma, 'listIgnoredPostsForStats');
+  return listIgnoredPostsForStatsStmt.all(plataforma, desdeIso, hastaIso).map((row) => row.matched_reason);
+}
+
+/**
+ * Resultados de búsqueda descartados por el clasificador (search_seen con
+ * outcome 'descartado'), por término, vistos por primera vez entre desdeIso
+ * (incluido) y hastaIso (excluido).
+ * @returns {{term: string, n: number}[]}
+ */
+function countDiscardedSearchesForStats({ plataforma, desdeIso, hastaIso }) {
+  requirePlataforma(plataforma, 'countDiscardedSearchesForStats');
+  return countDiscardedSearchesForStatsStmt.all(plataforma, desdeIso, hastaIso).map((row) => ({ term: row.term, n: Number(row.n) }));
+}
+
+/**
+ * Instantes (ISO) que muestran que hubo una corrida de la plataforma entre
+ * desdeIso (incluido) y hastaIso (excluido): el arranque de las corridas
+ * terminadas y, para lo anterior a monitoring_runs, las detecciones de
+ * posteos y de resultados de búsqueda. Sin repetidos.
+ * @returns {string[]}
+ */
+function listRunTracesForStats({ plataforma, desdeIso, hastaIso }) {
+  requirePlataforma(plataforma, 'listRunTracesForStats');
+  return listRunTracesForStatsStmt
+    .all(desdeIso, hastaIso, plataforma, plataforma, desdeIso, hastaIso, plataforma, desdeIso, hastaIso)
+    .map((row) => row.t);
+}
+
+/** @returns {string|null} posted_at (ISO) del primer posteo visible de la plataforma, o null si no hay ninguno. */
+function getFirstPostedAt(plataforma) {
+  requirePlataforma(plataforma, 'getFirstPostedAt');
+  const row = getFirstPostedAtStmt.get(plataforma);
+  return row ? row.first : null;
+}
+
+/**
+ * Seguidores por cuenta de una plataforma, para Estadísticas: el de
+ * account_followers y, si la cuenta no está ahí, el del posteo más reciente
+ * de la cuenta que lo trae.
+ * @returns {Map<string, number>}
+ */
+function listFollowersForStats(plataforma) {
+  requirePlataforma(plataforma, 'listFollowersForStats');
+  const map = new Map();
+  for (const row of listLatestPostFollowersStmt.all(plataforma)) map.set(row.account, row.followers);
+  for (const row of listCachedFollowersStmt.all(plataforma)) map.set(row.account, row.followers); // la caché manda
+  return map;
+}
+
 /** @returns {{id: number, runId: number|null, apifyRunId: string, usd: number, at: string}[]} llamadas con run conocido y sin costo real, con `at` entre newerThanIso y olderThanIso. */
 function listApifyCallsPendingRealCost({ olderThanIso, newerThanIso, limit = 100 }) {
   return listApifyCallsPendingRealCostStmt.all({ olderThanIso, newerThanIso, limit: Math.max(1, Math.floor(Number(limit)) || 100) });
@@ -1960,6 +2091,12 @@ module.exports = {
   getLastFinishedRunAtAny,
   getLastFinishedRun,
   listPostsDetectedBetween,
+  listPostsForStats,
+  listIgnoredPostsForStats,
+  listRunTracesForStats,
+  countDiscardedSearchesForStats,
+  getFirstPostedAt,
+  listFollowersForStats,
   sumApifyCallsSince,
   listApifyCallsPendingRealCost,
   setApifyCallRealCost,
