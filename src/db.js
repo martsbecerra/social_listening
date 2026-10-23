@@ -824,6 +824,21 @@ const countDiscardedSearchesForStatsStmt = db.prepare(`
     AND first_seen_at >= ? AND first_seen_at < ?
   GROUP BY term
 `);
+// Rastros de corridas de una plataforma en un rango, para contar en cuántos
+// días hubo alguna (el aviso "período anterior con pocas corridas" de
+// Estadísticas): el arranque de cada corrida terminada y, como
+// monitoring_runs existe recién desde el 23/9/2026, también cuándo se
+// detectó un posteo (visible o ignorado) o se vio un resultado de búsqueda:
+// eso solo pasa en una corrida.
+const listRunTracesForStatsStmt = db.prepare(`
+  SELECT started_at AS t FROM monitoring_runs
+  WHERE finished_at IS NOT NULL AND started_at >= ? AND started_at < ?
+    AND (plataforma = 'todas' OR (',' || plataforma || ',') LIKE ('%,' || ? || ',%'))
+  UNION
+  SELECT detected_at FROM detected_posts WHERE plataforma = ? AND detected_at >= ? AND detected_at < ?
+  UNION
+  SELECT first_seen_at FROM search_seen WHERE plataforma = ? AND first_seen_at >= ? AND first_seen_at < ?
+`);
 // El primer posteo visible de la plataforma: antes de ese día no hay datos,
 // que no es lo mismo que un día sin publicaciones.
 const getFirstPostedAtStmt = db.prepare(
@@ -1711,6 +1726,20 @@ function countDiscardedSearchesForStats({ plataforma, desdeIso, hastaIso }) {
   return countDiscardedSearchesForStatsStmt.all(plataforma, desdeIso, hastaIso).map((row) => ({ term: row.term, n: Number(row.n) }));
 }
 
+/**
+ * Instantes (ISO) que muestran que hubo una corrida de la plataforma entre
+ * desdeIso (incluido) y hastaIso (excluido): el arranque de las corridas
+ * terminadas y, para lo anterior a monitoring_runs, las detecciones de
+ * posteos y de resultados de búsqueda. Sin repetidos.
+ * @returns {string[]}
+ */
+function listRunTracesForStats({ plataforma, desdeIso, hastaIso }) {
+  requirePlataforma(plataforma, 'listRunTracesForStats');
+  return listRunTracesForStatsStmt
+    .all(desdeIso, hastaIso, plataforma, plataforma, desdeIso, hastaIso, plataforma, desdeIso, hastaIso)
+    .map((row) => row.t);
+}
+
 /** @returns {string|null} posted_at (ISO) del primer posteo visible de la plataforma, o null si no hay ninguno. */
 function getFirstPostedAt(plataforma) {
   requirePlataforma(plataforma, 'getFirstPostedAt');
@@ -2064,6 +2093,7 @@ module.exports = {
   listPostsDetectedBetween,
   listPostsForStats,
   listIgnoredPostsForStats,
+  listRunTracesForStats,
   countDiscardedSearchesForStats,
   getFirstPostedAt,
   listFollowersForStats,

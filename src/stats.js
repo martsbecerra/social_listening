@@ -21,8 +21,14 @@
 //     listado; no se guarda. "Se despegó" = top.level === 'alto'.
 //   - Los días anteriores al primer posteo de la base no son días sin
 //     publicaciones: no hay datos. El período efectivo arranca en el primer
-//     día con datos y termina hoy (un día futuro tampoco tiene datos). Si el
-//     período anterior queda entero fuera, sus campos *Anterior van en null.
+//     día con datos y termina hoy (un día futuro tampoco tiene datos).
+//   - Se compara con el período anterior solo si empieza en o después del
+//     primer día con datos (y termina antes de hoy): un día sin
+//     publicaciones vale cero, es un dato. Si empieza antes, sus campos
+//     *Anterior y temas[].anterior van en null (decisión del dueño,
+//     23/10/2026). `anterior.diasConCorridas` dice en cuántos de sus días
+//     hubo corridas: con menos de la mitad, la pantalla avisa sin dejar de
+//     comparar.
 //   - Menciones, por término de búsqueda (el de "Búsqueda: <término>" del
 //     motivo): `detectadas` cuenta también lo que no quedó (los ignorados y
 //     los resultados descartados por el clasificador, de search_seen, por el
@@ -683,6 +689,9 @@ function armarEstadisticas({ plataforma, desde, hasta, frases = [], conAlcance =
   const primerDia = primero ? fechaArgentina(Date.parse(primero)) : null;
   const efectivo = rangoEfectivo(periodo, primerDia, hoy);
   const efectivoAnterior = rangoEfectivo(anterior, primerDia, hoy);
+  // Comparable: el anterior entero tiene datos (empieza en o después del
+  // primer día con posteos y no llega a hoy).
+  const comparable = Boolean(primerDia) && anterior.desde >= primerDia && anterior.hasta < hoy;
 
   const filas = db.listPostsForStats({
     plataforma,
@@ -707,7 +716,17 @@ function armarEstadisticas({ plataforma, desde, hasta, frases = [], conAlcance =
   );
   const inicioPeriodo = inicioDelDia(periodo.desde);
   const actuales = posts.filter((p) => p.ms >= inicioPeriodo);
-  const anteriores = efectivoAnterior ? posts.filter((p) => p.ms < inicioPeriodo) : null;
+  const anteriores = comparable ? posts.filter((p) => p.ms < inicioPeriodo) : null;
+  // En cuántos días del anterior hubo corridas (ver db.listRunTracesForStats).
+  const diasConCorridas = new Set(
+    db
+      .listRunTracesForStats({
+        plataforma,
+        desdeIso: new Date(inicioDelDia(anterior.desde)).toISOString(),
+        hastaIso: new Date(inicioPeriodo).toISOString(),
+      })
+      .map((t) => fechaArgentina(Date.parse(t)))
+  ).size;
 
   const porDia = efectivo ? contarPorDia(actuales, listarDias(efectivo.desde, efectivo.hasta)) : [];
   const habitual = habitualDe(porDia);
@@ -736,6 +755,8 @@ function armarEstadisticas({ plataforma, desde, hasta, frases = [], conAlcance =
       desdeEfectivo: efectivoAnterior ? efectivoAnterior.desde : null,
       hastaEfectivo: efectivoAnterior ? efectivoAnterior.hasta : null,
       diasEfectivos: efectivoAnterior ? efectivoAnterior.dias : 0,
+      comparable,
+      diasConCorridas,
     },
     resumen: calcularResumen(actuales, anteriores, tendencias),
     porDia,

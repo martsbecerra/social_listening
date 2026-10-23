@@ -19,6 +19,7 @@ for (const name of Object.keys(process.env)) if (name.startsWith('REACH_')) dele
 const { describe, test } = require('node:test');
 const assert = require('node:assert/strict');
 
+const { DatabaseSync } = require('node:sqlite');
 const db = require('../src/db');
 const stats = require('../src/stats');
 const { CATEGORIA_FALLBACK } = require('../src/categoriasConfig');
@@ -463,7 +464,15 @@ describe('stats: la respuesta armada desde la base', { concurrency: false }, () 
       diasEfectivos: 9,
       primerDia: '2026-03-12',
     });
-    assert.deepEqual(r.anterior, { desde: '2026-01-20', hasta: '2026-02-18', desdeEfectivo: null, hastaEfectivo: null, diasEfectivos: 0 });
+    assert.deepEqual(r.anterior, {
+      desde: '2026-01-20',
+      hasta: '2026-02-18',
+      desdeEfectivo: null,
+      hastaEfectivo: null,
+      diasEfectivos: 0,
+      comparable: false,
+      diasConCorridas: 1, // el resultado de búsqueda visto el 1/2
+    });
 
     assert.deepEqual(
       r.porDia.map((d) => [d.fecha, d.total]),
@@ -577,23 +586,63 @@ describe('stats: la respuesta armada desde la base', { concurrency: false }, () 
     ]);
   });
 
-  test('el período anterior con datos en parte: cuenta solo lo que hay, y el posteo de las 23:30 del 15 queda en el 15', () => {
+  test('el período anterior que empieza antes del primer día con datos: sin comparación, y el posteo de las 23:30 del 15 queda en el 15', () => {
     const r = stats.armarEstadisticas({ plataforma: 'instagram', desde: '2026-03-16', hasta: '2026-03-20', conAlcance: true, ahora: AHORA });
-    assert.deepEqual(r.anterior, { desde: '2026-03-11', hasta: '2026-03-15', desdeEfectivo: '2026-03-12', hastaEfectivo: '2026-03-15', diasEfectivos: 4 });
+    assert.deepEqual(r.anterior, {
+      desde: '2026-03-11',
+      hasta: '2026-03-15',
+      desdeEfectivo: '2026-03-12',
+      hastaEfectivo: '2026-03-15',
+      diasEfectivos: 4,
+      comparable: false,
+      diasConCorridas: 1, // el resultado de búsqueda visto el 15/3 (la carga se detecta hoy)
+    });
     assert.equal(r.resumen.relevantes, 11);
+    assert.equal(r.resumen.relevantesAnterior, null);
+    assert.equal(r.resumen.seDespegaronAnterior, null);
+    assert.equal(r.resumen.negativoPctAnterior, null);
+    assert.equal(r.porDia[0].fecha, '2026-03-16');
+    assert.ok(r.temas.every((t) => t.anterior === null));
+  });
+
+  test('el período anterior que empieza justo el primer día con datos se compara, y cuenta en cuántos días hubo corridas', () => {
+    // Del 12 al 15: dos de Transporte, dos de Seguridad y dos sin tema.
+    const r = stats.armarEstadisticas({ plataforma: 'instagram', desde: '2026-03-16', hasta: '2026-03-19', conAlcance: true, ahora: AHORA });
+    assert.equal(r.anterior.desde, '2026-03-12');
+    assert.equal(r.anterior.comparable, true);
     assert.equal(r.resumen.relevantesAnterior, 6);
     assert.equal(r.resumen.seDespegaronAnterior, 0);
     assert.equal(r.resumen.negativoPctAnterior, 33.3); // 2 de 6
-    assert.equal(r.porDia[0].fecha, '2026-03-16');
-    // Del 12 al 15: dos de Transporte, dos de Seguridad y dos sin tema.
     assert.deepEqual(
-      r.temas.map((t) => [t.tema, t.n, t.anterior]),
+      r.temas.map((t) => [t.tema, t.anterior]),
       [
-        ['Seguridad', 5, 2],
-        ['Transporte', 5, 2],
-        [CATEGORIA_FALLBACK, 1, 2],
+        ['Seguridad', 2],
+        ['Transporte', 2],
+        [CATEGORIA_FALLBACK, 2],
       ]
     );
+  });
+
+  test('días con corridas: corridas terminadas de la plataforma, posteos detectados y resultados de búsqueda vistos', () => {
+    // Las fechas de detección de la carga son de hoy (no de marzo): para
+    // este test, corridas y vistos de marzo escritos a mano en la base.
+    const raw = new DatabaseSync(process.env.MONITORING_DB_PATH);
+    const run = raw.prepare('INSERT INTO monitoring_runs (started_at, finished_at, "trigger", plataforma) VALUES (?, ?, ?, ?)');
+    run.run(enArgentina('2026-02-20', 8), enArgentina('2026-02-20', 9), 'cron', 'instagram');
+    run.run(enArgentina('2026-02-20', 12), enArgentina('2026-02-20', 13), 'cron', 'instagram'); // el mismo día
+    run.run(enArgentina('2026-02-21', 8), enArgentina('2026-02-21', 9), 'cron', 'instagram,x');
+    run.run(enArgentina('2026-02-22', 8), null, 'cron', 'instagram'); // no terminó
+    run.run(enArgentina('2026-02-23', 8), enArgentina('2026-02-23', 9), 'cron', 'x'); // otra red
+    run.run(enArgentina('2026-02-24', 23, 30), enArgentina('2026-02-25', 0, 10), 'manual', 'todas'); // cuenta el día en que arrancó
+    raw
+      .prepare('INSERT INTO search_seen (post_id, plataforma, url, term, outcome, first_seen_at) VALUES (?, ?, ?, ?, ?, ?)')
+      .run('visto-1', 'instagram', 'https://www.instagram.com/p/VISTO1/', 'macri', 'descartado', enArgentina('2026-02-26', 10));
+    raw.close();
+    // Anterior del 20 al 26 de febrero: corridas el 20, 21 y 24, un visto el 26.
+    const r = stats.armarEstadisticas({ plataforma: 'instagram', desde: '2026-02-27', hasta: '2026-03-05', ahora: AHORA });
+    assert.equal(r.anterior.desde, '2026-02-20');
+    assert.equal(r.anterior.diasConCorridas, 4);
+    assert.equal(r.anterior.comparable, false); // antes del primer posteo (12/3): no se compara igual
   });
 
   test('un período anterior con datos pero sin posteos da 0, no null (y los porcentajes, null)', () => {

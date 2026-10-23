@@ -254,12 +254,12 @@ function statsNoData() {
   return statsData.periodo.diasEfectivos === 0;
 }
 
-// ¿Hay con qué comparar? El anterior tiene que tener datos todos sus días:
-// si la base arranca a mitad de ese período, comparar el período entero con
-// unos pocos días inflaría todo ("+919 %", todos los temas en "Pico"). El
-// backend cuenta lo que hay; la pantalla no lo compara.
+// ¿Se compara con el período anterior? Lo decide el backend
+// (anterior.comparable): solo si empieza en o después del primer día con
+// datos; un día sin publicaciones vale cero. Si empieza antes, los
+// *Anterior ya vienen en null.
 function statsHasPrevious() {
-  return statsData.anterior.diasEfectivos === statsData.periodo.dias;
+  return Boolean(statsData.anterior.comparable);
 }
 
 // Lo que dice una tarjeta sin nada que mostrar.
@@ -271,8 +271,8 @@ function statsEmptyLine() {
   return statsNode('p', 'stats-empty', statsEmptyText());
 }
 
-// La línea debajo de la cabecera: desde cuándo hay datos o por qué no se
-// compara con el período anterior ('' si no hace falta).
+// La línea debajo de la cabecera: desde cuándo hay datos, o que el período
+// anterior tuvo pocas corridas ('' si no hace falta).
 function statsPeriodNoteText() {
   if (!statsData) return '';
   const { periodo, anterior } = statsData;
@@ -285,8 +285,10 @@ function statsPeriodNoteText() {
   if (periodo.desdeEfectivo > periodo.desde) {
     notes.push(`Hay publicaciones guardadas desde el ${statsShort(periodo.desdeEfectivo)}: el período cuenta desde ahí.`);
   }
-  if (anterior.diasEfectivos > 0 && !statsHasPrevious()) {
-    notes.push(`El período anterior tiene datos de ${anterior.diasEfectivos} de sus ${periodo.dias} días: no se compara.`);
+  // Con corridas en menos de la mitad de sus días, el anterior puede dar
+  // poco: se compara igual, avisando.
+  if (statsHasPrevious() && anterior.diasConCorridas < periodo.dias / 2) {
+    notes.push(`Período anterior con pocas corridas: hubo en ${anterior.diasConCorridas} de sus ${periodo.dias} días.`);
   }
   return notes.join(' ');
 }
