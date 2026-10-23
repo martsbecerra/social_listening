@@ -30,6 +30,6 @@ un servidor de prueba en otro puerto y una copia de la base.
 ## Phase 3: prueba y documentación
 
 - [x] 3.1 `CLAUDE.md`, `README.md` y este registro
-- [ ] 3.2 Prueba en el navegador: la solapa a 1366 y 375 px, oscuro, movimiento reducido, corrida simulada, X
-- [ ] 3.3 Suite con `IG_ACTOR=apidojo` y `apify`
-- [ ] 3.4 Revisión independiente y correcciones de lo alto y lo medio
+- [x] 3.2 Prueba en el navegador: la solapa a 1366 y 375 px, oscuro, movimiento reducido (emulado con Chrome sin ventana), corrida simulada, X
+- [x] 3.3 Suite con `IG_ACTOR=apidojo` y `apify` (432 de 432 con los dos)
+- [x] 3.4 Revisión independiente (12 hallazgos, 5 medios según el revisor; el verificador dejó 1 medio y bajó 4 a bajos): corregidos los 5 medios y 4 bajos (flujo repetido, salto a las fuentes, tabla vacía de X, clic en cuentas, caja desplegada; horas del flujo, foco, avisos de consola, término resaltado), más el hueco de "Limpiar filtros" en el celular que salió de las capturas. Quedan 3 bajos: el pedido doble de `/status`, el contraste de `--muted` (valor de la maqueta) y los conteos del Pipeline con dos redes en el mismo ciclo

@@ -438,7 +438,9 @@ en el tag `v3-riel-radar`. SDD de la fase A en
   `--top` y atiende `#fuentes-busquedas` / `-cuentas` / `-palabras` /
   `-hashtags` (abre el Monitoreo, baja a esa caja, abre su campo de agregar
   con `panelOpenAdd` y lo enfoca; al cargar la página, recién en `load` y
-  sin animación).
+  sin animación, y durante 8 s `holdSourceBox` la vuelve a poner arriba si
+  se movió, porque el panel se dibuja después del `load`; lo suelta la
+  rueda, un toque, un clic o una tecla fuera de la caja).
 - **Estado de la escucha** (`public/js/topbar.js`): la hora de la última
   corrida TERMINADA (`GET /api/monitoring/status`, `lastRunAt`): de esa
   plataforma en `instagram.html` y `x.html` (`db.getLastFinishedRunAt`); en
@@ -502,7 +504,10 @@ en el tag `v3-riel-radar`. SDD de la fase A en
     absoluta: nunca crece); el término de la búsqueda va en `<mark>` armado
     con nodos (`flowFindTerm`, sin mayúsculas ni acentos). Durante una
     corrida no se redibuja; con `{ run: 'end', newIds }` las nuevas entran
-    de a una con "ahora"; con el mouse encima esperan en una cola.
+    de a una con "ahora" (el primer minuto; las horas se rehacen solas cada
+    30 s); con el mouse encima esperan en una cola, y un redibujo mientras
+    tanto las saltea (si no, quedaban repetidas). Un término lejos del
+    principio recorta el título adelante ("…de octubre GCBA").
   - **Filtros**: ocho controles con nombre en `.fbar` (Buscar, Tono,
     Alcance, Tema con `temas` de `/api/monitoring/config`, el combo de
     Cuenta `HAS_ACC_COMBO` con buscador y conteo del período, Desde, Hasta,

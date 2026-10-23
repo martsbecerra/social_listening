@@ -1061,11 +1061,11 @@ en el tag `v3-riel-radar`.
     cuántas publicaciones del período trajo cada uno y una barrita con su
     tono. Un clic filtra la lista; la ✕ pide confirmación en el mismo chip;
     el "+" abre el campo de agregar. Palabras clave y hashtags muestran 8 y
-    6, con "Ver las N →".
+    6, con "Ver las N →" (desplegadas, la lista se desplaza adentro).
   - **Centro**: el **flujo en vivo**, una línea por publicación (la última
     detectada arriba), con el término de la búsqueda resaltado; al terminar
-    una corrida las nuevas entran de a una con "ahora". Pasar el mouse lo
-    pausa; un clic abre la publicación.
+    una corrida las nuevas entran de a una con "ahora", y las horas se
+    actualizan solas. Pasar el mouse lo pausa; un clic abre la publicación.
   - **Derecha**: el pulso del tono (por hora del día, últimos 7 días), el
     **Pipeline** de la última corrida (traídas por las búsquedas, nuevas
     que clasificó el modelo, relevantes guardadas, cuántas se despegaron y
