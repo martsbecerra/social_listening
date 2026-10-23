@@ -773,8 +773,8 @@ function panelRenderAlerts(all, now) {
 let panelLastData = null;
 let panelLastSources = null;
 
-function panelDataKey(all, from) {
-  return `${from}|${all.map((p) => `${p.id}:${p.sentiment || ''}:${p.likes}:${p.comments}`).join(',')}`;
+function panelDataKey(all, from, to) {
+  return `${from}-${to}|${all.map((p) => `${p.id}:${p.sentiment || ''}:${p.likes}:${p.comments}`).join(',')}`;
 }
 
 function panelRenderSourcesNow() {
@@ -787,24 +787,28 @@ function panelRender() {
   if (!monitoringTable) return;
   const now = Date.now();
   const from = monitorPeriodStart(now);
+  const to = monitorPeriodEnd();
   const all = monitoringTable.getData();
-  const dataKey = panelDataKey(all, from);
+  const dataKey = panelDataKey(all, from, to);
   const sourcesKey = `${dataKey}|${sourceFilterKey(monitorSourceFilter)}|${fAccValue}|${panelConfig === undefined ? 'u' : panelConfig === null ? 'n' : 'c'}`;
   if (dataKey !== panelLastData) {
     panelLastData = dataKey;
-    const posts = all.filter((post) => postInPeriod(post, from));
-    const length = now - from;
+    const posts = all.filter((post) => postInPeriod(post, from, to));
+    // El anterior, del mismo largo: con Hoy / 7 / 30, lo que va del período;
+    // con un rango de Estadísticas, sus días enteros (el mismo anterior que
+    // allá). Los tramos del trazo llegan hasta ahora o hasta el fin del rango.
+    const length = (to === null ? now : to) - from;
     const previous = all.filter((post) => {
       const ms = postPostedMs(post);
       return ms !== null && ms >= from - length && ms < from;
     });
-    panelRenderKpis(posts, previous, from, now);
+    panelRenderKpis(posts, previous, from, to === null ? now : Math.min(to, now));
     panelRenderPulse(all, now);
     panelRenderAlerts(all, now);
   }
   if (sourcesKey !== panelLastSources) {
     panelLastSources = sourcesKey;
-    panelRenderSources(all.filter((post) => postInPeriod(post, from)));
+    panelRenderSources(all.filter((post) => postInPeriod(post, from, to)));
   }
 }
 

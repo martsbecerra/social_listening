@@ -58,7 +58,7 @@ const postImageRoutes = require('./src/postImageRoutes');
 const { buildLastRun } = require('./src/lastRun');
 const statsRoutes = require('./src/statsRoutes');
 const { CATEGORIAS_RECLAMO, ESTADOS_RECLAMO, isValidEstado } = require('./src/categoriaReclamo');
-const { subcategoriasDe, CATEGORIAS: TEMAS_POSTEO } = require('./src/categoriasConfig');
+const { subcategoriasDe, CATEGORIAS: TEMAS_POSTEO, CATEGORIA_FALLBACK } = require('./src/categoriasConfig');
 const { parseReclamosFilters, isValidReclamosPlataforma } = require('./src/reclamosQuery');
 const { normalizeEmail, isEmailAllowed } = require('./src/auth/allowlist');
 const { issueMagicLink, redeemMagicLink } = require('./src/auth/magicLink');
@@ -513,9 +513,11 @@ statsRoutes.register(app, {
 
 // Las fuentes de la plataforma y, para el filtro "Tema" del Monitoreo, los
 // temas posibles de un posteo: las categorías de primer nivel del mapa de
-// reclamos, en el orden del JSON (ver "Tema" en CLAUDE.md).
+// reclamos, en el orden del JSON (ver "Tema" en CLAUDE.md). `temaSinDato`
+// es el tema que vale para un posteo sin tema ("Coyuntura / Otros"), como
+// lo cuenta Estadísticas: el filtro lo incluye al elegir ese tema.
 app.get('/api/monitoring/config', (req, res) => {
-  res.json({ ...monitor.loadConfig(monitoringPlataforma(req)), temas: TEMAS_POSTEO });
+  res.json({ ...monitor.loadConfig(monitoringPlataforma(req)), temas: TEMAS_POSTEO, temaSinDato: CATEGORIA_FALLBACK });
 });
 
 // Estado de la escucha para "Monitoreo en vivo": la próxima corrida y las
