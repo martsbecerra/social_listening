@@ -8,8 +8,8 @@
 //   de la barra superior ([data-user-name], [data-logout]).
 // - Los enlaces navegan de verdad: a una solapa (instagram.html#tab-…), a
 //   una caja de fuentes del Monitoreo (instagram.html#fuentes-…, lo atiende
-//   main.js), a la página de cada plataforma. Estadísticas, Facebook y
-//   TikTok todavía no tienen pantalla: van sin enlace, con "pronto".
+//   main.js), a la página de cada plataforma. Facebook y TikTok todavía no
+//   tienen pantalla: van sin enlace, con "pronto".
 // - Si un dato no está, su línea no se muestra: nunca se inventa.
 
 const FOOTER_HTML = `
@@ -25,7 +25,7 @@ const FOOTER_HTML = `
         <li><a href="instagram.html#tab-monitoring">Monitoreo</a></li>
         <li><a href="instagram.html#tab-claims-map">Mapa de reclamos</a></li>
         <li><a href="instagram.html#tab-analysis">Análisis de publicación</a></li>
-        <li><span class="off" title="Pronto">Estadísticas · pronto</span></li>
+        <li><a href="instagram.html#tab-stats">Estadísticas</a></li>
       </ul>
     </div>
     <div>

@@ -7,8 +7,9 @@
 // .tab-panel (#tab-<nombre>) y esconde los demás; la pastilla de color se
 // corre al botón elegido. La solapa abierta queda en el hash (#tab-<nombre>,
 // sin sumar pasos al historial), y un cambio de hash abre esa solapa sin
-// recargar: así navegan los enlaces del pie. Un botón con aria-disabled
-// (Estadísticas, hasta que exista su pantalla) no abre nada.
+// recargar: así navegan los enlaces del pie. Un botón con aria-disabled no
+// abre nada. Al abrir el Mapa o Estadísticas se les avisa
+// (refreshClaimsMap, openStats): cargan sus datos recién ahí.
 // Teclas: 1, 2, 3... abren la solapa de ese número (no mientras se escribe
 // ni con un pop-up abierto); ← y → recorren la píldora con el foco en ella.
 // ---------------------------------------------------------------------------
@@ -60,6 +61,9 @@ function openTab(name, { updateHash = true } = {}) {
 
   if (name === 'claims-map' && typeof window.refreshClaimsMap === 'function') {
     window.refreshClaimsMap();
+  }
+  if (name === 'stats' && typeof window.openStats === 'function') {
+    window.openStats();
   }
   return true;
 }
@@ -303,10 +307,11 @@ document.addEventListener('click', async (e) => {
 
 initAuthHeader();
 
-// Si la URL trae #tab-analysis / #tab-monitoring / #tab-claims-map (o
-// #fuentes-…), abre esa solapa al cargar; sin hash queda la que el HTML
-// marca elegida. Se difiere a DOMContentLoaded porque main.js corre ANTES que
-// claimsMap.js: abrir el mapa ahora lo dejaría sin inicializar.
+// Si la URL trae #tab-analysis / #tab-monitoring / #tab-claims-map /
+// #tab-stats (o #fuentes-…), abre esa solapa al cargar; sin hash queda la
+// que el HTML marca elegida. Se difiere a DOMContentLoaded porque main.js
+// corre ANTES que claimsMap.js y stats.js: abrir el mapa ahora lo dejaría
+// sin inicializar.
 // El hash es también el id de la solapa, y el navegador salta hasta ella
 // (con la cabecera tapada por la barra superior): la página arranca arriba,
 // donde empieza la solapa igual.

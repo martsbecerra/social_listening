@@ -3530,7 +3530,7 @@ pre.report a {
   align-items: center;
   flex-wrap: wrap;
 }
-#statsKpis {
+.stats-body > * + * {
   margin-top: 14px;
 }
 /* Mientras llegan los datos de otro período, lo anterior queda tenue. */

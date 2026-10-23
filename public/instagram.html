@@ -37,8 +37,7 @@
         <button type="button" role="tab" data-tab="monitoring" aria-controls="tab-monitoring" aria-selected="true"><span class="k">1</span>Monitoreo</button>
         <button type="button" role="tab" data-tab="claims-map" aria-controls="tab-claims-map" aria-selected="false"><span class="k">2</span>Mapa</button>
         <button type="button" role="tab" data-tab="analysis" aria-controls="tab-analysis" aria-selected="false"><span class="k">3</span>Análisis de publicación</button>
-        <!-- Deshabilitado hasta que exista la pantalla (fase C del rediseño). -->
-        <button type="button" role="tab" data-tab="stats" aria-selected="false" aria-disabled="true" data-tip-title="Estadísticas" data-tip="Pronto: se activa cuando esté su pantalla.">Estadísticas<span class="soon">pronto</span></button>
+        <button type="button" role="tab" data-tab="stats" aria-controls="tab-stats" aria-selected="false"><span class="k">4</span>Estadísticas</button>
       </nav>
       <div class="status">
         <a class="plat" href="dashboard.html" title="Elegir plataforma"><i class="ig" aria-hidden="true"></i><span class="plat-name">Instagram</span></a>
@@ -415,6 +414,113 @@
           <button type="button" id="temasAddBtn" class="btn-small btn-copy">Agregar tema</button>
         </div>
         <pre id="reportAfter" class="report"></pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== Solapa: Estadísticas ===================== -->
+  <!-- La solapa de design/social-listening-v4.html con los datos de
+       GET /api/monitoring/stats (public/js/stats.js): todos los bloques sobre
+       el mismo período, que se pide la primera vez que se abre la solapa y
+       cada vez que cambia. Un clic en una palabra o un tema abre el Monitoreo
+       con ese período; uno en el ranking, el pop-up del posteo. -->
+  <section id="tab-stats" class="tab-panel hidden" role="tabpanel" aria-label="Estadísticas">
+    <div class="head rv">
+      <div>
+        <h1>Estadísticas</h1>
+        <p>Qué palabras traen conversación de verdad, de qué se está hablando, cuándo y quién. Cada bloque explica en una línea qué muestra. Todo sobre el mismo período.</p>
+      </div>
+      <div class="period">
+        <div class="seg" id="statsPeriod" role="group" aria-label="Período">
+          <button type="button" data-days="7" aria-pressed="false">7 días</button>
+          <button type="button" data-days="30" aria-pressed="true" class="on">30 días</button>
+          <button type="button" data-days="90" aria-pressed="false">90 días</button>
+        </div>
+        <div class="dates">
+          <input class="field" type="date" id="statsFrom" aria-label="Desde" />
+          <span aria-hidden="true">→</span>
+          <input class="field" type="date" id="statsTo" aria-label="Hasta" />
+        </div>
+        <p class="note period-note hidden" id="statsPeriodNote"></p>
+      </div>
+    </div>
+
+    <div class="card stats-error hidden" id="statsError" role="alert">
+      <p id="statsErrorText"></p>
+      <button type="button" class="btn" id="statsRetry">Reintentar</button>
+    </div>
+
+    <div class="stats-body" id="statsBody">
+      <div class="grid kpis five rv" id="statsKpis"></div>
+
+      <div class="card rv">
+        <div class="ct">
+          <h2>Nube de menciones</h2>
+          <div class="tools">
+            <span class="hint">tamaño = cantidad · color = tono predominante</span>
+            <div class="seg" id="statsCloudSeg" role="group" aria-label="Qué mide la nube">
+              <button type="button" data-mode="vol" aria-pressed="true" class="on">Volumen</button>
+              <button type="button" data-mode="pos" aria-pressed="false">Positivos reales</button>
+            </div>
+          </div>
+        </div>
+        <div class="cloud" id="statsCloud" aria-label="Palabras más usadas en las publicaciones del período"><div class="ph">Armando la nube…</div></div>
+      </div>
+
+      <div class="grid two rv">
+        <div class="card">
+          <div class="ct"><h2>Qué menciones trajeron positivos reales</h2></div>
+          <p class="note" style="margin: 0 0 12px">“Macri” junta muchísimo, pero no todo habla de Jorge. La barra azul es lo que el modelo confirmó que sí refiere a Jorge Macri o a la Ciudad; la verde, lo que además fue positivo.</p>
+          <div class="rows" id="statsRows"></div>
+          <div class="legend" style="margin-top: 12px"><span><i style="background: var(--line2)"></i>Menciones totales</span><span><i style="background: var(--c1)"></i>Refieren a Jorge o la Ciudad</span><span><i class="bg-pos"></i>Positivas reales</span></div>
+        </div>
+        <div class="card">
+          <div class="ct"><h2>Qué parte de la conversación se lleva cada búsqueda</h2><span class="hint">share of voice</span></div>
+          <div class="donut"><svg id="statsDonut" viewBox="0 0 150 150" role="img" aria-label="Participación de cada búsqueda en las publicaciones relevantes"></svg><div class="lg" id="statsDonutLg"></div></div>
+          <p class="note" style="margin: 12px 0 0">Si una búsqueda crece de golpe acá, casi siempre es un tema nuevo: conviene mirarlo en “De qué se habla”.</p>
+        </div>
+      </div>
+
+      <div class="head sec rv">
+        <div>
+          <h2>De qué se habla</h2>
+          <p>Los temas que el clasificador le pone a cada publicación. El badge marca si es un pico, si viene creciendo, si apareció en el período o si baja.</p>
+        </div>
+      </div>
+      <div class="grid topics rv" id="statsTopics"></div>
+
+      <div class="grid stats3 rv">
+        <div class="card wide">
+          <div class="ct"><h2>Cuándo se habla</h2><span class="hint">publicaciones por día y hora · hora de Argentina</span></div>
+          <div class="heat" id="statsHeat" role="img"></div>
+          <p class="note" style="margin: 10px 0 0">Más oscuro = más publicaciones. Sirve para saber a qué hora mirar el monitoreo y cuándo conviene publicar.</p>
+        </div>
+        <div class="card">
+          <div class="ct"><h2>Tono neto por semana</h2><span class="hint">positivos − negativos</span></div>
+          <svg class="line" id="statsNet" viewBox="0 0 320 180" preserveAspectRatio="none" role="img" aria-label="Tono neto por semana"></svg>
+          <p class="note" style="margin: 8px 0 0">Arriba de cero, la semana cerró con más elogios que críticas.</p>
+        </div>
+      </div>
+
+      <div class="grid who rv">
+        <div class="card">
+          <div class="ct">
+            <h2>Quién habla de nosotros</h2>
+            <div class="tools">
+              <span class="hint">impacto = likes + comentarios que generaron</span>
+              <div class="seg" id="statsAccSeg" role="group" aria-label="Ordenar las cuentas por">
+                <button type="button" data-sort="impacto" aria-pressed="true" class="on">Impacto</button>
+                <button type="button" data-sort="publicaciones" aria-pressed="false">Publicaciones</button>
+                <button type="button" data-sort="seguidores" aria-pressed="false">Seguidores</button>
+              </div>
+            </div>
+          </div>
+          <div id="statsAccRows"></div>
+        </div>
+        <div class="card">
+          <div class="ct"><h2>Las que más se despegaron</h2><span class="hint">razón con colchón contra la mediana de su cuenta</span></div>
+          <div class="rank" id="statsRank"></div>
+        </div>
       </div>
     </div>
   </section>
