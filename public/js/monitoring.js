@@ -1103,7 +1103,7 @@ function paintPeriodSeg() {
     rangeBtn.className = 'range on';
     rangeBtn.setAttribute('aria-pressed', 'true');
     rangeBtn.dataset.tipTitle = 'Período de Estadísticas';
-    rangeBtn.addEventListener('click', () => setMonitorPeriod(monitorPeriodDays));
+    rangeBtn.addEventListener('click', leaveMonitorRange);
     periodSegEl.appendChild(rangeBtn);
   }
   const label = monitorPeriodLabel();
@@ -1114,6 +1114,15 @@ function paintPeriodSeg() {
   rangeBtn.replaceChildren(label, close);
   rangeBtn.dataset.tip = `Las publicaciones ${monitorRangeWords()}, como en Estadísticas.\nClic: volver a ${back}.`;
   rangeBtn.setAttribute('aria-label', `Período de Estadísticas, ${label}. Quitarlo y volver a ${back}`);
+}
+
+// Saca el rango y vuelve a Hoy / 7 / 30. El botón del rango (o el enlace de
+// la lista vacía) desaparece: el foco pasa al botón del período que queda
+// prendido, para no caer en <body>.
+function leaveMonitorRange() {
+  setMonitorPeriod(monitorPeriodDays);
+  const on = periodSegEl && periodSegEl.querySelector('button[data-days].on');
+  if (on) on.focus({ preventScroll: true });
 }
 
 function setMonitorPeriod(days) {
@@ -1154,7 +1163,7 @@ function buildEmptyListLine({ filtered = true } = {}) {
     back.type = 'button';
     back.className = 'link-btn';
     back.textContent = `volver a ${periodDaysLabel(monitorPeriodDays)}`;
-    back.addEventListener('click', () => setMonitorPeriod(monitorPeriodDays));
+    back.addEventListener('click', leaveMonitorRange);
     line.appendChild(back);
     return line;
   }
@@ -1635,6 +1644,10 @@ function showInMonitoring({ range, palabra = null, tema = '', sentiment = '' } =
   renderHighlightCards(monitoringTable.getData());
   if (typeof openTab === 'function') openTab('monitoring');
   if (typeof panelGoToList === 'function') panelGoToList();
+  // El foco estaba en Estadísticas, que quedó oculta: pasa a lo que se puso
+  // (la ✕ de la pastilla de la palabra, o el filtro Tema), sin mover la página.
+  const target = palabra && fSourceEl ? fSourceEl.querySelector('button') : tema && fTemaEl ? fTemaEl : null;
+  if (target) target.focus({ preventScroll: true });
 }
 
 // Par de flechas asc/desc que Tabulator pinta en cada header sortable.

@@ -99,7 +99,7 @@ function panelRenderKpis(posts, previous, from, now) {
       id: 'pubs',
       label: `Publicaciones ${label}`,
       value: posts.length,
-      detail: kpiDelta(posts.length, previous.length),
+      detail: kpiDelta(posts.length, previous === null ? null : previous.length),
       spark: panelBuckets(posts, from, now),
     }),
     kpiCard({
@@ -684,7 +684,9 @@ function panelApplyAlert(filters) {
   if (filters.q) qEl.value = filters.q;
   if (filters.sentiment) fSentEl.value = filters.sentiment;
   if (filters.tema && fTemaEl) fTemaEl.value = filters.tema;
-  if (monitorPeriodDays !== 1) setMonitorPeriod(1);
+  // Hoy, aunque hubiera un rango de Estadísticas (setMonitorPeriod lo saca
+  // también si el período guardado ya era Hoy).
+  setMonitorPeriod(1);
   applyFilters();
   panelGoToList();
 }
@@ -773,6 +775,17 @@ function panelRenderAlerts(all, now) {
 let panelLastData = null;
 let panelLastSources = null;
 
+// Las 00:00 (Argentina) del día del primer posteo cargado; Infinity sin
+// ninguno.
+function panelFirstDayStart(all) {
+  let first = Infinity;
+  for (const post of all) {
+    const ms = postPostedMs(post);
+    if (ms !== null && ms < first) first = ms;
+  }
+  return Number.isFinite(first) ? argentinaDayStart(first, 0) : Infinity;
+}
+
 function panelDataKey(all, from, to) {
   return `${from}-${to}|${all.map((p) => `${p.id}:${p.sentiment || ''}:${p.likes}:${p.comments}`).join(',')}`;
 }
@@ -802,7 +815,10 @@ function panelRender() {
       const ms = postPostedMs(post);
       return ms !== null && ms >= from - length && ms < from;
     });
-    panelRenderKpis(posts, previous, from, to === null ? now : Math.min(to, now));
+    // Con un rango cuyo anterior arranca antes del primer posteo cargado, no
+    // hay con qué comparar ("sin datos", null), como en Estadísticas.
+    const complete = to === null || from - length >= panelFirstDayStart(all);
+    panelRenderKpis(posts, complete ? previous : null, from, to === null ? now : Math.min(to, now));
     panelRenderPulse(all, now);
     panelRenderAlerts(all, now);
   }
