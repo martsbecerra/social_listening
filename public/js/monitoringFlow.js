@@ -62,6 +62,12 @@ function flowFindTerm(text, term) {
   return [origin[at], origin[at + needle.length - 1] + 1];
 }
 
+// Si el término cae lejos del principio, el título se recorta adelante
+// ("…de octubre GCBA"): si no, la elipsis del final lo tapaba y del
+// resaltado asomaba solo una astilla.
+const FLOW_TERM_LEAD = 16;
+const FLOW_TERM_KEEP = 10;
+
 // "@cuenta · título", con el término de la búsqueda que lo trajo en <mark>
 // (armado con nodos de texto, nunca como HTML).
 function flowTitleLine(post) {
@@ -75,9 +81,15 @@ function flowTitleLine(post) {
   const hit = reason.text === 'búsqueda' ? flowFindTerm(title, reason.term) : null;
   line.append(name, ' · ');
   if (hit) {
+    let start = 0;
+    if (hit[0] > FLOW_TERM_LEAD) {
+      // Desde el principio de una palabra, unas letras antes del término.
+      const space = title.indexOf(' ', hit[0] - FLOW_TERM_KEEP);
+      start = space >= 0 && space < hit[0] ? space + 1 : hit[0] - FLOW_TERM_KEEP;
+    }
     const mark = document.createElement('mark');
     mark.textContent = title.slice(hit[0], hit[1]);
-    line.append(title.slice(0, hit[0]), mark, title.slice(hit[1]));
+    line.append(start ? `…${title.slice(start, hit[0])}` : title.slice(0, hit[0]), mark, title.slice(hit[1]));
   } else {
     line.append(title);
   }
