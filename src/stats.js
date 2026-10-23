@@ -421,10 +421,14 @@ function cantidadDeLetras(texto) {
  * lista. Se compara sin tildes ni mayúsculas y se muestra la forma más usada.
  * `positivas` y `negativas`: cuántos de esos posteos son de cada tono (el
  * modo "Positivos reales" de la nube y su color, el tono que predomina).
+ * `ids`: esos posteos, para que un clic en la palabra muestre en el
+ * Monitoreo exactamente los que se contaron (buscar el texto traería más:
+ * "Macri" está también dentro de "Jorge Macri" y "Ciudad" en "ciudadanos").
  */
 function contarPalabras(posts, frases = []) {
   const indiceFrases = prepararFrases([...FRASES_FIJAS, ...frases]);
   const posteosPorClave = new Map();
+  const idsPorClave = new Map();
   const tonoPorClave = new Map();
   const formasPorClave = new Map();
 
@@ -455,6 +459,8 @@ function contarPalabras(posts, frases = []) {
     }
     for (const clave of enEstePosteo) {
       posteosPorClave.set(clave, (posteosPorClave.get(clave) || 0) + 1);
+      if (!idsPorClave.has(clave)) idsPorClave.set(clave, []);
+      idsPorClave.get(clave).push(post.id);
       if (!tonoPorClave.has(clave)) tonoPorClave.set(clave, { positivas: 0, negativas: 0 });
       const tono = tonoPorClave.get(clave);
       if (post.sentimiento === 'positivo') tono.positivas++;
@@ -477,7 +483,7 @@ function contarPalabras(posts, frases = []) {
   return [...posteosPorClave]
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'es'))
     .slice(0, PALABRAS_MAX)
-    .map(([clave, n]) => ({ palabra: formaMasUsada(clave), n, ...tonoPorClave.get(clave) }));
+    .map(([clave, n]) => ({ palabra: formaMasUsada(clave), n, ...tonoPorClave.get(clave), ids: idsPorClave.get(clave) }));
 }
 
 /**

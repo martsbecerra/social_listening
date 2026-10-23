@@ -201,6 +201,9 @@ describe('stats: período y fechas en hora de Argentina', () => {
   });
 });
 
+// Una palabra de la nube sin sus ids (los tests que miran los conteos).
+const sinIds = ({ ids, ...resto }) => resto;
+
 describe('stats: bloques', () => {
   const preparar = (campos) =>
     stats.prepararPosteo({ id: String(siguienteId++), account: 'cuenta', likes: 0, comments: 0, sentiment: 'neutral', tema: null, posted_at: enArgentina('2026-10-01', 12), ...campos });
@@ -212,7 +215,7 @@ describe('stats: bloques', () => {
       preparar({ title: null, caption: 'Vecinos y vecinas de la Ciudad: #JorgeMacri' }),
     ];
     const palabras = stats.contarPalabras(posts, ['Jorge Macri', '#JorgeMacri', 'gobierno de la ciudad']);
-    assert.deepEqual(palabras.slice(0, 3), [
+    assert.deepEqual(palabras.slice(0, 3).map(sinIds), [
       { palabra: 'Jorge Macri', n: 2, positivas: 0, negativas: 0 },
       { palabra: 'plaza', n: 2, positivas: 0, negativas: 0 },
       { palabra: 'vecinos', n: 2, positivas: 0, negativas: 0 },
@@ -232,7 +235,21 @@ describe('stats: bloques', () => {
       preparar({ caption: 'El subte de siempre', sentiment: null }), // sin tono: neutral
     ];
     const subte = stats.contarPalabras(posts).find((p) => p.palabra.toLowerCase() === 'subte');
-    assert.deepEqual(subte, { palabra: subte.palabra, n: 3, positivas: 1, negativas: 1 });
+    assert.deepEqual(subte, { palabra: subte.palabra, n: 3, positivas: 1, negativas: 1, ids: posts.map((p) => p.id) });
+  });
+
+  test('palabras: los ids son los posteos que se contaron, no los que tienen el texto adentro', () => {
+    const posts = [
+      preparar({ caption: 'Jorge Macri en la plaza' }), // "Macri" va dentro de la frase
+      preparar({ caption: 'Macri y la plaza' }),
+      preparar({ caption: 'Los ciudadanos de la ciudad' }), // "ciudadanos" no es "ciudad"
+    ];
+    const palabras = stats.contarPalabras(posts, ['Jorge Macri']);
+    const de = (palabra) => palabras.find((p) => p.palabra.toLowerCase() === palabra.toLowerCase()).ids;
+    assert.deepEqual(de('Macri'), [posts[1].id]);
+    assert.deepEqual(de('Jorge Macri'), [posts[0].id]);
+    assert.deepEqual(de('ciudad'), [posts[2].id]);
+    assert.deepEqual(de('plaza'), [posts[0].id, posts[1].id]);
   });
 
   test('palabras: "Buenos Aires" cuenta como una frase aunque no esté en las listas', () => {
@@ -241,7 +258,7 @@ describe('stats: bloques', () => {
       preparar({ caption: 'buenos aires, la ciudad. Buenos días a todos' }), // "Buenos días" no es la frase
     ];
     const palabras = stats.contarPalabras(posts);
-    assert.deepEqual(palabras.find((p) => p.palabra === 'Buenos Aires'), { palabra: 'Buenos Aires', n: 2, positivas: 0, negativas: 0 });
+    assert.deepEqual(sinIds(palabras.find((p) => p.palabra === 'Buenos Aires')), { palabra: 'Buenos Aires', n: 2, positivas: 0, negativas: 0 });
     const mostradas = palabras.map((p) => p.palabra.toLowerCase());
     assert.ok(!mostradas.includes('aires'), '"Aires" no sale suelta');
     assert.ok(mostradas.includes('buenos'), '"Buenos días" sigue contando "Buenos"');
@@ -541,7 +558,7 @@ describe('stats: la respuesta armada desde la base', { concurrency: false }, () 
 
     // "Jorge Macri", "operativo" y "plaza" están en 4 posteos cada una: a igual
     // cantidad, en orden alfabético.
-    assert.deepEqual(r.palabras.slice(0, 3), [
+    assert.deepEqual(r.palabras.slice(0, 3).map(sinIds), [
       { palabra: 'Jorge Macri', n: 4, positivas: 1, negativas: 2 },
       { palabra: 'operativo', n: 4, positivas: 0, negativas: 3 },
       { palabra: 'plaza', n: 4, positivas: 0, negativas: 3 },
