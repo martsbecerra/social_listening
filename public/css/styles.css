@@ -3442,6 +3442,13 @@ pre.report a {
 .fstatus .f-clear.on {
   visibility: visible;
 }
+/* En el celular la línea se parte y el botón oculto ocupaba un renglón
+   propio (un hueco antes de la lista): ahí no ocupa lugar. */
+@media (max-width: 760px) {
+  .fstatus .f-clear:not(.on) {
+    display: none;
+  }
+}
 /* Un enlace que es un botón ("ver 7 días"). */
 .link-btn {
   border: 0;
