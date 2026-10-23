@@ -68,7 +68,9 @@
   --line2: #2f3f63;
   --fg: #e8ecf7;
   --fg2: #a9b4cf;
-  --muted: #6f7b99;
+  /* Más claro que el #6f7b99 de la maqueta, mismo tono: 5,03:1 sobre
+     --surface y 4,51:1 sobre --surface2 (la maqueta daba 4,10 y 3,67). */
+  --muted: #808aa5;
   --accent: #5cc8ff;
   --accent-ink: #0b1020;
   --glow: #7c6cff;
