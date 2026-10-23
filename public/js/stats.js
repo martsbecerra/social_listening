@@ -286,20 +286,22 @@ function statsRenderKpis() {
   const positivas = statsSum(statsData.porDia, 'positivo');
   const pctFormat = (n) => `${Math.round(n)} %`;
   const conversation = kpiDelta(r.conversacion, r.conversacionAnterior);
+  // Sin publicaciones, los tramos son todos cero: no hay trazo.
+  const spark = (values) => (r.relevantes ? values : null);
   statsKpisEl.replaceChildren(
     kpiCard({
       id: 'stats-relevantes',
       label: 'Publicaciones relevantes',
       value: r.relevantes,
       detail: kpiDelta(r.relevantes, r.relevantesAnterior),
-      spark: t.relevantes,
+      spark: spark(t.relevantes),
     }),
     kpiCard({
       id: 'stats-altos',
       label: 'Se despegaron',
       value: r.seDespegaron,
       detail: kpiDelta(r.seDespegaron, r.seDespegaronAnterior),
-      spark: t.seDespegaron,
+      spark: spark(t.seDespegaron),
     }),
     kpiCard({
       id: 'stats-neg',
@@ -307,7 +309,7 @@ function statsRenderKpis() {
       value: r.negativoPct,
       format: pctFormat,
       detail: statsToneDetail(r.negativoPctAnterior, negativas, r.negativoPct !== null && r.negativoPct > r.negativoPctAnterior),
-      spark: t.negativo,
+      spark: spark(t.negativo),
     }),
     kpiCard({
       id: 'stats-pos',
@@ -315,7 +317,7 @@ function statsRenderKpis() {
       value: r.positivoPct,
       format: pctFormat,
       detail: statsToneDetail(r.positivoPctAnterior, positivas, r.positivoPct !== null && r.positivoPct < r.positivoPctAnterior),
-      spark: t.positivo,
+      spark: spark(t.positivo),
     }),
     kpiCard({
       id: 'stats-conv',
@@ -323,7 +325,7 @@ function statsRenderKpis() {
       value: r.conversacion,
       format: statsConversationFormat(r.conversacion),
       detail: [...conversation, statsNode('br'), 'likes + comentarios'],
-      spark: t.conversacion,
+      spark: spark(t.conversacion),
     })
   );
 }

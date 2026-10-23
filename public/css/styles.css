@@ -3518,10 +3518,10 @@ pre.report a {
   font-size: 12.5px;
   font-family: var(--mono);
 }
-/* "Hay datos desde el 22/9": el período pedido arranca antes de la base. */
+/* Debajo de la cabecera: "Hay publicaciones guardadas desde el 29/7" (el
+   período pedido arranca antes de la base) o un Desde → Hasta mal escrito. */
 .period-note {
-  flex-basis: 100%;
-  margin: 0;
+  margin: -8px 0 12px;
   text-align: right;
 }
 .card > .ct .tools {
