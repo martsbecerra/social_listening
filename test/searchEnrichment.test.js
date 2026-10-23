@@ -358,10 +358,10 @@ describe('detalle de los resultados de búsqueda sin caption', { concurrency: fa
     }
   });
 
-  test('search_seen: el alta conserva la fecha del primer detalle y el ciclo purga lo de más de 30 días', async () => {
+  test('search_seen: el alta conserva la fecha del primer detalle y el ciclo purga lo de más de 100 días', async () => {
     const DAY_MS = 24 * 60 * 60 * 1000;
-    const old = new Date(Date.now() - 31 * DAY_MS).toISOString();
-    const recent = new Date(Date.now() - 29 * DAY_MS).toISOString();
+    const old = new Date(Date.now() - 101 * DAY_MS).toISOString();
+    const recent = new Date(Date.now() - 99 * DAY_MS).toISOString();
     db.markSearchSeen({ postId: 'purga-vieja', plataforma: 'instagram', url: 'https://www.instagram.com/p/purga-vieja/', term: 'jorge macri', outcome: 'descartado', firstSeenAt: old });
     db.markSearchSeen({ postId: 'purga-reciente', plataforma: 'instagram', outcome: 'sin_detalle', firstSeenAt: recent });
     db.markSearchSeen({ postId: 'purga-reciente', plataforma: 'instagram', outcome: 'descartado' });

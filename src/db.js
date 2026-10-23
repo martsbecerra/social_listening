@@ -647,8 +647,9 @@ const setRefreshStateStmt = db.prepare(`
 // uno nuevo cuesta una consulta de detalle; esta tabla evita pagarla dos
 // veces por un posteo que terminó descartado (los guardados ya están en
 // detected_posts). outcome: guardado | descartado | sin_caption |
-// sin_detalle. Se purga a los 30 días: la búsqueda trae contenido de la
-// ventana del ciclo, un id viejo no vuelve.
+// sin_detalle. Se purga a los 100 días (SEARCH_SEEN_TTL_DAYS en monitor.js):
+// la búsqueda trae contenido de la ventana del ciclo, un id viejo no vuelve,
+// y Estadísticas cuenta los descartados de períodos de hasta 90 días.
 db.exec(`
   CREATE TABLE IF NOT EXISTS search_seen (
     post_id TEXT NOT NULL,

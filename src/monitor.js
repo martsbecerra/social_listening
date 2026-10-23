@@ -219,7 +219,10 @@ function raiseLimitForWindow(baseLimit, windowDays) {
 // chico en un día con muchos resultados perdía posteos. Solo cuesta si hay
 // volumen (0,0023 usd por posteo nuevo).
 const DEFAULT_SEARCH_ENRICH_LIMIT = 100;
-const SEARCH_SEEN_TTL_DAYS = 30;
+// 100 días (era 30): Estadísticas cuenta los descartados por término en
+// períodos de hasta 90 días, y un descartado recordado más tiempo tampoco se
+// vuelve a pagar si una búsqueda lo trae otra vez.
+const SEARCH_SEEN_TTL_DAYS = 100;
 
 /** @returns {number} se lee en cada ciclo, no al cargar. Un valor inválido vale el default. */
 function searchEnrichLimit() {

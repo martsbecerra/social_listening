@@ -282,7 +282,7 @@ como llegaba y `/API/...` pasaba sin sesión hasta el handler. Test:
      paga una sola vez:
      `search_seen` anota lo consultado con su resultado (`guardado`,
      `descartado`, `sin_caption`, `sin_detalle`) y un descartado no se vuelve
-     a consultar ni a evaluar; la tabla se purga a los 30 días. Si el run de
+     a consultar ni a evaluar; la tabla se purga a los 100 días. Si el run de
      detalle falla entero no se anota nada y se reintenta en el próximo
      ciclo.
      La búsqueda por palabra clave de Instagram (`searches`) NO entra por el

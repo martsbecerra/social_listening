@@ -103,7 +103,9 @@ fachada expone con apidojo activo. Tope por ciclo `SEARCH_ENRICH_LIMIT`
 si la búsqueda lo vuelve a traer: por eso es holgado).
 `search_seen` anota lo ya pagado (`guardado` | `descartado` | `sin_caption`
 | `sin_detalle`): un descartado no se vuelve a consultar ni a evaluar; se
-purga a los 30 días. Si el run falla entero no se anota nada.
+purga a los 100 días (`SEARCH_SEEN_TTL_DAYS`; era 30: Estadísticas cuenta
+los descartados por término en períodos de hasta 90 días). Si el run falla
+entero no se anota nada.
 
 ## Modelo de costo (`src/apifyCost.js`)
 
