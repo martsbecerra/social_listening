@@ -20,7 +20,7 @@ La solapa Estadísticas de Instagram del diseño v4 (`design/social-listening-v4
 
 ### Requirement: REQ-EST-02 — Período y anterior
 
-El período MUST resolverse en hora de Argentina y el anterior MUST tener el mismo largo, pegado antes. El período efectivo MUST arrancar en el primer día con datos de la plataforma y terminar hoy; si el anterior queda entero fuera de los datos, cada campo `*Anterior` del resumen y `temas[].anterior` MUST ir en null.
+El período MUST resolverse en hora de Argentina y el anterior MUST tener el mismo largo, pegado antes. El período efectivo MUST arrancar en el primer día con datos de la plataforma y terminar hoy; si el anterior queda entero fuera de los datos, cada campo `*Anterior` del resumen y `temas[].anterior` MUST ir en null. La respuesta MUST traer el primer día con datos (`periodo.primerDia`).
 
 #### Scenario: Base nueva
 
@@ -80,7 +80,7 @@ MUST contar los posteos visibles (`ignored = 0`) por `posted_at`. Un posteo sin 
 
 ### Requirement: REQ-EST-10 — Solapa y carga
 
-Estadísticas MUST ser la cuarta solapa de `instagram.html` (tecla 4, `#tab-stats`) y el pie MUST enlazarla. MUST pedir los datos la primera vez que se abre y al cambiar el período (7 / 30 / 90 días hasta hoy o Desde → Hasta, recordado en `sl.stats.periodo`, con try/catch; sin nada, 30). Mientras llegan, lo anterior MUST quedar tenue; una respuesta de un período que ya no es el elegido MUST descartarse; un error MUST mostrar un aviso con "Reintentar". Si cambian los posteos de la tabla del Monitoreo (una corrida, ignorar, otro tono), MUST volver a pedirlos. Un Desde → Hasta mal escrito MUST avisarse sin pedir nada.
+Estadísticas MUST ser la cuarta solapa de `instagram.html` (tecla 4, `#tab-stats`) y el pie MUST enlazarla. Si el anterior no tiene datos todos sus días, la pantalla MUST NOT comparar (KPI "sin datos", temas sin badge ni variación) y MUST decir por qué. Un período sin ningún día con datos MUST mostrar "—" y "Sin datos de esas fechas", con desde cuándo hay. MUST pedir los datos la primera vez que se abre y al cambiar el período (7 / 30 / 90 días hasta hoy o Desde → Hasta, recordado en `sl.stats.periodo`, con try/catch; sin nada, 30). Mientras llegan, lo anterior MUST quedar tenue; una respuesta de un período que ya no es el elegido MUST descartarse; un error MUST mostrar un aviso con "Reintentar". Si cambian los posteos de la tabla del Monitoreo (una corrida, ignorar, otro tono), MUST volver a pedirlos. Un Desde → Hasta mal escrito MUST avisarse sin pedir nada.
 
 ---
 
@@ -104,19 +104,19 @@ MUST mostrar por término las barras de detectadas, relevantes y positivas con s
 
 ### Requirement: REQ-EST-14 — Temas
 
-MUST mostrar los 9 temas con más publicaciones con su badge: ninguno si el anterior no tiene datos; Nuevo si antes tuvo 0 y ahora 3 o más; Pico si tiene 5 o más y al menos el doble que antes; En alza con más de +20 %; Baja con menos de −20 %; si no, Estable. MUST mostrar su tono, su evolución por tramo y la cita de la que más se despegó con "N,NN× en <métrica>".
+MUST mostrar los 9 temas con más publicaciones con su badge: ninguno si el anterior no tiene datos; Nuevo si antes tuvo 0 y ahora 3 o más; Pico si tiene 5 o más y al menos el doble que antes; En alza con más de +20 %; Baja con menos de −20 %; si no, Estable. MUST mostrar su tono, su evolución por tramo y la cita de la de mayor razón con "N,NN× en <métrica>"; MUST NOT decir que se despegó si su nivel no es alto.
 
 ---
 
 ### Requirement: REQ-EST-15 — Horas, tono neto, cuentas y ranking
 
-MUST mostrar el mapa de día y hora, el tono neto por tramo (positivos − negativos sobre el total, sin punto en un tramo sin publicaciones), las 10 cuentas por impacto, publicaciones o seguidores, y las 6 que más se despegaron; una de esas MUST abrir el pop-up del posteo recorriendo las 6.
+MUST mostrar el mapa de día y hora, el tono neto por tramo (positivos − negativos sobre el total, sin punto en un tramo sin publicaciones), las 10 cuentas por impacto, publicaciones o seguidores, y las 6 de mayor razón entre las de nivel alto; una de esas MUST abrir el pop-up del posteo recorriendo las 6, y el foco MUST NOT quedar en `<body>` si se rehacen.
 
 ---
 
 ### Requirement: REQ-EST-16 — Del clic al Monitoreo
 
-Un clic en una palabra o un tema MUST abrir el Monitoreo con el período de Estadísticas como rango temporal ("24/9 → 23/10", con una ✕ que vuelve a Hoy / 7 / 30; no se guarda), los demás filtros en blanco, y bajar a la lista. El rango MUST valer para los KPI (con el mismo anterior que Estadísticas), las fuentes, el flujo, "Se despegaron" y la lista. La palabra MUST filtrar por sus `ids` (y, desde "Positivos reales", también por tono positivo); el tema, con el filtro Tema, que al elegir "Coyuntura / Otros" MUST traer también los posteos sin tema. La lista MUST mostrar el mismo número que la tarjeta.
+Un clic en una palabra o un tema MUST abrir el Monitoreo con el período de Estadísticas como rango temporal ("24/9 → 23/10", con una ✕ que vuelve a Hoy / 7 / 30; no se guarda), los demás filtros en blanco, y bajar a la lista. El rango MUST valer para los KPI (con el mismo anterior que Estadísticas), las fuentes, el flujo, "Se despegaron" y la lista. La palabra MUST filtrar por sus `ids` (y, desde "Positivos reales", también por tono positivo); el tema, con el filtro Tema, que al elegir "Coyuntura / Otros" MUST traer también los posteos sin tema. La lista MUST mostrar el mismo número que la tarjeta. El foco MUST pasar a lo que se puso (no quedar en la solapa oculta) y la ✕ del rango MUST dejarlo en el período que queda; una alerta del Monitoreo MUST sacar el rango.
 
 #### Scenario: La palabra "Macri"
 

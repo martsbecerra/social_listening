@@ -1096,9 +1096,10 @@ en el tag `v3-riel-radar`.
   la solapa de la maqueta con los números de `GET /api/monitoring/stats`.
   - Arriba, **7 / 30 / 90 días** o **Desde → Hasta** (se recuerda en el
     navegador). Todo va sobre el mismo período y se compara con el anterior
-    del mismo largo; si la base no tiene datos de ese anterior, dice "sin
-    datos" (no 0), y si el período arranca antes de la primera publicación
-    guardada, lo avisa.
+    del mismo largo; si la base no tiene datos de todos los días de ese
+    anterior, no compara y dice "sin datos" (no 0). Si el período arranca
+    antes de la primera publicación guardada, lo avisa; si es entero de
+    antes, dice desde cuándo hay datos.
   - **Cinco KPI**: publicaciones relevantes, cuántas se despegaron (las
     mismas que en el Monitoreo), % negativo, % positivo y conversación.
   - **Nube de menciones** (Volumen o Positivos reales; "Jorge Macri",
@@ -1108,10 +1109,11 @@ en el tag `v3-riel-radar`.
     búsqueda.
   - **De qué se habla**: los 9 temas con más publicaciones, con su badge
     (Pico, En alza, Nuevo, Baja o Estable contra el período anterior), su
-    tono, su evolución y la publicación que más se despegó.
+    tono, su evolución y la publicación de mayor alcance.
   - **Cuándo se habla** (día y hora), el **tono neto por semana**, **quién
     habla de nosotros** (por impacto, publicaciones o seguidores) y **las 6
-    que más se despegaron**, que abren el pop-up del posteo.
+    que más se despegaron** (solo las de alcance alto), que abren el pop-up
+    del posteo.
   - Un clic en una palabra o un tema abre el Monitoreo con ese período y
     esas publicaciones.
 - **El pie** (`public/js/footer.js`): la marca, el texto de la Dirección
@@ -1141,8 +1143,9 @@ y no hay caché (unos 50 ms con 30 días). Las reglas:
   (`top.level === 'alto'`, con colchón): los dos dan el mismo número.
 - La nube cuenta, por palabra, en cuántas publicaciones aparece (título y
   texto), con las frases de las palabras clave y búsquedas y "Buenos Aires"
-  enteras, sin palabras vacías (`src/stopwords.js`), hashtags, menciones,
-  links ni números; trae los ids de esas publicaciones.
+  enteras, sin palabras vacías (`src/stopwords.js`) y sin hashtags,
+  menciones, links ni números salvo los que están en la lista de palabras
+  clave (como "#JorgeMacri"); trae los ids de esas publicaciones.
 - Las menciones van por término de búsqueda: `detectadas` suma también lo
   que el clasificador descartó (`search_seen`, que por eso se purga a los
   100 días) y lo ignorado; `relevantes` y `positivas`, lo guardado.

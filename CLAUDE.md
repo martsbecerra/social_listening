@@ -404,6 +404,10 @@ días (si no, 400 con `userMessage`). Con la base real tarda unos 50 ms con
   (`rangoEfectivo`) arranca en el primer día con datos y termina hoy (la
   mediana de lo habitual sale de esos días); si el anterior queda entero
   fuera, sus `*Anterior` van en null (la pantalla dice "sin datos", no 0).
+  Si queda fuera en parte, el backend cuenta lo que hay (`anterior.diasEfectivos`)
+  y la PANTALLA no compara (ver "Estadísticas de Instagram").
+  `periodo.primerDia` es el primer día con datos de la plataforma (null sin
+  posteos).
 - Cuentan los posteos visibles (`ignored = 0`) por `posted_at`.
   Sentimiento null = neutral; tema null = "Coyuntura / Otros"
   (`CATEGORIA_FALLBACK`).
@@ -438,10 +442,10 @@ días (si no, 400 con `userMessage`). Con la base real tarda unos 50 ms con
   de 2026) no entra. El share of voice de la pantalla sale de acá.
 - **`temas`**: por tramo, con `anterior` (null si el período anterior no
   tiene datos) y `destacada` (la de mayor razón; a igual razón, la más
-  nueva). **`cuentas`**: impacto (likes + comentarios), seguidores (el
-  último conocido o null), cuántas se despegaron y la mejor razón.
-  **`ranking`**: las 10 de mayor razón, con la métrica que decidió, su valor
-  y la mediana.
+  nueva; con su `nivel`, que puede no ser alto). **`cuentas`**: impacto
+  (likes + comentarios), seguidores (el último conocido o null), cuántas se
+  despegaron y la mejor razón. **`ranking`**: las 10 de mayor razón, con la
+  métrica que decidió, su valor, la mediana y su `nivel`.
 - Sin benchmark (X, `conAlcance` falso) no hay alcance: 0 se despegaron y
   ranking vacío.
 
@@ -623,22 +627,42 @@ en el tag `v3-riel-radar`. SDD de la fase A en
     tema, `statsPostsKey`: una corrida, ignorar, otro tono) se vuelve a
     pedir: ya, si la solapa está a la vista y el pop-up cerrado (si no, al
     cerrarlo o al volver).
+  - **Sin con qué comparar**: si el período anterior no tiene datos todos
+    sus días (`statsHasPrevious`: la base arranca a mitad de ese período),
+    la pantalla no compara: KPI "sin datos del período anterior", temas sin
+    badge ni variación, y el aviso "El período anterior tiene datos de N de
+    sus M días: no se compara." (comparar el período entero con unos pocos
+    días daba "+919 %" y todos los temas en "Pico"). Un período entero
+    antes de la primera publicación (`diasEfectivos` 0) muestra "—", "Sin
+    datos de esas fechas." y "No hay datos de esas fechas: las publicaciones
+    guardadas empiezan el 29/7." (`periodo.primerDia`). El aviso sale de los
+    datos a la vista (`statsPeriodNoteText`), también al volver a la solapa.
   - **Bloques**: cinco KPI (`kpi.js`; "sin datos" si el anterior no tiene);
     la nube en espiral medida con canvas (Volumen / Positivos reales; las de
     dos publicaciones o más; color = el tono que predomina); menciones por
     búsqueda y la dona; los 9 temas con su badge (sin datos del anterior,
     ninguno; Nuevo: 0 antes y 3 o más; Pico: 5 o más y al menos el doble;
     En alza: más de +20 %; Baja: menos de −20 %; si no, Estable), su
-    evolución y la cita "N,NN× en <métrica>"; el mapa de día y hora; el tono
-    neto por tramo (sin punto en un tramo sin publicaciones); las 10 cuentas
-    (Impacto / Publicaciones / Seguidores) y las 6 que más se despegaron.
+    evolución y la cita "N,NN× en <métrica>" ("La que más se despegó" si su
+    `nivel` es alto; si no, "La de mayor alcance"); el mapa de día y hora;
+    el tono neto por tramo (por día o por semana, también en el título; sin
+    punto en un tramo sin publicaciones); las 10 cuentas (Impacto /
+    Publicaciones / Seguidores) y las 6 que más se despegaron (solo las de
+    nivel alto; sin ninguna, "Ninguna publicación del período se despegó de
+    lo habitual de su cuenta"). Con cinco KPI, entre 981 y 1200 px van de a
+    tres.
   - **Clics**: una palabra o un tema llaman a `showInMonitoring`
     (`monitoring.js`): el Monitoreo con este período como rango y la
     palabra (por sus `ids`; con "Positivos reales", además Tono positivo) o
     el tema, los demás filtros en blanco, y baja a la lista, que muestra el
-    mismo número que la tarjeta. El ranking abre el pop-up
-    (`openFeedPopList`) recorriendo esos 6, con la foto y el tema de la fila
-    de la tabla.
+    mismo número que la tarjeta; el foco pasa a la ✕ de la pastilla o al
+    filtro Tema. La ✕ del rango (`leaveMonitorRange`) lo deja en el botón
+    del período que queda prendido, y una alerta del Monitoreo saca el rango
+    (va a Hoy). Con un rango cuyo anterior arranca antes del primer posteo
+    cargado, el KPI del Monitoreo dice "sin datos del período anterior",
+    como Estadísticas. El ranking abre el pop-up (`openFeedPopList`)
+    recorriendo esos 6, con la foto y el tema de la fila de la tabla; si se
+    rehace con el foco en una fila, el foco pasa a la misma fila nueva.
 - **Mapa**: mosaicos de OpenStreetMap claros también en oscuro; controles,
   leyenda, popups y tooltips de Leaflet con los tokens. Los colores de
   categoría (`--cat-1` … `--cat-12`) salen de la paleta de la maqueta, en su
@@ -674,7 +698,8 @@ control existe solo en `instagram.html` (como `fAlcanceEl`), en X es null y
 hay que tratarlo así. `monitoring.js` avisa los cambios con
 `notifyMonitoringViews(change)` (sin argumento = redibujar;
 `{ ignoredId }`; `{ goToId }`, que quedó como respaldo de X; `{ config }`;
-`{ run }`, para la barra superior, el panel y el flujo). El alcance de la
+`{ run }`, para la barra superior, el panel y el flujo; Estadísticas
+escucha todos para saber si sus datos quedaron viejos). El alcance de la
 tarjeta y del filtro "Alcance" es `postReach`: combina los niveles que ya
 manda el backend en `benchmark.likes` y `benchmark.comments` (vale el
 mejor de los dos; "normal" se muestra "medio"; sin ninguna métrica con

@@ -42,4 +42,4 @@ un servidor de prueba en otro puerto y una copia de la base.
 - [x] 3.1 `CLAUDE.md`, `README.md` y este registro
 - [x] 3.2 Prueba en el navegador: la solapa a 1366 y 375 px, oscuro, movimiento reducido (emulado con Chrome sin ventana), 90 días, Positivos reales, sin datos, error, clics al Monitoreo, ranking y pop-up
 - [x] 3.3 Suite con `IG_ACTOR=apidojo` y `apify` (469 de 469 con los dos)
-- [ ] 3.4 Revisión independiente
+- [x] 3.4 Revisión independiente (12 hallazgos; el verificador confirmó 4 medios y bajó el alto a medio): corregidos los 4 medios (la alerta no sacaba el rango, el anterior incompleto inflaba las comparaciones, el foco caía en `<body>` al rehacer el ranking y al sacar el rango o llegar desde Estadísticas) y 7 bajos (período entero sin datos, KPI entre 981 y 1200 px, el aviso de fechas mal escritas al volver, "tono neto por día", la cita y el ranking según el nivel, el anterior del Monitoreo con rango, la documentación). Queda para el dueño: `--accent` y `--pos` como texto chico en claro (3,83 y 3,51:1, tokens de la maqueta en toda la app)
