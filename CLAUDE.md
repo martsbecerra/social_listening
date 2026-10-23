@@ -399,7 +399,10 @@ en el tag `v3-riel-radar`. SDD de la fase A en
   `--accent`, `--glow`, `--pos`/`--neu`/`--neg`, `--c1`…`--c5`; `.card`,
   `.chip`, `.kpi`, `.seg`, `.btn`, `.field`, `.tip`; `rise` escalonado por
   `.rv`, `fadeIn`, `pop`, `slideIn`, `ping`, `draw`), con Sora, IBM Plex
-  Sans e IBM Plex Mono de Google Fonts; 2) el marco; 3) los componentes de
+  Sans e IBM Plex Mono de Google Fonts. Una excepción: `--muted` del tema
+  claro es `#626d8c` y no el `#7c87a4` de la maqueta (mismo tono, más
+  oscuro), para pasar 4,5:1 sobre `--surface` (5,14) y `--surface2`
+  (4,55); el de oscuro sigue siendo el de la maqueta; 2) el marco; 3) los componentes de
   la app: el Monitoreo de la maqueta (`.mon`, `.srcbox`, `.flowcard`/`.fl`,
   `.pipe`, `.al`, `.fbar`, `.combo`, `.fstatus`, `.ups`/`.up`, `.reach`) y,
   con los mismos tokens, lo que la maqueta no dibuja o que todavía no se
