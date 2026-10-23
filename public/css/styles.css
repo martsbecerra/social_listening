@@ -3569,6 +3569,10 @@ pre.report a {
   color: var(--muted);
   font-size: 13px;
 }
+.topics > .stats-empty,
+.heat > .stats-empty {
+  grid-column: 1 / -1;
+}
 
 /* ---------- nube ---------- */
 .cloud {

@@ -559,6 +559,247 @@ function statsRenderDonut() {
 }
 
 // -------------------------------------------------------------------------
+// De qué se habla: los 9 temas con más publicaciones, con el badge contra el
+// período anterior, el tono, la evolución por tramo (por día hasta 14 días;
+// si no, por semana) y la cita de la que más se despegó. Un clic abre el
+// Monitoreo con ese tema y este período.
+// -------------------------------------------------------------------------
+const statsTopicsEl = document.getElementById('statsTopics');
+const STATS_TOPICS_MAX = 9;
+
+// Las reglas del badge (las del dueño): sin datos del período anterior,
+// ninguno. Nuevo: nada antes y 3 o más ahora. Pico: 5 o más y al menos el
+// doble que antes. En alza: más de +20 %. Baja: menos de −20 %. Si no,
+// Estable.
+function statsTopicBadge(topic) {
+  if (topic.anterior === null) return null;
+  const stable = { label: 'Estable', cls: 'st', color: 'var(--neu)' };
+  if (topic.anterior === 0) return topic.n >= 3 ? { label: 'Nuevo', cls: 'new', color: 'var(--c3)' } : stable;
+  const change = ((topic.n - topic.anterior) / topic.anterior) * 100;
+  if (topic.n >= 5 && topic.n >= 2 * topic.anterior) return { label: 'Pico', cls: 'pk', color: 'var(--neg)' };
+  if (change > 20) return { label: 'En alza', cls: 'up', color: 'var(--c5)' };
+  if (change < -20) return { label: 'Baja', cls: 'dn', color: 'var(--muted)' };
+  return stable;
+}
+
+function statsTopicChange(topic) {
+  if (!topic.anterior) return '—';
+  const change = Math.round(((topic.n - topic.anterior) / topic.anterior) * 100);
+  return `${change > 0 ? '+' : ''}${change} %`;
+}
+
+// La evolución del tema por tramo: área y trazo, del color del badge.
+function statsTopicSpark(values, color) {
+  const w = 230;
+  const h = 54;
+  const series = values.length > 1 ? values : [values[0] || 0, values[0] || 0];
+  const max = Math.max(1, ...series);
+  const points = series.map((v, i) => `${((i / (series.length - 1)) * w).toFixed(1)},${(50 - (v / max) * 44).toFixed(1)}`).join('L');
+  const svg = statsSvg('svg', { viewBox: `0 0 ${w} ${h}`, preserveAspectRatio: 'none', 'aria-hidden': 'true' });
+  const area = statsSvg('path', { d: `M${points}L${w},${h}L0,${h}Z`, opacity: 0.15 });
+  area.style.fill = color;
+  const line = statsSvg('path', { d: `M${points}`, fill: 'none', 'stroke-width': 2, pathLength: 1 });
+  line.style.stroke = color;
+  if (!statsReducedMotion.matches) {
+    line.style.strokeDasharray = '1';
+    line.style.strokeDashoffset = '1';
+    line.style.animation = 'draw 1.5s ease forwards';
+  }
+  svg.append(area, line);
+  return svg;
+}
+
+function statsShowTopic(topic) {
+  const { desde, hasta } = statsData.periodo;
+  showInMonitoring({ range: { desde, hasta }, tema: topic.tema });
+}
+
+function statsTopicCard(topic) {
+  const badge = statsTopicBadge(topic);
+  const card = statsNode('div', 'card topic');
+  card.tabIndex = 0;
+  card.setAttribute('role', 'button');
+  card.setAttribute(
+    'aria-label',
+    `${topic.tema}: ${statsPlural(topic.n, 'publicación', 'publicaciones')}${badge ? `, ${badge.label.toLowerCase()}` : ''}. Verlas en el Monitoreo`
+  );
+  if (badge) card.appendChild(statsNode('span', `badge ${badge.cls}`, badge.label));
+  card.appendChild(statsNode('h3', '', topic.tema));
+  const meta = statsNode('div', 'meta');
+  const count = statsNode('span');
+  count.append(statsNode('b', '', STATS_INT.format(topic.n)), ' publ.');
+  const change = statsNode('span');
+  change.append(statsNode('b', '', statsTopicChange(topic)), ' vs. período anterior');
+  meta.append(count, change);
+  const tone = statsNode('div', 'stack');
+  tone.setAttribute('aria-hidden', 'true');
+  for (const [cls, n] of [['bg-pos', topic.positivo], ['bg-neu', topic.neutral], ['bg-neg', topic.negativo]]) {
+    const part = statsNode('i', cls);
+    part.style.width = `${(n / topic.n) * 100}%`;
+    tone.appendChild(part);
+  }
+  tone.dataset.tip = `${STATS_INT.format(topic.positivo)} positivas · ${STATS_INT.format(topic.neutral)} neutrales · ${STATS_INT.format(topic.negativo)} negativas`;
+  card.append(meta, tone, statsTopicSpark(topic.porSemana, badge ? badge.color : 'var(--neu)'));
+  // La cita: la publicación del tema que más se despegó. La razón lleva
+  // colchón: "4,31× en comentarios", nunca "veces lo habitual".
+  const best = topic.destacada;
+  if (best && best.titulo) {
+    const quote = statsNode('p', 'q', `“${best.titulo}”`);
+    quote.dataset.tipTitle = `La que más se despegó en ${topic.tema}`;
+    quote.dataset.tip = `${best.cuenta ? `@${best.cuenta} · ` : ''}${formatBenchmarkRatio(best.razon)}× en ${best.metrica}`;
+    card.appendChild(quote);
+  }
+  card.addEventListener('click', () => statsShowTopic(topic));
+  card.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    statsShowTopic(topic);
+  });
+  return card;
+}
+
+function statsRenderTopics() {
+  const topics = statsData.temas.slice(0, STATS_TOPICS_MAX);
+  statsTopicsEl.replaceChildren(...(topics.length ? topics.map(statsTopicCard) : [statsEmptyLine()]));
+}
+
+// -------------------------------------------------------------------------
+// Cuándo se habla: publicaciones por día de la semana y hora (hora de
+// Argentina; más oscuro, más publicaciones).
+// -------------------------------------------------------------------------
+const statsHeatEl = document.getElementById('statsHeat');
+const STATS_WEEKDAYS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+
+function statsRenderHeat() {
+  const grid = statsData.porHora;
+  const max = Math.max(...grid.flat());
+  if (!max) {
+    statsHeatEl.replaceChildren(statsEmptyLine());
+    statsHeatEl.setAttribute('aria-label', 'Sin publicaciones en el período');
+    return;
+  }
+  const days = statsData.periodo.diasEfectivos;
+  const nodes = [statsNode('span')];
+  for (let h = 0; h < 24; h++) nodes.push(statsNode('span', 'hr', h % 3 === 0 ? String(h) : ''));
+  const cells = [];
+  let top = { n: -1 };
+  grid.forEach((row, d) => {
+    nodes.push(statsNode('span', 'lab', STATS_WEEKDAYS[d]));
+    row.forEach((n, h) => {
+      const cell = statsNode('span', 'c');
+      cell.dataset.tipTitle = `${STATS_WEEKDAYS[d]} ${h}:00`;
+      cell.dataset.tip = `${statsPlural(n, 'publicación', 'publicaciones')} en ${statsPlural(days, 'día', 'días')}`;
+      cell.dataset.o = (0.05 + Math.pow(n / max, 1.2) * 0.95).toFixed(2);
+      if (!statsReducedMotion.matches) cell.style.transitionDelay = `${cells.length * 3}ms`;
+      if (n > top.n) top = { n, d, h };
+      cells.push(cell);
+      nodes.push(cell);
+    });
+  });
+  statsHeatEl.replaceChildren(...nodes);
+  statsHeatEl.setAttribute(
+    'aria-label',
+    `Publicaciones por día y hora. La franja con más: ${STATS_WEEKDAYS[top.d]} de ${top.h} a ${top.h + 1} h, ${statsPlural(top.n, 'publicación', 'publicaciones')}`
+  );
+  const show = () => cells.forEach((cell) => (cell.style.opacity = cell.dataset.o));
+  if (statsReducedMotion.matches) show();
+  else setTimeout(show, 100);
+}
+
+// -------------------------------------------------------------------------
+// Tono neto por tramo (los mismos de los temas: por día hasta 14 días, si
+// no por semana, el último de los 7 días que terminan en "hasta"):
+// positivos menos negativos sobre el total, en puntos. Un tramo sin
+// publicaciones no tiene punto (no es un cero).
+// -------------------------------------------------------------------------
+const statsNetEl = document.getElementById('statsNet');
+const STATS_WEEKDAY_OF = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+
+function statsWeekday(fecha) {
+  const [y, m, d] = fecha.split('-').map(Number);
+  return STATS_WEEKDAY_OF[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
+}
+
+function statsSvgText(attrs, text, color = 'var(--muted)') {
+  const node = statsSvg('text', { 'font-size': 9, ...attrs });
+  node.style.fill = color;
+  node.style.fontFamily = 'var(--mono)';
+  node.textContent = text;
+  return node;
+}
+
+function statsRenderNet() {
+  const tramos = statsData.semanas;
+  const daily = tramos.length > 0 && tramos.every((t) => t.desde === t.hasta);
+  const points = tramos.map((t) => {
+    const days = statsData.porDia.filter((d) => d.fecha >= t.desde && d.fecha <= t.hasta);
+    const total = statsSum(days, 'total');
+    const net = total ? Math.round(((statsSum(days, 'positivo') - statsSum(days, 'negativo')) / total) * 100) : null;
+    return { ...t, total, net };
+  });
+  const known = points.filter((p) => p.net !== null);
+  if (!known.length) {
+    statsNetEl.replaceChildren(statsSvgText({ x: 160, y: 94, 'text-anchor': 'middle', 'font-size': 11 }, `Sin publicaciones ${statsRangeWords(statsData.periodo)}`));
+    statsNetEl.setAttribute('aria-label', 'Sin publicaciones en el período');
+    return;
+  }
+  const W = 320;
+  const H = 180;
+  const n = points.length;
+  const max = Math.max(10, ...known.map((p) => p.net));
+  const min = Math.min(-10, ...known.map((p) => p.net));
+  const x = (i) => 30 + (i / Math.max(1, n - 1)) * (W - 44);
+  const y = (k) => 16 + ((max - k) / (max - min)) * (H - 46);
+  const label = (p, i) => (daily ? statsWeekday(p.desde) : `S${i + 1}`);
+  const nodes = [];
+  const zero = statsSvg('line', { x1: 30, x2: W - 10, y1: y(0), y2: y(0), 'stroke-width': 1, opacity: 0.6 });
+  zero.style.stroke = 'var(--fg2)';
+  nodes.push(
+    zero,
+    statsSvgText({ x: 26, y: y(0) + 3, 'text-anchor': 'end' }, '0'),
+    statsSvgText({ x: 26, y: y(max) + 3, 'text-anchor': 'end' }, `+${max}`),
+    statsSvgText({ x: 26, y: y(min) + 3, 'text-anchor': 'end' }, String(min))
+  );
+  const path = statsSvg('path', {
+    d: `M${points.map((p, i) => (p.net === null ? null : `${x(i).toFixed(1)},${y(p.net).toFixed(1)}`)).filter(Boolean).join('L')}`,
+    fill: 'none',
+    'stroke-width': 2,
+    'stroke-linejoin': 'round',
+    pathLength: 1,
+  });
+  path.style.stroke = 'var(--accent)';
+  if (!statsReducedMotion.matches) {
+    path.style.strokeDasharray = '1';
+    path.style.strokeDashoffset = '1';
+    path.style.animation = 'draw 1.6s ease forwards';
+  }
+  nodes.push(path);
+  points.forEach((p, i) => {
+    if (p.net !== null) {
+      const dot = statsSvg('circle', { cx: x(i), cy: y(p.net), r: i === n - 1 ? 5 : 3.5, 'stroke-width': 1.5 });
+      dot.style.fill = p.net >= 0 ? 'var(--pos)' : 'var(--neg)';
+      dot.style.stroke = 'var(--surface)';
+      dot.dataset.tipTitle = daily ? `${statsWeekday(p.desde)} ${statsShort(p.desde)}` : `Semana ${statsRangeWords(p)}`;
+      dot.dataset.tip = `tono neto ${p.net > 0 ? '+' : ''}${p.net} pts · ${statsPlural(p.total, 'publicación', 'publicaciones')}`;
+      nodes.push(dot);
+    }
+    if (n <= 8 || i % 2 === 0) nodes.push(statsSvgText({ x: x(i), y: H - 8, 'text-anchor': 'middle' }, label(p, i)));
+  });
+  // El último tramo: "esta semana" / "hoy" si el período termina hoy.
+  const last = points[n - 1];
+  const endsToday = statsData.periodo.hasta >= statsToday();
+  const lastName = daily ? (endsToday ? 'hoy' : 'último día') : endsToday ? 'esta semana' : 'última semana';
+  const lastValue = last.net === null ? 'sin publicaciones' : `${last.net > 0 ? '+' : ''}${last.net}`;
+  const lastY = last.net === null ? y(0) : y(last.net);
+  nodes.push(statsSvgText({ x: x(n - 1), y: lastY + 16, 'text-anchor': 'end', 'font-size': 10 }, `${lastName}: ${lastValue}`, 'var(--fg)'));
+  statsNetEl.replaceChildren(...nodes);
+  statsNetEl.setAttribute(
+    'aria-label',
+    `Tono neto ${daily ? 'por día' : 'por semana'}: ${points.map((p, i) => `${label(p, i)} ${p.net === null ? 'sin publicaciones' : `${p.net > 0 ? '+' : ''}${p.net}`}`).join(', ')}`
+  );
+}
+
+// -------------------------------------------------------------------------
 // Todo el período.
 // -------------------------------------------------------------------------
 function statsRender() {
@@ -572,6 +813,9 @@ function statsRender() {
   statsRenderCloud();
   statsRenderMentions();
   statsRenderDonut();
+  statsRenderTopics();
+  statsRenderHeat();
+  statsRenderNet();
 }
 
 // -------------------------------------------------------------------------
