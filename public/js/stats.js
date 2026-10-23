@@ -118,6 +118,7 @@ function statsRange() {
 function statsRangeProblem(desde, hasta) {
   if (!statsValidDate(desde) || !statsValidDate(hasta)) return 'Elegí las dos fechas.';
   if (desde > hasta) return '"Desde" tiene que ser anterior a "Hasta".';
+  if (hasta > statsToday()) return '"Hasta" no puede ser posterior a hoy.';
   if (statsDaysBetween(desde, hasta) > STATS_MAX_DAYS) return `El período puede tener hasta ${STATS_MAX_DAYS} días.`;
   return null;
 }
@@ -576,7 +577,7 @@ function statsRenderDonut() {
   const value = statsSvg('text', { x: 75, y: 71, 'text-anchor': 'middle', 'font-size': 20, 'font-weight': 600 });
   value.style.fill = 'var(--fg)';
   value.style.fontFamily = 'var(--display)';
-  value.textContent = STATS_INT.format(total);
+  value.textContent = statsNoData() ? '—' : STATS_INT.format(total);
   const caption = statsSvg('text', { x: 75, y: 88, 'text-anchor': 'middle', 'font-size': 9 });
   caption.style.fill = 'var(--muted)';
   caption.style.fontFamily = 'var(--mono)';
@@ -591,7 +592,9 @@ function statsRenderDonut() {
     'aria-label',
     total
       ? `Relevantes por búsqueda: ${slices.map((s) => `${s.name} ${statsPctText(s.n, total)}`).join(', ')}`
-      : 'Ninguna búsqueda trajo publicaciones relevantes en el período'
+      : statsNoData()
+        ? statsEmptyText()
+        : 'Ninguna búsqueda trajo publicaciones relevantes en el período'
   );
   if (!total) {
     statsDonutLgEl.replaceChildren(statsData.resumen.relevantes ? statsNode('p', 'stats-empty', 'Ninguna búsqueda trajo publicaciones relevantes.') : statsEmptyLine());
@@ -725,7 +728,7 @@ function statsRenderHeat() {
   const max = Math.max(...grid.flat());
   if (!max) {
     statsHeatEl.replaceChildren(statsEmptyLine());
-    statsHeatEl.setAttribute('aria-label', 'Sin publicaciones en el período');
+    statsHeatEl.setAttribute('aria-label', statsEmptyText());
     return;
   }
   const days = statsData.periodo.diasEfectivos;
@@ -782,7 +785,7 @@ function statsSvgText(attrs, text, color = 'var(--muted)') {
 
 function statsRenderNet() {
   const tramos = statsData.semanas;
-  const daily = tramos.length > 0 && tramos.every((t) => t.desde === t.hasta);
+  const daily = tramos.length ? tramos.every((t) => t.desde === t.hasta) : statsData.periodo.dias <= 14;
   statsNetTitleEl.textContent = daily ? 'Tono neto por día' : 'Tono neto por semana';
   statsNetNoteEl.textContent = `Arriba de cero, ${daily ? 'el día' : 'la semana'} cerró con más elogios que críticas.`;
   const points = tramos.map((t) => {
@@ -794,7 +797,7 @@ function statsRenderNet() {
   const known = points.filter((p) => p.net !== null);
   if (!known.length) {
     statsNetEl.replaceChildren(statsSvgText({ x: 160, y: 94, 'text-anchor': 'middle', 'font-size': 11 }, statsEmptyText()));
-    statsNetEl.setAttribute('aria-label', 'Sin publicaciones en el período');
+    statsNetEl.setAttribute('aria-label', statsEmptyText());
     return;
   }
   const W = 320;
@@ -986,6 +989,8 @@ function statsRenderRanking() {
     statsRankEl.replaceChildren(
       statsData.resumen.relevantes ? statsNode('p', 'stats-empty', 'Ninguna publicación del período se despegó de lo habitual de su cuenta.') : statsEmptyLine()
     );
+    // Sin filas, el foco va al título de la tarjeta (tabindex -1).
+    if (focusedId !== null) document.getElementById('statsRankTitle').focus({ preventScroll: true });
     return;
   }
   const ids = list.map((item) => String(item.id));

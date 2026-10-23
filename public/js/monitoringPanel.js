@@ -689,6 +689,9 @@ function panelApplyAlert(filters) {
   setMonitorPeriod(1);
   applyFilters();
   panelGoToList();
+  // Las alertas se rehacen con el período nuevo: la que tenía el foco ya no
+  // está.
+  focusMonitoringList();
 }
 
 function panelRenderAlerts(all, now) {

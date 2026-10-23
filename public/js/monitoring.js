@@ -1223,6 +1223,16 @@ function setSourceFilter(source) {
   applyFilters();
 }
 
+// El título de la lista ("Publicaciones detectadas", tabindex -1): adonde va
+// el foco cuando lo que lo tenía desaparece o queda oculto (llegar desde
+// Estadísticas, sacar la pastilla de la fuente, una alerta). No es un
+// control: Espacio y las flechas siguen moviendo la página y las teclas de
+// las solapas siguen andando.
+function focusMonitoringList() {
+  const title = document.getElementById('pubsTitle');
+  if (title) title.focus({ preventScroll: true });
+}
+
 // ¿El posteo vino por esa fuente? Ver monitorSourceFilter.
 function postMatchesSource(post, source) {
   if (source.kind === 'palabra') return source.ids.has(String(post.id));
@@ -1281,7 +1291,10 @@ function renderSourcePill() {
   close.type = 'button';
   close.textContent = '✕';
   close.setAttribute('aria-label', 'Sacar el filtro por fuente');
-  close.addEventListener('click', () => setSourceFilter(null));
+  close.addEventListener('click', () => {
+    setSourceFilter(null);
+    focusMonitoringList(); // la pastilla (y su ✕) ya no está
+  });
   fSourceEl.append(label, term, close);
 }
 
@@ -1644,10 +1657,9 @@ function showInMonitoring({ range, palabra = null, tema = '', sentiment = '' } =
   renderHighlightCards(monitoringTable.getData());
   if (typeof openTab === 'function') openTab('monitoring');
   if (typeof panelGoToList === 'function') panelGoToList();
-  // El foco estaba en Estadísticas, que quedó oculta: pasa a lo que se puso
-  // (la ✕ de la pastilla de la palabra, o el filtro Tema), sin mover la página.
-  const target = palabra && fSourceEl ? fSourceEl.querySelector('button') : tema && fTemaEl ? fTemaEl : null;
-  if (target) target.focus({ preventScroll: true });
+  // El foco estaba en Estadísticas, que quedó oculta: pasa al título de la
+  // lista (no a un control, así una tecla no saca el filtro ni cambia el tema).
+  focusMonitoringList();
 }
 
 // Par de flechas asc/desc que Tabulator pinta en cada header sortable.
