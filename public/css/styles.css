@@ -3489,6 +3489,531 @@ pre.report a {
   }
 }
 
+/* ==========================================================================
+   Estadísticas de Instagram (diseño v4, fase C): la solapa de la maqueta.
+   Cabecera con el período (7 / 30 / 90 días o Desde → Hasta); cinco KPI;
+   la nube; menciones por búsqueda y la dona; los temas; cuándo se habla y
+   el tono neto; quién habla y las que más se despegaron. Lo dibuja
+   public/js/stats.js con los datos de GET /api/monitoring/stats.
+   ========================================================================== */
+.two {
+  grid-template-columns: 1fr 1fr;
+  align-items: start;
+}
+.period {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.period .dates {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--muted);
+}
+.period .dates input {
+  padding: 7px 8px;
+  font-size: 12.5px;
+  font-family: var(--mono);
+}
+/* "Hay datos desde el 22/9": el período pedido arranca antes de la base. */
+.period-note {
+  flex-basis: 100%;
+  margin: 0;
+  text-align: right;
+}
+.card > .ct .tools {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+#statsKpis {
+  margin-top: 14px;
+}
+/* Mientras llegan los datos de otro período, lo anterior queda tenue. */
+.stats-body {
+  transition: opacity 0.2s;
+}
+.stats-body.loading {
+  opacity: 0.45;
+  pointer-events: none;
+}
+.stats-error {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+  border-color: color-mix(in oklab, var(--neg) 45%, var(--line));
+}
+.stats-error p {
+  margin: 0;
+  color: var(--fg2);
+}
+.stats-error .btn {
+  margin-left: auto;
+}
+/* Una tarjeta sin datos en el período. */
+.stats-empty {
+  margin: 0;
+  padding: 18px 0;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* ---------- nube ---------- */
+.cloud {
+  position: relative;
+  height: 360px;
+  overflow: hidden;
+  border-radius: 12px;
+  background: radial-gradient(500px 240px at 50% 50%, color-mix(in oklab, var(--glow) 12%, transparent), transparent 70%);
+}
+.cloud button {
+  position: absolute;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  font-family: var(--display);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  line-height: 1;
+  transform: translate(-50%, -50%) scale(0.3);
+  opacity: 0;
+  transition: transform 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.3), opacity 0.5s, filter 0.2s;
+}
+.cloud button.in {
+  transform: translate(-50%, -50%) scale(1);
+  opacity: 1;
+}
+.cloud button:hover,
+.cloud button:focus-visible {
+  filter: brightness(1.3) drop-shadow(0 0 10px currentColor);
+  z-index: 2;
+}
+.cloud button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+.cloud .ph {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* ---------- menciones por búsqueda ---------- */
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.rows .row {
+  display: grid;
+  grid-template-columns: 140px 1fr 72px 92px;
+  gap: 12px;
+  align-items: center;
+  font-size: 12.5px;
+}
+.rows .row .nm {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.rows .row .nm small {
+  display: block;
+  font-weight: 400;
+  color: var(--muted);
+  font-size: 11px;
+}
+.rows .row .bars {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.rows .row .bars i {
+  display: block;
+  height: 7px;
+  border-radius: 0 4px 4px 0;
+  width: 0;
+  transition: width 1.1s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.rows .row .bars i:first-child {
+  background: var(--line2);
+}
+.rows .row .bars i:nth-child(2) {
+  background: var(--c1);
+}
+.rows .row .bars i:nth-child(3) {
+  background: var(--pos);
+}
+.rows .row .num {
+  text-align: right;
+  font-size: 13px;
+}
+.rows .row .num small {
+  display: block;
+  font-size: 10.5px;
+  color: var(--muted);
+}
+.rows .hdr {
+  font: 500 10.5px/1 var(--body);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.donut {
+  display: grid;
+  grid-template-columns: 150px 1fr;
+  gap: 14px;
+  align-items: center;
+}
+.donut svg {
+  width: 150px;
+  height: 150px;
+}
+.donut .lg {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12.5px;
+  min-width: 0;
+}
+.donut .lg div {
+  display: grid;
+  grid-template-columns: 12px 1fr auto;
+  gap: 8px;
+  align-items: center;
+}
+.donut .lg i {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+}
+.donut .lg span {
+  overflow-wrap: anywhere;
+}
+
+/* ---------- de qué se habla ---------- */
+.topics {
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+}
+.topic {
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+}
+.topic:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+@media (hover: hover) {
+  .topic:hover {
+    border-color: var(--line2);
+  }
+}
+/* Texto del badge: en claro, blanco (--accent-ink) salvo "En alza", que va
+   oscuro sobre el ámbar; en oscuro, todos con la tinta oscura. Con el
+   blanco de la maqueta, varios quedaban debajo de 4,5:1. "Pico" lleva el
+   rojo apenas más oscuro por lo mismo. */
+.topic .badge {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  font: 600 10.5px/1 var(--mono);
+  letter-spacing: 0.08em;
+  padding: 5px 7px;
+  border-radius: 6px;
+  color: var(--accent-ink);
+  background: var(--neu);
+}
+.topic .badge.pk {
+  background: color-mix(in oklab, var(--neg) 88%, var(--fg));
+}
+.topic .badge.up {
+  background: var(--c5);
+  color: var(--fg);
+}
+.topic .badge.new {
+  background: var(--c3);
+}
+.topic .badge.dn {
+  background: var(--muted);
+}
+:root[data-theme="dark"] .topic .badge.up {
+  color: var(--accent-ink);
+}
+.topic h3 {
+  padding-right: 62px;
+  margin-bottom: 4px;
+}
+.topic .meta {
+  font-size: 12px;
+  color: var(--muted);
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.topic .meta b {
+  color: var(--fg);
+  font-family: var(--mono);
+  font-weight: 500;
+}
+.topic .stack {
+  height: 6px;
+  margin-top: 8px;
+}
+.topic svg {
+  width: 100%;
+  height: 54px;
+  display: block;
+  margin-top: 8px;
+}
+.topic .q {
+  font-size: 12px;
+  color: var(--fg2);
+  margin: 8px 0 0;
+  border-left: 2px solid var(--line2);
+  padding-left: 8px;
+  font-style: italic;
+}
+
+/* ---------- cuándo se habla y tono neto ---------- */
+.stats3 {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+.stats3 > .wide {
+  grid-column: span 2;
+}
+.heat {
+  display: grid;
+  grid-template-columns: 34px repeat(24, 1fr);
+  gap: 2px;
+  font: 400 10px/1 var(--mono);
+  color: var(--muted);
+}
+.heat .c {
+  aspect-ratio: 1;
+  border-radius: 2px;
+  background: var(--c1);
+  opacity: 0.08;
+  transition: opacity 0.9s;
+}
+.heat .lab {
+  align-self: center;
+}
+.heat .hr {
+  text-align: center;
+}
+svg.line {
+  width: 100%;
+  height: 180px;
+  display: block;
+}
+
+/* ---------- quién habla y las que más se despegaron ---------- */
+.who {
+  grid-template-columns: 2fr 1fr;
+  align-items: start;
+}
+.acc-row {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 90px 70px 80px;
+  gap: 10px;
+  align-items: center;
+  font-size: 12.5px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--line);
+}
+.acc-row:last-child {
+  border-bottom: 0;
+}
+.acc-row .av {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font: 600 10px/1 var(--mono);
+  color: #fff;
+}
+.acc-row b {
+  font-weight: 600;
+  display: block;
+  overflow-wrap: anywhere;
+}
+.acc-row small {
+  color: var(--muted);
+  font-size: 11px;
+}
+.acc-row .bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--line);
+  overflow: hidden;
+}
+.acc-row .bar i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, var(--accent), var(--glow));
+  transition: width 1s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.acc-row .num {
+  text-align: right;
+  font-size: 12.5px;
+}
+.acc-row .stack {
+  height: 6px;
+  width: 70px;
+  margin-left: auto;
+}
+.acc-row.hdr {
+  font: 500 10.5px/1 var(--body);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 0 0 6px;
+}
+.rank {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.rk {
+  display: grid;
+  grid-template-columns: 26px 40px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: var(--surface2);
+  color: var(--fg);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+.rk:hover {
+  border-color: var(--accent);
+}
+.rk:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.rk .pos {
+  font: 600 13px/1 var(--display);
+  color: var(--muted);
+  text-align: center;
+}
+.rk .th {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--c1), var(--glow));
+  overflow: hidden;
+}
+.rk .th img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.rk b {
+  font-weight: 600;
+  display: block;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.rk small {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.rk .rz {
+  font: 600 14px/1 var(--mono);
+  color: var(--accent);
+  text-align: right;
+}
+.rk .rz small {
+  display: block;
+  font: 400 10.5px/1.3 var(--mono);
+  color: var(--muted);
+}
+
+/* ---------- el rango de Estadísticas en el Monitoreo ----------
+   Un clic en una palabra o un tema abre el Monitoreo con el período de
+   Estadísticas ("24/9 → 23/10"); la ✕ vuelve a Hoy / 7 / 30. */
+.seg button.range {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+.seg button.range i {
+  font-style: normal;
+  color: var(--muted);
+}
+.seg button.range:hover i {
+  color: var(--neg);
+}
+
+@media (max-width: 1100px) {
+  .stats3 {
+    grid-template-columns: 1fr 1fr;
+  }
+  .who {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 700px) {
+  .stats3 {
+    grid-template-columns: 1fr;
+  }
+  .stats3 > .wide {
+    grid-column: auto;
+  }
+  .rows .row {
+    grid-template-columns: 100px 1fr 60px 76px;
+  }
+  .heat {
+    font-size: 8px;
+  }
+  .acc-row {
+    grid-template-columns: 28px minmax(0, 1fr) 70px 60px;
+  }
+  .acc-row > :nth-child(5) {
+    display: none;
+  }
+}
+@media (max-width: 640px) {
+  .two {
+    grid-template-columns: 1fr;
+  }
+  .period-note {
+    text-align: left;
+  }
+}
+@media (max-width: 480px) {
+  .donut {
+    grid-template-columns: 1fr;
+    justify-items: center;
+  }
+  .donut .lg {
+    width: 100%;
+  }
+}
+
 /* ---------- Monitoreo: vista Feed (solo Instagram, public/js/monitoringFeed.js) ----
    Las tarjetas de siempre con el aspecto de .pc de la maqueta: borde de
    arriba del color del tono, foto cuadrada entera sobre negro. */
