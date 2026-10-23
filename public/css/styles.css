@@ -2517,70 +2517,72 @@ pre.report a {
   display: none !important;
 }
 
-/* ---------- el medidor de alcance (columna "Alcance" y pie de la tarjeta) ----
-   Cinco barras con el criterio de .reach de la maqueta: alto en el color de
-   acento, latiendo; medio en ámbar; bajo gris. */
-.reach-cell {
+/* ---------- el medidor de alcance (.reach de la maqueta) ----------
+   Cinco barras y una palabra, en la tabla, el feed, el flujo y "Se
+   despegaron": alto en el color de acento, latiendo, con la razón al lado;
+   medio en ámbar (el texto, en el ámbar legible); bajo gris; "—" sin
+   referencia. */
+.reach {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   font: 500 11px/1 var(--mono);
   color: var(--muted);
   white-space: nowrap;
 }
-.reach-cell:has(.reach-meter.alto) {
-  color: var(--accent);
-}
-.reach-cell:has(.reach-meter.medio) {
-  color: var(--warn-ink);
-}
-.reach-meter {
+.reach .bars {
   display: inline-flex;
   align-items: flex-end;
   gap: 2px;
   height: 12px;
 }
-.reach-meter i {
+.reach .bars i {
   display: block;
   width: 3px;
   border-radius: 1px;
   background: var(--line2);
   transform-origin: bottom;
 }
-.reach-meter i:nth-child(1) {
+.reach .bars i:nth-child(1) {
   height: 4px;
 }
-.reach-meter i:nth-child(2) {
+.reach .bars i:nth-child(2) {
   height: 6px;
 }
-.reach-meter i:nth-child(3) {
+.reach .bars i:nth-child(3) {
   height: 8px;
 }
-.reach-meter i:nth-child(4) {
+.reach .bars i:nth-child(4) {
   height: 10px;
 }
-.reach-meter i:nth-child(5) {
+.reach .bars i:nth-child(5) {
   height: 12px;
 }
-.reach-meter.medio i:nth-child(-n + 3) {
-  background: var(--c5);
+.reach.alto {
+  color: var(--accent);
 }
-.reach-meter.alto i {
+.reach.alto .bars i {
   background: var(--accent);
   box-shadow: 0 0 6px color-mix(in oklab, var(--accent) 60%, transparent);
   animation: reachBeat 1.3s ease-in-out infinite;
 }
-.reach-meter.alto i:nth-child(2) {
+.reach.alto .bars i:nth-child(2) {
   animation-delay: 0.1s;
 }
-.reach-meter.alto i:nth-child(3) {
+.reach.alto .bars i:nth-child(3) {
   animation-delay: 0.2s;
 }
-.reach-meter.alto i:nth-child(4) {
+.reach.alto .bars i:nth-child(4) {
   animation-delay: 0.3s;
 }
-.reach-meter.alto i:nth-child(5) {
+.reach.alto .bars i:nth-child(5) {
   animation-delay: 0.4s;
+}
+.reach.medio {
+  color: var(--warn-ink);
+}
+.reach.medio .bars i:nth-child(-n + 3) {
+  background: var(--c5);
 }
 
 /* ==========================================================================
@@ -3807,7 +3809,7 @@ pre.report a {
   grid-row: 2;
   justify-self: start;
 }
-.feed-foot .reach-cell {
+.feed-foot .reach {
   grid-column: 2;
   grid-row: 2;
   justify-self: end;

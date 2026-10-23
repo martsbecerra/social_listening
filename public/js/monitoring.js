@@ -944,28 +944,41 @@ function postReach(post) {
   return { level: REACH_LEVELS[best.rank], by: best.by, label: best.label, ratio: best.ratio, metric: best.metric };
 }
 
-// El alcance a la vista: medidor de cinco barras con su nivel
-// (design/social-listening-v4.html). En "alto" las cinco laten en el color
-// de acento, en "medio" van tres en ámbar, en "bajo" quedan grises
-// (.reach-meter en styles.css; en la maqueta se llama .reach, que acá ya es
-// una etiqueta del pop-up). Sin referencia: "—". Lo usan la columna "Alcance" de la tabla y el
-// pie de la tarjeta del feed. "reach" es lo que devuelve postReach.
+// El alcance a la vista: el .reach de design/social-listening-v4.html, cinco
+// barras y una palabra. En "alto" las cinco laten en el color de acento y al
+// lado va la razón ("1,56×"); en "medio" van tres en ámbar; en "bajo" quedan
+// grises. Sin referencia: "—". Al pasar el mouse dice con qué se calculó (la
+// razón lleva colchón). Lo usan la columna "Alcance" de la tabla, el pie de
+// la tarjeta del feed, el flujo y "Se despegaron". "reach" es lo que
+// devuelve postReach.
 const REACH_TITLES = { alto: 'Alto', medio: 'Medio', bajo: 'Bajo' };
 
 function buildReachMeter(reach) {
   const cell = document.createElement('span');
-  cell.className = 'reach-cell';
   if (!reach) {
+    cell.className = 'reach none';
     cell.textContent = '—';
-    cell.title = 'Sin referencia de su cuenta';
+    cell.dataset.tipTitle = 'Alcance sin referencia';
+    cell.dataset.tip = 'Ninguna de sus dos métricas tiene con qué compararse en su cuenta.';
     return cell;
   }
-  const meter = document.createElement('span');
-  meter.className = `reach-meter ${reach.level}`;
-  meter.setAttribute('aria-hidden', 'true');
-  for (let i = 0; i < 5; i++) meter.appendChild(document.createElement('i'));
-  cell.append(meter, REACH_TITLES[reach.level]);
-  cell.title = `Alcance ${reach.level}: razón ${formatBenchmarkRatio(reach.ratio)} en ${reach.label} (${benchmarkRatioBasis(reach.metric)})`;
+  cell.className = `reach ${reach.level}`;
+  const bars = document.createElement('span');
+  bars.className = 'bars';
+  bars.setAttribute('aria-hidden', 'true');
+  for (let i = 0; i < 5; i++) bars.appendChild(document.createElement('i'));
+  // Para un lector de pantalla, el nivel en palabras.
+  const sr = document.createElement('span');
+  sr.className = 'sr';
+  if (reach.level === 'alto') {
+    sr.textContent = 'Alcance alto, razón ';
+    cell.append(bars, sr, `${formatBenchmarkRatio(reach.ratio)}×`);
+  } else {
+    sr.textContent = 'Alcance ';
+    cell.append(bars, sr, reach.level);
+  }
+  cell.dataset.tipTitle = `Alcance ${reach.level}`;
+  cell.dataset.tip = `Razón ${formatBenchmarkRatio(reach.ratio)} en ${reach.label}: ${benchmarkRatioBasis(reach.metric)}.`;
   return cell;
 }
 
