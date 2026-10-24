@@ -80,6 +80,8 @@ social_listening_app/
 │   ├── lastRun.js            # Resumen de la última corrida (traídas, nuevas, guardadas, destacadas, costo) para el Pipeline.
 │   ├── stats.js              # Estadísticas: todos los bloques de un período (y el anterior) desde la base.
 │   ├── statsRoutes.js        # GET /api/monitoring/stats.
+│   ├── inicioRoutes.js       # GET /api/inicio: las tarjetas de cada red, las corridas de hoy y la última corrida.
+│   ├── publicResumen.js      # GET /api/public/resumen (sin sesión): solo cantidades y temas, para el login.
 │   ├── stopwords.js          # Palabras vacías que no cuentan en la nube de Estadísticas.
 │   ├── keepAwake.js          # Windows: lanza scripts/keep-awake.ps1 para que la máquina no se suspenda.
 │   ├── concurrencyLimiter.js # Cola FIFO para los runs simultáneos de Apify.
@@ -97,9 +99,9 @@ social_listening_app/
 │   ├── media/                # Fotos de los posteos: dos JPEG por posteo (se crea sola, no se versiona).
 │   └── geo/                  # Cache en disco de comunas.geojson y barrios.geojson (GCBA).
 ├── public/
-│   ├── index.html            # Login (pide un magic link por email).
-│   ├── login-verify.html     # Confirma el link (POST, un solo uso).
-│   ├── dashboard.html        # Selector de red social.
+│   ├── index.html            # Login: la visual (temas y contadores) y el link mágico en dos pasos.
+│   ├── login-verify.html     # Último paso del link: clic en "Entrar" (POST, un solo uso).
+│   ├── dashboard.html        # Inicio: las redes, la próxima corrida y las últimas publicaciones.
 │   ├── instagram.html        # App Instagram: monitoreo + mapa de reclamos + análisis + estadísticas (píldora de solapas).
 │   ├── x.html                # App X: análisis (Grok) + monitoreo + mapa de reclamos.
 │   ├── css/styles.css        # Estilos del diseño v4 (tokens claro / oscuro de design/social-listening-v4.html).
@@ -109,7 +111,11 @@ social_listening_app/
 │       ├── topbar.js         # "escuchando · HH:MM" de la barra superior (última corrida terminada).
 │       ├── tip.js            # Tooltip global ([data-tip], siempre por textContent).
 │       ├── footer.js         # Arma el pie de las páginas con sesión.
-│       ├── login.js          # Pedido del magic link.
+│       ├── login.js          # Tarjeta del login: link mágico en dos pasos (pedir, revisar el correo, reenviar).
+│       ├── loginScene.js     # Visual del login: constelación, ticker y contadores (GET /api/public/resumen).
+│       ├── loginVerify.js    # Último paso del login: verify por fetch y el aviso del link vencido.
+│       ├── dashboard.js      # El inicio (GET /api/inicio y las últimas publicaciones).
+│       ├── postView.js       # Cómo se ve un posteo (piezas compartidas por el Monitoreo, Estadísticas y el inicio).
 │       ├── analysis.js       # Lógica de "Análisis de publicación" (Instagram).
 │       ├── x-analysis.js     # Análisis de publicación de X (`/api/x/analyze`).
 │       ├── temasEditor.js    # Temas emergentes editables (antes de copiar/WhatsApp).
@@ -118,7 +124,7 @@ social_listening_app/
 │       ├── monitoringFeedPopup.js # Pop-up del posteo (feed, flujo y "Se despegaron"). Solo Instagram.
 │       ├── monitoringPanel.js # KPI, fuentes, pulso, pipeline y alertas del Monitoreo. Solo Instagram.
 │       ├── monitoringFlow.js # Flujo en vivo del Monitoreo. Solo Instagram.
-│       ├── kpi.js            # Tarjetas KPI (número, trazo, anillo, variación) del Monitoreo y Estadísticas. Solo Instagram.
+│       ├── kpi.js            # Tarjetas KPI (número, trazo, anillo, variación) del Monitoreo y Estadísticas; el login usa su contador.
 │       ├── stats.js          # Solapa Estadísticas (GET /api/monitoring/stats). Solo Instagram.
 │       └── claimsMap.js      # Mapa de reclamos (Leaflet, filtrado por plataforma).
 ├── scripts/
@@ -165,14 +171,20 @@ archivo **o** en el env. Los cambios al archivo aplican en el próximo intento,
 sin reiniciar.
 
 Flujo: la persona pone su email → si está autorizado se manda un link (15 min,
-un solo uso) → abre el mail y hace clic en **Entrar**. La respuesta de la API
-es la misma aunque el email no esté en la lista (no se enumeran los autorizados).
+un solo uso) → abre el mail, toca el link y, en la página que se abre, hace
+clic en **Entrar**. La respuesta de la API es la misma aunque el email no
+esté en la lista (no se enumeran los autorizados), y la pantalla tampoco dice
+nada distinto: "Revisá tu correo", con "Mandar otro link" (espera 2 minutos
+por dirección) y "Cambiar el correo". Antes de entrar no se ve ninguna
+publicación: la parte de la izquierda muestra solo temas y cantidades de
+`GET /api/public/resumen`.
 
 Hace falta `SESSION_SECRET` (string largo aleatorio) y `APP_BASE_URL` (p. ej.
 `http://localhost:3000`). El SMTP es el mismo de las alertas (`SMTP_*`).
 
 Qué pide sesión lo decide `src/auth/gate.js`, que corre antes que todo lo
-demás: `/api/` (salvo las cuatro rutas de `/api/auth/`) y cualquier página
+demás: `/api/` (salvo las cuatro rutas de `/api/auth/` y `GET
+/api/public/resumen`, cinco en total, escritas exactas) y cualquier página
 `.html` que no sea la de login. Lo público se reconoce por el camino exacto;
 lo protegido, por el camino **decodificado y en minúsculas, con las barras
 unificadas**, porque Express no distingue mayúsculas en las rutas y el disco
@@ -1126,9 +1138,26 @@ en el tag `v3-riel-radar`.
   General de Análisis y Datos, "4 corridas por día · 8, 12, 16 y 20 h" (de
   la expresión del cron real), Secciones, Fuentes (cada una baja a su caja
   del Monitoreo), Plataformas y Cuenta.
-- **Login**: pantalla partida (la marca sobre fondo oscuro, la tarjeta con
-  el formulario del link mágico de siempre). La parte animada llega en la
-  fase D; el login sigue por link mágico.
+- **Login** (fase D): la pantalla partida de la maqueta. A la izquierda,
+  siempre oscura, una constelación con los temas de los últimos 7 días (más
+  grande el que más publicaciones tuvo), un ticker "tema · N publicaciones"
+  y cuatro contadores (publicaciones hoy, reclamos en el mapa, días
+  escuchando y publicaciones de 30 días): solo temas y cantidades, nunca una
+  publicación. A la derecha, el link mágico en dos pasos: "Mandarme el link
+  →" y "Revisá tu correo", con "Mandar otro link" (con su cuenta regresiva)
+  y "Cambiar el correo". El link abre "Último paso": un clic en **Entrar** y
+  al inicio; si venció o ya se usó, lo dice y ofrece pedir otro. Sin
+  movimiento si el sistema lo pide; en el celular, la tarjeta primero.
+- **Inicio** (fase D): "Qué se dice hoy de la Ciudad". Una tarjeta por red:
+  Instagram con las publicaciones de hoy, las que se despegaron y el tono de
+  los últimos 7 días (los mismos números de Estadísticas) y su curva; X en
+  pausa, con su última corrida real; Facebook y TikTok, "pronto". La
+  **próxima corrida** con cuenta regresiva y anillo, la línea del día con las
+  corridas de hoy (terminada, cortada, en curso, la siguiente o la que no
+  corrió) y la última corrida (traídas, nuevas, relevantes y costo). Las
+  **últimas publicaciones** de Instagram: un clic abre esa publicación en el
+  pop-up del Monitoreo. Se actualiza solo cada minuto. "Análisis recientes"
+  llega en la fase E.
 - **Favicon** nuevo: el ◎ de la marca.
 
 ### Estadísticas: `GET /api/monitoring/stats` (octubre 2026)
