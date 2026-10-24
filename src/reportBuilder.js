@@ -202,7 +202,8 @@ function buildComentariosCsv(vista) {
         c.horas !== null ? Math.round(c.horas * 10) / 10 : '',
         c.tono || 'sin clasificar',
         POSTURA_TEXTO[c.postura] || '',
-        c.tema || '',
+        // Un v1: todos sus temas (la vista cuenta cada tema por su lista).
+        Array.isArray(c.temasV1) ? c.temasV1.join(' · ') : c.tema || '',
         SI_NO(c.sobrePosteo),
         SI_NO(c.pedido),
         c.texto,

@@ -100,8 +100,9 @@ function temasDeFila(temas) {
     .map((t, i) => {
       const comentariosV1 = [...new Set((Array.isArray(t.comentarios) ? t.comentarios : []).filter(Number.isInteger))];
       const texto = typeof t.texto === 'string' && t.texto.trim() ? t.texto.trim() : null;
-      // Sin comentarios y con texto: uno que agregó el equipo en la E (sale con su texto, sin conteo).
-      return { id: i + 1, nombre: t.titulo.trim(), manual: comentariosV1.length === 0 && Boolean(texto), texto, comentariosV1 };
+      // Sin comentarios: uno que agregó el equipo en la E (la E descartaba
+      // los del modelo sin texto; sale con su texto si tiene, sin conteo).
+      return { id: i + 1, nombre: t.titulo.trim(), manual: comentariosV1.length === 0, texto, comentariosV1 };
     });
   return { lista, canonico: (id) => (lista.some((t) => t.id === Number(id)) ? Number(id) : null), version: 1 };
 }
@@ -209,13 +210,23 @@ function buildAnalysisView(row, { figuras = new Map(), reclamos = [], anteriores
 
   // Los comentarios, con su tema canónico y las horas desde la publicación.
   const nombreTema = new Map(temas.lista.map((t) => [t.id, t.nombre]));
+  // v1: un comentario podía estar en varios temas; temaId es el primero
+  // (para filtrar) y temasV1 todos (el CSV los nombra, como los cuenta la vista).
   const temaV1 = new Map();
-  if (temas.version === 1) for (const t of temas.lista) for (const n of t.comentariosV1) if (!temaV1.has(n)) temaV1.set(n, t.id);
-  const comentarios = (Array.isArray(row.comentarios) ? row.comentarios : []).map((c) => {
+  const todosV1 = new Map();
+  if (temas.version === 1) {
+    for (const t of temas.lista) {
+      for (const n of t.comentariosV1) {
+        if (!temaV1.has(n)) temaV1.set(n, t.id);
+        todosV1.set(n, [...(todosV1.get(n) || []), t.nombre]);
+      }
+    }
+  }
+  const comentarios = (Array.isArray(row.comentarios) ? row.comentarios : []).filter((c) => c && typeof c === 'object').map((c) => {
     const temaId = v2 ? temas.canonico(c.tema) : temaV1.get(c.n) ?? null;
     return {
       n: c.n,
-      usuario: c.usuario || 'desconocido',
+      usuario: c.usuario ? String(c.usuario) : 'desconocido',
       verificada: Boolean(c.verificada),
       likes: num(c.likes),
       fecha: c.fecha || null,
@@ -225,6 +236,7 @@ function buildAnalysisView(row, { figuras = new Map(), reclamos = [], anteriores
       postura: v2 && POSTURAS.includes(c.postura) ? c.postura : null,
       temaId,
       tema: temaId !== null ? nombreTema.get(temaId) || null : null,
+      temasV1: v2 ? null : todosV1.get(c.n) || [],
       sobrePosteo: v2 && typeof c.sobrePosteo === 'boolean' ? c.sobrePosteo : null,
       pedido: v2 && typeof c.pedido === 'boolean' ? c.pedido : null,
     };
@@ -282,7 +294,9 @@ function buildAnalysisView(row, { figuras = new Map(), reclamos = [], anteriores
   }
 
   // ---- temas con su tono (y, en un v2, cuántos no hablan del posteo)
-  const porTema = new Map(temas.lista.map((t) => [t.id, { positivo: 0, neutral: 0, negativo: 0, n: 0, fuera: v2 ? 0 : null }]));
+  // conOpinion: los que no son ruido (en un v1 la estrella tiene que tener
+  // alguno: un tema de puro spam no es el de la publicación).
+  const porTema = new Map(temas.lista.map((t) => [t.id, { positivo: 0, neutral: 0, negativo: 0, n: 0, conOpinion: 0, fuera: v2 ? 0 : null }]));
   if (temas.version === 1) {
     // Fase E: un comentario podía estar en varios temas y cada tema se
     // contaba por su lista (también el ruido, que no suma tono). Igual acá.
@@ -293,7 +307,10 @@ function buildAnalysisView(row, { figuras = new Map(), reclamos = [], anteriores
         const c = porNumero.get(n);
         if (!c) continue;
         x.n += 1;
-        if (TONOS.includes(c.tono)) x[c.tono] += 1;
+        if (TONOS.includes(c.tono)) {
+          x[c.tono] += 1;
+          x.conOpinion += 1;
+        }
       }
     }
   } else {
@@ -301,6 +318,7 @@ function buildAnalysisView(row, { figuras = new Map(), reclamos = [], anteriores
       const t = c.temaId !== null ? porTema.get(c.temaId) : null;
       if (!t) continue;
       t.n += 1;
+      t.conOpinion += 1;
       t[c.tono] += 1;
       if (t.fuera !== null && c.sobrePosteo === false) t.fuera += 1;
     }
@@ -323,7 +341,7 @@ function buildAnalysisView(row, { figuras = new Map(), reclamos = [], anteriores
     // v1 los conserva: ahí uno sin comentarios es el que agregó el equipo.
     .filter((t) => temas.version !== 2 || t.manual || t.n > 0)
     .sort((a, b) => Number(a.manual) - Number(b.manual) || (b.n ?? 0) - (a.n ?? 0) || a.id - b.id);
-  const estrella = temasVista.find((t) => !t.manual && t.n > 0) || null;
+  const estrella = temasVista.find((t) => !t.manual && t.n > 0 && porTema.get(t.id).conOpinion > 0) || null;
   for (const t of temasVista) t.estrella = Boolean(estrella && t.id === estrella.id);
 
   // ---- verificados y figuras públicas (todos los que comentaron se cruzan con la tabla)
@@ -345,7 +363,7 @@ function buildAnalysisView(row, { figuras = new Map(), reclamos = [], anteriores
         comentario: { n: c.n, texto: c.texto, likes: c.likes, tono: c.tono, horas: c.horas },
       };
     })
-    .sort((a, b) => (b.comentario.likes || 0) - (a.comentario.likes || 0) || a.usuario.localeCompare(b.usuario));
+    .sort((a, b) => (b.comentario.likes || 0) - (a.comentario.likes || 0) || String(a.usuario).localeCompare(String(b.usuario)));
 
   // ---- hecho dominante
   let hecho = null;
@@ -374,6 +392,8 @@ function buildAnalysisView(row, { figuras = new Map(), reclamos = [], anteriores
       };
     }
   }
+  // Del hecho: del tema y fuera del posteo (los mismos que cuenta el hecho).
+  const esDelHecho = (c) => Boolean(hecho) && c.temaId === hecho.temaId && c.sobrePosteo === false;
   if (!hecho && estrella) {
     sinHecho = {
       tema: estrella.nombre,
@@ -392,7 +412,7 @@ function buildAnalysisView(row, { figuras = new Map(), reclamos = [], anteriores
         const ids = [...new Set((Array.isArray(p.ids) ? p.ids : []).filter((n) => porN.has(n)))];
         const lista = ids.map((n) => porN.get(n));
         const ejemplo = [...lista].sort((a, b) => likesDe(b) - likesDe(a) || a.n - b.n)[0] || null;
-        const delHecho = Boolean(hecho && lista.filter((c) => c.temaId === hecho.temaId).length * 2 > lista.length);
+        const delHecho = Boolean(hecho && lista.filter(esDelHecho).length * 2 > lista.length);
         return { texto: String(p.texto || '').trim(), n: ids.length, proporcion: analizados > 0 ? ids.length / analizados : 0, ejemplo: ejemplo ? ejemplo.texto : null, delHecho, ids };
       })
       .filter((p) => p.texto && p.n > 0)
@@ -403,7 +423,7 @@ function buildAnalysisView(row, { figuras = new Map(), reclamos = [], anteriores
   const top = [...comentarios]
     .sort((a, b) => likesDe(b) - likesDe(a) || a.n - b.n)
     .slice(0, TOP_LIKES)
-    .map((c) => ({ ...c, delHecho: Boolean(hecho && c.temaId === hecho.temaId) }));
+    .map((c) => ({ ...c, delHecho: esDelHecho(c) }));
 
   // ---- comparación con la cuenta
   const actual = {

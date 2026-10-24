@@ -55,6 +55,9 @@ insertar.run(
 );
 insertar.run('https://www.instagram.com/p/VIEJO2/', 'VIEJO2', 'ok', 0, 0, 0, '[]', '[]');
 insertar.run('https://www.instagram.com/p/VIEJO3/', 'VIEJO3', 'error', null, null, null, null, null);
+// Una fila rara (un comentario null, un usuario numérico) no frena el completado de las que siguen.
+insertar.run('https://www.instagram.com/p/VIEJO4/', 'VIEJO4', 'ok', 1, 0, 0, JSON.stringify([null, { n: 1, usuario: 123, verificada: true, texto: 'a', tono: 'positivo' }, { n: 2, usuario: 45, verificada: true, texto: 'b', tono: 'positivo' }]), '[]');
+insertar.run('https://www.instagram.com/p/VIEJO5/', 'VIEJO5', 'ok', 0, 0, 1, JSON.stringify([{ n: 1, usuario: 'u', verificada: false, texto: 'c', tono: 'negativo' }]), '[]');
 vieja.close();
 
 const { test } = require('node:test');
@@ -73,11 +76,13 @@ test('las columnas nuevas aparecen y se completan en los análisis viejos termin
   assert.deepEqual({ ...filas[0] }, { url: 'https://www.instagram.com/p/VIEJO1/', pct_neg: 50, tiene_hecho: 0, n_verificados: 2, tema_estrella: 'Seguridad' });
   assert.deepEqual({ ...filas[1] }, { url: 'https://www.instagram.com/p/VIEJO2/', pct_neg: null, tiene_hecho: 0, n_verificados: 0, tema_estrella: null });
   assert.equal(filas[2].n_verificados, null, 'uno que no terminó bien no se toca');
+  assert.deepEqual([filas[3].pct_neg, filas[3].n_verificados], [0, 2], 'la rara, completada sin el null');
+  assert.deepEqual([filas[4].pct_neg, filas[4].n_verificados], [100, 0], 'y la que sigue, también');
 });
 
 test('la galería lee las columnas completadas y la tabla de figuras existe', () => {
   const { items, total } = db.listAnalisisGaleria({ plataforma: 'instagram' });
-  assert.equal(total, 2);
+  assert.equal(total, 4);
   const viejo = items.find((a) => a.postCode === 'VIEJO1');
   assert.equal(viejo.pctNeg, 50);
   assert.equal(viejo.nVerificados, 2);

@@ -1113,8 +1113,11 @@ públicas). La F va en dos PR: F1 (modelo y servidor, tag `v4-fase-f1`) y F2
   tampoco entra), el ponderado por likes (cada comentario pesa likes + 1),
   el tono neto, "hablan del posteo" y a qué se desvían, los temas (con sus
   renombres y uniones; uno del modelo sin ningún comentario no sale; en
-  un v1 cada tema cuenta su propia lista, como en la E, y uno sin
-  comentarios con texto es uno del equipo: sale con su texto), el hecho dominante, quién habló (verificados y
+  un v1 cada tema cuenta su propia lista, como en la E (también el ruido,
+  que no suma tono), la estrella tiene que tener algún comentario que no
+  sea ruido, uno sin comentarios es uno del equipo (sale con su texto si
+  tiene, sin conteo) y el CSV nombra todos los temas de cada comentario), el hecho dominante (los que más pegaron y los pedidos son "del
+  hecho" con la misma regla: del tema y fuera del posteo), quién habló (verificados y
   figuras públicas), los pedidos, etiquetas (@ mencionadas), emojis (sin
   tono de piel ni U+FE0F; una secuencia ZWJ cuenta por su primer emoji;
   listas fijas `APOYO` y `BRONCA`), los de más likes, el tiempo, la
@@ -1135,7 +1138,10 @@ públicas). La F va en dos PR: F1 (modelo y servidor, tag `v4-fase-f1`) y F2
   cuatro, al editar los temas (v1 y v2: unir temas puede cambiar la
   estrella y el hecho), y los v1 se completaron una vez al cargar `db.js`
   con `buildAnalysisView` y `columnasDeVista`, la misma cuenta que la
-  vista.
+  vista, fila por fila (una rara queda con `n_verificados` 0 y un aviso, y
+  no frena a las demás). `listAnterioresDeCuenta` hace la ventana por
+  publicación solo sobre id y fecha y lee los comentarios de los elegidos
+  (con `SELECT *` tardaba casi un segundo con 300 análisis de una cuenta).
 - **Informe y CSV** (`src/reportBuilder.js`): `buildInforme(vista)` es el
   de 8 puntos (lo que pasó, tono, postura, hablan del posteo, temas, quién
   habló, pedidos, lectura), más "Comentarios destacados" y el pie
@@ -1153,7 +1159,8 @@ públicas). La F va en dos PR: F1 (modelo y servidor, tag `v4-fase-f1`) y F2
   `comentarios-<cuenta>-<AAAA-MM-DD>.csv`. Contra la inyección de
   fórmulas, un campo que empieza con = + - @ tabulación o retorno (salvo un
   número) lleva un apóstrofo adelante (`escapeCsvField`); el CSV de
-  reclamos de un análisis anterior ya quedó guardado como estaba. Un
+  reclamos de un análisis anterior ya quedó guardado como estaba, y el de
+  X (`src/x/reportBuilder.js`) no cambió (X no se toca en esta fase). Un
   análisis donde todo lo clasificado es ruido dice "sin comentarios con
   opinión para medir" en los puntos 1 a 4.
 - **Figuras públicas** (`src/figuras.js`, puro; tabla `figuras_publicas`,

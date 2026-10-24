@@ -369,6 +369,14 @@ describe('correcciones de la revisión', () => {
     assert.equal(v.hecho.n, 8, 'el del posteo no suma');
     assert.ok(Math.abs(v.hecho.proporcion - 8 / 20) < 1e-9);
     assert.ok(!v.hecho.ejemplos.some((c) => c.n === 21), 'ni queda de ejemplo, aunque tenga más likes');
+    assert.equal(v.top.find((c) => c.n === 21).delHecho, false, 'entre los que más pegaron, no es "del hecho"');
+    assert.equal(v.top.find((c) => c.n === 1).delHecho, true);
+    // Un pedido hecho solo con ese comentario tampoco es del hecho.
+    const conPedido = buildAnalysisView(
+      filaV2({ comentarios: [...comentariosV2(), { ...extra, pedido: true }], analizados: 20, resultado: { ...filaV2().resultado, pedidos: [{ texto: 'Del posteo', ids: [21] }] } }),
+      {}
+    );
+    assert.equal(conPedido.pedidos[0].delHecho, false);
   });
 
   test('cada tema lleva sus propios fuera del posteo, y la síntesis los recibe aunque haya más de 4 que se desvían', () => {
@@ -391,27 +399,51 @@ describe('correcciones de la revisión', () => {
     for (let t = 1; t <= 6; t++) assert.match(prompt, new RegExp(`^${t}\\. Tema ${t}: 1 comentarios .* · 1 fuera del posteo$`, 'm'));
   });
 
-  test('un v1: cada tema cuenta su propia lista (como en la E) y uno sin comentarios con texto es del equipo', () => {
+  test('un v1: cada tema cuenta su propia lista (como en la E, también el ruido) y uno sin comentarios es del equipo', () => {
     const fila = {
       ...filaV2(),
       resultado: { lecturaEstrategica: 'De antes.' },
       temas: [
-        { titulo: 'A', texto: 'x', comentarios: [1, 2] },
-        { titulo: 'B', texto: 'y', comentarios: [1, 2, 3] },
+        // El 19 es ruido: suma a A pero no a su tono.
+        { titulo: 'A', texto: 'x', comentarios: [1, 2, 19] },
+        { titulo: 'B', texto: 'y', comentarios: [1, 2, 3, 4] },
         { titulo: 'Del equipo', texto: 'Uno a mano.', comentarios: [] },
+        { titulo: 'Sin texto', texto: '', comentarios: [] },
       ],
     };
     const v = buildAnalysisView(fila, {});
     assert.deepEqual(
       v.temas.map((t) => [t.nombre, t.n, t.manual, t.estrella]),
       [
-        ['B', 3, false, true],
-        ['A', 2, false, false],
+        ['B', 4, false, true],
+        ['A', 3, false, false],
         ['Del equipo', null, true, false],
+        ['Sin texto', null, true, false],
       ]
     );
+    assert.deepEqual(v.temas[1].tonos, { positivo: 0, neutral: 0, negativo: 2 });
     assert.equal(columnasDeVista(v).temaEstrella, 'B');
-    assert.match(buildInforme(v), /5\) \*Temas:\* B \(3\), A \(2\), Del equipo: Uno a mano\./);
+    assert.match(buildInforme(v), /5\) \*Temas:\* B \(4\), A \(3\), Del equipo: Uno a mano\., Sin texto\n/);
+    // El CSV nombra todos los temas de cada comentario, como los cuenta la vista.
+    const csv = buildComentariosCsv(v).split('\n');
+    assert.match(csv[1], /"A · B"/);
+    assert.match(csv[3], /,"B",/);
+  });
+
+  test('un v1: un tema de puro ruido no es la estrella aunque tenga la lista más larga', () => {
+    const comentarios = [
+      { n: 1, usuario: 'bot1', likes: 0, tono: 'ruido', texto: 'Sorteo', fecha: en(1) },
+      { n: 2, usuario: 'bot2', likes: 0, tono: 'ruido', texto: 'Sorteo', fecha: en(1) },
+      { n: 3, usuario: 'v3', likes: 0, tono: 'positivo', texto: 'Bien', fecha: en(1) },
+    ];
+    const v = buildAnalysisView({ ...filaV2(), comentarios, analizados: 3, resultado: { lecturaEstrategica: 'x' }, temas: [{ titulo: 'Spam', texto: 'x', comentarios: [1, 2] }, { titulo: 'Real', texto: 'y', comentarios: [3] }] }, {});
+    assert.deepEqual(
+      v.temas.map((t) => [t.nombre, t.n, t.estrella]),
+      [
+        ['Spam', 2, false],
+        ['Real', 1, true],
+      ]
+    );
   });
 
   test('todo ruido: los puntos 1 a 4 dicen que no hay qué medir, no 0 %', () => {
@@ -431,5 +463,13 @@ describe('correcciones de la revisión', () => {
     assert.match(csv, /"1","v1","no","3"/);
     const rec = buildReclamosCsv([{ username: 'v2' }], [{ reclamosGeo: [{ direccionDetectada: '+54 Salta 250', direccionNormalizada: '@SALTA 250', tematica: '-bache' }] }]);
     assert.match(rec, /"v2","'\+54 Salta 250","'@SALTA 250","'-bache"/);
+    // Un número que empieza con "-" queda; texto que empieza con "-", tabulación o retorno, no.
+    // El último campo del renglón (el texto), entre comillas.
+    const campo = (texto) => /,("(?:[^"]|"")*")$/.exec(buildComentariosCsv(buildAnalysisView(filaV2({ comentarios: [{ ...comentarios[0], texto }], analizados: 1 }), {})).split('\n')[1])[1];
+    assert.equal(campo('-3'), '"-3"');
+    assert.equal(campo('-3,5'), '"-3,5"');
+    assert.equal(campo('-3 cuadras'), `"'-3 cuadras"`);
+    assert.equal(campo('\t=1'), `"'\t=1"`);
+    assert.equal(campo('\r=1'), `"'\r=1"`);
   });
 });

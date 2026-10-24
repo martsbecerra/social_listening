@@ -1229,17 +1229,24 @@ const listAnalisisGaleriaStmt = db.prepare(`
 const resumenGaleriaStmt = db.prepare("SELECT COUNT(*) AS total, MIN(finished_at) AS desde FROM analisis WHERE plataforma = ? AND estado = 'ok'");
 // Los análisis anteriores de una cuenta, para la comparación: sin el
 // actual ni otros de la misma publicación, y de cada publicación anterior
-// solo el último (re-analizar una no la cuenta dos veces).
+// solo el último (re-analizar una no la cuenta dos veces). La ventana va
+// solo sobre id y fecha y las columnas pesadas (comentarios) se leen de los
+// elegidos: con SELECT * ordenaba todo y, con 300 análisis de una cuenta,
+// tardaba casi un segundo con el servidor parado.
 const listAnterioresDeCuentaStmt = db.prepare(`
   SELECT id, started_at, finished_at, post_code, pct_neg, comentarios_total, n_verificados, comentarios, temas
-  FROM (
-    SELECT *, ROW_NUMBER() OVER (PARTITION BY COALESCE(post_code, 'id:' || id) ORDER BY started_at DESC, id DESC) AS rn
-    FROM analisis
-    WHERE plataforma = @plataforma AND estado = 'ok' AND cuenta = @cuenta AND id <> @id AND started_at < @antesDe
-      AND (@postCode IS NULL OR post_code IS NULL OR post_code <> @postCode)
+  FROM analisis
+  WHERE id IN (
+    SELECT id FROM (
+      SELECT id, started_at, ROW_NUMBER() OVER (PARTITION BY COALESCE(post_code, 'id:' || id) ORDER BY started_at DESC, id DESC) AS rn
+      FROM analisis
+      WHERE plataforma = @plataforma AND estado = 'ok' AND cuenta = @cuenta AND id <> @id AND started_at < @antesDe
+        AND (@postCode IS NULL OR post_code IS NULL OR post_code <> @postCode)
+    )
+    WHERE rn = 1
+    ORDER BY started_at DESC, id DESC LIMIT @limit
   )
-  WHERE rn = 1
-  ORDER BY started_at DESC, id DESC LIMIT @limit
+  ORDER BY started_at DESC, id DESC
 `);
 // Los reclamos de una publicación (los guarda el análisis con su post_url),
 // con la regla del pin del mapa (ver countReclamosEnMapaStmt).
@@ -1291,15 +1298,22 @@ try {
     .all();
   const rellenar = db.prepare('UPDATE analisis SET pct_neg = ?, tiene_hecho = ?, n_verificados = ?, tema_estrella = COALESCE(tema_estrella, ?) WHERE id = ?');
   for (const row of sinColumnas) {
-    const col = analysisMetrics.columnasDeVista(
-      analysisMetrics.buildAnalysisView({
-        analizados: row.analizados,
-        resultado: parseJsonColumn(row.resultado),
-        comentarios: parseJsonColumn(row.comentarios),
-        temas: parseJsonColumn(row.temas),
-      })
-    );
-    rellenar.run(col.pctNeg, col.tieneHecho ? 1 : 0, col.nVerificados, col.temaEstrella, row.id);
+    // Fila por fila: una rara no deja sin columnas a las demás. Se marca con
+    // n_verificados 0 para no volver a probarla en cada arranque.
+    try {
+      const col = analysisMetrics.columnasDeVista(
+        analysisMetrics.buildAnalysisView({
+          analizados: row.analizados,
+          resultado: parseJsonColumn(row.resultado),
+          comentarios: parseJsonColumn(row.comentarios),
+          temas: parseJsonColumn(row.temas),
+        })
+      );
+      rellenar.run(col.pctNeg, col.tieneHecho ? 1 : 0, col.nVerificados, col.temaEstrella, row.id);
+    } catch (err) {
+      console.warn(`[db] el análisis #${row.id} no se pudo completar para la galería: ${err && err.message}`);
+      rellenar.run(null, 0, 0, null, row.id);
+    }
   }
 } catch (err) {
   console.warn(`[db] no se pudieron completar las columnas de los análisis anteriores: ${err && err.message}`);
