@@ -456,6 +456,32 @@ días (si no, 400 con `userMessage`). Con la base real tarda unos 50 ms con
 - Sin benchmark (X, `conAlcance` falso) no hay alcance: 0 se despegaron y
   ranking vacío.
 
+## Datos sin sesión: `GET /api/public/resumen`
+
+La única ruta de datos que pasa el gate sin sesión (`src/auth/gate.js`,
+`PUBLIC_API`, escrita EXACTA: nunca un prefijo `/api/public/`, que dejaría
+pasar cualquier ruta futura; POST, HEAD, mayúsculas, barra final o doble
+dan 401, `test/authGate.test.js`). La arma `src/publicResumen.js` campo
+por campo, con lecturas de `db.js` que solo cuentan
+(`countPostedSinceAllPlatforms`, `countTemasSinceAllPlatforms`,
+`getFirstDetectedAtAny`, `countReclamosEnMapa`): `publicacionesHoy` y
+`publicaciones30Dias` (todas las redes), `reclamosEnMapa` (los que tienen
+pin, con la regla del mapa, `hasMapLocation`: no de fuera de CABA, con x, y
+y dirección normalizada, y no en el (0,0) que deja una respuesta de USIG sin
+coordenadas; los sin dirección, no encontrados o pendientes no cuentan),
+`primerDia` y `diasEscuchando` (desde la primera DETECCIÓN, contando los dos
+extremos: la primera fecha de publicación puede ser de días antes),
+`runHours`, `corridasPorDia` y `temas` (los 8 de 7 días, con `n` y
+`orden`; un tema que no está en la config cuenta como "Coyuntura / Otros").
+Nunca un título, un texto, una cuenta, una URL, un término de búsqueda ni un
+correo: no reusa `armarEstadisticas`, `contarTemas` ni `buildLastRun`. No
+lee nada del pedido ni pone cookies; 60 s de caché en memoria
+(`Cache-Control: public, max-age=60`), también para un fallo: con una
+respuesta buena anterior DEL MISMO DÍA de Argentina sirve esa (la de ayer
+diría "publicaciones hoy" de ayer); si no, 503 genérico.
+Test: `test/resumenPublico.test.js`. Un campo nuevo acá tiene que ser una
+cantidad o un nombre de tema, y su test lo tiene que fijar.
+
 ## Diseño v4
 
 Desde octubre 2026 el frontend se rehace sobre UNA maqueta,
@@ -467,6 +493,7 @@ páginas), B `monitoreo-v4`, C `estadisticas`, D `inicio-y-login`, E
 en el tag `v3-riel-radar`. SDD de la fase A en
 `openspec/changes/sistema-visual-v4/`; de la B, en
 `openspec/changes/monitoreo-v4/`; de la C, en `openspec/changes/estadisticas/`.
+La D va sin SDD (decisión del dueño).
 
 - **Sistema visual** (`public/css/styles.css`, en tres partes comentadas):
   1) los tokens y componentes de la maqueta tal cual (`--bg`, `--surface`,
@@ -492,10 +519,16 @@ en el tag `v3-riel-radar`. SDD de la fase A en
   `.pipe`, `.al`, `.fbar`, `.combo`, `.fstatus`, `.ups`/`.up`, `.reach`),
   las Estadísticas (`.cloud`, `.rows`, `.donut`, `.topic`, `.heat`,
   `.acc-row`, `.rk`; los badges de los temas llevan la tinta oscura donde
-  el blanco de la maqueta no pasaba 4,5:1) y,
+  el blanco de la maqueta no pasaba 4,5:1), el inicio (`.hero`,
+  `.plats`/`.pl`, `.nextcard` con `.nring` y `.tl24`, `.homefeed` con
+  `.fl.big`), el login (`.lg-vis` con `.ticker`/`.tk` y `.lg-stats`;
+  `.lg-card` con `.lg-state`, `.lg-err`, `.lg-mail`, `.lg-foot`,
+  `.lg-trust`) y,
   con los mismos tokens, lo que la maqueta no dibuja o que todavía no se
-  rehizo (progreso, Tabulator, feed, pop-up, modales, análisis, mapa,
-  inicio, login, el Monitoreo de X). Todo color sale de los tokens: los únicos sueltos son los de marca de cada
+  rehizo (progreso, Tabulator, feed, pop-up, modales, análisis, mapa, el
+  Monitoreo de X). La visual del login es SIEMPRE oscura: el bloque de los
+  tokens oscuros vale también para ella (`:root[data-theme="dark"],
+  .lg-vis`), más `--vis-1` / `--vis-2`, las manchas de color. Todo color sale de los tokens: los únicos sueltos son los de marca de cada
   red, los de las categorías del mapa y el negro de las fotos. Los tokens
   viejos (`--jade-*`, `--clay-*`, `--coral-*`) ya no existen. No hay estilo
   global de `<button>`: cada botón lleva su clase (`.btn`, `.btn.primary`,
@@ -508,7 +541,8 @@ en el tag `v3-riel-radar`. SDD de la fase A en
   `theme.js` marca SIEMPRE `data-theme="light"` o `"dark"` en `<html>`
   (nunca lo deja vacío) y la elección queda en `localStorage`
   (`sl.tema`: `oscuro` | `claro`, con try/catch; sin almacenamiento vale la
-  clara). El login no tiene botón pero respeta lo elegido. Los valores
+  clara). El login no tiene botón: su tarjeta respeta lo elegido y la
+  visual de la izquierda es siempre oscura. Los valores
   oscuros son los de la maqueta, salvo `--muted` (`:root[data-theme="dark"]`); no hay
   `prefers-color-scheme` en styles.css.
 - **Barra superior** (`header.top`, igual en `instagram.html`, `x.html` y,
@@ -573,7 +607,10 @@ en el tag `v3-riel-radar`. SDD de la fase A en
     despegaron" y la lista. La ✕ o elegir Hoy / 7 / 30 lo saca.
   - **Panel** (`public/js/monitoringPanel.js`, prefijo `panel`): los
     cuatro KPI (publicaciones con sparkline y variación contra el período
-    anterior del mismo largo; tono neto sobre los clasificados, con anillo;
+    anterior del mismo largo; tono neto, con anillo, con la regla de
+    Estadísticas y del inicio: sin clasificar = neutral (decisión del dueño,
+    24/10/2026; antes iba sobre los clasificados; vale también para la
+    barrita de tono de los chips);
     "Se despegaron" con "la mayor: 15,37× en comentarios, de @cuenta";
     conversación), con las tarjetas de `public/js/kpi.js` (prefijo `kpi`,
     compartidas con Estadísticas: `kpiCard`, `kpiDelta`, el trazo, el
@@ -603,7 +640,7 @@ en el tag `v3-riel-radar`. SDD de la fase A en
     publicaciones del período por `detected_at`, tantas como entran (la
     tarjeta `.flowcard` tiene el alto de la fila y su contenido es una capa
     absoluta: nunca crece); el término de la búsqueda va en `<mark>` armado
-    con nodos (`flowFindTerm`, sin mayúsculas ni acentos). Durante una
+    con nodos (`postFindTerm` de `postView.js`, sin mayúsculas ni acentos). Durante una
     corrida no se redibuja; con `{ run: 'end', newIds }` las nuevas entran
     de a una con "ahora" (el primer minuto; las horas se rehacen solas cada
     30 s); con el mouse encima esperan en una cola, y un redibujo mientras
@@ -685,17 +722,168 @@ en el tag `v3-riel-radar`. SDD de la fase A en
     rehace con el foco en una fila, el foco pasa a la misma fila nueva (sin
     filas, al título de la tarjeta). Desde → Hasta no acepta un "Hasta"
     posterior a hoy.
+- **Cómo se ve un posteo** (`public/js/postView.js`, fase D): las piezas
+  que dibujan un posteo, compartidas por el Monitoreo, Estadísticas y el
+  inicio, movidas TAL CUAL de `monitoring.js`, `monitoringFeed.js` y
+  `monitoringFlow.js` con sus nombres (`formatCount`, `accountColor`,
+  `temaColor`, `buildTemaTag`, `postReasonParts`, `formatBenchmarkRatio`,
+  `benchmarkRatioBasis`, `formatFullDateTime`, `postReach`,
+  `buildReachMeter`, `normalizeSearch`, `feedAgo`, `feedImageUrl`); las del
+  flujo pasaron a llamarse `postFindTerm`, `postTitleLine` (con
+  `{ wrap: true }`, el del inicio: la cuenta en su renglón y el título
+  entero, sin " · " ni recorte adelante), `postThumb` y `POST_TONES`. Los
+  temas para los colores son `postViewTemas`, que fija `setPostViewTemas`
+  (`monitoring.js` al llegar la config; el inicio, con la suya). Va antes
+  que todos en `instagram.html`, `x.html` y `dashboard.html`. Una pieza de
+  dibujo nueva que sirva a más de una página va acá.
 - **Mapa**: mosaicos de OpenStreetMap claros también en oscuro; controles,
   leyenda, popups y tooltips de Leaflet con los tokens. Los colores de
   categoría (`--cat-1` … `--cat-12`) salen de la paleta de la maqueta, en su
   tono oscuro (el número del pin va en blanco). La tarjeta de filtros lleva
   `z-index: 3`: las dos tarjetas tienen `.rv`, cuya animación les da su
   propia capa, y sin eso el mapa tapaba los desplegables.
-- **Login** (`index.html`, que es el de `/`, y `login-verify.html`):
-  pantalla partida estática (marca y título sobre fondo oscuro, la tarjeta
-  con el formulario del link mágico de siempre). Sin pie. La fase D suma la
-  parte animada; el login SIGUE por link mágico (sin código de 6 dígitos) y
-  `/api/auth/*` no cambia.
+- **Login** (fase D; `index.html`, que es el de `/`, y `login-verify.html`):
+  la pantalla partida de la maqueta, sin pie. Antes de entrar no se muestra
+  ninguna publicación.
+  - **La visual** (`public/js/loginScene.js`, prefijo `lg`): todo sale de
+    `GET /api/public/resumen` (ver "Datos sin sesión"). La constelación es
+    un canvas: los 8 temas de los últimos 7 días (radio de 5 a 18 px por
+    cantidad, color `--cat-N` por su lugar en la config, como `temaColor`)
+    en el hueco más alto que dejan los textos (en escritorio, entre el
+    subtítulo y los contadores; en celular, debajo de los contadores) y 18
+    puntitos sin nombre unidos a dos temas, con una chispa que viaja por
+    cada hilo; al azar pero siempre igual (semilla fija). Van los temas que
+    entran en filas de `LG_ROW_MIN_PX` (56 px; en una franja baja quedan
+    afuera los de menos publicaciones), con el vaivén y el desvío a la
+    medida de la fila: no se enciman nombres (probado de 375 a 1920 px). Se
+    mide con `offset*` (sin las animaciones de entrada) y se rearma cuando
+    cambia de tamaño la visual o alguno de sus textos (un `ResizeObserver`
+    sobre el título, el subtítulo y los contadores: con la fuente en frío,
+    el subtítulo cambia DESPUÉS de `fonts.ready`). Con movimiento reducido, un cuadro quieto; con la
+    pestaña oculta o la visual fuera de la pantalla, el
+    `requestAnimationFrame` se frena. El ticker "tema · N publicaciones · 7
+    días" va donde de verdad queda lugar, entre los textos y los contadores
+    (`lgPlaceTicker`; con menos de 150 px de alto o 230 de ancho, `.no-room`
+    y no va: entre 981 y unos 1200 px no entra), y repite la lista hasta
+    llenar el alto; la pista es `flow-root` para que sus dos mitades midan
+    lo mismo, y el ticker va sin transiciones (con movimiento reducido la
+    regla global les da 0,01 ms y se leería el top viejo). El subtítulo y
+    los rótulos chicos (contadores, ticker, la marca) van en `--fg`: debajo
+    están las manchas, que aclaran el fondo; en ventanas bajas la celeste
+    sube hasta el subtítulo (medido de 1000x620 a 1920x1080 con las manchas
+    en tres puntos de su recorrido, el mínimo queda en 5,11:1). Los contadores
+    (publicaciones hoy de todas las redes, reclamos en el mapa, días
+    escuchando, publicaciones · 30 días) usan `kpiCountUp` de `kpi.js`, y el subtítulo
+    suma "La escucha corre cuatro veces por día: 8, 12, 16 y 20 h." Sin
+    respuesta: contadores en "—", sin ticker, solo los puntitos. Los nombres
+    del canvas van por `fillText`; el resto, por `textContent`.
+  - **La tarjeta** (`public/js/login.js`, prefijo `login`): el link mágico
+    de siempre (sin código de 6 dígitos; `/api/auth/*` no cambió) en dos
+    pasos. 1) "Entrá con tu correo" y "Mandarme el link →" (Enviando el
+    link… / Link enviado ✓); 2) "Revisá tu correo": a qué dirección,
+    "Mandar otro link" (con `aria-disabled`, no `disabled`, que le sacaría
+    el foco, y la cuenta regresiva de `retryAfterSeconds`) y "Cambiar el
+    correo". El envío y el reenvío llevan su propia bandera (con un reenvío
+    en vuelo se puede volver y pedir para otra dirección; para la MISMA no:
+    un segundo link anularía el primero, el backend borra los no usados) y
+    el aviso de "Te mandamos otro link" va fuera de los pasos. Un reenvío que
+    vuelve cuando ya se está en otra dirección solo se anuncia. La espera es POR
+    DIRECCIÓN: otra no queda trabada; lo mandado queda en `sessionStorage`
+    (`sl.login.enviados`, esa pestaña) y, si se pide otra vez la misma
+    dentro de la espera, va directo al paso 2 ("Ya te mandamos un link hace
+    instantes"), sin pedir (el backend tampoco mandaría otro). Nunca en
+    `localStorage` (la clave vieja `sl-login-cooldown-until` se borra). La
+    respuesta es la misma esté o no habilitado el correo: la pantalla nunca
+    dice "no autorizado". Errores, solo los reales, con textos propios:
+    correo mal escrito (se mira acá), 429, 503 (no muestra el del backend,
+    que nombra variables del `.env`) y sin conexión. Abajo: "Sin
+    contraseña · La sesión dura 7 días · Solo correos habilitados".
+  - **login-verify** (`public/js/loginVerify.js`, prefijo `verify`; sin
+    script en línea): "Último paso"; entra recién con el clic en "Entrar"
+    (un filtro de correo que abre el link no lo usa). Guarda el token en
+    memoria y lo saca de la dirección (`history.replaceState`), con `<meta
+    name="referrer" content="no-referrer">`. Manda el mismo cuerpo de
+    siempre a `POST /api/auth/verify` por `fetch`: si la redirección
+    terminó en `/dashboard.html`, entró y va ahí; si terminó en otro lado
+    (el gate la mandó al login: la cookie no quedó), "No se guardó la
+    sesión"; un 400 muestra "El link venció o
+    ya se usó" con "Pedir otro link →"; sin token (abierta sola o
+    recargada), "Falta el link"; con la red o el servidor caídos, se puede
+    volver a probar.
+  - En celular (≤ 980 px): la marca y la tarjeta primero, la visual debajo,
+    sin ticker y con 340 px abajo para la constelación. Los errores son `.lg-card .lg-err`: sin `.lg-card` adelante
+    les gana `.lg-card p`.
+- **Inicio** (fase D, `dashboard.html` + `public/js/dashboard.js`, prefijo
+  `home`): la pantalla de la maqueta con datos reales, sin el selector
+  Hoy / 7 días, sin reloj y sin "datos de ejemplo"; "Análisis recientes"
+  pasa a la fase E, con la tabla de análisis.
+  - `GET /api/inicio` (`src/inicioRoutes.js`, con sesión) arma una entrada
+    por red: `enCron` (las de `MONITOR_PLATFORMS`), `nextRunAt` (null
+    fuera del cron), `hoy` (publicadas desde las 00:00 de Argentina),
+    `sieteDias` (publicaciones, se despegaron —null sin benchmark—, % pos,
+    % neg y `porDia`, de `stats.armarEstadisticas` de los últimos 7 días:
+    los números de Estadísticas, sin clasificar = neutral), `lastRunAt`,
+    `lastRun` (`buildLastRun`, el del Pipeline) y `corridasHoy`
+    (`db.listRunsBetween`: las de hoy de esa red o de "todas", con su
+    estado `ok` | `cortada` (cuota) | `en curso` | `interrumpida`). Una
+    fila sin `finished_at` está "en curso" solo si es la del ciclo que corre
+    AHORA (`scheduler.getCurrentRunId`, que `server.js` pasa como
+    `runIdEnCurso`); si no, quedó sin cerrar porque el proceso se cayó en el
+    medio, y nada la cierra al arrancar: "interrumpida". Nuevas y guardadas
+    van en null en una fila abierta (`new_posts` es 0 por defecto) y en una
+    de varias redes ("todas", "instagram,x": son las de todo el ciclo; el
+    Pipeline, `lastRun.js`, todavía no lo distingue). Test:
+    `test/inicio.test.js`.
+  - Tarjetas: Instagram (hoy, se despegaron · 7 días, % positivo y %
+    negativo · 7 días y el trazo de esos días) y X (hoy y su última corrida
+    real; fuera del cron, "La detección automática de X está en pausa. Lo
+    guardado sigue disponible."). El estado, con la regla de la barra
+    superior: "escuchando" con una corrida terminada hace menos de 5 h,
+    "última dd/mm" si es más vieja, "en pausa" fuera del cron. Facebook y
+    TikTok: "pronto", sin enlace. Una red en pausa (X, con su "Ver lo
+    guardado" a `x.html#tab-monitoring`, que dice "En pausa · sin corridas
+    automáticas" en vez de "Escuchando": `/api/monitoring/status` trae
+    `enCron` por red, de `CRON_PLATFORMS` en `server.js`) o que no se escucha lleva
+    `.pl.off`: no baja la opacidad, hunde el fondo y el texto se sigue
+    leyendo; "en pausa" lleva el ámbar solo en el punto (contraste).
+  - Próxima corrida: la primera `nextRunAt` de las redes en el cron, con
+    cuenta regresiva, anillo (lo que pasó desde la corrida programada
+    anterior) y "hoy" / "hoy, la primera del día" / "mañana"; llegada la
+    hora, se vuelve a pedir a los 20 s. La línea de 24 h pone las horas de
+    `runHours` con el estado real de su corrida (una corrida es la de su
+    hora si arrancó en esa media hora; la del cron primero): terminada con
+    "N nuevas", cortada (sin la tilde de terminada), en curso,
+    interrumpida (`.stop`, "se cayó" debajo del punto), "siguiente" o,
+    pasado un cuarto de hora sin corrida, "no corrió". Los rótulos no se
+    enciman: con menos de 60 px entre dos horas (celular, dos columnas)
+    van más chicos (`.tight`) y cada uno con un ancho máximo hasta la hora
+    vecina (`homeFitTrackLabels`; lo que no entra se corta con "…"). Las
+    demás (a mano, fuera de hora) son puntitos;
+    todas con `data-tip` y un resumen en el `aria-label`. "ahora" va en
+    `--fg2` (el `--glow` de la maqueta no llegaba a 4,5:1 en oscuro). Última
+    corrida: traídas, nuevas, relevantes y US$, con los tooltips del
+    Pipeline. La nota dice la verdad: en Instagram solo detectan las
+    búsquedas.
+  - Últimas publicaciones: `GET /api/monitoring/posts?plataforma=instagram&pageSize=12`
+    con las piezas de `postView.js` en `.fl.big` (la foto con la marca de
+    la red, la cuenta, el título en dos renglones, el tono con su nombre,
+    el tema, el alcance y "hace N h"). La tarjeta tiene el alto de la fila y
+    van las que entran enteras (`homeFitFeed`, con `offset*`); en una
+    columna, seis. Cada una es un enlace a `instagram.html#publicacion-<id>`:
+    `monitoringFeedPopup.js` lo cambia por `#tab-monitoring`, abre el
+    Monitoreo y, al llegar los posteos, el pop-up (recorre el feed si el
+    posteo está en él; si no está en la tabla, no abre nada); al cerrar, el
+    foco va a su tarjeta o, si no tiene, a la solapa. Sin `aria-label`: el
+    lector lee lo que se ve y, al final (`.sr`), adónde lleva (el alcance
+    sin referencia de `buildReachMeter` lleva la raya con `aria-hidden` y
+    "Alcance sin referencia" en `.sr`). Se vuelven a
+    pedir cuando cambia la última corrida de Instagram (la marca avanza
+    recién cuando llegaron: si el pedido falla, se reintenta con la recarga
+    siguiente), y las nuevas entran con la animación.
+  - `/api/inicio` se pide cada minuto con la pestaña a la vista y al volver
+    a ella; si la primera vez no responde, "sin respuesta del servidor" en
+    las dos tarjetas. Horas de Argentina, UTC-3 fija. Las fechas "dd/mm" se arman a
+    mano (`homeDayMonth`): con `Intl` es-AR, Chrome da "25/9".
 - **Favicon**: el ◎ sobre el degradé (`favicon.svg`); los PNG y el `.ico`
   salen de él con `sharp`.
 - Pruebas de pantalla: servidor de prueba aparte (otro puerto, copia de la

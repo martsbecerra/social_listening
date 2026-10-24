@@ -55,19 +55,7 @@ function feedCount(value) {
   return String(n);
 }
 
-// "hace 30 min" / "hace 5 h" / "hace 3 días", desde la fecha de publicación.
-// La unidad se elige con el número ya redondeado: 59,6 minutos es "hace 1 h"
-// y 23,6 horas es "hace 1 día", nunca "hace 60 min" ni "hace 24 h".
-function feedAgo(iso) {
-  const hours = iso ? (Date.now() - new Date(iso).getTime()) / 3600e3 : NaN;
-  if (!Number.isFinite(hours)) return 'N/D';
-  const minutes = Math.max(0, Math.round(hours * 60));
-  if (minutes < 60) return `hace ${minutes} min`;
-  const wholeHours = Math.round(hours);
-  if (wholeHours < 24) return `hace ${wholeHours} h`;
-  const days = Math.round(hours / 24);
-  return `hace ${days} ${days === 1 ? 'día' : 'días'}`;
-}
+// feedAgo y feedImageUrl están en postView.js (compartido con el inicio).
 
 // -------------------------------------------------------------------------
 // Recuadro de la imagen.
@@ -75,16 +63,6 @@ function feedAgo(iso) {
 // Un posteo sin tipo detectado no lleva etiqueta de tipo.
 const FEED_TYPE_LABELS = { reel: 'Reel', imagen: 'Imagen', carrusel: 'Carrusel' };
 const FEED_REACH_LABELS = { alto: 'Alcance alto', medio: 'Alcance medio', bajo: 'Alcance bajo' };
-
-// Foto del posteo. El listado manda `image` (src/postImageRoutes.js):
-// thumbUrl y fullUrl, las direcciones de las dos copias guardadas en el
-// servidor (null si no hay), y status, cómo salió el último intento de
-// bajarla. El frontend lee ese dato en tres puntos: acá, en feedImageFailed
-// (abajo) y en feedPopImageUrl (pop-up). La tarjeta usa la miniatura y el
-// pop-up la imagen grande.
-function feedImageUrl(post) {
-  return (post.image && post.image.thumbUrl) || null;
-}
 
 // Se intentó bajar la foto y no quedó ninguna copia (el link de Instagram
 // venció o la imagen no se aceptó): la tarjeta y el pop-up avisan "Imagen no

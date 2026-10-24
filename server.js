@@ -49,7 +49,17 @@ const {
 const db = require('./src/db');
 const monitor = require('./src/monitor');
 const { listPlatformIds, getPlatform } = require('./src/platforms');
-const { startScheduler, runCycle, getCronExpression, getLastRunAt, estimateRunsPerDay, getNextRunAt, getRunHours } = require('./src/scheduler');
+const {
+  startScheduler,
+  runCycle,
+  getCronExpression,
+  getLastRunAt,
+  estimateRunsPerDay,
+  getNextRunAt,
+  getRunHours,
+  getCurrentRunId,
+  cronPlatforms,
+} = require('./src/scheduler');
 const monitoringProgress = require('./src/monitoringProgress');
 const { startKeepAwake, stopKeepAwake } = require('./src/keepAwake');
 const { processPendingReclamosInBackground } = require('./src/geoWorker');
@@ -57,6 +67,8 @@ const accountStats = require('./src/accountStats');
 const postImageRoutes = require('./src/postImageRoutes');
 const { buildLastRun } = require('./src/lastRun');
 const statsRoutes = require('./src/statsRoutes');
+const publicResumen = require('./src/publicResumen');
+const inicioRoutes = require('./src/inicioRoutes');
 const { CATEGORIAS_RECLAMO, ESTADOS_RECLAMO, isValidEstado } = require('./src/categoriaReclamo');
 const { subcategoriasDe, CATEGORIAS: TEMAS_POSTEO, CATEGORIA_FALLBACK } = require('./src/categoriasConfig');
 const { parseReclamosFilters, isValidReclamosPlataforma } = require('./src/reclamosQuery');
@@ -77,6 +89,8 @@ const {
 const { createAuthGate } = require('./src/auth/gate');
 
 const app = express();
+// Sin el encabezado "X-Powered-By: Express": no anunciar qué corre atrás.
+app.disable('x-powered-by');
 
 // La respuesta es SIEMPRE esta, pase lo que pase (email no autorizado,
 // cooldown de reenvío, envío OK): no revela qué direcciones existen.
@@ -527,6 +541,12 @@ app.get('/api/monitoring/config', (req, res) => {
 // cualquier red. Con plataforma suma `lastRun`, el resumen de esa corrida
 // para el Pipeline (src/lastRun.js; null si nunca corrió), y `model`, el
 // modelo que clasifica.
+// Las redes del ciclo automático (MONITOR_PLATFORMS), leídas una vez al
+// arrancar (cada llamada a cronPlatforms avisa por consola si hay ids
+// desconocidos): /status dice si la red está en el cron (X en pausa no muestra
+// "Escuchando") y el inicio arma sus tarjetas con ellas.
+const CRON_PLATFORMS = cronPlatforms();
+
 app.get('/api/monitoring/status', (req, res) => {
   const plataforma = monitoringPlataforma(req);
   let lastRunAt = null;
@@ -552,6 +572,8 @@ app.get('/api/monitoring/status', (req, res) => {
   }
   res.json({
     nextRunAt: getNextRunAt(getCronExpression()).toISOString(),
+    // null sin plataforma (el inicio y la barra superior cuentan todas).
+    enCron: plataforma ? CRON_PLATFORMS.includes(plataforma) : null,
     lastRunAt,
     runHours: getRunHours(),
     lastRun,
@@ -568,6 +590,25 @@ app.get('/api/monitoring/status', (req, res) => {
 // arriba corre antes que esta ruta).
 app.get('/api/monitoring/progress', (req, res) => {
   res.json(monitoringProgress.getView());
+});
+
+// El inicio (dashboard.html): por red, si el cron la corre, hoy y los
+// últimos 7 días (los números de Estadísticas), la última corrida y las de
+// hoy. Ver src/inicioRoutes.js. Las redes del cron, CRON_PLATFORMS (arriba).
+inicioRoutes.register(app, {
+  listPlatformIds,
+  getPlatform,
+  cronPlatforms: () => CRON_PLATFORMS,
+  nextRunAt: () => getNextRunAt(getCronExpression()),
+  runHours: () => getRunHours(),
+  runIdEnCurso: () => getCurrentRunId(),
+});
+
+// Los números del login, SIN sesión (el gate deja pasar solo esta ruta
+// exacta): cantidades y nombres de tema, nada de los posteos. Ver
+// src/publicResumen.js.
+publicResumen.register(app, {
+  runInfo: () => ({ runHours: getRunHours(), corridasPorDia: estimateRunsPerDay(getCronExpression()) }),
 });
 
 // Menciones detectadas en los últimos 7 días, para el resumen del dashboard,
