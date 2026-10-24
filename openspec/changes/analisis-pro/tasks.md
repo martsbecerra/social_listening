@@ -12,9 +12,9 @@ un servidor de prueba en otro puerto y una copia de la base.
 ## Phase 1: base
 
 - [x] 1.1 La maqueta nueva y los `.rar` fuera del repo
-- [ ] 1.2 Columnas nuevas de `analisis` y su relleno en los v1 (REQ-PRO-11)
-- [ ] 1.3 `figuras_publicas` y sus lecturas (REQ-PRO-06)
-- [ ] 1.4 Galería, anteriores de la cuenta, reclamos de un posteo, temas v2 (REQ-PRO-08, REQ-PRO-10, REQ-PRO-12)
+- [x] 1.2 Columnas nuevas de `analisis` y su relleno en los v1 (REQ-PRO-11)
+- [x] 1.3 `figuras_publicas` y sus lecturas (REQ-PRO-06)
+- [x] 1.4 Galería, anteriores de la cuenta, reclamos de un posteo, temas v2 (REQ-PRO-08, REQ-PRO-10, REQ-PRO-12)
 
 ## Phase 2: modelo
 

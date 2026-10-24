@@ -201,3 +201,96 @@ describe('reclamos de un análisis que se repite', { concurrency: false }, () =>
     assert.equal(r.geoStatus, 'pendiente');
   });
 });
+
+describe('fase F: galería, anteriores de la cuenta, reclamos de un posteo', { concurrency: false }, () => {
+  // Cada uno con su cuenta, sus columnas y su hora: el orden de la galería
+  // es el del fin del análisis.
+  const nuevo = ({ code, cuenta, caption, finishedAt, pctNeg, tieneHecho = false, nVerificados = 0, temaEstrella = null, comentariosTotal = 100 }) => {
+    const id = db.startAnalisis({ plataforma: 'instagram', url: `https://www.instagram.com/p/${code}/`, postCode: code, startedAt: finishedAt });
+    db.saveAnalisisPost(id, 'instagram', { ownerUsername: cuenta, caption, commentsCount: comentariosTotal });
+    terminar(id, { finishedAt, pctNeg, tieneHecho, nVerificados, temaEstrella });
+    return id;
+  };
+  const ids = {};
+
+  test('la galería: búsqueda sin acentos, filtros, orden, total y desde', () => {
+    ids.g1 = nuevo({ code: 'GAL1', cuenta: 'jorgemacri', caption: 'Reabrimos el Parque Centenario', finishedAt: '2026-10-21T10:00:00.000Z', pctNeg: 53, tieneHecho: true, nVerificados: 6, temaEstrella: 'Vendedor de churros', comentariosTotal: 1284 });
+    ids.g2 = nuevo({ code: 'GAL2', cuenta: 'jorgemacri', caption: 'Nueva estación Sáenz', finishedAt: '2026-10-22T10:00:00.000Z', pctNeg: 42, nVerificados: 1, temaEstrella: 'Operativo', comentariosTotal: 2140 });
+    ids.g3 = nuevo({ code: 'GAL3', cuenta: 'gcba', caption: 'Veredas nuevas en Caballito', finishedAt: '2026-10-23T10:00:00.000Z', pctNeg: 12, temaEstrella: 'Veredas', comentariosTotal: 640 });
+    const g = (args) =>
+      db
+        .listAnalisisGaleria({ plataforma: 'instagram', ...args })
+        .items.filter((a) => /^GAL/.test(a.postCode))
+        .map((a) => a.postCode);
+    assert.deepEqual(g({}), ['GAL3', 'GAL2', 'GAL1'], 'el más reciente primero');
+    assert.deepEqual(g({ q: 'SAENZ' }), ['GAL2'], 'sin acentos ni mayúsculas');
+    assert.deepEqual(g({ q: 'churros' }), ['GAL1'], 'también por el tema estrella');
+    assert.deepEqual(g({ q: 'gcba' }), ['GAL3'], 'y por la cuenta');
+    assert.deepEqual(g({ f: 'ev' }), ['GAL1']);
+    assert.deepEqual(g({ f: 'neg' }), ['GAL2', 'GAL1'], '40 % negativo o más');
+    assert.deepEqual(g({ f: 'ver' }), ['GAL2', 'GAL1']);
+    assert.deepEqual(g({ ord: 'c' }), ['GAL2', 'GAL1', 'GAL3']);
+    assert.deepEqual(g({ ord: 'neg' }), ['GAL1', 'GAL2', 'GAL3']);
+    assert.deepEqual(g({ ord: 'ver' }), ['GAL1', 'GAL2', 'GAL3']);
+    const todo = db.listAnalisisGaleria({ plataforma: 'instagram', f: 'ev' });
+    assert.ok(todo.total > todo.items.length, 'total es de todos, no del filtro');
+    assert.ok(todo.desde && todo.desde <= '2026-10-21T10:00:00.000Z');
+    assert.throws(() => db.listAnalisisGaleria({}), /plataforma/);
+  });
+
+  test('los reclamos del posteo: cuántos en la lista y cuáles tienen pin', () => {
+    const url = 'https://www.instagram.com/p/GAL1/';
+    const r = (id, extra = {}) => ({
+      id,
+      comentarioId: id,
+      plataforma: 'instagram',
+      postUrl: url,
+      autor: 'vecina',
+      detectedAt: '2026-10-21T10:00:00.000Z',
+      textoOriginal: 'Luz en el lago',
+      categoria: 'Infraestructura',
+      direccionDetectada: 'Parque Centenario',
+      geoStatus: 'pendiente',
+      estado: 'Pendiente',
+      ...extra,
+    });
+    db.upsertReclamo(r('ig:g1'));
+    db.upsertReclamo(r('ig:g2'));
+    db.updateReclamoGeo('ig:g2', { geoStatus: 'ok', direccionNormalizada: 'PARQUE CENTENARIO', x: -58.435, y: -34.606, comuna: 6, barrio: 'Caballito' });
+    db.upsertReclamo(r('ig:g3', { postUrl: 'https://www.instagram.com/p/OTRO/' }));
+    const lista = db.listReclamosDePost({ plataforma: 'instagram', postUrl: url });
+    assert.deepEqual(
+      lista.map((x) => [x.id, x.enMapa]),
+      [
+        ['ig:g1', false],
+        ['ig:g2', true],
+      ]
+    );
+    assert.equal(lista[1].barrio, 'Caballito');
+    const enGaleria = db.listAnalisisGaleria({ plataforma: 'instagram' }).items.find((a) => a.postCode === 'GAL1');
+    assert.equal(enGaleria.nReclamos, 2);
+  });
+
+  test('los anteriores de la cuenta: sin el actual, sin otros de la misma publicación, solo los de antes', () => {
+    const repetido = nuevo({ code: 'GAL1', cuenta: 'jorgemacri', caption: 'Reabrimos el Parque Centenario', finishedAt: '2026-10-24T10:00:00.000Z', pctNeg: 50 });
+    const actual = db.getAnalisis(repetido, 'instagram');
+    const previos = db.listAnterioresDeCuenta({ plataforma: 'instagram', cuenta: 'jorgemacri', id: repetido, antesDe: actual.startedAt, postCode: actual.postCode });
+    assert.deepEqual(
+      previos.map((p) => p.id),
+      [ids.g2],
+      'el otro de GAL1 no entra'
+    );
+    assert.equal(previos[0].pctNeg, 42);
+    assert.ok(Array.isArray(previos[0].comentarios));
+    assert.deepEqual(db.listAnterioresDeCuenta({ plataforma: 'instagram', cuenta: 'jorgemacri', id: ids.g1, antesDe: '2026-10-21T10:00:00.000Z', postCode: 'GAL1' }), []);
+    assert.deepEqual(db.listAnterioresDeCuenta({ plataforma: 'instagram', cuenta: null, id: 1, antesDe: 'z' }), []);
+  });
+
+  test('renombrar el tema estrella actualiza su columna', () => {
+    const temas = { version: 2, lista: [{ id: 1, nombre: 'Veredas y baldosas' }] };
+    assert.equal(db.updateAnalisisTemas(ids.g3, 'instagram', temas, { temaEstrella: 'Veredas y baldosas' }), true);
+    const a = db.listAnalisisGaleria({ plataforma: 'instagram' }).items.find((x) => x.id === ids.g3);
+    assert.equal(a.temaEstrella, 'Veredas y baldosas');
+    assert.deepEqual(db.getAnalisis(ids.g3, 'instagram').temas, temas);
+  });
+});
