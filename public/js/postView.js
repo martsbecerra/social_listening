@@ -271,8 +271,11 @@ const POST_TERM_LEAD = 16;
 const POST_TERM_KEEP = 10;
 
 // "@cuenta · título", con el término de la búsqueda que lo trajo en <mark>
-// (armado con nodos de texto, nunca como HTML).
-function postTitleLine(post) {
+// (armado con nodos de texto, nunca como HTML). En un renglón (el flujo)
+// el título se recorta adelante si el término cae lejos; `wrap` (el inicio,
+// donde la cuenta va en su renglón y el título en dos) lo deja entero y sin
+// el " · ".
+function postTitleLine(post, { wrap = false } = {}) {
   const line = document.createElement('span');
   line.className = 'l1';
   const account = post.account && post.account !== 'N/D' ? `@${post.account}` : 'N/D';
@@ -281,10 +284,11 @@ function postTitleLine(post) {
   const title = post.title || '(sin clasificar)';
   const reason = postReasonParts(post.matched_reason);
   const hit = reason.text === 'búsqueda' ? postFindTerm(title, reason.term) : null;
-  line.append(name, ' · ');
+  line.append(name);
+  if (!wrap) line.append(' · ');
   if (hit) {
     let start = 0;
-    if (hit[0] > POST_TERM_LEAD) {
+    if (!wrap && hit[0] > POST_TERM_LEAD) {
       // Desde el principio de una palabra, unas letras antes del término.
       const space = title.indexOf(' ', hit[0] - POST_TERM_KEEP);
       start = space >= 0 && space < hit[0] ? space + 1 : hit[0] - POST_TERM_KEEP;

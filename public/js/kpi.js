@@ -2,9 +2,12 @@
 // Tarjetas KPI del diseño v4 (design/social-listening-v4.html), las mismas
 // en el Monitoreo (monitoringPanel.js) y en Estadísticas (stats.js): el
 // rótulo, el número que sube de 0, el detalle y, en la esquina, el trazo de
-// los tramos o el anillo. Estilos (.kpi) en public/css/styles.css.
+// los tramos o el anillo. Estilos (.kpi) en public/css/styles.css. El login
+// usa solo kpiCountUp, para sus contadores (loginScene.js).
 //
-// Lo carga SOLO instagram.html, antes de monitoringPanel.js y stats.js.
+// Lo cargan instagram.html, antes de monitoringPanel.js y stats.js, y las
+// dos páginas del login (index.html y login-verify.html), antes de
+// loginScene.js.
 // Script clásico: todo lo suyo lleva prefijo kpi / KPI_. Todo dato entra
 // por textContent.
 // --------------------------------------------------------------------

@@ -4,11 +4,12 @@
 // GET /api/monitoring/stats (los arma src/stats.js; acá no se cuenta nada).
 // Estilos en public/css/styles.css.
 //
-// Lo carga SOLO instagram.html, después de monitoring.js, el pop-up
-// (monitoringFeedPopup.js), kpi.js, el panel y el flujo, y usa lo que ya
-// definen: withPlataforma, monitoringViewListeners, formatBenchmarkRatio,
-// accountColor, temaColor, feedImageUrl, openFeedPopList y showInMonitoring
-// (un clic en una palabra o un tema abre el Monitoreo con este período).
+// Lo carga SOLO instagram.html, después de postView.js, monitoring.js, el
+// pop-up (monitoringFeedPopup.js), kpi.js, el panel y el flujo, y usa lo que
+// ya definen: formatBenchmarkRatio, accountColor, temaColor y feedImageUrl
+// (postView.js), withPlataforma, monitoringViewListeners y showInMonitoring
+// (monitoring.js: un clic en una palabra o un tema abre el Monitoreo con
+// este período) y openFeedPopList.
 // Script clásico: todo lo suyo lleva prefijo stats / STATS_.
 //
 // - Carga: la primera vez que se abre la solapa (openStats, lo llama

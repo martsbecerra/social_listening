@@ -5373,33 +5373,71 @@ html.feed-pop-lock body {
   font-size: 12.5px;
 }
 
-/* ---------- Inicio (dashboard.html), hasta la fase D ----------
-   Las cuatro tarjetas de plataforma de siempre, con el aspecto de .card. */
-.dash-plats {
+/* ---------- Inicio (dashboard.html) ----------
+   El inicio de la maqueta con datos reales (dashboard.js, GET /api/inicio y
+   el listado de Instagram): una tarjeta por red, la próxima corrida (anillo,
+   cuenta regresiva, la línea de las 24 h con las corridas de hoy y la
+   última corrida) y las últimas publicaciones. "Análisis recientes" llega
+   con la fase E, junto con la tabla de análisis. */
+.hero {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+.hero h1 {
+  font-size: 30px;
+  font-weight: 700;
+}
+.hero h1 em {
+  font-style: normal;
+  background: linear-gradient(135deg, var(--accent), var(--glow));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.hero p {
+  margin: 6px 0 0;
+  color: var(--fg2);
+  max-width: 60ch;
+}
+.plats {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
-.dash-plats .plat {
-  position: relative;
+.pl {
   display: flex;
   flex-direction: column;
-  overflow: hidden;
-  min-height: 200px;
-  padding: 16px 16px 0;
+  gap: 10px;
+  min-height: 190px;
   text-decoration: none;
   color: inherit;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--r);
-  box-shadow: var(--shadow);
   transition:
     transform 0.2s,
     border-color 0.2s;
 }
-.dash-plats .plat:hover {
+a.pl:hover {
   transform: translateY(-2px);
   border-color: var(--accent);
 }
-.dash-plats .plat-glyph {
+a.pl:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* Una red en pausa o que todavía no se escucha: el fondo un poco hundido,
+   sin bajar la opacidad (el texto tiene que seguir leyéndose). */
+.pl.off {
+  background: color-mix(in oklab, var(--surface) 55%, var(--bg));
+  box-shadow: none;
+}
+.pl .ph2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.pl .ic {
+  flex: none;
   width: 34px;
   height: 34px;
   border-radius: 10px;
@@ -5407,67 +5445,483 @@ html.feed-pop-lock body {
   place-items: center;
   color: #fff;
 }
-.dash-plats .plat-glyph svg {
+.pl .ic svg {
   width: 18px;
   height: 18px;
-}
-.dash-plats .plat-glyph svg,
-.dash-plats .plat-glyph path {
   fill: currentColor;
 }
-.dash-plats .plat[data-platform="instagram"] .plat-glyph {
+.pl .ic.ig {
   background: linear-gradient(135deg, #f58529, #dd2a7b 60%, #8134af);
 }
-.dash-plats .plat[data-platform="x"] .plat-glyph {
+.pl .ic.x {
   background: #111;
 }
-.dash-plats .plat[data-platform="facebook"] .plat-glyph {
+.pl .ic.fb {
   background: #1877f2;
 }
-.dash-plats .plat[data-platform="tiktok"] .plat-glyph {
+.pl .ic.tt {
   background: #111;
   color: #69c9d0;
 }
-.dash-plats .plat-name {
-  margin-top: auto;
-  font: 600 16px/1.2 var(--display);
+.pl h2 {
+  font-size: 16px;
 }
-.dash-plats .plat-state {
-  margin-top: 3px;
+.pl .st {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: var(--surface2);
+  color: var(--fg2);
+  font: 500 11px/1 var(--mono);
+  white-space: nowrap;
+}
+.pl .st i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.pl .st.live {
+  color: var(--pos-text);
+}
+.pl .st.live i {
+  background: var(--pos);
+  animation: ping 1.8s infinite;
+}
+.pl .st.pause {
+  color: var(--warn-ink);
+}
+.pl .st.pause i {
+  background: var(--c5);
+}
+.pl .kv {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.pl .kv div {
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--surface2);
+}
+.pl .kv .v {
+  font: 600 20px/1.1 var(--display);
+  font-variant-numeric: tabular-nums;
+}
+.pl .kv small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.pl .soon {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  padding: 10px;
+  border: 1px dashed var(--line2);
+  border-radius: 10px;
+  color: var(--muted);
+  font-size: 12.5px;
+  text-align: center;
+}
+.pl .note {
+  margin: 0;
+}
+.pl svg.sp {
+  display: block;
+  width: 100%;
+  height: 36px;
+}
+.pl .go {
+  margin-top: auto;
+  color: var(--accent-text);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.home3 {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+  align-items: stretch;
+  margin-top: 14px;
+}
+.nextcard {
+  display: flex;
+  flex-direction: column;
+}
+.nx {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  gap: 16px;
+  align-items: center;
+}
+.ring-wrap {
+  position: relative;
+  width: 140px;
+  height: 140px;
+}
+.nring {
+  display: block;
+  width: 140px;
+  height: 140px;
+}
+.nring .bg {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: 8;
+}
+.nring .val {
+  fill: none;
+  stroke: url(#ngrad);
+  stroke-width: 8;
+  stroke-linecap: round;
+  stroke-dasharray: 377;
+  stroke-dashoffset: 377;
+  transition: stroke-dashoffset 1s linear;
+  filter: drop-shadow(0 0 6px color-mix(in oklab, var(--accent) 60%, transparent));
+}
+.nring .dot {
+  fill: var(--surface);
+  stroke: var(--accent);
+  stroke-width: 3;
+  filter: drop-shadow(0 0 8px var(--accent));
+}
+.ring-center {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  text-align: center;
+}
+.ring-center b {
+  font: 600 22px/1 var(--display);
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent-text);
+}
+.ring-center small {
+  font: 500 10px/1.4 var(--mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.nx-info {
+  min-width: 0;
+}
+.nx-info .big {
+  margin: 4px 0 2px;
+  font: 700 34px/1 var(--display);
+  letter-spacing: -0.02em;
+}
+.nx-info .when {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+.lastrun {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--line2);
+}
+.lastrun .chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.lastrun .chips span {
+  padding: 5px 7px;
+  border-radius: 6px;
+  background: var(--surface2);
+  color: var(--muted);
+  font: 400 11.5px/1 var(--mono);
+}
+.lastrun .chips b {
+  color: var(--fg);
+  font-weight: 500;
+}
+/* La línea de las 24 h: las corridas programadas de hoy en su hora, con
+   su estado real (terminada, cortada, en curso, la siguiente o la que no
+   corrió), las manuales como puntitos y la hora actual. */
+.tl24 {
+  margin-top: 30px;
+}
+.tl24 .track {
+  position: relative;
+  height: 38px;
+  margin: 0 6px 22px;
+  border-top: 2px solid var(--line);
+}
+.tl24 .run {
+  position: absolute;
+  top: -9px;
+  width: 16px;
+  height: 16px;
+  transform: translateX(-50%);
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 2px solid var(--line2);
+  color: transparent;
+  font: 600 8px/1 var(--mono);
+}
+.tl24 .run b {
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: var(--fg2);
+  font: 500 11px/1 var(--mono);
+  white-space: nowrap;
+}
+.tl24 .run small {
+  position: absolute;
+  top: 34px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: var(--muted);
+  font: 400 10px/1 var(--mono);
+  white-space: nowrap;
+}
+.tl24 .run.ok {
+  background: var(--pos);
+  border-color: var(--pos);
+  color: var(--accent-ink);
+}
+.tl24 .run.cut {
+  background: var(--c5);
+  border-color: var(--c5);
+  color: var(--accent-ink);
+}
+.tl24 .run.cut small {
+  color: var(--warn-ink);
+}
+.tl24 .run.live {
+  border-color: var(--pos);
+  animation: ping 1.8s infinite;
+}
+.tl24 .run.live small {
+  color: var(--pos-text);
+}
+.tl24 .run.next {
+  border-color: var(--accent);
+  animation: ping 1.8s infinite;
+}
+.tl24 .run.next b {
+  color: var(--accent-text);
+  font-weight: 600;
+}
+.tl24 .run.miss {
+  border-style: dashed;
+}
+/* Una corrida a mano: un puntito sobre la línea, sin hora debajo. */
+.tl24 .run.extra {
+  top: -5px;
+  width: 8px;
+  height: 8px;
+  border-width: 0;
+  background: var(--fg2);
+}
+.tl24 .now {
+  position: absolute;
+  top: -14px;
+  bottom: -8px;
+  width: 2px;
+  transform: translateX(-50%);
+  background: linear-gradient(180deg, var(--glow), transparent);
+}
+.tl24 .now em {
+  position: absolute;
+  top: -14px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 0 3px;
+  background: var(--surface);
+  color: var(--glow);
+  font: 500 9px/1 var(--mono);
+  font-style: normal;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.tl24 .hrs {
+  display: flex;
+  justify-content: space-between;
+  margin: 0 2px;
+  color: var(--muted);
+  font: 400 10px/1 var(--mono);
+}
+.nextcard .note {
+  margin: 12px 0 0;
+}
+
+/* Las últimas publicaciones: las líneas del flujo del Monitoreo (.fl), en
+   grande, con la foto y la red; cada una es un enlace al pop-up. Como el
+   flujo, la tarjeta tiene el alto de la fila y nunca crece: el contenido va
+   en una capa absoluta y dashboard.js deja las líneas que entran enteras. */
+.homefeed {
+  position: relative;
+  min-height: 440px;
+}
+.homefeed .inner {
+  position: absolute;
+  inset: 16px;
+  display: flex;
+  flex-direction: column;
+}
+/* El encabezado como el de toda tarjeta (.card > .ct), que acá queda un
+   nivel más adentro. */
+.homefeed .inner .ct {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.homefeed .inner .ct .hint {
   font-size: 12px;
   color: var(--muted);
 }
-.dash-plats .plat-state b {
-  font-family: var(--mono);
-  font-weight: 500;
-  color: var(--fg);
-}
-.dash-plats .plat-signal {
-  margin: 14px -16px 0;
-  padding: 12px 16px;
-  height: 52px;
+.home-feed {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
   display: flex;
-  align-items: flex-end;
-  background: var(--surface2);
-  border-top: 1px solid var(--line);
+  flex-direction: column;
+  gap: 8px;
 }
-.dash-plats .plat-signal .meter {
-  --meter-h: 24px;
-  --bar-w: 3px;
-  --bar-gap: 3px;
-  width: 100%;
+.home-feed .fl[hidden] {
+  display: none;
 }
-.dash-plats .plat-signal .meter i {
-  flex: 0 0 auto;
+.home-feed .empty {
+  padding: 40px 10px;
+}
+a.fl {
+  color: inherit;
+  text-decoration: none;
+}
+.fl.big {
+  grid-template-columns: 64px minmax(0, 1fr);
+  padding: 8px;
+}
+.fl.seen {
+  animation: none;
+}
+.fl.big .th {
+  width: 64px;
+  height: 64px;
+  overflow: visible;
+  border-radius: 10px;
+}
+.fl.big .th img {
+  border-radius: 10px;
+}
+.fl.big .th .net {
+  position: absolute;
+  left: -4px;
+  top: -4px;
+  z-index: 1;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  border: 2px solid var(--surface);
+  background: linear-gradient(135deg, #f58529, #dd2a7b 60%, #8134af);
+  color: #fff;
+}
+.fl.big .th .net svg {
+  width: 10px;
+  height: 10px;
+  fill: currentColor;
+}
+.fl.big .body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.fl.big .l1 {
+  display: -webkit-box;
+  -webkit-line-clamp: 3; /* la cuenta y dos renglones de título */
+  -webkit-box-orient: vertical;
+  white-space: normal;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.fl.big .l1 b {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 400;
+}
+.fl.big .l2 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.fl.big .l2 .t {
+  margin-left: auto;
+}
+/* El tono con su nombre (en el flujo del Monitoreo va solo el punto). */
+.fl.big .lbl {
+  gap: 6px;
+  color: var(--fg2);
+  font: 500 11px/1 var(--mono);
 }
 @media (max-width: 1100px) {
-  .dash-plats {
+  .plats {
     grid-template-columns: 1fr 1fr;
   }
 }
-@media (max-width: 560px) {
-  .dash-plats {
+/* En una columna la tarjeta crece con su contenido: seis publicaciones. */
+@media (max-width: 860px) {
+  .home3 {
     grid-template-columns: 1fr;
+  }
+  .homefeed {
+    min-height: 0;
+  }
+  .homefeed .inner {
+    position: static;
+  }
+  .home-feed .fl:nth-child(n + 7) {
+    display: none;
+  }
+}
+@media (max-width: 560px) {
+  .plats {
+    grid-template-columns: 1fr;
+  }
+  .hero h1 {
+    font-size: 26px;
+  }
+  .nx {
+    grid-template-columns: 112px minmax(0, 1fr);
+    gap: 14px;
+  }
+  .ring-wrap,
+  .nring {
+    width: 112px;
+    height: 112px;
+  }
+  .ring-center b {
+    font-size: 18px;
+  }
+  .nx-info .big {
+    font-size: 28px;
   }
 }
 

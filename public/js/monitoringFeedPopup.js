@@ -719,3 +719,36 @@ monitoringViewListeners.push((change) => {
   updateFeedPopPosition();
   return false;
 });
+
+// Desde el inicio: "instagram.html#publicacion-<id>" (dashboard.js) abre el
+// Monitoreo y, cuando llegan los posteos, el pop-up de esa publicación, que
+// recorre el feed si está en él (si no, va sola). Si no está en la tabla
+// (se ignoró, o el id no es de Instagram) queda el Monitoreo sin pop-up. La
+// dirección vuelve a ser la de la solapa, sin sumar un paso al historial.
+const FEED_POP_HASH_RE = /^#publicacion-(\d{1,30})$/;
+let feedPopHashId = null;
+
+function feedPopTakeHash() {
+  const match = FEED_POP_HASH_RE.exec(location.hash);
+  if (!match) return;
+  feedPopHashId = match[1];
+  history.replaceState(null, '', '#tab-monitoring');
+  openTab('monitoring', { updateHash: false });
+}
+
+monitoringViewListeners.push((change) => {
+  if (feedPopHashId === null || change !== undefined || !monitoringTable) return false;
+  const id = feedPopHashId;
+  feedPopHashId = null;
+  // Después del redibujo del feed (que espera 150 ms), para recorrer su
+  // lista y devolverle el foco a su tarjeta al cerrar (si no tiene, a la
+  // solapa del Monitoreo: nunca a <body>).
+  setTimeout(() => {
+    const ids = feedVisibleIds.includes(id) ? feedVisibleIds : [id];
+    const opener = feedCardById(id) || document.querySelector('[role="tab"][data-tab="monitoring"]');
+    openFeedPopList(ids, id, opener);
+  }, 250);
+  return false;
+});
+
+feedPopTakeHash();
