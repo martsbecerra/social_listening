@@ -539,7 +539,7 @@ function homeAnaLine(a) {
   const fechaIso = a.postedAt || a.finishedAt;
   const fecha = fechaIso && !Number.isNaN(new Date(fechaIso).getTime()) ? HOME_ANA_DATE.format(new Date(fechaIso)).replace('.', '') : null;
   tx.appendChild(homeNode('b', '', `${a.cuenta ? `@${a.cuenta}` : 'Publicación'}${fecha ? ` · ${fecha}` : ''}`));
-  const caption = (a.caption || '').replace(/s+/g, ' ').trim();
+  const caption = (a.caption || '').replace(/\s+/g, ' ').trim();
   tx.appendChild(homeNode('small', '', caption || 'Sin texto.'));
   const t = a.tonos || {};
   const base = (t.positivos || 0) + (t.neutrales || 0) + (t.negativos || 0);
