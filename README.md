@@ -1197,7 +1197,9 @@ nada ni vuelve a gastar, y el resultado queda en la tabla `analisis` y en
   escribe el trabajo; nada es una frase fija ni un porcentaje simulado.
 - **Cuántos comentarios**: `COMMENTS_LIMIT` (los que se piden a Apify) y
   `COMMENTS_ANALYSIS_LIMIT` (los que van al modelo) valen **300** por
-  defecto; un valor en el `.env` los pisa. Se clasifican en **tandas de
+  defecto; un valor en el `.env` los pisa. Valen solo para Instagram: X
+  sigue con 150 y su propia variable, `X_COMMENTS_ANALYSIS_LIMIT`, porque
+  manda todo el hilo en una sola llamada. Se clasifican en **tandas de
   100** por llamada (así no se choca con el tope de salida del modelo) y
   después una síntesis arma los textos y los temas. "Analizados" es lo que
   el modelo clasificó de verdad: si una tanda falla, sus comentarios no

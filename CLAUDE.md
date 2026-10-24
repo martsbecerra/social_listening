@@ -1016,8 +1016,11 @@ script que abre la base no puede tocar un análisis vivo. SDD en
   `apify_calls.analisis_id`; `usd_apify` de la fila es su suma
   (`db.sumApifyUsdForAnalisis`). `COMMENTS_LIMIT` (lo que se pide a Apify)
   y `COMMENTS_ANALYSIS_LIMIT` (lo que va al modelo) valen 300 por defecto
-  (decisión del dueño, 24/10/2026; tope 500); el `.env` los pisa. X sigue
-  con 150. `normalizePost` suma id, código, `postedAt`, tipo e `imageUrl`
+  (decisión del dueño, 24/10/2026; tope 500); el `.env` los pisa. Los dos
+  son solo de Instagram: X sigue con 150 y su propia variable,
+  `X_COMMENTS_ANALYSIS_LIMIT` (`resolveXMaxItems`, src/x/sample.js), porque
+  manda todo el hilo en una sola llamada (subir el de Instagram no puede
+  subir el de X). La línea de arranque muestra los tres. `normalizePost` suma id, código, `postedAt`, tipo e `imageUrl`
   (las funciones del monitoreo); likes -1 o ausentes → null, también en
   los comentarios.
 - **Modelo** (`src/analyzeComments.js`): la muestra (`commentSample.js`)

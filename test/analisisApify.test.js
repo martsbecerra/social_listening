@@ -15,6 +15,7 @@ process.env.MONITORING_DB_PATH = path.join(tmp, 'monitoring.db'); // ANTES de ca
 process.env.APIFY_API_TOKEN = 'token-de-test';
 delete process.env.COMMENTS_LIMIT;
 delete process.env.COMMENTS_ANALYSIS_LIMIT;
+delete process.env.X_COMMENTS_ANALYSIS_LIMIT;
 
 const { describe, test, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
@@ -33,6 +34,7 @@ afterEach(() => {
   global.fetch = realFetch;
   delete process.env.COMMENTS_LIMIT;
   delete process.env.COMMENTS_ANALYSIS_LIMIT;
+  delete process.env.X_COMMENTS_ANALYSIS_LIMIT;
 });
 
 describe('la publicación de un análisis', () => {
@@ -94,12 +96,17 @@ describe('topes', () => {
     assert.equal(apify.resolveCommentsLimit(), 300);
   });
 
-  test('COMMENTS_ANALYSIS_LIMIT: 300 en Instagram, X sigue con 150 por defecto', () => {
+  test('COMMENTS_ANALYSIS_LIMIT: 300 en Instagram; X sigue con 150 y no lo lee: tiene X_COMMENTS_ANALYSIS_LIMIT', () => {
     const comments = Array.from({ length: 400 }, (_, i) => ({ username: `u${i}`, text: `t${i}`, likesCount: i, timestamp: null, isVerified: false }));
     assert.equal(prepareCommentSample(comments).sample.length, 300);
     const items = Array.from({ length: 400 }, (_, i) => ({ id: String(i), username: `u${i}`, text: `t${i}`, likes: i, kind: 'reply' }));
-    assert.equal(prepareXSample({ post: { id: 'p', text: 'post', username: 'x' }, items }, new Map()).sample.length, 150);
+    const muestraX = () => prepareXSample({ post: { id: 'p', text: 'post', username: 'x' }, items }, new Map()).sample.length;
+    assert.equal(muestraX(), 150);
     process.env.COMMENTS_ANALYSIS_LIMIT = '200';
+    assert.equal(prepareCommentSample(comments).sample.length, 200);
+    assert.equal(muestraX(), 150, 'subir el de Instagram no sube X');
+    process.env.X_COMMENTS_ANALYSIS_LIMIT = '120';
+    assert.equal(muestraX(), 120);
     assert.equal(prepareCommentSample(comments).sample.length, 200);
   });
 });
