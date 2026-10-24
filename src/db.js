@@ -858,11 +858,13 @@ const getFirstDetectedAtAnyStmt = db.prepare(
 );
 // Los reclamos que dibuja el mapa, con su misma regla (listReclamosFiltered
 // deja afuera los de fuera de CABA; claimsMap.js, hasMapLocation, pide x, y
-// y dirección normalizada): los sin dirección, no encontrados, inválidos o
-// pendientes no tienen pin.
+// y dirección normalizada, y que el punto no sea el (0,0) que deja una
+// respuesta de USIG sin coordenadas): los sin dirección, no encontrados,
+// inválidos o pendientes no tienen pin.
 const countReclamosEnMapaStmt = db.prepare(`
   SELECT COUNT(*) AS n FROM reclamos
-  WHERE geo_status IS NOT 'fuera_caba' AND x IS NOT NULL AND y IS NOT NULL AND COALESCE(direccion_normalizada, '') <> ''
+  WHERE geo_status IS NOT 'fuera_caba' AND x IS NOT NULL AND y IS NOT NULL AND NOT (x = 0 AND y = 0)
+    AND COALESCE(direccion_normalizada, '') <> ''
 `);
 // Las corridas de una plataforma que arrancaron en un rango, terminadas o no:
 // la línea de 24 h del inicio (src/inicioRoutes.js).

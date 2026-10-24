@@ -18,9 +18,9 @@
 //   - guarda la respuesta 60 s en memoria (un solo proceso): venga lo que
 //     venga de afuera, la base trabaja a lo sumo una vez por minuto, también
 //     cuando falla (el fallo se guarda igual);
-//   - si algo falla y hay una respuesta anterior, sirve esa (generadoEn dice
-//     de cuándo es); si no hay ninguna, 503 con un mensaje genérico, sin
-//     detalles.
+//   - si algo falla y hay una respuesta anterior DEL MISMO DÍA (hora de
+//     Argentina), sirve esa: "publicaciones hoy" de ayer no es la de hoy.
+//     Si no, 503 con un mensaje genérico, sin detalles.
 // "Reclamos en el mapa" son los que tienen pin (la regla del mapa) y "días
 // escuchando" se cuentan desde la primera detección, con los dos extremos.
 // Todas las redes juntas: el login no es de ninguna.
@@ -94,7 +94,9 @@ function register(app, { runInfo = () => ({ runHours: [], corridasPorDia: null }
         cache = { at: ahora, body: armarResumen({ ahora, runHours, corridasPorDia }) };
       } catch (err) {
         console.error(`Error en ${RESUMEN_ROUTE}:`, err.message);
-        cache = { at: ahora, body: cache ? cache.body : null };
+        const anterior = cache && cache.body;
+        const deHoy = anterior && stats.fechaArgentina(Date.parse(anterior.generadoEn)) === stats.fechaArgentina(ahora);
+        cache = { at: ahora, body: deHoy ? anterior : null };
       }
     }
     if (!cache.body) {

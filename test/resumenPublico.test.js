@@ -112,6 +112,7 @@ before(async () => {
   reclamo('r-3', 'sin_direccion', { x: null, y: null, direccionNormalizada: null });
   reclamo('r-4', 'pendiente', { x: null, y: null, direccionNormalizada: null });
   reclamo('r-5', 'no_encontrada', { x: null, y: null });
+  reclamo('r-6', 'ok', { x: 0, y: 0 }); // USIG sin coordenadas: el (0,0) no es un pin
 
   const app = express();
   app.use(createAuthGate());
@@ -236,6 +237,32 @@ describe('GET /api/public/resumen', { concurrency: false }, () => {
       assert.equal((await vieja.json()).generadoEn, cuerpo.generadoEn);
       await pedir();
       assert.equal(llamadas, 3);
+    } finally {
+      otro.closeAllConnections();
+      await new Promise((resolve) => otro.close(resolve));
+    }
+  });
+
+  test('una respuesta de ayer no se sirve hoy: "publicaciones hoy" sería la de ayer', async () => {
+    let reloj = Date.parse(enArgentina('2026-10-23', 23, 59));
+    let falla = false;
+    const app = express();
+    publicResumen.register(app, {
+      runInfo: () => {
+        if (falla) throw new Error('la base no responde');
+        return { runHours: [8], corridasPorDia: 1 };
+      },
+      now: () => reloj,
+    });
+    const otro = await new Promise((resolve) => {
+      const s = app.listen(0, '127.0.0.1', () => resolve(s));
+    });
+    const pedir = () => fetch(`http://127.0.0.1:${otro.address().port}/api/public/resumen`);
+    try {
+      assert.equal((await pedir()).status, 200);
+      falla = true;
+      reloj = Date.parse(enArgentina('2026-10-24', 0, 1)); // pasó la medianoche
+      assert.equal((await pedir()).status, 503);
     } finally {
       otro.closeAllConnections();
       await new Promise((resolve) => otro.close(resolve));

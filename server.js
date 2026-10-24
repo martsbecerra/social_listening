@@ -541,6 +541,12 @@ app.get('/api/monitoring/config', (req, res) => {
 // cualquier red. Con plataforma suma `lastRun`, el resumen de esa corrida
 // para el Pipeline (src/lastRun.js; null si nunca corrió), y `model`, el
 // modelo que clasifica.
+// Las redes del ciclo automático (MONITOR_PLATFORMS), leídas una vez al
+// arrancar (cada llamada a cronPlatforms avisa por consola si hay ids
+// desconocidos): /status dice si la red está en el cron (X en pausa no muestra
+// "Escuchando") y el inicio arma sus tarjetas con ellas.
+const CRON_PLATFORMS = cronPlatforms();
+
 app.get('/api/monitoring/status', (req, res) => {
   const plataforma = monitoringPlataforma(req);
   let lastRunAt = null;
@@ -566,6 +572,8 @@ app.get('/api/monitoring/status', (req, res) => {
   }
   res.json({
     nextRunAt: getNextRunAt(getCronExpression()).toISOString(),
+    // null sin plataforma (el inicio y la barra superior cuentan todas).
+    enCron: plataforma ? CRON_PLATFORMS.includes(plataforma) : null,
     lastRunAt,
     runHours: getRunHours(),
     lastRun,
@@ -586,13 +594,11 @@ app.get('/api/monitoring/progress', (req, res) => {
 
 // El inicio (dashboard.html): por red, si el cron la corre, hoy y los
 // últimos 7 días (los números de Estadísticas), la última corrida y las de
-// hoy. Ver src/inicioRoutes.js. Las redes del cron se leen una vez (cada
-// llamada a cronPlatforms avisa por consola si hay ids desconocidos).
-const INICIO_CRON_PLATFORMS = cronPlatforms();
+// hoy. Ver src/inicioRoutes.js. Las redes del cron, CRON_PLATFORMS (arriba).
 inicioRoutes.register(app, {
   listPlatformIds,
   getPlatform,
-  cronPlatforms: () => INICIO_CRON_PLATFORMS,
+  cronPlatforms: () => CRON_PLATFORMS,
   nextRunAt: () => getNextRunAt(getCronExpression()),
   runHours: () => getRunHours(),
   runIdEnCurso: () => getCurrentRunId(),

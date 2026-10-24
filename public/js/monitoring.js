@@ -1773,12 +1773,22 @@ async function loadPosts() {
 
 // Hora real de la próxima corrida (el backend calcula desde MONITOR_CRON) —
 // nunca una hora inventada. Si falla, queda el placeholder "–".
+// Una red fuera del ciclo automático (X, hoy: MONITOR_PLATFORMS) no está
+// "Escuchando": se dice que está en pausa, sin próxima corrida.
 async function loadNextRun() {
   if (!monitoringNextRunEl) return;
   try {
-    const resp = await fetch('/api/monitoring/status');
+    const resp = await fetch(withPlataforma('/api/monitoring/status'));
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data = await resp.json();
+    if (data.enCron === false) {
+      const state = document.getElementById('monitoringListenState');
+      const note = document.getElementById('monitoringHeadNote');
+      if (state) state.textContent = 'En pausa';
+      if (note) note.textContent = 'La detección automática está en pausa: acá queda lo que se guardó.';
+      monitoringNextRunEl.textContent = 'sin corridas automáticas';
+      return;
+    }
     const time = new Date(data.nextRunAt).toLocaleTimeString('es-AR', {
       hour: '2-digit',
       minute: '2-digit',
