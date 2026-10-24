@@ -41,6 +41,8 @@ let homeInicio = null; // la última respuesta de /api/inicio
 let homeNextAt = null; // la próxima corrida programada (ms) o null
 let homeLastRunAt; // la última corrida de Instagram ya vista (undefined: todavía nada)
 let homePostIds = null; // los ids ya dibujados en "Últimas publicaciones"
+let homePostsLoading = false;
+let homeLoadFailed = false; // el último pedido de /api/inicio falló
 let homeRetryTimer = 0;
 
 function homeEl(id) {
@@ -173,7 +175,9 @@ function homeRenderPlats() {
   homeEl('homeXHoy').textContent = homeCount(x ? x.hoy : null);
   const xLast = x ? Date.parse(x.lastRunAt) : NaN;
   homeEl('homeXLast').textContent = Number.isFinite(xLast) ? homeDayMonth(xLast) : '—';
-  homeEl('homeXNote').hidden = !(x && !x.enCron);
+  const xPaused = Boolean(x) && !x.enCron;
+  homeEl('homeXNote').hidden = !xPaused;
+  homeEl('homeX').classList.toggle('off', xPaused);
 }
 
 // ---------- próxima corrida ----------
@@ -222,7 +226,7 @@ function homeTick() {
     clock.textContent = '—';
     homeEl('homeClockLabel').textContent = '';
     homeEl('homeNextAt').textContent = '—';
-    homeEl('homeNextWhen').textContent = homeInicio ? 'no hay corridas programadas' : '—';
+    homeEl('homeNextWhen').textContent = homeInicio ? 'no hay corridas programadas' : homeLoadFailed ? 'sin respuesta del servidor' : '—';
   } else {
     const left = Math.max(0, Math.floor((homeNextAt - now) / 1000));
     const hh = String(Math.floor(left / 3600)).padStart(2, '0');
@@ -247,18 +251,30 @@ function homeTick() {
 
 // ---------- la línea de las 24 h ----------
 
+// Estado de /api/inicio → [clase, nombre en pantalla].
 const HOME_RUN_STATES = {
   ok: ['ok', 'terminada'],
   cortada: ['cut', 'cortada'],
   'en curso': ['live', 'en curso'],
+  interrumpida: ['stop', 'interrumpida'],
 };
 
+function homeRunName(run) {
+  return (HOME_RUN_STATES[run.estado] || ['', run.estado])[1];
+}
+
 function homeRunTip(run) {
-  const parts = [`${homeWhenText(run.startedAt)} · ${(HOME_RUN_STATES[run.estado] || [, run.estado])[1]}`];
+  const parts = [`${homeWhenText(run.startedAt)} · ${homeRunName(run)}`];
   if (run.trigger === 'manual') parts[0] = `A mano · ${parts[0]}`;
   if (run.estado === 'cortada') parts.push('Se cortó por la cuota de Apify.');
-  if (run.estado !== 'en curso') {
-    parts.push(`${homeCount(run.nuevas)} nuevas · ${homeCount(run.guardadas)} relevantes guardadas`);
+  if (run.estado === 'interrumpida') parts.push('Arrancó y no terminó: el proceso se cortó en el medio.');
+  if (run.estado === 'ok' || run.estado === 'cortada') {
+    // Sin números: la corrida fue de varias redes y los suyos son de todas.
+    parts.push(
+      run.nuevas === null && run.guardadas === null
+        ? 'Corrida de varias redes: sus números no son solo de esta.'
+        : `${homeCount(run.nuevas)} nuevas · ${homeCount(run.guardadas)} relevantes guardadas`
+    );
   }
   return parts.join('\n');
 }
@@ -319,7 +335,7 @@ function homeRenderTrack() {
     el.style.left = `${(homeArHours(Date.parse(run.startedAt)) / 24) * 100}%`;
     el.dataset.tip = homeRunTip(run);
     track.appendChild(el);
-    summary.push(`otra a las ${HOME_TIME.format(Date.parse(run.startedAt))} ${(HOME_RUN_STATES[run.estado] || [, run.estado])[1]}`);
+    summary.push(`otra a las ${HOME_TIME.format(Date.parse(run.startedAt))} ${homeRunName(run)}`);
   });
   track.setAttribute('aria-label', summary.length ? `Corridas de hoy: ${summary.join(', ')}` : 'Corridas de hoy');
   homeEl('homeRunsHint').textContent = hours.length ? `${hours.length} por día · ${homeHoursText(hours)} h` : '';
@@ -367,8 +383,8 @@ function homeLine(post, isNew) {
   line.href = `instagram.html#publicacion-${encodeURIComponent(post.id)}`;
   line.dataset.id = post.id;
   if (!isNew) line.classList.add('seen');
-  const account = post.account && post.account !== 'N/D' ? `@${post.account}` : 'cuenta sin identificar';
-  line.setAttribute('aria-label', `${account}: ${post.title || 'sin título'}. Abrir en el Monitoreo`);
+  // Sin aria-label: el lector de pantalla lee lo mismo que se ve (cuenta,
+  // título, tono, tema, alcance y hora) y, al final, adónde lleva.
 
   const thumb = postThumb(post);
   const net = homeNode('span', 'net');
@@ -396,7 +412,7 @@ function homeLine(post, isNew) {
   when.title = `Publicada el ${time ? `${date} · ${time}` : date}`;
   meta.appendChild(when);
 
-  body.append(title, meta);
+  body.append(title, meta, homeNode('span', 'sr', ' · Abrir en el Monitoreo'));
   line.append(thumb, body);
   return line;
 }
@@ -446,6 +462,8 @@ async function homeLoadTemas() {
   }
 }
 
+// @returns {Promise<boolean>} si llegaron (si no, se vuelve a probar con la
+// recarga siguiente del inicio).
 async function homeLoadPosts() {
   try {
     const [res] = await Promise.all([
@@ -456,9 +474,11 @@ async function homeLoadPosts() {
     const data = await res.json();
     const posts = (data.posts || []).filter((post) => !post.ignored && (post.plataforma || 'instagram') === 'instagram');
     homeRenderFeed(posts.slice(0, HOME_POSTS));
+    return true;
   } catch (err) {
     console.error('Error leyendo las últimas publicaciones:', err);
     if (homePostIds === null) homeEl('homeFeed').replaceChildren(homeNode('p', 'note empty', 'No se pudieron cargar las publicaciones.'));
+    return false;
   }
 }
 
@@ -480,19 +500,30 @@ async function homeLoad() {
     homeInicio = await res.json();
   } catch (err) {
     console.error('Error leyendo el inicio:', err);
-    if (homeInicio === null) homeEl('homeNextWhen').textContent = 'sin respuesta del servidor';
+    homeLoadFailed = true;
+    homeTick();
     return;
   }
+  homeLoadFailed = false;
   homeNextAt = homeFindNextAt();
   homeRenderPlats();
   homeRenderLastRun();
   homeRenderTrack();
   homeTick();
+  // Las publicaciones se vuelven a pedir cuando cambia la última corrida; la
+  // marca avanza recién cuando llegaron (si el pedido falla, se reintenta con
+  // la recarga siguiente, no con la próxima corrida).
   const ig = homeRed('instagram');
   const lastRunAt = ig ? ig.lastRunAt : null;
-  if (lastRunAt !== homeLastRunAt) {
-    homeLastRunAt = lastRunAt;
-    homeLoadPosts();
+  if (lastRunAt !== homeLastRunAt && !homePostsLoading) {
+    homePostsLoading = true;
+    homeLoadPosts()
+      .then((ok) => {
+        if (ok) homeLastRunAt = lastRunAt;
+      })
+      .finally(() => {
+        homePostsLoading = false;
+      });
   }
 }
 
