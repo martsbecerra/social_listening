@@ -49,10 +49,13 @@ function platformForUrl(url) {
 // --------------------------------------------------------------------------
 const LABEL = { instagram: 'Instagram', x: 'X' };
 const EJEMPLO = { instagram: 'https://www.instagram.com/p/XXXXXXXX/', x: 'https://x.com/usuario/status/1234567890' };
-// Qué path es "una publicación" en cada red. Instagram: post, reel o tv. X:
-// el mismo criterio que src/x/url.js (parseXPostUrl), sin depender de él.
+// Qué path es "una publicación" en cada red. Instagram: post, reel o tv,
+// también con el usuario adelante (/<usuario>/p/<code>/, como lo muestra
+// Instagram web desde un perfil); nunca /reels/audio/<id>/ (la página de un
+// audio: se gastarían dos corridas para nada). X: el mismo criterio que
+// src/x/url.js (parseXPostUrl), sin depender de él.
 const POST_PATH = {
-  instagram: /^\/(p|reel|reels|tv)\/[\w-]+/,
+  instagram: /^\/(?:[A-Za-z0-9._]{1,30}\/)?(p|reel|reels|tv)\/(?!audio(?:\/|$))[\w-]+/,
   x: /^\/([A-Za-z0-9_]+\/status\/\d+|i\/web\/status\/\d+)/i,
 };
 

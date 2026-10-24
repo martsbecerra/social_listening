@@ -19,6 +19,8 @@ describe('guard del análisis de publicación', () => {
       'https://instagram.com/reel/BBB_456',
       'https://www.instagram.com/reels/CCC/',
       'https://www.instagram.com/tv/DDD/?utm_source=ig',
+      'https://www.instagram.com/jorgemacri/p/EEE_9/',
+      'https://www.instagram.com/jorge.macri/reel/FFF/',
     ]) {
       assert.deepEqual(checkAnalyzeUrl(url, 'instagram'), { ok: true }, url);
       assert.equal(isPostUrlOf(url, 'instagram'), true, url);
@@ -42,7 +44,12 @@ describe('guard del análisis de publicación', () => {
   });
 
   test('Instagram: perfil o story de instagram.com no es una publicación → mensaje de formato con ejemplo', () => {
-    for (const url of ['https://www.instagram.com/jorgemacri/', 'https://www.instagram.com/stories/jorgemacri/123/', 'https://www.instagram.com/']) {
+    for (const url of [
+      'https://www.instagram.com/jorgemacri/',
+      'https://www.instagram.com/stories/jorgemacri/123/',
+      'https://www.instagram.com/',
+      'https://www.instagram.com/reels/audio/1234567890/',
+    ]) {
       const r = checkAnalyzeUrl(url, 'instagram');
       assert.equal(r.ok, false, url);
       assert.equal(r.motivo, 'no_es_posteo', url);

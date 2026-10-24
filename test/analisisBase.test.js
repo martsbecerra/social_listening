@@ -125,6 +125,14 @@ describe('tabla analisis', { concurrency: false }, () => {
     assert.ok(Math.abs(gasto.usd - 0.2323) < 1e-9);
   });
 
+  test('sin cuenta en la corrida, la fila queda sin dato (no "N/D")', () => {
+    const id = db.startAnalisis({ plataforma: 'instagram', url: 'https://www.instagram.com/p/NDND/' });
+    db.saveAnalisisPost(id, 'instagram', { ownerUsername: 'N/D', ownerFullName: 'N/D', caption: '', likesCount: null, commentsCount: null });
+    const a = db.getAnalisis(id, 'instagram');
+    assert.equal(a.cuenta, null);
+    assert.equal(a.cuentaNombre, null);
+  });
+
   test('la foto anotada', () => {
     const id = db.startAnalisis({ plataforma: 'instagram', url: 'https://www.instagram.com/p/FFF/' });
     db.markAnalisisImage(id, 'instagram', { sourceUrl: 'https://scontent.cdninstagram.com/x.jpg', status: 'ok', savedAt: '2026-10-24T10:00:00.000Z', width: 640, height: 800 });

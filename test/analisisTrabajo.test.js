@@ -244,6 +244,18 @@ describe('el trabajo del análisis', { concurrency: false }, () => {
 
   test('un link sin código de publicación no arranca nada', () => {
     assert.equal(analysisJob.start({ url: 'https://www.instagram.com/gcba/' }), null);
+    assert.equal(analysisJob.start({ url: 'https://www.instagram.com/reels/audio/1234567890/' }), null, 'la página de un audio no es una publicación');
+  });
+
+  test('el link se normaliza a /p/<code>/: reels, con el usuario adelante, con parámetros', () => {
+    const norm = (u) => (analysisJob.normalizeAnalysisUrl(u) || {}).url || null;
+    assert.equal(norm('https://www.instagram.com/reel/ABC_12-x/?igsh=abc'), 'https://www.instagram.com/p/ABC_12-x/');
+    assert.equal(norm('https://instagram.com/reels/ABC/'), 'https://www.instagram.com/p/ABC/');
+    assert.equal(norm('https://www.instagram.com/gcba/p/ABC/'), 'https://www.instagram.com/p/ABC/');
+    assert.equal(norm('https://www.instagram.com/tv/ABC'), 'https://www.instagram.com/p/ABC/');
+    assert.equal(norm('https://www.instagram.com/reels/audio/123/'), null);
+    assert.equal(norm('https://www.instagram.com/stories/gcba/123/'), null);
+    assert.equal(norm('no es un link'), null);
   });
 
   test('sin comentarios: estado "sin comentarios", con el mensaje para la persona', async () => {

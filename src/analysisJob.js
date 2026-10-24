@@ -34,7 +34,6 @@ const analyzer = require('./analyzeComments');
 const postImages = require('./postImages');
 const geoWorker = require('./geoWorker');
 const progress = require('./analysisProgress');
-const { postCodeOf } = require('./monitor');
 const { buildCommentTimeline } = require('./commentTimeline');
 const { runWithContext } = require('./usageContext');
 
@@ -52,14 +51,26 @@ function log(id, texto, detalle) {
   console.log(`[analisis] #${id} ${texto}${extra}`);
 }
 
+// El código sale del path, con el mismo criterio que checkAnalyzeUrl
+// (src/platforms/urlPlatform.js): /p/, /reel/, /reels/ o /tv/, con o sin el
+// usuario adelante, y nunca /reels/audio/.
+const ANALYSIS_PATH = /^\/(?:[A-Za-z0-9._]{1,30}\/)?(?:p|reel|reels|tv)\/(?!audio(?:\/|$))([A-Za-z0-9_-]{1,64})(?:\/|$)/;
+
 /**
  * El link de una publicación de Instagram como se guarda y se compara:
  * https://www.instagram.com/p/<code>/ (también para reels). null si no
  * tiene código.
  */
 function normalizeAnalysisUrl(url) {
-  const code = postCodeOf(url);
-  if (!code || !/^[A-Za-z0-9_-]{1,64}$/.test(code)) return null;
+  let pathname;
+  try {
+    pathname = new URL(String(url || '').trim()).pathname;
+  } catch {
+    return null;
+  }
+  const match = ANALYSIS_PATH.exec(pathname);
+  if (!match) return null;
+  const code = match[1];
   return { url: `https://www.instagram.com/p/${code}/`, code };
 }
 

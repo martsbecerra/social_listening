@@ -2392,8 +2392,9 @@ function saveAnalisisPost(id, plataforma, post) {
     id,
     plataforma,
     postId: post.id ?? null,
-    cuenta: post.ownerUsername ?? null,
-    cuentaNombre: post.ownerFullName ?? null,
+    // 'N/D' es el relleno del informe (normalizePost): en la fila es "sin dato".
+    cuenta: post.ownerUsername && post.ownerUsername !== 'N/D' ? post.ownerUsername : null,
+    cuentaNombre: post.ownerFullName && post.ownerFullName !== 'N/D' ? post.ownerFullName : null,
     caption: post.caption ?? null,
     postedAt: post.postedAt ?? null,
     postType: post.postType ?? null,
