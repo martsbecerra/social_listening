@@ -279,7 +279,15 @@ async function run(id, url) {
     const mensaje = (err && err.userMessage) || MENSAJE_ERROR;
     console.error(`[analisis] #${id} error:`, err && err.message);
     try {
-      db.failAnalisis(id, PLATAFORMA, { estado: 'error', error: mensaje, traidos, usdApify: db.sumApifyUsdForAnalisis(id).usd });
+      const gastoModelo = (err && err.tokenUsage) || null;
+      db.failAnalisis(id, PLATAFORMA, {
+        estado: 'error',
+        error: mensaje,
+        traidos,
+        usdApify: db.sumApifyUsdForAnalisis(id).usd,
+        usdModelo: gastoModelo ? gastoModelo.costUsd ?? null : null,
+        tokens: gastoModelo ? gastoModelo.totalTokens ?? null : null,
+      });
     } catch (dbErr) {
       console.error(`[analisis] #${id} no se pudo cerrar la fila:`, dbErr && dbErr.message);
     }

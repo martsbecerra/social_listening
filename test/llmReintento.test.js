@@ -129,6 +129,20 @@ describe('OpenRouter: timeout y reintento ante fallos transitorios', { concurren
     assert.equal(text, 'hola');
     assert.equal(llamadas.length, 2);
   });
+
+  test('requestText de la fachada trae el costo estimado, como el análisis (la subcategoría de los reclamos)', async () => {
+    process.env.LLM_INPUT_USD_PER_MTOK = '2';
+    process.env.LLM_OUTPUT_USD_PER_MTOK = '8';
+    try {
+      stubFetch([respuesta(200, { choices: [{ message: { content: 'hola' } }], usage: { prompt_tokens: 1000000, completion_tokens: 1000000, total_tokens: 2000000 } })]);
+      const { usage } = await llm.requestText({ system: 's', userPrompt: 'u', timeoutMs: 1000 });
+      assert.equal(usage.costSource, 'estimate_env');
+      assert.ok(Math.abs(usage.costUsd - 10) < 1e-9);
+    } finally {
+      delete process.env.LLM_INPUT_USD_PER_MTOK;
+      delete process.env.LLM_OUTPUT_USD_PER_MTOK;
+    }
+  });
 });
 
 describe('clasificarPosteo pide su timeout', { concurrency: false }, () => {

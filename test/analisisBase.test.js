@@ -104,12 +104,14 @@ describe('tabla analisis', { concurrency: false }, () => {
     assert.equal(db.updateAnalisisTemas(enCurso, 'instagram', []), false);
   });
 
-  test('los en curso de un arranque anterior pasan a interrumpido', () => {
+  test('los en curso de un arranque anterior pasan a interrumpido, con lo que ya gastaron en Apify', () => {
     const id = db.startAnalisis({ plataforma: 'instagram', url: 'https://www.instagram.com/p/DDD/' });
+    db.insertApifyCall({ phase: 'analisis', plataforma: 'instagram', items: 300, ok: true, usd: 0.69, analisisId: id });
     assert.ok(db.markInterruptedAnalisis() >= 1);
     const a = db.getAnalisis(id, 'instagram');
     assert.equal(a.estado, 'interrumpido');
     assert.ok(a.finishedAt);
+    assert.ok(Math.abs(a.usdApify - 0.69) < 1e-9);
   });
 
   test('el gasto de Apify de un análisis es la suma de sus filas', () => {

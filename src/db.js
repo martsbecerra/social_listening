@@ -1034,7 +1034,8 @@ const upsertReclamoConservandoStmt = db.prepare(`
     fecha = excluded.fecha,
     texto_original = excluded.texto_original,
     categoria = excluded.categoria,
-    subcategoria = excluded.subcategoria,
+    subcategoria = CASE WHEN reclamos.categoria IS excluded.categoria
+      THEN COALESCE(NULLIF(excluded.subcategoria, ''), reclamos.subcategoria) ELSE excluded.subcategoria END,
     precision_fecha = excluded.precision_fecha,
     import_origen = excluded.import_origen,
     ${GEO_SI_MISMA_DIRECCION},
@@ -1180,7 +1181,8 @@ const findAnalisisByUrlStmt = db.prepare(`
 const updateAnalisisTemasStmt = db.prepare("UPDATE analisis SET temas = ? WHERE id = ? AND plataforma = ? AND estado = 'ok'");
 const markInterruptedAnalisisStmt = db.prepare(`
   UPDATE analisis SET estado = 'interrumpido', finished_at = ?,
-    error = 'El servidor se reinició con el análisis en curso.'
+    error = 'El servidor se reinició con el análisis en curso.',
+    usd_apify = COALESCE(usd_apify, (SELECT COALESCE(SUM(COALESCE(usd_real, usd)), 0) FROM apify_calls WHERE apify_calls.analisis_id = analisis.id))
   WHERE estado = 'en curso'
 `);
 const sumApifyUsdForAnalisisStmt = db.prepare(

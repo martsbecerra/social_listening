@@ -25,6 +25,7 @@ const db = require('../src/db');
 const llm = require('../src/llm');
 const clasificarReclamo = require('../src/clasificarReclamo');
 const { analyzeComments } = require('../src/analyzeComments');
+const { updateAccountRegistry, loadAccountRegistry } = require('../src/accountRegistry');
 
 const URL = 'https://www.instagram.com/p/TEST/';
 const POST = { ownerFullName: 'GCBA', ownerUsername: 'gcba', caption: 'Anuncio', likesCount: 900, commentsCount: 1480, videoPlayCount: null };
@@ -49,14 +50,16 @@ function numerosDelPrompt(userPrompt) {
 
 let llamadas;
 let tandaFalla;
+let errorDeTanda;
 let omitir;
 let temas;
+let subcategoria;
 function stubModelo() {
   llm.requestStructuredAnalysis = async ({ schemaName, userPrompt }) => {
     llamadas.push({ schemaName, userPrompt });
     if (schemaName === 'tanda_instagram') {
       const numero = Number(/tanda (\d+) de/.exec(userPrompt)[1]);
-      if (tandaFalla === numero) throw new Error('se cayó la tanda');
+      if (tandaFalla === numero) throw errorDeTanda || new Error('se cayó la tanda');
       const lista = numerosDelPrompt(userPrompt);
       return {
         parsed: {
@@ -86,7 +89,7 @@ function stubModelo() {
       usage: { inputTokens: 3000, outputTokens: 800, totalTokens: 3800, costUsd: 0.02 },
     };
   };
-  clasificarReclamo.asignarSubcategorias = async (lista) => ({ subcategorias: lista.map(() => ''), usage: null, llamadas: 0 });
+  clasificarReclamo.asignarSubcategorias = async (lista) => ({ subcategorias: lista.map(() => subcategoria), usage: null, llamadas: 0 });
 }
 
 function pasosQueAnotan() {
@@ -98,6 +101,8 @@ function pasosQueAnotan() {
 beforeEach(() => {
   llamadas = [];
   tandaFalla = null;
+  errorDeTanda = null;
+  subcategoria = '';
   omitir = new Set();
   temas = [
     { titulo: 'La plaza', texto: 'Hablan de la plaza.', comentarios: [1, 2, 2, 999, 0, 3] },
@@ -137,6 +142,16 @@ describe('tandas y síntesis', { concurrency: false }, () => {
     const sintesis = llamadas.find((l) => l.schemaName === 'sintesis_instagram').userPrompt;
     assert.match(sintesis, /\[sin clasificar\]/);
     assert.match(eventos.filter(([, key]) => key === 'tono').pop()[2], /una tanda falló/);
+    // El contador del tono suma solo lo clasificado: nunca llega a 250.
+    const avances = eventos.filter(([tipo, key]) => tipo === 'update' && key === 'tono').map(([, , d]) => Number(d.split(' ')[0]));
+    assert.equal(Math.max(...avances), 150);
+  });
+
+  test('un tema no nombra comentarios de una tanda caída', async () => {
+    tandaFalla = 2;
+    temas = [{ titulo: 'La plaza', texto: 'Hablan de la plaza.', comentarios: [1, 100, 101, 150, 200, 201] }];
+    const r = await analyzeComments({ url: URL, post: POST, comments: comentarios(250) });
+    assert.deepEqual(r.qualitative.temasConversacion[0].comentarios, [1, 100, 201]);
   });
 
   test('lo que el modelo no devolvió no cuenta como analizado', async () => {
@@ -154,6 +169,12 @@ describe('tandas y síntesis', { concurrency: false }, () => {
     assert.equal(llamadas.filter((l) => l.schemaName === 'sintesis_instagram').length, 0);
   });
 
+  test('si fallan todas las tandas, el mensaje es el del proveedor (sin crédito no se arregla reintentando)', async () => {
+    tandaFalla = 1;
+    errorDeTanda = Object.assign(new Error('402'), { userMessage: 'Tu cuenta de OpenRouter no tiene crédito suficiente.' });
+    await assert.rejects(analyzeComments({ url: URL, post: POST, comments: comentarios(30) }), (err) => err.userMessage === 'Tu cuenta de OpenRouter no tiene crédito suficiente.');
+  });
+
   test('si falla la síntesis, tira', async () => {
     llm.requestStructuredAnalysis = async ({ schemaName, userPrompt }) => {
       if (schemaName === 'sintesis_instagram') throw new Error('se cayó la síntesis');
@@ -161,6 +182,19 @@ describe('tandas y síntesis', { concurrency: false }, () => {
       return { parsed: { classifications: lista.map(([n]) => ({ index: n, sentiment: 'neutral', accountType: 'vecino', reclamosGeo: [] })) }, usage: null };
     };
     await assert.rejects(analyzeComments({ url: URL, post: POST, comments: comentarios(10) }), (err) => Boolean(err.userMessage));
+  });
+
+  test('si falla la síntesis, el error lleva lo ya gastado en las tandas', async () => {
+    const tandaSola = llm.requestStructuredAnalysis;
+    llm.requestStructuredAnalysis = async (args) => {
+      if (args.schemaName === 'sintesis_instagram') throw new Error('se cayó la síntesis');
+      return tandaSola(args);
+    };
+    await assert.rejects(analyzeComments({ url: URL, post: POST, comments: comentarios(250) }), (err) => {
+      assert.equal(err.tokenUsage.totalTokens, 3 * 1500);
+      assert.ok(Math.abs(err.tokenUsage.costUsd - 0.03) < 1e-9);
+      return true;
+    });
   });
 });
 
@@ -200,6 +234,26 @@ describe('temas, tonos e informe', { concurrency: false }, () => {
     await analyzeComments({ url: URL, post: POST, comments: comentarios(12) });
     const fila = db.listReclamosFiltered({ plataforma: 'instagram' }).find((x) => x.id === 'ig:c5');
     assert.equal(fila.estado, 'Resuelto');
+  });
+
+  test('re-analizar sin subcategoría (la llamada falló) no borra la que ya tenía el reclamo', async () => {
+    subcategoria = 'Reclamos por falta de mantenimiento en obras de la Ciudad';
+    await analyzeComments({ url: URL, post: POST, comments: comentarios(12) });
+    const subDe = () => db.listReclamosFiltered({ plataforma: 'instagram' }).find((x) => x.id === 'ig:c5').subcategoria;
+    assert.equal(subDe(), 'Reclamos por falta de mantenimiento en obras de la Ciudad');
+    subcategoria = '';
+    await analyzeComments({ url: URL, post: POST, comments: comentarios(12) });
+    assert.equal(subDe(), 'Reclamos por falta de mantenimiento en obras de la Ciudad');
+  });
+
+  test('el registro de cuentas: dos actualizaciones a la vez no se pisan', async () => {
+    await Promise.all([
+      updateAccountRegistry((r) => (r.accounts.cuentauno = { accountType: 'periodista' })),
+      updateAccountRegistry((r) => (r.accounts.cuentados = { accountType: 'oficial' })),
+    ]);
+    const r = await loadAccountRegistry();
+    assert.equal(r.accounts.cuentauno.accountType, 'periodista');
+    assert.equal(r.accounts.cuentados.accountType, 'oficial');
   });
 
   test('sin reclamos, el paso queda omitido', async () => {

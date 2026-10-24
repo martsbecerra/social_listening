@@ -277,6 +277,19 @@ describe('el trabajo del análisis', { concurrency: false }, () => {
     assert.equal(progress.getView(id, 'instagram').pasos.find((p) => p.key === 'tono').estado, 'error');
   });
 
+  test('si la síntesis falla después de clasificar, la fila guarda lo gastado en el modelo', async () => {
+    const tandas = llm.requestStructuredAnalysis;
+    llm.requestStructuredAnalysis = async (args) => {
+      if (args.schemaName === 'sintesis_instagram') throw new Error('se cayó la síntesis');
+      return tandas(args);
+    };
+    const id = await analizar('https://www.instagram.com/p/SINSINTESIS/');
+    const a = db.getAnalisis(id, 'instagram');
+    assert.equal(a.estado, 'error');
+    assert.equal(a.tokens, 150);
+    assert.ok(Math.abs(a.usdModelo - 0.01) < 1e-9);
+  });
+
   test('"Esperar turno en Apify" aparece solo si una corrida tuvo que esperar cupo', async () => {
     let soltar;
     const espera = new Promise((resolve) => (soltar = resolve));

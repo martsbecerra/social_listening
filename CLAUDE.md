@@ -1005,8 +1005,9 @@ queda en la tabla `analisis` (`db.startAnalisis`, `saveAnalisisPost`,
 `finishAnalisis`, `failAnalisis`…, todas por plataforma, sin default):
 `en curso` | `ok` | `sin comentarios` | `error` | `interrumpido`. Los "en
 curso" de un arranque anterior los pasa a "interrumpido" SOLO `server.js`
-al arrancar (`db.markInterruptedAnalisis`), nunca la carga de `db.js`: un
-script que abre la base no puede tocar un análisis vivo. SDD en
+al arrancar (`db.markInterruptedAnalisis`, con el `usd_apify` que ya
+gastaron), nunca la carga de `db.js`: un script que abre la base no puede
+tocar un análisis vivo. SDD en
 `openspec/changes/analisis-v4/`.
 
 - **Apify**: dos corridas del actor oficial en paralelo (la publicación y
@@ -1029,9 +1030,17 @@ script que abre la base no puede tocar un análisis vivo. SDD en
   después una síntesis (`SINTESIS_SYSTEM_PROMPT`, `SINTESIS_JSON_SCHEMA`)
   con todo lo clasificado: posteo sobre, insights, postura, lectura
   estratégica y hasta 8 temas con los números de sus comentarios
-  (`normalizeTemasConComentarios`: solo los que existen en la muestra, sin
-  repetidos). Una tanda que falla deja sus comentarios en null y el
-  análisis sigue; si fallan todas o la síntesis, error con `userMessage`.
+  (`normalizeTemasConComentarios`: solo comentarios clasificados de la
+  muestra, sin repetidos). Una tanda que falla deja sus comentarios en null
+  y el análisis sigue (el contador del paso suma solo lo clasificado); si
+  fallan todas, error con el `userMessage` del proveedor (sin crédito,
+  clave inválida: reintentar no lo arregla), y si falla la síntesis, con el
+  suyo. El error lleva lo ya gastado (`err.tokenUsage`): la fila guarda
+  `usd_modelo` y `tokens` también al fallar. La subcategoría de los
+  reclamos (`llm.requestText`) sale con su costo estimado, como el resto.
+  El registro de cuentas se actualiza de a uno (`updateAccountRegistry`:
+  relee el archivo, suma lo suyo y lo guarda con un temporal y un rename),
+  así dos análisis a la vez no se pisan.
   **"Analizados" son los clasificados de verdad**:
   `normalizeBatchClassifications` ya no completa con neutral lo que el
   modelo no devolvió; la pantalla dice "analizados N de M" con M el total
@@ -1045,7 +1054,9 @@ script que abre la base no puede tocar un análisis vivo. SDD en
   por el objeto del módulo.
 - **Reclamos**: `db.upsertReclamo(r, { conservarGestion: true })` en
   Instagram y X: re-analizar conserva el estado y, si la dirección detectada
-  no cambió, el geocodificado. El importador sigue como antes.
+  no cambió, el geocodificado; con la misma categoría, una subcategoría
+  vacía (la llamada falló) no borra la que había. El importador sigue como
+  antes.
 - **Progreso** (`src/analysisProgress.js`,
   `GET /api/analyze/progress?plataforma=&id=`): turno (solo si alguna
   corrida esperó cupo), publicación, comentarios, tono ("100 de 287", tanda

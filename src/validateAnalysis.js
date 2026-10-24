@@ -97,7 +97,7 @@ function normalizeInsightPair(raw) {
  * comentarios que existen en la muestra (sin repetidos, en orden). Un tema
  * sin título o sin texto se descarta; a lo sumo MAX_TEMAS.
  */
-function normalizeTemasConComentarios(raw, sampleLength) {
+function normalizeTemasConComentarios(raw, sampleLength, validos = null) {
   if (!Array.isArray(raw)) return [];
   const out = [];
   for (const item of raw) {
@@ -106,7 +106,7 @@ function normalizeTemasConComentarios(raw, sampleLength) {
     const texto = typeof item.texto === 'string' ? item.texto.trim() : '';
     if (!titulo || !texto) continue;
     const comentarios = Array.isArray(item.comentarios)
-      ? [...new Set(item.comentarios.filter((n) => Number.isInteger(n) && n >= 1 && n <= sampleLength))].sort((a, b) => a - b)
+      ? [...new Set(item.comentarios.filter((n) => Number.isInteger(n) && n >= 1 && n <= sampleLength && (!validos || validos.has(n))))].sort((a, b) => a - b)
       : [];
     out.push({ titulo, texto, comentarios });
     if (out.length >= MAX_TEMAS) break;
@@ -118,8 +118,10 @@ function normalizeTemasConComentarios(raw, sampleLength) {
  * La síntesis (posteo sobre, insights, postura, lectura y temas).
  * @param {unknown} parsed
  * @param {number} sampleLength
+ * @param {Set<number>|null} [validos] los números (desde 1) que un tema puede
+ *   nombrar: los comentarios clasificados. Sin él, cualquiera de la muestra.
  */
-function normalizeSynthesis(parsed, sampleLength) {
+function normalizeSynthesis(parsed, sampleLength, validos = null) {
   if (!parsed || typeof parsed !== 'object') {
     const e = new Error('Structured output de la síntesis vacío o inválido.');
     e.userMessage = 'El servicio de análisis no devolvió un resultado válido. Intentá de nuevo en unos minutos.';
@@ -135,7 +137,7 @@ function normalizeSynthesis(parsed, sampleLength) {
     insightMedios: normalizeInsightPair(p.insightMedios),
     posturaAudiencia: text(p.posturaAudiencia),
     lecturaEstrategica: text(p.lecturaEstrategica),
-    temasConversacion: normalizeTemasConComentarios(p.temasConversacion, sampleLength),
+    temasConversacion: normalizeTemasConComentarios(p.temasConversacion, sampleLength, validos),
   };
 }
 

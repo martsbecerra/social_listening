@@ -16,7 +16,10 @@
 //   4) Registro de cuentas, reclamos (subcategoría y guardado, conservando
 //      la gestión de los que ya existían) y el reporte (reportBuilder.js).
 // "Analizados" son los clasificados de verdad: lo que el modelo no devolvió
-// no cuenta (validateAnalysis.js ya no lo completa como neutral).
+// no cuenta (validateAnalysis.js ya no lo completa como neutral), y un tema
+// solo nombra comentarios clasificados.
+// Si algo tira después de alguna llamada, el error lleva lo ya gastado en
+// el modelo (err.tokenUsage): la fila del análisis lo guarda igual.
 //
 // El LLM y la subcategoría se llaman por el objeto del módulo (llm.,
 // clasificarReclamo.) para que los tests los puedan reemplazar.
@@ -37,7 +40,7 @@ const { addTokenUsage } = require('./llm/usage');
 const db = require('./db');
 const {
   loadAccountRegistry,
-  saveAccountRegistry,
+  updateAccountRegistry,
   applyRegistryAccountTypes,
   recordAccountTypesFromRun,
 } = require('./accountRegistry');
@@ -83,14 +86,25 @@ function llmError(err, provider) {
  * @returns {Promise<object>} el reporte (report, csv, temas, reportParts),
  *   lo que guarda la fila del análisis (qualitative, sample,
  *   classifications, tonos, numeros, metricas, reclamos) y tokenUsage.
+ *   Si tira, el error lleva err.tokenUsage con lo ya gastado.
  */
-async function analyzeComments({ url, post, comments, pasos = NO_PASOS }) {
+async function analyzeComments(params) {
+  const gasto = { tokenUsage: null };
+  try {
+    return await analizar(params, gasto);
+  } catch (err) {
+    if (err && typeof err === 'object' && gasto.tokenUsage) err.tokenUsage = gasto.tokenUsage;
+    throw err;
+  }
+}
+
+/** El análisis en sí; `gasto.tokenUsage` va sumando cada llamada al modelo. */
+async function analizar({ url, post, comments, pasos = NO_PASOS }, gasto) {
   const provider = getLlmProvider();
   const registry = await loadAccountRegistry();
   const { sample, total: unicos, isPartial: recortadaPorLaApp } = prepareCommentSample(comments);
-  let tokenUsage = null;
   const sumUsage = (usage) => {
-    if (usage) tokenUsage = tokenUsage ? addTokenUsage(tokenUsage, usage) : usage;
+    if (usage) gasto.tokenUsage = gasto.tokenUsage ? addTokenUsage(gasto.tokenUsage, usage) : usage;
   };
 
   // ---- 1) tandas
@@ -98,6 +112,7 @@ async function analyzeComments({ url, post, comments, pasos = NO_PASOS }) {
   const porTanda = new Array(tandas.length);
   let hechos = 0;
   let fallidas = 0;
+  let ultimoError = null;
   const tonoDesde = Date.now();
   pasos.start('tono', `0 de ${INT.format(sample.length)}`);
   await runPool(
@@ -115,9 +130,11 @@ async function analyzeComments({ url, post, comments, pasos = NO_PASOS }) {
       } catch (err) {
         porTanda[t] = new Array(tanda.length).fill(null);
         fallidas += 1;
+        ultimoError = err;
         console.warn(`[analisis] la tanda ${t + 1} de ${tandas.length} falló (${tanda.length} comentarios sin clasificar): ${err && err.message}`);
       }
-      hechos += tanda.length;
+      // Solo lo clasificado: una tanda caída no avanza el contador.
+      hechos += porTanda[t].filter(Boolean).length;
       pasos.update('tono', `${INT.format(hechos)} de ${INT.format(sample.length)}`);
     }),
     BATCH_CONCURRENCY
@@ -128,7 +145,9 @@ async function analyzeComments({ url, post, comments, pasos = NO_PASOS }) {
   const analizados = classifications.filter(Boolean).length;
   if (analizados === 0) {
     pasos.fail('tono', 'no se pudo clasificar');
-    throw llmError(new Error('ninguna tanda devolvió clasificaciones'), provider);
+    // El error del proveedor trae el mensaje que sirve (sin crédito, clave
+    // inválida, modelo sin schema): reintentar no lo arregla.
+    throw llmError(ultimoError || new Error('ninguna tanda devolvió clasificaciones'), provider);
   }
   const segundos = Math.round((Date.now() - tonoDesde) / 1000);
   pasos.done(
@@ -148,7 +167,8 @@ async function analyzeComments({ url, post, comments, pasos = NO_PASOS }) {
       schemaName: 'sintesis_instagram',
       maxTokens: SYNTHESIS_MAX_TOKENS,
     });
-    qualitative = normalizeSynthesis(result.parsed, sample.length);
+    const clasificados = new Set(classifications.map((row, i) => (row ? i + 1 : null)).filter(Boolean));
+    qualitative = normalizeSynthesis(result.parsed, sample.length, clasificados);
     sumUsage(result.usage);
   } catch (err) {
     pasos.fail('temas', 'falló');
@@ -157,10 +177,10 @@ async function analyzeComments({ url, post, comments, pasos = NO_PASOS }) {
   const nTemas = qualitative.temasConversacion.length;
   pasos.done('temas', `${nTemas === 1 ? '1 tema' : `${nTemas} temas`} · ${Math.round((Date.now() - temasDesde) / 1000)} s`);
 
-  // ---- 3) registro de cuentas
-  recordAccountTypesFromRun(sample, classifications, registry);
+  // ---- 3) registro de cuentas: sobre el archivo de ahora, no sobre el que
+  // se leyó al empezar (otro análisis pudo sumar cuentas mientras tanto).
   try {
-    await saveAccountRegistry(registry);
+    await updateAccountRegistry((actual) => recordAccountTypesFromRun(sample, classifications, actual));
   } catch (err) {
     console.warn('No se pudo guardar account-types.json:', err.message);
   }
@@ -223,7 +243,7 @@ async function analyzeComments({ url, post, comments, pasos = NO_PASOS }) {
       nivel: reportResult.meta.performanceLevel,
     },
     reclamos: reclamos.length,
-    tokenUsage,
+    tokenUsage: gasto.tokenUsage,
   };
 }
 
