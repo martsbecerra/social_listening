@@ -129,9 +129,16 @@ function register(app) {
           enCurso: plataforma === 'instagram' ? analysisJob.enCursoDe(norm.url) : null,
         });
       }
+      // "propio": lo arrancó esta misma sesión. Al cargar, la solapa sigue
+      // solo esos (el de otra persona no le bloquea "Analizar"); el correo
+      // no sale de acá.
+      const quien = (req.auth && req.auth.email) || null;
       return res.json({
         recientes: db.listAnalisis({ plataforma, limit: req.query.limit }).map(paraNavegador),
-        enCurso: plataforma === 'instagram' ? analysisJob.listEnCurso() : [],
+        enCurso:
+          plataforma === 'instagram'
+            ? analysisJob.listEnCurso().map((a) => ({ id: a.id, url: a.url, propio: (a.analizadoPor || null) === quien }))
+            : [],
       });
     } catch (err) {
       console.error('Error en GET /api/analisis:', err);

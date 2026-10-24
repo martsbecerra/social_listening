@@ -1077,7 +1077,8 @@ tocar un análisis vivo. SDD en
   fila guarda sus `image_*`; `GET /api/analisis/:id/image` arma el archivo
   con el `post_id` de la fila.
 - **Lecturas**: `GET /api/analisis?plataforma=&limit=` (`recientes`
-  terminados bien y `enCurso`), `?url=` (`ultimo` y `enCurso`: el aviso de
+  terminados bien y `enCurso`, cada uno con `propio`: lo arrancó esta
+  sesión; el correo no sale), `?url=` (`ultimo` y `enCurso`: el aviso de
   "ya se analizó"), `GET /api/analisis/:id`, `PATCH /api/analisis/:id/temas`
   (hasta 8, cada uno con título; los números de comentarios se limpian
   contra la fila). Al navegador no va el link original de la foto ni quién
@@ -1088,13 +1089,23 @@ tocar un análisis vivo. SDD en
   "ya se analizó el …" con "Ver ese análisis" / "Analizar de nuevo"; si hay
   uno en curso, lo sigue), después POST, y consulta los pasos cada 1 s.
   Enter con uno en curso no dispara otro (también en `x-analysis.js`). Al
-  cargar la página, si hay uno en curso, lo sigue. La vista sale entera de
+  cargar la página sigue solo uno en curso PROPIO (el de otra persona le
+  bloquearía "Analizar"). Al terminar el que se sigue, el campo se vacía y
+  se muestra solo si la persona no eligió otra cosa mientras tanto (otro
+  link en el campo, un reciente, un `#analisis-<id>`); si no, "Terminó el
+  análisis de @cuenta" con "Ver ese análisis", sin tocarle el campo. Los
+  pasos se actualizan en el lugar (la lista es una región viva: se anuncia
+  lo que cambió); el sondeo corta con un 401 (sesión cerrada) o a los ~3 min
+  sin respuesta, y sin conexión dice "No hay conexión con el servidor". La
+  vista sale entera de
   la fila: la foto entera sobre negro, "analizados N de M", el resumen (la
   lectura estratégica, escrita en ~1,5 s; quieta con movimiento reducido),
   el tono, los temas (tamaño por conteo; clic filtra los comentarios con
   una pastilla ✕; ✎ edita título y texto o quita; "+ tema"; sin texto el
   tema no entra en el informe), "Cuándo comentaron" (SVG al ancho real, una
-  franja por tramo con `data-tip`; tres marcas en el eje bajo 480 px), los
+  franja por tramo con `data-tip`; tres marcas en el eje bajo 480 px; con
+  la solapa oculta no se dibuja y se arma al aparecer; el rótulo del pico
+  se mide y queda adentro), los
   comentarios (Destacados = los 5 con más likes, Negativos, Neutrales,
   Positivos, Todos de a 50) y compartir: el informe con los temas editados
   (`TemasConversacion.assemble`), aviso pasados los 4.000 caracteres

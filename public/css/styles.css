@@ -4180,7 +4180,8 @@ svg.line {
   padding: 10px 12px;
   border: 1px solid color-mix(in oklab, var(--neg) 35%, var(--line));
   border-radius: 10px;
-  background: color-mix(in oklab, var(--neg) 7%, var(--surface2));
+  /* Fondo liso: la tinta roja sobre el fondo teñido no llegaba a 4,5:1. */
+  background: var(--surface2);
   color: var(--neg-text);
   font-size: 13px;
 }
@@ -4362,7 +4363,9 @@ svg.line {
   font: 500 11px/1 var(--mono);
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--accent-text);
+  /* --fg2: el acento sobre el degradé de arriba no llegaba a 4,5:1; el ◆ sí
+     va en el acento (es un adorno, aria-hidden). */
+  color: var(--fg2);
   margin-bottom: 6px;
 }
 .ana4 .ai p {
@@ -4461,6 +4464,13 @@ svg.line {
   font: 400 11px/1 var(--mono);
   color: var(--muted);
   margin-left: 6px;
+}
+/* El tema elegido tiene el fondo teñido: --muted ahí no llega a 4,5:1. */
+.ana4 .theme.on .theme-name small {
+  color: var(--fg2);
+}
+.ana4 .ai .ct2 .dot {
+  color: var(--accent);
 }
 .ana4 .theme-edit {
   border: 0;

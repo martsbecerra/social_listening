@@ -409,7 +409,7 @@
           </div>
         </article>
         <div class="ai">
-          <div class="ct2">◆ Resumen generado</div>
+          <div class="ct2"><span class="dot" aria-hidden="true">◆</span> Resumen generado</div>
           <p id="aiText"></p>
         </div>
         <div class="card ana-share">
@@ -443,7 +443,7 @@
               <input class="field" type="text" id="anaTemaTitulo" maxlength="120" autocomplete="off" />
               <label class="field-l" for="anaTemaTexto">Texto para el informe</label>
               <textarea class="field" id="anaTemaTexto" rows="3" maxlength="1000"></textarea>
-              <p class="note" id="anaTemaMsg"></p>
+              <p class="note" id="anaTemaMsg" role="status" aria-live="polite"></p>
               <div class="tema-edit-acts">
                 <button type="submit" class="btn sm primary" id="anaTemaSave">Guardar</button>
                 <button type="button" class="btn sm ghost" id="anaTemaDel">Quitar tema</button>

@@ -232,7 +232,7 @@ describe('el trabajo del análisis', { concurrency: false }, () => {
     assert.equal(a.yaEnCurso, false);
     assert.deepEqual(b, { id: a.id, yaEnCurso: true });
     assert.equal(analysisJob.enCursoDe('https://www.instagram.com/p/DUP1/'), a.id);
-    assert.deepEqual(analysisJob.listEnCurso(), [{ id: a.id, url: 'https://www.instagram.com/p/DUP1/' }]);
+    assert.deepEqual(analysisJob.listEnCurso(), [{ id: a.id, url: 'https://www.instagram.com/p/DUP1/', analizadoPor: null }]);
     soltar();
     await analysisJob.waitFor(a.id);
     assert.equal(llamadasApify.filter(([k]) => k === 'post').length, 1);
@@ -417,6 +417,26 @@ describe('las rutas', { concurrency: false }, () => {
     assert.ok(view.pasos.length >= 6);
     assert.equal((await pedir(`/api/analyze/progress?plataforma=x&id=${id}`)).status, 404);
     assert.equal((await pedir(`/api/analyze/progress?id=${id}`)).status, 400);
+  });
+
+  test('en curso: "propio" solo para quien lo arrancó, y el correo no sale', async () => {
+    let soltar;
+    frenoPost = new Promise((resolve) => (soltar = resolve));
+    const ok = await pedir('/api/analyze', { method: 'POST', body: { url: 'https://www.instagram.com/p/PROPIO1/' } });
+    const { id } = await ok.json();
+    let otraHeader = '';
+    setSessionCookie({ append: (name, value) => (otraHeader = value) }, 'otra@test.local');
+    const otra = otraHeader.split(';')[0];
+    try {
+      const texto = await (await pedir('/api/analisis?plataforma=instagram&limit=4')).text();
+      assert.doesNotMatch(texto, /prueba@test\.local/);
+      assert.deepEqual(JSON.parse(texto).enCurso, [{ id, url: 'https://www.instagram.com/p/PROPIO1/', propio: true }]);
+      const ajena = await (await realFetch(`${base}/api/analisis?plataforma=instagram&limit=4`, { headers: { Cookie: otra } })).json();
+      assert.deepEqual(ajena.enCurso, [{ id, url: 'https://www.instagram.com/p/PROPIO1/', propio: false }]);
+    } finally {
+      soltar();
+      await analysisJob.waitFor(id);
+    }
   });
 
   test('el progreso de un análisis que ya no está en memoria sale de la fila', async () => {

@@ -23,6 +23,10 @@
 //   inicio). anaPreload(url), desde "Analizar comentarios" del pop-up del
 //   Monitoreo, deja el link en el campo sin analizar y saca de la vista el
 //   análisis de otra publicación.
+// - Al terminar el análisis que se sigue, se muestra solo si la persona no
+//   eligió otra cosa mientras tanto (otro link en el campo, otro análisis a
+//   la vista); si no, un aviso "Terminó el análisis de @cuenta · Ver". Al
+//   cargar la página se siguen solo los análisis en curso propios.
 //
 // Todo dato entra por textContent o atributos; el SVG, con createElementNS.
 // --------------------------------------------------------------------
@@ -30,6 +34,7 @@
 const ANA_PLATAFORMA = 'instagram';
 const ANA_POLL_MS = 1000;
 const ANA_POLL_RETRY_MS = 3000;
+const ANA_POLL_MAX_FAILS = 60; // unos 3 minutos sin respuesta
 const ANA_WA_CAP = 4000;
 const ANA_CMTS_PAGE = 50;
 const ANA_TOP = 5;
@@ -94,6 +99,11 @@ let anaRecientes = [];
 let anaRecientesReady = Promise.resolve(null);
 let anaShown = null; // el análisis a la vista (GET /api/analisis/:id)
 let anaRunningId = null; // el que se está siguiendo
+let anaRunningUrl = null; // su link
+let anaFollowSwitch = true; // al terminar, ¿se lo muestra? (false si la persona eligió otra cosa)
+let anaPollFails = 0; // consultas del progreso seguidas sin respuesta
+let anaStepsSig = ''; // los pasos dibujados (para no redibujar lo mismo)
+let anaWhenDrawnW = 0; // el ancho al que se dibujó "Cuándo comentaron"
 let anaBusy = false; // entre el clic y la respuesta de POST /api/analyze
 let anaPollTimer = null;
 let anaTypeTimer = null;
@@ -141,7 +151,14 @@ function anaPlural(n, uno, varios) {
 }
 
 async function anaApi(path, options = {}) {
-  const resp = await fetch(path, { credentials: 'same-origin', ...options });
+  let resp;
+  try {
+    resp = await fetch(path, { credentials: 'same-origin', ...options });
+  } catch {
+    const err = new Error('No hay conexión con el servidor. Intentá de nuevo.');
+    err.status = 0;
+    throw err;
+  }
   let data = null;
   try {
     data = await resp.json();
@@ -193,29 +210,56 @@ function anaHideNotice() {
 
 const ANA_STEP_CLASS = { 'en curso': 'run', ok: 'ok', error: 'err', omitido: 'skip' };
 
+// La lista es una región viva (aria-live): se toca solo lo que cambió, así
+// el lector de pantalla anuncia el paso que avanzó y no la lista entera en
+// cada consulta.
+function anaSetText(el, text) {
+  if (el.textContent !== text) el.textContent = text;
+}
+
 function anaRenderSteps(pasos) {
-  anaEls.steps.replaceChildren(
-    ...pasos.map((paso, i) => {
-      const row = document.createElement('div');
-      row.className = `step ${ANA_STEP_CLASS[paso.estado] || ''}`.trim();
+  const sig = JSON.stringify(pasos);
+  if (sig === anaStepsSig) return;
+  anaStepsSig = sig;
+  const box = anaEls.steps;
+  while (box.children.length > pasos.length) box.lastElementChild.remove();
+  pasos.forEach((paso, i) => {
+    let row = box.children[i];
+    if (!row || row.dataset.key !== paso.key) {
+      const nuevo = document.createElement('div');
+      nuevo.dataset.key = paso.key;
       const mark = document.createElement('i');
       mark.setAttribute('aria-hidden', 'true');
-      mark.textContent = paso.estado === 'ok' ? '✓' : paso.estado === 'error' ? '!' : paso.estado === 'omitido' ? '–' : String(i + 1);
       const label = document.createElement('span');
-      label.textContent = paso.label;
       const estado = document.createElement('span');
       estado.className = 'sr';
-      estado.textContent = ` (${paso.estado})`;
-      row.append(mark, label, estado);
-      if (paso.detalle) {
-        const n = document.createElement('span');
-        n.className = 'n';
-        n.textContent = paso.detalle;
-        row.append(n);
-      }
-      return row;
-    })
-  );
+      const n = document.createElement('span');
+      n.className = 'n';
+      nuevo.append(mark, label, estado, n);
+      if (row) row.replaceWith(nuevo);
+      else box.append(nuevo);
+      row = nuevo;
+    }
+    const [mark, label, estado, n] = row.children;
+    const clase = `step ${ANA_STEP_CLASS[paso.estado] || ''}`.trim();
+    if (row.className !== clase) row.className = clase;
+    anaSetText(mark, paso.estado === 'ok' ? '✓' : paso.estado === 'error' ? '!' : paso.estado === 'omitido' ? '–' : String(i + 1));
+    anaSetText(label, paso.label);
+    anaSetText(estado, ` (${paso.estado})`);
+    anaSetText(n, paso.detalle || '');
+    anaShow(n, Boolean(paso.detalle));
+  });
+}
+
+// El análisis terminó sin pasos en memoria (el servidor se reinició): lo
+// que seguía en curso no va a terminar.
+function anaFailRunningSteps() {
+  anaEls.steps.querySelectorAll('.step.run').forEach((row) => {
+    row.className = 'step err';
+    anaSetText(row.children[0], '!');
+    anaSetText(row.children[2], ' (error)');
+  });
+  anaStepsSig = '';
 }
 
 function anaSetRunning(running) {
@@ -224,11 +268,17 @@ function anaSetRunning(running) {
   anaEls.btn.textContent = running ? 'Analizando…' : 'Analizar';
 }
 
-function anaFollow(id) {
+// switchView: al terminar, mostrar ese análisis. Es false si la persona ya
+// está mirando otra cosa que eligió (por ejemplo, entró por #analisis-<id>).
+function anaFollow(id, { url = null, switchView = true } = {}) {
   clearTimeout(anaRunHideTimer);
   anaRunningId = Number(id);
+  anaRunningUrl = url;
+  anaFollowSwitch = switchView;
+  anaPollFails = 0;
   anaSetError('');
   anaHideNotice();
+  anaStepsSig = '';
   anaEls.steps.replaceChildren();
   anaEls.run.classList.add('on');
   anaSetRunning(true);
@@ -238,7 +288,15 @@ function anaFollow(id) {
 function anaStopFollow() {
   clearTimeout(anaPollTimer);
   anaRunningId = null;
+  anaRunningUrl = null;
   anaSetRunning(false);
+}
+
+// La persona eligió qué mirar mientras corre un análisis: al terminar, no
+// se le cambia la vista.
+function anaUserChose() {
+  anaSkipAutoShow = true;
+  anaFollowSwitch = false;
 }
 
 async function anaPoll() {
@@ -255,22 +313,47 @@ async function anaPoll() {
       anaSetError('Ese análisis ya no existe.');
       return;
     }
-    // Un corte de red: se vuelve a preguntar, más despacio.
+    if (err.status === 401) {
+      anaStopFollow();
+      anaSetError('Se cerró la sesión. Volvé a entrar: el análisis sigue en el servidor y queda en "Recientes".');
+      return;
+    }
+    // Un corte de red o un error del servidor: se vuelve a preguntar, más
+    // despacio, con un tope.
+    anaPollFails += 1;
+    if (anaPollFails >= ANA_POLL_MAX_FAILS) {
+      anaStopFollow();
+      anaSetError('Se perdió la conexión con el servidor. El análisis sigue ahí: recargá la página para ver cómo terminó.');
+      return;
+    }
+    anaSetError('Sin respuesta del servidor; se vuelve a intentar…');
     anaPollTimer = setTimeout(anaPoll, ANA_POLL_RETRY_MS);
     return;
   }
   if (id !== anaRunningId) return;
+  if (anaPollFails > 0) {
+    anaPollFails = 0;
+    anaSetError('');
+  }
   if (view.pasos) anaRenderSteps(view.pasos);
   if (view.estado === 'en curso') {
     anaPollTimer = setTimeout(anaPoll, ANA_POLL_MS);
     return;
   }
+  const seguido = { url: anaRunningUrl, mostrar: anaFollowSwitch };
   anaStopFollow();
+  if (!view.pasos && view.estado !== 'ok') anaFailRunningSteps();
   if (view.estado === 'ok') {
-    anaEls.url.value = '';
+    // El campo se vacía solo si sigue con el link de este análisis (o
+    // vacío): un link que la persona puso mientras tanto se queda.
+    const campo = anaEls.url.value.trim();
+    const mismoLink = !campo || (seguido.url && anaPostCode(campo) === anaPostCode(seguido.url));
+    if (mismoLink && campo) anaEls.url.value = '';
     anaSkipAutoShow = true;
     await anaLoadRecientes();
-    await anaShowAnalysis(id);
+    // Con el mismo link en el campo, la persona lo está esperando: se muestra.
+    if (mismoLink && (seguido.mostrar || Boolean(campo))) await anaShowAnalysis(id);
+    else anaShowDoneNotice(id);
     anaRunHideTimer = setTimeout(() => anaEls.run.classList.remove('on'), anaReducedMotion() ? 0 : 1200);
   } else {
     anaSetError(view.error || 'El análisis no terminó.');
@@ -311,7 +394,7 @@ async function anaAnalyze({ force = false } = {}) {
       }
       if (ya && ya.enCurso) {
         anaBusy = false;
-        anaFollow(ya.enCurso);
+        anaFollow(ya.enCurso, { url });
         return;
       }
       if (ya && ya.ultimo) {
@@ -325,7 +408,7 @@ async function anaAnalyze({ force = false } = {}) {
       body: JSON.stringify({ url }),
     });
     anaBusy = false;
-    anaFollow(started.id);
+    anaFollow(started.id, { url });
   } catch (err) {
     anaSetError(err.message);
   } finally {
@@ -336,6 +419,7 @@ async function anaAnalyze({ force = false } = {}) {
 
 function anaShowNotice(ultimo) {
   anaNoticeFor = ultimo;
+  anaShow(anaEls.noticeRun, true);
   const cuando = anaDateParts(ultimo.finishedAt);
   const n = Number.isFinite(ultimo.analizados) ? `, ${anaPlural(ultimo.analizados, 'comentario analizado', 'comentarios analizados')}` : '';
   anaEls.noticeText.textContent = cuando
@@ -344,11 +428,21 @@ function anaShowNotice(ultimo) {
   anaShow(anaEls.notice, true);
 }
 
+// Terminó el análisis que se seguía, pero la persona está mirando otra cosa
+// o puso otro link: se avisa, sin cambiarle la vista ni el campo.
+function anaShowDoneNotice(id) {
+  const a = anaRecientes.find((r) => r.id === Number(id));
+  anaNoticeFor = { id: Number(id), conservarCampo: true };
+  anaShow(anaEls.noticeRun, false);
+  anaEls.noticeText.textContent = a && a.cuenta ? `Terminó el análisis de @${a.cuenta}.` : 'Terminó el análisis.';
+  anaShow(anaEls.notice, true);
+}
+
 // Lo llama "Analizar comentarios" del pop-up del Monitoreo: el link queda en
 // el campo, sin gastar nada. Si a la vista había el análisis de otra
 // publicación, deja de mostrarse; si ese link ya se analizó, se avisa.
 function anaPreload(url) {
-  anaSkipAutoShow = true;
+  anaUserChose();
   anaLoadSeq += 1;
   anaEls.url.value = url || '';
   anaSetError('');
@@ -359,7 +453,7 @@ function anaPreload(url) {
   anaApi(`/api/analisis?plataforma=${ANA_PLATAFORMA}&url=${encodeURIComponent(url)}`)
     .then((ya) => {
       if (seq !== anaLoadSeq || anaEls.url.value !== url) return;
-      if (ya.enCurso) anaFollow(ya.enCurso);
+      if (ya.enCurso) anaFollow(ya.enCurso, { url });
       else if (ya.ultimo && !(anaShown && anaShown.id === ya.ultimo.id)) anaShowNotice(ya.ultimo);
     })
     .catch(() => {});
@@ -381,6 +475,8 @@ async function anaLoadRecientes() {
 
 function anaRenderStrip() {
   const strip = anaEls.posts;
+  // Si el foco estaba en un botón de la tira, vuelve al mismo (por su id).
+  const conFoco = strip.contains(document.activeElement) ? document.activeElement.dataset.id : null;
   strip.replaceChildren();
   anaShow(strip, anaRecientes.length > 0);
   anaShow(anaEls.empty, anaRecientes.length === 0 && anaShown === null);
@@ -420,12 +516,16 @@ function anaRenderStrip() {
     small.textContent = fecha ? fecha.corta : '—';
     b.append(small);
     b.addEventListener('click', () => {
-      anaSkipAutoShow = true;
+      anaUserChose();
       anaHideNotice();
       anaSetError('');
       anaShowAnalysis(a.id);
     });
     strip.append(b);
+  }
+  if (conFoco) {
+    const mismo = strip.querySelector(`button[data-id="${conFoco}"]`) || strip.querySelector('button');
+    if (mismo) mismo.focus();
   }
 }
 
@@ -518,10 +618,15 @@ function anaRenderPost(a) {
 }
 
 // "analizados N de M": N, los que el modelo clasificó de verdad; M, el total
-// que informa Instagram (o los traídos, si no vino).
+// que informa Instagram. Si Instagram no lo informó, "de M traídos" (lo que
+// trajo Apify, que no es el total de la publicación).
 function anaAnalizadosText(a) {
-  const total = Number.isFinite(a.comentariosTotal) ? a.comentariosTotal : a.traidos;
-  if (Number.isFinite(total) && a.analizados < total) return `analizados ${formatCount(a.analizados)} de ${formatCount(total)}`;
+  if (Number.isFinite(a.comentariosTotal) && a.analizados < a.comentariosTotal) {
+    return `analizados ${formatCount(a.analizados)} de ${formatCount(a.comentariosTotal)}`;
+  }
+  if (!Number.isFinite(a.comentariosTotal) && Number.isFinite(a.traidos) && a.analizados < a.traidos) {
+    return `analizados ${formatCount(a.analizados)} de ${formatCount(a.traidos)} traídos`;
+  }
   return `analizados ${formatCount(a.analizados)}`;
 }
 
@@ -677,7 +782,9 @@ function anaCloseTemaForm({ restoreFocus = true } = {}) {
   if (target) target.focus();
 }
 
-async function anaSaveTemas(temas, { focusAfter } = {}) {
+// cmtTema: el índice del tema que filtra los comentarios después de
+// guardar (al quitar uno se corre); se aplica recién si el PATCH salió bien.
+async function anaSaveTemas(temas, { focusAfter, cmtTema } = {}) {
   const a = anaShown;
   const botones = [anaEls.temaSave, anaEls.temaDel, anaEls.temaCancel];
   botones.forEach((b) => (b.disabled = true));
@@ -691,6 +798,7 @@ async function anaSaveTemas(temas, { focusAfter } = {}) {
     a.temas = data.temas;
     anaTemaEditing = null;
     anaShow(anaEls.temaForm, false);
+    if (cmtTema !== undefined) anaCmtTema = cmtTema;
     if (anaCmtTema !== null && anaCmtTema >= a.temas.length) anaCmtTema = null;
     anaRenderThemes();
     anaRenderCmts();
@@ -753,9 +861,10 @@ anaEls.temaDel.addEventListener('click', () => {
   if (!anaShown || typeof anaTemaEditing !== 'number') return;
   const temas = anaTemas();
   temas.splice(anaTemaEditing, 1);
-  if (anaCmtTema === anaTemaEditing) anaCmtTema = null;
-  else if (anaCmtTema !== null && anaCmtTema > anaTemaEditing) anaCmtTema -= 1;
-  anaSaveTemas(temas, { focusAfter: 'add' });
+  let cmtTema = anaCmtTema;
+  if (cmtTema === anaTemaEditing) cmtTema = null;
+  else if (cmtTema !== null && cmtTema > anaTemaEditing) cmtTema -= 1;
+  anaSaveTemas(temas, { focusAfter: 'add', cmtTema });
 });
 
 anaEls.temaCancel.addEventListener('click', () => anaCloseTemaForm());
@@ -795,8 +904,16 @@ function anaRenderWhen() {
   anaEls.whenHint.textContent = `comentarios ${unidad} desde la publicación`;
   anaEls.whenNote.textContent = `${formatCount(c.conFecha)} de ${formatCount(c.total)} comentarios traídos tienen fecha.`;
 
-  // Al ancho real de la tarjeta: el texto no se estira.
-  const W = Math.max(280, Math.round(anaEls.when.clientWidth || 640));
+  // Al ancho real de la tarjeta: el texto no se estira. Con la solapa
+  // oculta no hay ancho: se dibuja cuando aparece (el ResizeObserver).
+  const visible = Math.round(anaEls.when.clientWidth);
+  if (!visible) {
+    anaWhenDrawnW = 0;
+    anaEls.when.replaceChildren();
+    return;
+  }
+  const W = Math.max(280, visible);
+  anaWhenDrawnW = visible;
   const H = 190;
   const L = 30;
   const R = 12;
@@ -853,6 +970,17 @@ function anaRenderWhen() {
   txt.textContent = `pico: ${anaPeakLabel(pico.h, c.unidadHoras)} · ${anaPlural(pico.n, 'comentario', 'comentarios')}`;
   marca.append(txt);
   svg.append(marca);
+  const acomodarPico = () => {
+    // El rótulo entero adentro del gráfico (en celular puede medir casi todo el ancho).
+    try {
+      const largo = txt.getComputedTextLength();
+      const x0 = Math.min(Math.max(cerca ? px - 6 - largo : px + 6, L), Math.max(L, W - R - largo));
+      txt.setAttribute('text-anchor', 'start');
+      txt.setAttribute('x', x0.toFixed(1));
+    } catch {
+      /* sin medida, queda donde estaba */
+    }
+  };
 
   // Una franja por tramo con su número (tip.js).
   const ancho = n === 1 ? W - L - R : (W - L - R) / (n - 1);
@@ -865,14 +993,15 @@ function anaRenderWhen() {
     svg.append(r);
   });
   anaEls.when.replaceChildren(svg);
+  acomodarPico();
 }
 
+// Se redibuja cuando el ancho cambia respecto del que se usó al dibujar
+// (también al volver a la solapa si se armó con ella oculta).
 if (typeof ResizeObserver === 'function') {
-  let anaWhenWidth = 0;
   new ResizeObserver(() => {
     const w = Math.round(anaEls.when.clientWidth);
-    if (!anaShown || !w || w === anaWhenWidth) return;
-    anaWhenWidth = w;
+    if (!anaShown || !w || w === anaWhenDrawnW) return;
     anaRenderWhen();
   }).observe(anaEls.when);
 }
@@ -1103,8 +1232,8 @@ anaEls.noticeView.addEventListener('click', () => {
   const ultimo = anaNoticeFor;
   if (!ultimo) return;
   anaHideNotice();
-  anaEls.url.value = '';
-  anaSkipAutoShow = true;
+  if (!ultimo.conservarCampo) anaEls.url.value = '';
+  anaUserChose();
   anaShowAnalysis(ultimo.id);
 });
 anaEls.noticeRun.addEventListener('click', () => anaAnalyze({ force: true }));
@@ -1113,7 +1242,7 @@ anaEls.noticeRun.addEventListener('click', () => anaAnalyze({ force: true }));
 // la vista, salvo que haya un link en el campo o ya se esté viendo otro.
 // Con un análisis a la vista, el hash es el suyo.
 window.openAnalysis = function openAnalysis() {
-  if (anaShown) history.replaceState(null, '', `#analisis-${anaShown.id}`);
+  if (anaShown && !ANA_HASH.test(location.hash)) history.replaceState(null, '', `#analisis-${anaShown.id}`);
   if (anaOpened) return;
   anaOpened = true;
   anaRecientesReady.then(() => {
@@ -1125,7 +1254,7 @@ window.openAnalysis = function openAnalysis() {
 function anaOpenFromHash() {
   const m = ANA_HASH.exec(location.hash);
   if (!m) return false;
-  anaSkipAutoShow = true;
+  anaUserChose();
   if (typeof openTab === 'function') openTab('analysis', { updateHash: false });
   window.scrollTo(0, 0);
   anaShowAnalysis(Number(m[1]), { updateHash: false });
@@ -1134,11 +1263,13 @@ function anaOpenFromHash() {
 
 window.addEventListener('hashchange', anaOpenFromHash);
 
-// Los recientes y, si quedó uno en curso (otra pestaña, una recarga), se lo
-// sigue: el análisis corre en el servidor.
+// Los recientes y, si quedó uno en curso de esta persona (otra pestaña, una
+// recarga), se lo sigue: el análisis corre en el servidor. El de otra
+// persona no se sigue (le bloquearía "Analizar"). Si entró por
+// #analisis-<id>, al terminar no se le cambia la vista.
 anaRecientesReady = anaLoadRecientes().then((data) => {
-  const enCurso = (data && data.enCurso) || [];
-  if (enCurso.length && anaRunningId === null) anaFollow(enCurso[0].id);
+  const propio = ((data && data.enCurso) || []).find((a) => a.propio);
+  if (propio && anaRunningId === null) anaFollow(propio.id, { url: propio.url, switchView: !anaSkipAutoShow });
   return data;
 });
 

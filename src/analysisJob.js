@@ -42,9 +42,11 @@ const INT = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 });
 const MENSAJE_SIN_COMENTARIOS = 'La publicación no tiene comentarios visibles o no se pudieron extraer. Probá con otra publicación.';
 const MENSAJE_ERROR = 'Ocurrió un error al procesar la publicación. Intentá de nuevo en unos minutos.';
 
-// link normalizado → id, y id → la promesa del trabajo (para los tests).
+// link normalizado → id, id → la promesa del trabajo (para los tests) e
+// id → quién lo arrancó (para que cada persona siga solo los suyos).
 const enCurso = new Map();
 const corridas = new Map();
+const duenos = new Map();
 
 function log(id, texto, detalle) {
   const extra = detalle && Object.keys(detalle).length ? ` ${JSON.stringify(detalle)}` : '';
@@ -79,9 +81,9 @@ function enCursoDe(url) {
   return enCurso.has(url) ? enCurso.get(url) : null;
 }
 
-/** Los análisis en curso, para la tira de recientes. */
+/** Los análisis en curso, con quién los arrancó (las rutas no lo mandan al navegador). */
 function listEnCurso() {
-  return [...enCurso.entries()].map(([url, id]) => ({ id, url }));
+  return [...enCurso.entries()].map(([url, id]) => ({ id, url, analizadoPor: duenos.has(id) ? duenos.get(id) : null }));
 }
 
 /**
@@ -98,12 +100,14 @@ function start({ url, analizadoPor = null }) {
   const id = db.startAnalisis({ plataforma: PLATAFORMA, url: norm.url, postCode: norm.code, analizadoPor });
   progress.create(id, { plataforma: PLATAFORMA });
   enCurso.set(norm.url, id);
+  duenos.set(id, analizadoPor || null);
   log(id, 'inicio', { url: norm.url });
   const corrida = runWithContext({ phase: 'analisis', analisisId: id }, () => run(id, norm.url))
     .catch((err) => console.error(`[analisis] #${id} error inesperado:`, err))
     .finally(() => {
       enCurso.delete(norm.url);
       corridas.delete(id);
+      duenos.delete(id);
     });
   corridas.set(id, corrida);
   return { id, yaEnCurso: false };
