@@ -372,8 +372,11 @@ function createFilterMultiSelect({ containerId, label, options, selectedSet }) {
 // Agrupado + pines
 // -------------------------------------------------------------------------
 
+// El (0,0) no es una ubicación: lo deja una respuesta de USIG sin
+// coordenadas, y el pin quedaría en el golfo de Guinea, fuera del AMBA. La
+// misma regla cuenta "reclamos en el mapa" del login (db.countReclamosEnMapa).
 function hasMapLocation(row) {
-  return row.x != null && row.y != null && Boolean(row.direccionNormalizada);
+  return row.x != null && row.y != null && !(row.x === 0 && row.y === 0) && Boolean(row.direccionNormalizada);
 }
 
 function clusterVisible() {

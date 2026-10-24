@@ -95,6 +95,9 @@ before(async () => {
   };
   app.post('/api/auth/magic-link', anotar('magic-link'));
   app.get('/api/auth/me', anotar('me'));
+  app.get('/api/public/resumen', anotar('resumen'));
+  app.get('/api/public/otra', anotar('otra'));
+  app.post('/api/public/resumen', anotar('resumen-post'));
   app.get('/api/monitoring/posts', anotar('posts'));
   app.post('/api/monitoring/run-now', anotar('run-now'));
   app.post('/api/analyze', anotar('analyze'));
@@ -201,6 +204,25 @@ describe('gate de login: /api/ sin sesión', { concurrency: false }, () => {
     assert.equal((await pedir('POST', '/API/auth/magic-link')).status, 401);
     assert.equal((await pedir('POST', '/api//auth/magic-link')).status, 401);
     assert.equal((await pedir('GET', '/api/auth/me/')).status, 401);
+    assert.deepEqual(llegadas, []);
+  });
+
+  test('/api/public/resumen es pública solo como GET y escrita exacta; el resto de /api/public/ pide sesión', async () => {
+    assert.equal((await pedir('GET', '/api/public/resumen')).status, 200);
+    assert.deepEqual(llegadas, ['GET resumen']);
+
+    llegadas.length = 0;
+    for (const [method, rawPath] of [
+      ['POST', '/api/public/resumen'],
+      ['HEAD', '/api/public/resumen'],
+      ['GET', '/API/public/resumen'],
+      ['GET', '/api/public/resumen/'],
+      ['GET', '/api//public/resumen'],
+      ['GET', '/api/public/otra'],
+      ['GET', '/api/public/'],
+    ]) {
+      assert.equal((await pedir(method, rawPath)).status, 401, `${method} ${rawPath}`);
+    }
     assert.deepEqual(llegadas, []);
   });
 });

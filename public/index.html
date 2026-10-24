@@ -20,34 +20,64 @@
   <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body class="login-page">
-  <!-- Pantalla partida (design/social-listening-v4.html) sin la parte
-       animada, que llega en la fase D: a la izquierda la marca y el título,
-       a la derecha el formulario del link mágico de siempre (login.js). -->
+  <!-- Pantalla partida (design/social-listening-v4.html). A la izquierda,
+       la visual (loginScene.js): la constelación y el ticker de los temas de
+       la semana y los contadores, todo de /api/public/resumen; ninguna
+       publicación antes de entrar. A la derecha, el link mágico en dos
+       pasos (login.js). -->
   <div class="lgwrap">
     <div class="lg-vis">
+      <span class="blob b1" aria-hidden="true"></span><span class="blob b2" aria-hidden="true"></span><span class="blob b3" aria-hidden="true"></span>
+      <canvas id="lgNet" aria-hidden="true"></canvas>
       <span class="brand"><span class="logo" aria-hidden="true">◎</span><span>Social Listening<small>DGAYD · GCBA</small></span></span>
       <h1>Lo que se dice de <em>la Ciudad</em>, en vivo.</h1>
-      <p class="sub">Monitoreo de redes, análisis de publicaciones y mapa de reclamos. Cuatro veces por día, clasificado por IA: relevancia, tono y tema.</p>
+      <p class="sub">Monitoreo de redes, análisis de publicaciones y mapa de reclamos, clasificado por IA: relevancia, tono y tema.<span id="lgRuns"></span></p>
+      <div class="ticker" aria-hidden="true" hidden><div class="track" id="lgTicker"></div></div>
+      <div class="lg-stats">
+        <div><b id="lgHoy">—</b><small>publicaciones hoy</small></div>
+        <div><b id="lgReclamos">—</b><small>reclamos en el mapa</small></div>
+        <div><b id="lgDias">—</b><small>días escuchando</small></div>
+        <div><b id="lg30">—</b><small>publicaciones · 30 días</small></div>
+      </div>
     </div>
 
     <div class="lg-side">
+      <span class="brand lg-side-brand"><span class="logo" aria-hidden="true">◎</span><span>Social Listening<small>DGAYD · GCBA</small></span></span>
       <div class="card lg-card">
-        <span class="eyebrow">Acceso del equipo</span>
-        <h2>Entrar</h2>
-        <p class="lg-note">Te mandamos un link a tu email. No hace falta contraseña. El link vence en 15 minutos.</p>
+        <section class="lg-state" id="loginStep1" aria-labelledby="loginTitle1">
+          <span class="eyebrow">Acceso del equipo</span>
+          <h2 id="loginTitle1" tabindex="-1">Entrá con tu correo</h2>
+          <p>Te mandamos un link para entrar. Vence en 15 minutos y sirve una sola vez.</p>
 
-        <form id="loginForm" novalidate>
-          <label for="loginEmail">Email</label>
-          <input class="field" type="email" id="loginEmail" name="email" placeholder="nombre@buenosaires.gob.ar" autocomplete="username" required />
+          <form id="loginForm" novalidate>
+            <label for="loginEmail">Correo</label>
+            <input class="field" type="email" id="loginEmail" name="email" placeholder="nombre@buenosaires.gob.ar" autocomplete="username" required />
+            <p class="lg-err" id="loginErr" role="alert" hidden></p>
+            <button type="submit" class="btn primary" id="loginSubmit"><span>Mandarme el link →</span></button>
+          </form>
+          <div class="lg-trust"><span><i></i>Sin contraseña</span><span><i></i>La sesión dura 7 días</span><span><i></i>Solo correos habilitados</span></div>
+        </section>
 
-          <button type="submit" class="btn primary" id="loginSubmit">Enviarme el link</button>
-          <p id="loginStatus" class="login-status" role="status"></p>
-          <p id="loginCooldown" class="login-cooldown" role="status" hidden></p>
-        </form>
+        <section class="lg-state" id="loginStep2" aria-labelledby="loginTitle2" hidden>
+          <span class="eyebrow">Paso 2 de 2</span>
+          <h2 id="loginTitle2" tabindex="-1">Revisá tu correo</h2>
+          <p id="loginSentNote">Tocá el link que te mandamos a:</p>
+          <div class="lg-mail"><i aria-hidden="true"></i><span id="loginMailTo"></span></div>
+          <p class="lg-small">El link vence en 15 minutos y sirve una sola vez. Si no llega en unos minutos, mirá en el correo no deseado o confirmá que tu correo esté habilitado.</p>
+          <p class="lg-err" id="loginErr2" role="alert" hidden></p>
+          <div class="lg-foot">
+            <button type="button" id="loginBack">Cambiar el correo</button>
+            <button type="button" id="loginAgain">Mandar otro link</button>
+          </div>
+        </section>
+        <!-- Fuera de los pasos: se anuncia aunque ya se haya vuelto al 1. -->
+        <p class="lg-live" id="loginLive" role="status"></p>
       </div>
     </div>
   </div>
 
+  <script src="js/kpi.js"></script>
+  <script src="js/loginScene.js"></script>
   <script src="js/login.js"></script>
 </body>
 

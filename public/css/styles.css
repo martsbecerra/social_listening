@@ -68,8 +68,10 @@
   color-scheme: light;
 }
 /* Oscuro: los mismos valores de la maqueta, pero solo con el botón (la
-   maqueta lo tomaba también del sistema; la app arranca siempre clara). */
-:root[data-theme="dark"] {
+   maqueta lo tomaba también del sistema; la app arranca siempre clara).
+   La parte visual del login (.lg-vis) los toma SIEMPRE, en los dos temas. */
+:root[data-theme="dark"],
+.lg-vis {
   --bg: #0b1020;
   --surface: #121a2e;
   --surface2: #182340;
@@ -101,6 +103,13 @@
   --shadow: 0 18px 40px -24px rgba(0, 0, 0, 0.8);
   --warn-ink: #e3b341;
   color-scheme: dark;
+}
+/* Las manchas de color de la visual del login: el violeta y el celeste del
+   tema claro (--glow y --accent), más saturados que los del oscuro, como en
+   la maqueta. */
+.lg-vis {
+  --vis-1: #5b4fd6;
+  --vis-2: #0b7fc4;
 }
 
 * {
@@ -5364,33 +5373,71 @@ html.feed-pop-lock body {
   font-size: 12.5px;
 }
 
-/* ---------- Inicio (dashboard.html), hasta la fase D ----------
-   Las cuatro tarjetas de plataforma de siempre, con el aspecto de .card. */
-.dash-plats {
+/* ---------- Inicio (dashboard.html) ----------
+   El inicio de la maqueta con datos reales (dashboard.js, GET /api/inicio y
+   el listado de Instagram): una tarjeta por red, la próxima corrida (anillo,
+   cuenta regresiva, la línea de las 24 h con las corridas de hoy y la
+   última corrida) y las últimas publicaciones. "Análisis recientes" llega
+   con la fase E, junto con la tabla de análisis. */
+.hero {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+.hero h1 {
+  font-size: 30px;
+  font-weight: 700;
+}
+.hero h1 em {
+  font-style: normal;
+  background: linear-gradient(135deg, var(--accent), var(--glow));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.hero p {
+  margin: 6px 0 0;
+  color: var(--fg2);
+  max-width: 60ch;
+}
+.plats {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
-.dash-plats .plat {
-  position: relative;
+.pl {
   display: flex;
   flex-direction: column;
-  overflow: hidden;
-  min-height: 200px;
-  padding: 16px 16px 0;
+  gap: 10px;
+  min-height: 190px;
   text-decoration: none;
   color: inherit;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--r);
-  box-shadow: var(--shadow);
   transition:
     transform 0.2s,
     border-color 0.2s;
 }
-.dash-plats .plat:hover {
+a.pl:hover {
   transform: translateY(-2px);
   border-color: var(--accent);
 }
-.dash-plats .plat-glyph {
+a.pl:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* Una red en pausa o que todavía no se escucha: el fondo un poco hundido,
+   sin bajar la opacidad (el texto tiene que seguir leyéndose). */
+.pl.off {
+  background: color-mix(in oklab, var(--surface) 55%, var(--bg));
+  box-shadow: none;
+}
+.pl .ph2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.pl .ic {
+  flex: none;
   width: 34px;
   height: 34px;
   border-radius: 10px;
@@ -5398,74 +5445,517 @@ html.feed-pop-lock body {
   place-items: center;
   color: #fff;
 }
-.dash-plats .plat-glyph svg {
+.pl .ic svg {
   width: 18px;
   height: 18px;
-}
-.dash-plats .plat-glyph svg,
-.dash-plats .plat-glyph path {
   fill: currentColor;
 }
-.dash-plats .plat[data-platform="instagram"] .plat-glyph {
+.pl .ic.ig {
   background: linear-gradient(135deg, #f58529, #dd2a7b 60%, #8134af);
 }
-.dash-plats .plat[data-platform="x"] .plat-glyph {
+.pl .ic.x {
   background: #111;
 }
-.dash-plats .plat[data-platform="facebook"] .plat-glyph {
+.pl .ic.fb {
   background: #1877f2;
 }
-.dash-plats .plat[data-platform="tiktok"] .plat-glyph {
+.pl .ic.tt {
   background: #111;
   color: #69c9d0;
 }
-.dash-plats .plat-name {
-  margin-top: auto;
-  font: 600 16px/1.2 var(--display);
+.pl h2 {
+  font-size: 16px;
 }
-.dash-plats .plat-state {
-  margin-top: 3px;
+.pl .st {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: var(--surface2);
+  color: var(--fg2);
+  font: 500 11px/1 var(--mono);
+  white-space: nowrap;
+}
+.pl .st i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.pl .st.live {
+  color: var(--pos-text);
+}
+.pl .st.live i {
+  background: var(--pos);
+  animation: ping 1.8s infinite;
+}
+/* "en pausa": el ámbar va solo en el punto (--warn-ink sobre --surface2 no
+   llega a 4,5:1 en claro). */
+.pl .st.pause i {
+  background: var(--c5);
+}
+.pl .kv {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.pl .kv div {
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--surface2);
+}
+.pl .kv .v {
+  font: 600 20px/1.1 var(--display);
+  font-variant-numeric: tabular-nums;
+}
+.pl .kv small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.pl .soon {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  padding: 10px;
+  border: 1px dashed var(--line2);
+  border-radius: 10px;
+  color: var(--muted);
+  font-size: 12.5px;
+  text-align: center;
+}
+.pl .note {
+  margin: 0;
+}
+.pl svg.sp {
+  display: block;
+  width: 100%;
+  height: 36px;
+}
+.pl .go {
+  margin-top: auto;
+  color: var(--accent-text);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.home3 {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+  align-items: stretch;
+  margin-top: 14px;
+}
+.nextcard {
+  display: flex;
+  flex-direction: column;
+}
+.nx {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  gap: 16px;
+  align-items: center;
+}
+.ring-wrap {
+  position: relative;
+  width: 140px;
+  height: 140px;
+}
+.nring {
+  display: block;
+  width: 140px;
+  height: 140px;
+}
+.nring .bg {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: 8;
+}
+.nring .val {
+  fill: none;
+  stroke: url(#ngrad);
+  stroke-width: 8;
+  stroke-linecap: round;
+  stroke-dasharray: 377;
+  stroke-dashoffset: 377;
+  transition: stroke-dashoffset 1s linear;
+  filter: drop-shadow(0 0 6px color-mix(in oklab, var(--accent) 60%, transparent));
+}
+.nring .dot {
+  fill: var(--surface);
+  stroke: var(--accent);
+  stroke-width: 3;
+  filter: drop-shadow(0 0 8px var(--accent));
+}
+.ring-center {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  text-align: center;
+}
+.ring-center b {
+  font: 600 22px/1 var(--display);
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent-text);
+}
+.ring-center small {
+  font: 500 10px/1.4 var(--mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.nx-info {
+  min-width: 0;
+}
+.nx-info .big {
+  margin: 4px 0 2px;
+  font: 700 34px/1 var(--display);
+  letter-spacing: -0.02em;
+}
+.nx-info .when {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+.lastrun {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--line2);
+}
+.lastrun .chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.lastrun .chips span {
+  padding: 5px 7px;
+  border-radius: 6px;
+  background: var(--surface2);
+  color: var(--muted);
+  font: 400 11.5px/1 var(--mono);
+}
+.lastrun .chips b {
+  color: var(--fg);
+  font-weight: 500;
+}
+/* La línea de las 24 h: las corridas programadas de hoy en su hora, con
+   su estado real (terminada, cortada, en curso, interrumpida, la siguiente
+   o la que no corrió), las manuales como puntitos y la hora actual. */
+.tl24 {
+  margin-top: 30px;
+}
+.tl24 .track {
+  position: relative;
+  height: 38px;
+  margin: 0 6px 22px;
+  border-top: 2px solid var(--line);
+}
+.tl24 .run {
+  position: absolute;
+  top: -9px;
+  width: 16px;
+  height: 16px;
+  transform: translateX(-50%);
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 2px solid var(--line2);
+  color: transparent;
+  font: 600 8px/1 var(--mono);
+}
+.tl24 .run b {
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: var(--fg2);
+  font: 500 11px/1 var(--mono);
+  white-space: nowrap;
+}
+.tl24 .run small {
+  position: absolute;
+  top: 34px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: var(--muted);
+  font: 400 10px/1 var(--mono);
+  white-space: nowrap;
+}
+/* dashboard.js (homeFitTrackLabels) les pone un ancho máximo con el lugar
+   que hay hasta la hora vecina; lo que no entra se corta. */
+.tl24 .run b,
+.tl24 .run small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tl24 .track.tight .run b {
+  font-size: 10px;
+}
+.tl24 .track.tight .run small {
+  font-size: 9px;
+  letter-spacing: -0.05em; /* "45 nuevas" entra en los 45 px que hay a 375 */
+}
+.tl24 .run.ok {
+  background: var(--pos);
+  border-color: var(--pos);
+  color: var(--accent-ink);
+}
+/* La cortada no lleva la tilde de terminada: lo dice "cortada". */
+.tl24 .run.cut {
+  background: var(--c5);
+  border-color: var(--c5);
+}
+/* Interrumpida: arrancó y no cerró (el proceso se cayó en el medio). */
+.tl24 .run.stop {
+  border-color: var(--neg);
+  border-style: dashed;
+}
+.tl24 .run.stop small {
+  color: var(--neg-text);
+}
+.tl24 .run.cut small {
+  color: var(--warn-ink);
+}
+.tl24 .run.live {
+  border-color: var(--pos);
+  animation: ping 1.8s infinite;
+}
+.tl24 .run.live small {
+  color: var(--pos-text);
+}
+.tl24 .run.next {
+  border-color: var(--accent);
+  animation: ping 1.8s infinite;
+}
+.tl24 .run.next b {
+  color: var(--accent-text);
+  font-weight: 600;
+}
+.tl24 .run.miss {
+  border-style: dashed;
+}
+/* Una corrida a mano: un puntito sobre la línea, sin hora debajo. */
+.tl24 .run.extra {
+  top: -5px;
+  width: 8px;
+  height: 8px;
+  border-width: 0;
+  background: var(--fg2);
+}
+.tl24 .now {
+  position: absolute;
+  top: -14px;
+  bottom: -8px;
+  width: 2px;
+  transform: translateX(-50%);
+  background: linear-gradient(180deg, var(--glow), transparent);
+}
+.tl24 .now em {
+  position: absolute;
+  top: -14px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 0 3px;
+  background: var(--surface);
+  color: var(--fg2); /* --glow, el de la maqueta, daba 4,49:1 en oscuro */
+  font: 500 9px/1 var(--mono);
+  font-style: normal;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.tl24 .hrs {
+  display: flex;
+  justify-content: space-between;
+  margin: 0 2px;
+  color: var(--muted);
+  font: 400 10px/1 var(--mono);
+}
+.nextcard .note {
+  margin: 12px 0 0;
+}
+
+/* Las últimas publicaciones: las líneas del flujo del Monitoreo (.fl), en
+   grande, con la foto y la red; cada una es un enlace al pop-up. Como el
+   flujo, la tarjeta tiene el alto de la fila y nunca crece: el contenido va
+   en una capa absoluta y dashboard.js deja las líneas que entran enteras. */
+.homefeed {
+  position: relative;
+  min-height: 440px;
+}
+.homefeed .inner {
+  position: absolute;
+  inset: 16px;
+  display: flex;
+  flex-direction: column;
+}
+/* El encabezado como el de toda tarjeta (.card > .ct), que acá queda un
+   nivel más adentro. */
+.homefeed .inner .ct {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.homefeed .inner .ct .hint {
   font-size: 12px;
   color: var(--muted);
 }
-.dash-plats .plat-state b {
-  font-family: var(--mono);
-  font-weight: 500;
-  color: var(--fg);
-}
-.dash-plats .plat-signal {
-  margin: 14px -16px 0;
-  padding: 12px 16px;
-  height: 52px;
+.home-feed {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
   display: flex;
-  align-items: flex-end;
-  background: var(--surface2);
-  border-top: 1px solid var(--line);
+  flex-direction: column;
+  gap: 8px;
 }
-.dash-plats .plat-signal .meter {
-  --meter-h: 24px;
-  --bar-w: 3px;
-  --bar-gap: 3px;
-  width: 100%;
+.home-feed .fl[hidden] {
+  display: none;
 }
-.dash-plats .plat-signal .meter i {
-  flex: 0 0 auto;
+.home-feed .empty {
+  padding: 40px 10px;
+}
+a.fl {
+  color: inherit;
+  text-decoration: none;
+}
+.fl.big {
+  grid-template-columns: 64px minmax(0, 1fr);
+  padding: 8px;
+}
+.fl.seen {
+  animation: none;
+}
+.fl.big .th {
+  width: 64px;
+  height: 64px;
+  overflow: visible;
+  border-radius: 10px;
+}
+.fl.big .th img {
+  border-radius: 10px;
+}
+.fl.big .th .net {
+  position: absolute;
+  left: -4px;
+  top: -4px;
+  z-index: 1;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  border: 2px solid var(--surface);
+  background: linear-gradient(135deg, #f58529, #dd2a7b 60%, #8134af);
+  color: #fff;
+}
+.fl.big .th .net svg {
+  width: 10px;
+  height: 10px;
+  fill: currentColor;
+}
+.fl.big .body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.fl.big .l1 {
+  display: -webkit-box;
+  -webkit-line-clamp: 3; /* la cuenta y dos renglones de título */
+  -webkit-box-orient: vertical;
+  white-space: normal;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.fl.big .l1 b {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 400;
+}
+.fl.big .l2 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.fl.big .l2 .t {
+  margin-left: auto;
+}
+/* El tono con su nombre (en el flujo del Monitoreo va solo el punto). */
+.fl.big .lbl {
+  gap: 6px;
+  color: var(--fg2);
+  font: 500 11px/1 var(--mono);
 }
 @media (max-width: 1100px) {
-  .dash-plats {
+  .plats {
     grid-template-columns: 1fr 1fr;
   }
 }
-@media (max-width: 560px) {
-  .dash-plats {
+/* En una columna la tarjeta crece con su contenido: seis publicaciones. */
+@media (max-width: 860px) {
+  .home3 {
     grid-template-columns: 1fr;
+  }
+  .homefeed {
+    min-height: 0;
+  }
+  .homefeed .inner {
+    position: static;
+  }
+  .home-feed .fl:nth-child(n + 7) {
+    display: none;
+  }
+}
+@media (max-width: 560px) {
+  .plats {
+    grid-template-columns: 1fr;
+  }
+  .hero h1 {
+    font-size: 26px;
+  }
+  .nx {
+    grid-template-columns: 112px minmax(0, 1fr);
+    gap: 14px;
+  }
+  .ring-wrap,
+  .nring {
+    width: 112px;
+    height: 112px;
+  }
+  .ring-center b {
+    font-size: 18px;
+  }
+  .nx-info .big {
+    font-size: 28px;
   }
 }
 
-/* ---------- Login (index.html y login-verify.html), hasta la fase D ----------
-   La pantalla partida de la maqueta, sin la parte animada: a la izquierda
-   la marca y el título sobre fondo oscuro; a la derecha, la tarjeta con el
-   formulario de siempre. */
+/* ---------- Login (index.html y login-verify.html) ----------
+   La pantalla partida de la maqueta. A la izquierda, la parte visual
+   (.lg-vis), SIEMPRE oscura: toma los tokens del tema oscuro (ver la parte
+   1) aunque la app esté en claro. Lleva las manchas de color, la
+   constelación de los temas de la semana (el canvas de loginScene.js), el
+   ticker "tema · N publicaciones" y los contadores de /api/public/resumen:
+   antes de entrar no se muestra ninguna publicación. A la derecha, la
+   tarjeta del link mágico (login.js; en login-verify.html, loginVerify.js),
+   que sigue el tema elegido. En celular, la tarjeta primero y la visual
+   debajo, más chica y sin ticker. */
 body.login-page {
   min-height: 100vh;
 }
@@ -5482,48 +5972,217 @@ body.login-page {
   display: flex;
   flex-direction: column;
   padding: 34px 40px;
-  color: #e8ecf7;
-  background:
-    radial-gradient(700px 420px at 0% 0%, rgba(91, 79, 214, 0.45), transparent 70%),
-    radial-gradient(640px 420px at 100% 100%, rgba(11, 127, 196, 0.42), transparent 70%),
-    #0b1020;
+  color: var(--fg);
+  background: var(--bg);
+}
+.lg-vis .blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(70px);
+  opacity: 0.55;
+  z-index: 0;
+  pointer-events: none;
+}
+.lg-vis .b1 {
+  width: 520px;
+  height: 520px;
+  left: -120px;
+  top: -160px;
+  background: var(--vis-1);
+  animation: lgBlob1 18s ease-in-out infinite alternate;
+}
+.lg-vis .b2 {
+  width: 460px;
+  height: 460px;
+  right: -140px;
+  bottom: -120px;
+  background: var(--vis-2);
+  animation: lgBlob2 22s ease-in-out infinite alternate;
+}
+.lg-vis .b3 {
+  width: 300px;
+  height: 300px;
+  left: 40%;
+  top: 45%;
+  background: var(--pos);
+  opacity: 0.25;
+  animation: lgBlob1 26s ease-in-out infinite alternate-reverse;
+}
+@keyframes lgBlob1 {
+  from {
+    transform: translate(0, 0) scale(1);
+  }
+  to {
+    transform: translate(90px, 70px) scale(1.15);
+  }
+}
+@keyframes lgBlob2 {
+  from {
+    transform: translate(0, 0) scale(1);
+  }
+  to {
+    transform: translate(-80px, -60px) scale(1.1);
+  }
+}
+.lg-vis canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
 }
 .lg-vis .brand {
-  color: #fff;
+  position: relative;
+  z-index: 2;
+  align-self: flex-start;
 }
+/* --fg y no --fg2: la mancha violeta (.b1) queda debajo (4,42:1 con --fg2). */
 .lg-vis .brand small {
-  color: #a9b4cf;
+  color: var(--fg);
 }
 .lg-vis .brand .logo {
-  box-shadow: 0 0 34px rgba(92, 200, 255, 0.6);
+  box-shadow: 0 0 34px color-mix(in oklab, var(--accent) 60%, transparent);
 }
 .lg-vis h1 {
+  position: relative;
+  z-index: 2;
   font-size: clamp(28px, 3.2vw, 42px);
   font-weight: 700;
   line-height: 1.08;
-  margin: auto 0 10px;
+  margin: 34px 0 10px;
   max-width: 14ch;
-  color: #fff;
   animation: rise 0.8s 0.1s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 .lg-vis h1 em {
   font-style: normal;
-  background: linear-gradient(90deg, #5cc8ff, #9f8cff);
+  background: linear-gradient(90deg, var(--accent), var(--glow));
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
 }
+/* --fg: en ventanas bajas la mancha celeste sube hasta el subtítulo (con
+   --fg2 bajaba a 2,9:1). */
 .lg-vis .sub {
-  margin: 0 0 auto;
+  position: relative;
+  z-index: 2;
+  margin: 0;
   max-width: 44ch;
-  color: #a9b4cf;
+  color: var(--fg);
   font-size: 14.5px;
   animation: rise 0.8s 0.25s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
+.lg-stats {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px 26px;
+  margin-top: auto;
+  animation: rise 0.8s 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.lg-stats div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.lg-stats b {
+  font: 600 30px/1 var(--display);
+  font-variant-numeric: tabular-nums;
+}
+/* Los rótulos chicos van en --fg, no en --muted ni --fg2: debajo está la
+   mancha celeste (.b2), que aclara el fondo; --muted daba 2,3:1 y --fg2 4:1
+   en su punto más claro. */
+.lg-stats small {
+  font: 500 11px/1.3 var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg);
+}
+/* El ticker: los temas de la semana subiendo despacio. Cada fila lleva su
+   margen (no un gap) para que las dos mitades de la pista midan lo mismo y
+   el salto del -50 % no se note; loginScene.js lo ubica entre los textos y
+   los contadores (top y bottom con las medidas reales; sin lugar, .no-room),
+   repite la lista hasta llenar el alto y ajusta la duración. */
+/* Sin transiciones: con movimiento reducido la regla global les da 0,01 ms a
+   todas, y loginScene.js leería el top viejo al recolocarlo. */
+.ticker {
+  transition-property: none;
+  position: absolute;
+  right: 34px;
+  top: 30%;
+  bottom: 120px;
+  width: min(300px, 36%);
+  z-index: 2;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 12%, #000 85%, transparent);
+  mask-image: linear-gradient(to bottom, transparent, #000 12%, #000 85%, transparent);
+  pointer-events: none;
+}
+.ticker[hidden],
+.ticker.no-room {
+  display: none;
+}
+/* flow-root: el margen de la última fila queda adentro de la pista (si no,
+   se escapa y las mitades no miden lo mismo: el -50 % salta unos píxeles). */
+.ticker .track {
+  display: flow-root;
+  animation: lgTick 38s linear infinite;
+}
+@keyframes lgTick {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-50%);
+  }
+}
+.tk {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: color-mix(in oklab, var(--fg) 6%, transparent);
+  border: 1px solid color-mix(in oklab, var(--fg) 10%, transparent);
+  backdrop-filter: blur(6px);
+}
+.tk i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--c);
+  box-shadow: 0 0 10px var(--c);
+}
+.tk span {
+  min-width: 0;
+}
+.tk b {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tk small {
+  display: block;
+  font: 400 11px/1.3 var(--mono);
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .lg-side {
   position: relative;
-  display: grid;
-  place-items: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
   padding: 30px 24px;
 }
 .lg-side::before {
@@ -5532,6 +6191,13 @@ body.login-page {
   inset: 0;
   background: radial-gradient(700px 400px at 50% 0%, color-mix(in oklab, var(--glow) 14%, transparent), transparent 70%);
   pointer-events: none;
+}
+/* La marca arriba de la tarjeta: solo en celular, donde la visual (que la
+   lleva) queda debajo. */
+.lg-side-brand {
+  display: none;
+  position: relative;
+  align-self: flex-start;
 }
 .lg-card {
   width: min(420px, 100%);
@@ -5546,7 +6212,10 @@ body.login-page {
   font-size: 24px;
   margin-bottom: 6px;
 }
-.lg-card p.lg-note {
+.lg-card h2:focus {
+  outline: none;
+}
+.lg-card p {
   margin: 0 0 18px;
   color: var(--fg2);
   font-size: 13.5px;
@@ -5580,38 +6249,191 @@ body.login-page {
   padding: 13px;
   border-radius: 12px;
   font-size: 14.5px;
+  position: relative;
+  overflow: hidden;
+  transition:
+    transform 0.2s,
+    box-shadow 0.3s,
+    background-color 0.3s;
 }
-.lg-card .btn.primary:disabled {
-  opacity: 0.7;
-  cursor: wait;
+.lg-card .btn.primary.busy {
+  pointer-events: none;
 }
-.login-status {
-  margin: 12px 0 0;
-  min-height: 1.2em;
-  font-size: 13px;
-  color: var(--fg2);
-  line-height: 1.4;
+.lg-card .btn.primary.busy::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, color-mix(in oklab, var(--accent-ink) 35%, transparent), transparent);
+  animation: lgShine 1s linear infinite;
 }
-.login-status.is-error {
+@keyframes lgShine {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+/* "Link enviado ✓": el verde de texto, que con la tinta del botón pasa
+   4,5:1 en los dos temas (la base --pos no, en claro). */
+.lg-card .btn.primary.ok {
+  background: var(--pos-text);
+  box-shadow: 0 0 0 6px color-mix(in oklab, var(--pos) 25%, transparent);
+}
+/* Con .lg-card adelante: si no, el color y el margen de ".lg-card p" le
+   ganan. */
+.lg-card .lg-err {
+  margin: -4px 0 10px;
   color: var(--neg-text);
+  font-size: 12.5px;
 }
-/* Cuenta regresiva del reenvío: informativa y apagada. */
-.login-cooldown {
-  margin: 6px 0 0;
-  font: 400 12px/1.4 var(--mono);
+.lg-err[hidden] {
+  display: none;
+}
+.lg-err.shake {
+  animation: lgShake 0.4s;
+}
+@keyframes lgShake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-5px);
+  }
+  75% {
+    transform: translateX(5px);
+  }
+}
+.lg-foot {
+  margin-top: 14px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+.lg-foot button {
+  border: 0;
+  background: transparent;
+  color: var(--accent-text);
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+}
+.lg-foot button:hover {
+  text-decoration: underline;
+}
+/* aria-disabled y no disabled: deshabilitar el botón con el foco lo manda
+   a <body>. */
+.lg-foot button[aria-disabled="true"] {
   color: var(--muted);
+  cursor: default;
+  text-decoration: none;
   font-variant-numeric: tabular-nums;
+}
+.lg-state[hidden] {
+  display: none;
+}
+.lg-state.in {
+  animation: rise 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.lg-mail {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  margin: -6px 0 16px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--surface2);
+  border: 1px solid var(--line);
+  font: 500 12.5px/1 var(--mono);
+}
+.lg-mail span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lg-mail i {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--pos);
+  animation: ping 1.8s infinite;
+}
+.lg-card p.lg-small {
+  margin: 0 0 16px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.lg-trust {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--line2);
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.lg-trust span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.lg-trust i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+/* Lo que se anuncia sin verse ("Link reenviado"): para el lector de
+   pantalla. */
+.lg-card .lg-live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 @media (max-width: 980px) {
   .lgwrap {
     grid-template-columns: 1fr;
+    min-height: 0;
   }
+  .lg-side {
+    order: -1;
+    padding: 20px 16px 28px;
+  }
+  .lg-side-brand {
+    display: flex;
+  }
+  .lg-card {
+    padding: 24px 20px;
+  }
+  /* Los textos arriba y, debajo de los contadores, una franja para la
+     constelación (loginScene.js la ubica en el hueco más alto). */
   .lg-vis {
-    min-height: 38vh;
-    padding: 24px;
+    padding: 24px 20px 340px;
+  }
+  .lg-vis > .brand {
+    display: none;
   }
   .lg-vis h1 {
-    margin-top: 28px;
+    margin-top: 0;
+  }
+  .lg-stats {
+    margin-top: 24px;
+  }
+  .lg-stats b {
+    font-size: 24px;
+  }
+  .ticker {
+    display: none;
   }
 }
 

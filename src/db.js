@@ -844,6 +844,36 @@ const listRunTracesForStatsStmt = db.prepare(`
 const getFirstPostedAtStmt = db.prepare(
   'SELECT MIN(posted_at) AS first FROM detected_posts WHERE plataforma = ? AND ignored = 0 AND posted_at IS NOT NULL'
 );
+// El resumen público del login (src/publicResumen.js) cuenta TODAS las redes
+// y solo cantidades: ningún texto de un posteo sale de estas lecturas.
+const countPostedSinceAllStmt = db.prepare('SELECT COUNT(*) AS n FROM detected_posts WHERE ignored = 0 AND posted_at >= ?');
+const countTemasSinceAllStmt = db.prepare(
+  'SELECT tema, COUNT(*) AS n FROM detected_posts WHERE ignored = 0 AND posted_at >= ? GROUP BY tema'
+);
+// Desde cuándo escucha la app: la primera DETECCIÓN (no la primera fecha de
+// publicación, que puede ser de días antes: la ventana de detección mira
+// hacia atrás). Cuenta también los ignorados: la app ya estaba escuchando.
+const getFirstDetectedAtAnyStmt = db.prepare(
+  'SELECT MIN(detected_at) AS first FROM detected_posts WHERE detected_at IS NOT NULL'
+);
+// Los reclamos que dibuja el mapa, con su misma regla (listReclamosFiltered
+// deja afuera los de fuera de CABA; claimsMap.js, hasMapLocation, pide x, y
+// y dirección normalizada, y que el punto no sea el (0,0) que deja una
+// respuesta de USIG sin coordenadas): los sin dirección, no encontrados,
+// inválidos o pendientes no tienen pin.
+const countReclamosEnMapaStmt = db.prepare(`
+  SELECT COUNT(*) AS n FROM reclamos
+  WHERE geo_status IS NOT 'fuera_caba' AND x IS NOT NULL AND y IS NOT NULL AND NOT (x = 0 AND y = 0)
+    AND COALESCE(direccion_normalizada, '') <> ''
+`);
+// Las corridas de una plataforma que arrancaron en un rango, terminadas o no:
+// la línea de 24 h del inicio (src/inicioRoutes.js).
+const listRunsBetweenStmt = db.prepare(`
+  SELECT id, started_at, finished_at, "trigger", plataforma, new_candidates, new_posts, quota_exceeded FROM monitoring_runs
+  WHERE started_at >= ? AND started_at < ?
+    AND (plataforma = 'todas' OR (',' || plataforma || ',') LIKE ('%,' || ? || ',%'))
+  ORDER BY started_at
+`);
 // Seguidores por cuenta para Estadísticas: la caché account_followers y, de
 // respaldo, el número del posteo más reciente de la cuenta que lo trae.
 const listCachedFollowersStmt = db.prepare(
@@ -1748,6 +1778,58 @@ function getFirstPostedAt(plataforma) {
 }
 
 /**
+ * Posteos visibles de TODAS las redes publicados desde desdeIso (incluido):
+ * el resumen público del login, que no es de ninguna red. No es un default
+ * de una función por plataforma: es otra pregunta.
+ * @returns {number}
+ */
+function countPostedSinceAllPlatforms(desdeIso) {
+  return Number(countPostedSinceAllStmt.get(desdeIso).n) || 0;
+}
+
+/**
+ * Posteos visibles de todas las redes por tema, publicados desde desdeIso:
+ * solo el tema (null = sin tema) y la cantidad.
+ * @returns {{tema: string|null, n: number}[]}
+ */
+function countTemasSinceAllPlatforms(desdeIso) {
+  return countTemasSinceAllStmt.all(desdeIso).map((row) => ({ tema: row.tema, n: Number(row.n) }));
+}
+
+/** @returns {string|null} detected_at (ISO) del primer posteo detectado de cualquier red, o null si no hay ninguno. */
+function getFirstDetectedAtAny() {
+  const row = getFirstDetectedAtAnyStmt.get();
+  return row ? row.first : null;
+}
+
+/** @returns {number} los reclamos de todas las redes que tienen pin en el mapa. */
+function countReclamosEnMapa() {
+  return Number(countReclamosEnMapaStmt.get().n) || 0;
+}
+
+/**
+ * Las corridas de la plataforma (o de "todas") que arrancaron entre desdeIso
+ * (incluido) y hastaIso (excluido), en orden: terminadas (finishedAt) o no
+ * (en curso, o que quedaron sin cerrar porque el proceso se cayó). `plataforma`
+ * es la de la fila: "instagram", "todas" o una lista ("instagram,x").
+ * @returns {{ id: number, startedAt: string, finishedAt: string|null, trigger: string, plataforma: string,
+ *   newCandidates: number|null, newPosts: number, quotaExceeded: boolean }[]}
+ */
+function listRunsBetween({ plataforma, desdeIso, hastaIso }) {
+  requirePlataforma(plataforma, 'listRunsBetween');
+  return listRunsBetweenStmt.all(desdeIso, hastaIso, plataforma).map((row) => ({
+    id: Number(row.id),
+    startedAt: row.started_at,
+    finishedAt: row.finished_at,
+    trigger: row.trigger,
+    plataforma: row.plataforma,
+    newCandidates: row.new_candidates === null || row.new_candidates === undefined ? null : Number(row.new_candidates),
+    newPosts: Number(row.new_posts) || 0,
+    quotaExceeded: Boolean(row.quota_exceeded),
+  }));
+}
+
+/**
  * Seguidores por cuenta de una plataforma, para Estadísticas: el de
  * account_followers y, si la cuenta no está ahí, el del posteo más reciente
  * de la cuenta que lo trae.
@@ -2096,6 +2178,11 @@ module.exports = {
   listRunTracesForStats,
   countDiscardedSearchesForStats,
   getFirstPostedAt,
+  countPostedSinceAllPlatforms,
+  countTemasSinceAllPlatforms,
+  getFirstDetectedAtAny,
+  countReclamosEnMapa,
+  listRunsBetween,
   listFollowersForStats,
   sumApifyCallsSince,
   listApifyCallsPendingRealCost,

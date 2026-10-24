@@ -795,4 +795,7 @@ module.exports = {
   calcularRanking,
   partesArgentina,
   inicioDelDia,
+  fechaArgentina,
+  sumarDias,
+  diasEntre,
 };
