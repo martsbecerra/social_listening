@@ -4,6 +4,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- La dirección trae el token del link: que no viaje a ningún lado. -->
+  <meta name="referrer" content="no-referrer" />
   <title>Confirmar acceso — Social Listening App</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml" />
   <link rel="icon" href="favicon-32.png" type="image/png" sizes="32x32" />
@@ -20,49 +22,54 @@
   <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body class="login-page">
-  <!-- La misma pantalla partida que index.html. -->
+  <!-- La misma pantalla partida que index.html (la visual es
+       loginScene.js). La tarjeta: el último paso del link mágico, con el
+       clic en "Entrar" (así un filtro de correo que abre los links no
+       entra por la persona). loginVerify.js. -->
   <div class="lgwrap">
     <div class="lg-vis">
+      <span class="blob b1" aria-hidden="true"></span><span class="blob b2" aria-hidden="true"></span><span class="blob b3" aria-hidden="true"></span>
+      <canvas id="lgNet" aria-hidden="true"></canvas>
       <span class="brand"><span class="logo" aria-hidden="true">◎</span><span>Social Listening<small>DGAYD · GCBA</small></span></span>
       <h1>Lo que se dice de <em>la Ciudad</em>, en vivo.</h1>
-      <p class="sub">Monitoreo de redes, análisis de publicaciones y mapa de reclamos. Cuatro veces por día, clasificado por IA: relevancia, tono y tema.</p>
+      <p class="sub">Monitoreo de redes, análisis de publicaciones y mapa de reclamos, clasificado por IA: relevancia, tono y tema.<span id="lgRuns"></span></p>
+      <div class="ticker" aria-hidden="true" hidden><div class="track" id="lgTicker"></div></div>
+      <div class="lg-stats">
+        <div><b id="lgHoy">—</b><small>publicaciones hoy</small></div>
+        <div><b id="lgReclamos">—</b><small>reclamos en el mapa</small></div>
+        <div><b id="lgDias">—</b><small>días escuchando</small></div>
+        <div><b id="lg30">—</b><small>publicaciones · 30 días</small></div>
+      </div>
     </div>
 
     <div class="lg-side">
+      <span class="brand lg-side-brand"><span class="logo" aria-hidden="true">◎</span><span>Social Listening<small>DGAYD · GCBA</small></span></span>
       <div class="card lg-card">
-        <span class="eyebrow">Paso 2 de 2</span>
-        <h2>Confirmar acceso</h2>
-        <p class="lg-note">Hacé clic para entrar. Este paso evita que un filtro de correo use el link por vos.</p>
+        <section class="lg-state" id="verifyStep" aria-labelledby="verifyTitle">
+          <span class="eyebrow">Último paso</span>
+          <h2 id="verifyTitle" tabindex="-1">Entrá a la app</h2>
+          <p>Tocá «Entrar» para terminar. Este paso evita que un filtro de correo use el link por vos.</p>
+          <form id="verifyForm" method="POST" action="/api/auth/verify" novalidate>
+            <input type="hidden" name="token" id="tokenInput" />
+            <p class="lg-err" id="verifyErr" role="alert" hidden></p>
+            <button type="submit" class="btn primary" id="verifySubmit"><span>Entrar</span></button>
+          </form>
+          <div class="lg-trust"><span><i></i>Sin contraseña</span><span><i></i>La sesión dura 7 días</span><span><i></i>Solo correos habilitados</span></div>
+        </section>
 
-        <form id="verifyForm" method="POST" action="/api/auth/verify">
-          <input type="hidden" name="token" id="tokenInput" />
-          <button type="submit" class="btn primary" id="verifySubmit">Entrar</button>
-          <p id="verifyStatus" class="login-status is-error" role="status"></p>
-        </form>
+        <section class="lg-state" id="verifyFail" aria-labelledby="verifyFailTitle" hidden>
+          <span class="eyebrow">No se pudo entrar</span>
+          <h2 id="verifyFailTitle" tabindex="-1">El link venció o ya se usó</h2>
+          <p id="verifyFailNote">Cada link sirve una sola vez y vence a los 15 minutos. Pedí otro con tu correo.</p>
+          <a class="btn primary" id="verifyAgain" href="/"><span>Pedir otro link →</span></a>
+        </section>
       </div>
     </div>
   </div>
 
-  <script>
-    const params = new URLSearchParams(window.location.search);
-    const token = params.get('token') || '';
-    const tokenInput = document.getElementById('tokenInput');
-    const form = document.getElementById('verifyForm');
-    const statusEl = document.getElementById('verifyStatus');
-    const submitBtn = document.getElementById('verifySubmit');
-
-    tokenInput.value = token;
-    if (!token) {
-      submitBtn.disabled = true;
-      statusEl.textContent = 'Falta el token. Pedí un link nuevo desde la página de inicio.';
-    }
-
-    form.addEventListener('submit', () => {
-      if (!tokenInput.value) {
-        statusEl.textContent = 'Falta el token. Pedí un link nuevo desde la página de inicio.';
-      }
-    });
-  </script>
+  <script src="js/kpi.js"></script>
+  <script src="js/loginScene.js"></script>
+  <script src="js/loginVerify.js"></script>
 </body>
 
 </html>

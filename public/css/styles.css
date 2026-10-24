@@ -68,8 +68,10 @@
   color-scheme: light;
 }
 /* Oscuro: los mismos valores de la maqueta, pero solo con el botón (la
-   maqueta lo tomaba también del sistema; la app arranca siempre clara). */
-:root[data-theme="dark"] {
+   maqueta lo tomaba también del sistema; la app arranca siempre clara).
+   La parte visual del login (.lg-vis) los toma SIEMPRE, en los dos temas. */
+:root[data-theme="dark"],
+.lg-vis {
   --bg: #0b1020;
   --surface: #121a2e;
   --surface2: #182340;
@@ -101,6 +103,13 @@
   --shadow: 0 18px 40px -24px rgba(0, 0, 0, 0.8);
   --warn-ink: #e3b341;
   color-scheme: dark;
+}
+/* Las manchas de color de la visual del login: el violeta y el celeste del
+   tema claro (--glow y --accent), más saturados que los del oscuro, como en
+   la maqueta. */
+.lg-vis {
+  --vis-1: #5b4fd6;
+  --vis-2: #0b7fc4;
 }
 
 * {
@@ -5462,10 +5471,16 @@ html.feed-pop-lock body {
   }
 }
 
-/* ---------- Login (index.html y login-verify.html), hasta la fase D ----------
-   La pantalla partida de la maqueta, sin la parte animada: a la izquierda
-   la marca y el título sobre fondo oscuro; a la derecha, la tarjeta con el
-   formulario de siempre. */
+/* ---------- Login (index.html y login-verify.html) ----------
+   La pantalla partida de la maqueta. A la izquierda, la parte visual
+   (.lg-vis), SIEMPRE oscura: toma los tokens del tema oscuro (ver la parte
+   1) aunque la app esté en claro. Lleva las manchas de color, la
+   constelación de los temas de la semana (el canvas de loginScene.js), el
+   ticker "tema · N publicaciones" y los contadores de /api/public/resumen:
+   antes de entrar no se muestra ninguna publicación. A la derecha, la
+   tarjeta del link mágico (login.js; en login-verify.html, loginVerify.js),
+   que sigue el tema elegido. En celular, la tarjeta primero y la visual
+   debajo, más chica y sin ticker. */
 body.login-page {
   min-height: 100vh;
 }
@@ -5482,48 +5497,203 @@ body.login-page {
   display: flex;
   flex-direction: column;
   padding: 34px 40px;
-  color: #e8ecf7;
-  background:
-    radial-gradient(700px 420px at 0% 0%, rgba(91, 79, 214, 0.45), transparent 70%),
-    radial-gradient(640px 420px at 100% 100%, rgba(11, 127, 196, 0.42), transparent 70%),
-    #0b1020;
+  color: var(--fg);
+  background: var(--bg);
+}
+.lg-vis .blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(70px);
+  opacity: 0.55;
+  z-index: 0;
+  pointer-events: none;
+}
+.lg-vis .b1 {
+  width: 520px;
+  height: 520px;
+  left: -120px;
+  top: -160px;
+  background: var(--vis-1);
+  animation: lgBlob1 18s ease-in-out infinite alternate;
+}
+.lg-vis .b2 {
+  width: 460px;
+  height: 460px;
+  right: -140px;
+  bottom: -120px;
+  background: var(--vis-2);
+  animation: lgBlob2 22s ease-in-out infinite alternate;
+}
+.lg-vis .b3 {
+  width: 300px;
+  height: 300px;
+  left: 40%;
+  top: 45%;
+  background: var(--pos);
+  opacity: 0.25;
+  animation: lgBlob1 26s ease-in-out infinite alternate-reverse;
+}
+@keyframes lgBlob1 {
+  from {
+    transform: translate(0, 0) scale(1);
+  }
+  to {
+    transform: translate(90px, 70px) scale(1.15);
+  }
+}
+@keyframes lgBlob2 {
+  from {
+    transform: translate(0, 0) scale(1);
+  }
+  to {
+    transform: translate(-80px, -60px) scale(1.1);
+  }
+}
+.lg-vis canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
 }
 .lg-vis .brand {
-  color: #fff;
+  position: relative;
+  z-index: 2;
+  align-self: flex-start;
 }
 .lg-vis .brand small {
-  color: #a9b4cf;
+  color: var(--fg2);
 }
 .lg-vis .brand .logo {
-  box-shadow: 0 0 34px rgba(92, 200, 255, 0.6);
+  box-shadow: 0 0 34px color-mix(in oklab, var(--accent) 60%, transparent);
 }
 .lg-vis h1 {
+  position: relative;
+  z-index: 2;
   font-size: clamp(28px, 3.2vw, 42px);
   font-weight: 700;
   line-height: 1.08;
-  margin: auto 0 10px;
+  margin: 34px 0 10px;
   max-width: 14ch;
-  color: #fff;
   animation: rise 0.8s 0.1s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 .lg-vis h1 em {
   font-style: normal;
-  background: linear-gradient(90deg, #5cc8ff, #9f8cff);
+  background: linear-gradient(90deg, var(--accent), var(--glow));
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
 }
 .lg-vis .sub {
-  margin: 0 0 auto;
+  position: relative;
+  z-index: 2;
+  margin: 0;
   max-width: 44ch;
-  color: #a9b4cf;
+  color: var(--fg2);
   font-size: 14.5px;
   animation: rise 0.8s 0.25s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
+.lg-stats {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px 26px;
+  margin-top: auto;
+  animation: rise 0.8s 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.lg-stats div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.lg-stats b {
+  font: 600 30px/1 var(--display);
+  font-variant-numeric: tabular-nums;
+}
+.lg-stats small {
+  font: 500 11px/1.3 var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+/* El ticker: los temas de la semana subiendo despacio. Cada fila lleva su
+   margen (no un gap) para que las dos mitades de la pista midan lo mismo y
+   el salto del -50 % no se note; loginScene.js repite la lista hasta llenar
+   el alto y ajusta la duración. */
+.ticker {
+  position: absolute;
+  right: 34px;
+  top: 30%;
+  bottom: 120px;
+  width: min(300px, 36%);
+  z-index: 2;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 12%, #000 85%, transparent);
+  mask-image: linear-gradient(to bottom, transparent, #000 12%, #000 85%, transparent);
+  pointer-events: none;
+}
+.ticker[hidden] {
+  display: none;
+}
+.ticker .track {
+  animation: lgTick 38s linear infinite;
+}
+@keyframes lgTick {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-50%);
+  }
+}
+.tk {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: color-mix(in oklab, var(--fg) 6%, transparent);
+  border: 1px solid color-mix(in oklab, var(--fg) 10%, transparent);
+  backdrop-filter: blur(6px);
+}
+.tk i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--c);
+  box-shadow: 0 0 10px var(--c);
+}
+.tk span {
+  min-width: 0;
+}
+.tk b {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tk small {
+  display: block;
+  font: 400 11px/1.3 var(--mono);
+  color: var(--fg2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .lg-side {
   position: relative;
-  display: grid;
-  place-items: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
   padding: 30px 24px;
 }
 .lg-side::before {
@@ -5532,6 +5702,13 @@ body.login-page {
   inset: 0;
   background: radial-gradient(700px 400px at 50% 0%, color-mix(in oklab, var(--glow) 14%, transparent), transparent 70%);
   pointer-events: none;
+}
+/* La marca arriba de la tarjeta: solo en celular, donde la visual (que la
+   lleva) queda debajo. */
+.lg-side-brand {
+  display: none;
+  position: relative;
+  align-self: flex-start;
 }
 .lg-card {
   width: min(420px, 100%);
@@ -5546,7 +5723,10 @@ body.login-page {
   font-size: 24px;
   margin-bottom: 6px;
 }
-.lg-card p.lg-note {
+.lg-card h2:focus {
+  outline: none;
+}
+.lg-card p {
   margin: 0 0 18px;
   color: var(--fg2);
   font-size: 13.5px;
@@ -5580,38 +5760,189 @@ body.login-page {
   padding: 13px;
   border-radius: 12px;
   font-size: 14.5px;
+  position: relative;
+  overflow: hidden;
+  transition:
+    transform 0.2s,
+    box-shadow 0.3s,
+    background-color 0.3s;
 }
-.lg-card .btn.primary:disabled {
-  opacity: 0.7;
-  cursor: wait;
+.lg-card .btn.primary.busy {
+  pointer-events: none;
 }
-.login-status {
-  margin: 12px 0 0;
-  min-height: 1.2em;
-  font-size: 13px;
-  color: var(--fg2);
-  line-height: 1.4;
+.lg-card .btn.primary.busy::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, color-mix(in oklab, var(--accent-ink) 35%, transparent), transparent);
+  animation: lgShine 1s linear infinite;
 }
-.login-status.is-error {
+@keyframes lgShine {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+/* "Link enviado ✓": el verde de texto, que con la tinta del botón pasa
+   4,5:1 en los dos temas (la base --pos no, en claro). */
+.lg-card .btn.primary.ok {
+  background: var(--pos-text);
+  box-shadow: 0 0 0 6px color-mix(in oklab, var(--pos) 25%, transparent);
+}
+/* Con .lg-card adelante: si no, el color y el margen de ".lg-card p" le
+   ganan. */
+.lg-card .lg-err {
+  margin: -4px 0 10px;
   color: var(--neg-text);
+  font-size: 12.5px;
 }
-/* Cuenta regresiva del reenvío: informativa y apagada. */
-.login-cooldown {
-  margin: 6px 0 0;
-  font: 400 12px/1.4 var(--mono);
+.lg-err[hidden] {
+  display: none;
+}
+.lg-err.shake {
+  animation: lgShake 0.4s;
+}
+@keyframes lgShake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-5px);
+  }
+  75% {
+    transform: translateX(5px);
+  }
+}
+.lg-foot {
+  margin-top: 14px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+.lg-foot button {
+  border: 0;
+  background: transparent;
+  color: var(--accent-text);
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+}
+.lg-foot button:hover {
+  text-decoration: underline;
+}
+.lg-foot button:disabled {
   color: var(--muted);
+  cursor: default;
+  text-decoration: none;
   font-variant-numeric: tabular-nums;
+}
+.lg-state[hidden] {
+  display: none;
+}
+.lg-state.in {
+  animation: rise 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.lg-mail {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  margin: -6px 0 16px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--surface2);
+  border: 1px solid var(--line);
+  font: 500 12.5px/1 var(--mono);
+}
+.lg-mail span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lg-mail i {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--pos);
+  animation: ping 1.8s infinite;
+}
+.lg-card p.lg-small {
+  margin: 0 0 16px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.lg-trust {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--line2);
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.lg-trust span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.lg-trust i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+/* Lo que se anuncia sin verse ("Link reenviado"): para el lector de
+   pantalla. */
+.lg-card .lg-live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 @media (max-width: 980px) {
   .lgwrap {
     grid-template-columns: 1fr;
+    min-height: 0;
   }
+  .lg-side {
+    order: -1;
+    padding: 20px 16px 28px;
+  }
+  .lg-side-brand {
+    display: flex;
+  }
+  .lg-card {
+    padding: 24px 20px;
+  }
+  /* Los textos arriba y, debajo de los contadores, una franja para la
+     constelación (loginScene.js la ubica en el hueco más alto). */
   .lg-vis {
-    min-height: 38vh;
-    padding: 24px;
+    padding: 24px 20px 300px;
+  }
+  .lg-vis > .brand {
+    display: none;
   }
   .lg-vis h1 {
-    margin-top: 28px;
+    margin-top: 0;
+  }
+  .lg-stats {
+    margin-top: 24px;
+  }
+  .lg-stats b {
+    font-size: 24px;
+  }
+  .ticker {
+    display: none;
   }
 }
 

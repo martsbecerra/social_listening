@@ -1,154 +1,265 @@
-const GENERIC_MSG = 'Si el email está autorizado, te mandamos un link. Revisá tu casilla.';
+// --------------------------------------------------------------------
+// La tarjeta del login (index.html), diseño v4: el link mágico en dos
+// pasos.
+//   1. El correo y "Mandarme el link →" (enviando… y enviado ✓).
+//   2. "Revisá tu correo": a qué dirección se mandó, "Mandar otro link"
+//      (con la cuenta regresiva de retryAfterSeconds) y "Cambiar el
+//      correo", que vuelve al paso 1 sin trabar otra dirección.
+// /api/auth/magic-link responde SIEMPRE lo mismo, esté o no habilitado el
+// correo: la pantalla nunca dice "no autorizado". Los únicos errores son
+// los reales: un correo mal escrito (se mira acá), 429, 503 y sin
+// conexión. La visual de la izquierda es loginScene.js.
+//
+// La espera del reenvío es por dirección y queda en sessionStorage (esa
+// pestaña, unos minutos): recargar y volver a pedir para la misma dirección
+// no hace creer que salió otro link, cosa que el backend tampoco haría
+// (RESEND_COOLDOWN_MS en src/auth/rateLimit.js: responde lo mismo y no
+// manda nada). Nunca en localStorage: en una máquina compartida la
+// dirección no tiene por qué quedar escrita.
+//
+// Script clásico: todo lo suyo lleva prefijo login / LOGIN_. Todo texto
+// entra por textContent.
+// --------------------------------------------------------------------
+const LOGIN_COOLDOWN_FALLBACK_SECONDS = 120; // si la respuesta no trae retryAfterSeconds
+const LOGIN_SENT_KEY = 'sl.login.enviados';
+const LOGIN_OLD_KEY = 'sl-login-cooldown-until'; // el de antes (solo la hora): se borra
+const LOGIN_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const LOGIN_LABEL = 'Mandarme el link →';
+const LOGIN_AGAIN_LABEL = 'Mandar otro link';
+const loginReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
-// Fallback por si la respuesta no trae retryAfterSeconds (el valor real sale
-// del backend: RESEND_COOLDOWN_MS en src/auth/rateLimit.js).
-const COOLDOWN_FALLBACK_SECONDS = 120;
+const loginStep1 = document.getElementById('loginStep1');
+const loginStep2 = document.getElementById('loginStep2');
+const loginForm = document.getElementById('loginForm');
+const loginEmail = document.getElementById('loginEmail');
+const loginSubmit = document.getElementById('loginSubmit');
+const loginErr = document.getElementById('loginErr');
+const loginErr2 = document.getElementById('loginErr2');
+const loginMailTo = document.getElementById('loginMailTo');
+const loginSentNote = document.getElementById('loginSentNote');
+const loginBack = document.getElementById('loginBack');
+const loginAgain = document.getElementById('loginAgain');
+const loginLive = document.getElementById('loginLive');
 
-// Sólo la marca de tiempo, nunca la dirección: en una máquina compartida no
-// hay por qué dejar el email escrito en localStorage.
-const STORAGE_KEY = 'sl-login-cooldown-until';
+// Lo mandado en esta página, por si sessionStorage no anda.
+const loginSentMemory = new Map();
+let loginAddress = ''; // la dirección del paso 2
+let loginTimer = 0;
+let loginBusy = false;
 
-const form = document.getElementById('loginForm');
-const emailInput = document.getElementById('loginEmail');
-const statusEl = document.getElementById('loginStatus');
-const submitBtn = document.getElementById('loginSubmit');
-const cooldownEl = document.getElementById('loginCooldown');
-
-let cooldownTimer = null;
-
-function formatMmSs(totalSeconds) {
-  const m = Math.floor(totalSeconds / 60);
-  const s = totalSeconds % 60;
-  return `${m}:${String(s).padStart(2, '0')}`;
+function loginWait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, loginReducedMotion.matches ? 0 : ms));
 }
 
-// localStorage puede fallar (modo privado, permisos): el login tiene que
-// funcionar igual, sólo se pierde la restauración del contador al recargar.
-function readCooldownUntil() {
+function loginMmSs(totalSeconds) {
+  return `${Math.floor(totalSeconds / 60)}:${String(totalSeconds % 60).padStart(2, '0')}`;
+}
+
+function loginSetLabel(text) {
+  loginSubmit.firstElementChild.textContent = text;
+}
+
+// ---------- lo ya mandado, por dirección ----------
+
+function loginReadSent() {
+  const now = Date.now();
+  const sent = {};
   try {
-    const v = Number(localStorage.getItem(STORAGE_KEY));
-    return Number.isFinite(v) ? v : 0;
-  } catch {
-    return 0;
-  }
-}
-
-function saveCooldownUntil(until) {
-  try {
-    localStorage.setItem(STORAGE_KEY, String(until));
-  } catch {
-    /* sin persistencia: el backend bloquea igual */
-  }
-}
-
-function clearCooldown() {
-  try {
-    localStorage.removeItem(STORAGE_KEY);
-  } catch {
-    /* nada que borrar */
-  }
-}
-
-/**
- * Estado post-envío: botón "Link enviado" deshabilitado, email deshabilitado
- * (para no cambiar la dirección sin darse cuenta) y cuenta regresiva visual.
- * El contador es sólo UX: el bloqueo real está en el backend, que durante la
- * ventana responde el genérico sin mandar nada.
- */
-function startCooldown(until) {
-  clearInterval(cooldownTimer);
-  submitBtn.disabled = true;
-  submitBtn.textContent = 'Link enviado';
-  emailInput.disabled = true;
-
-  const tick = () => {
-    const left = Math.ceil((until - Date.now()) / 1000);
-    if (left <= 0) {
-      endCooldown();
-      return;
+    const raw = JSON.parse(sessionStorage.getItem(LOGIN_SENT_KEY) || '{}');
+    if (raw && typeof raw === 'object') {
+      for (const [address, until] of Object.entries(raw)) if (Number(until) > now) sent[address] = Number(until);
     }
-    cooldownEl.hidden = false;
-    cooldownEl.textContent = `Podés pedir otro link en ${formatMmSs(left)}`;
+  } catch {
+    /* sin almacenamiento: queda lo de la memoria */
+  }
+  for (const [address, until] of loginSentMemory) if (until > now && !(sent[address] > until)) sent[address] = until;
+  return sent;
+}
+
+function loginSentUntil(address) {
+  return loginReadSent()[address.toLowerCase()] || 0;
+}
+
+function loginRememberSent(address, until) {
+  const key = address.toLowerCase();
+  loginSentMemory.set(key, until);
+  try {
+    const sent = loginReadSent();
+    sent[key] = until;
+    sessionStorage.setItem(LOGIN_SENT_KEY, JSON.stringify(sent));
+  } catch {
+    /* sin almacenamiento: el backend espera igual */
+  }
+}
+
+// ---------- pantalla ----------
+
+function loginShowError(el, text) {
+  el.textContent = text;
+  el.hidden = false;
+  el.classList.remove('shake');
+  void el.offsetWidth; // para que la sacudida vuelva a empezar
+  el.classList.add('shake');
+}
+
+function loginClearError(el) {
+  el.hidden = true;
+  el.textContent = '';
+  el.classList.remove('shake');
+}
+
+function loginShowStep(step) {
+  const show = step === 2 ? loginStep2 : loginStep1;
+  const hide = step === 2 ? loginStep1 : loginStep2;
+  hide.hidden = true;
+  hide.classList.remove('in');
+  show.hidden = false;
+  show.classList.remove('in');
+  void show.offsetWidth;
+  show.classList.add('in');
+}
+
+// "Mandar otro link en 1:52" mientras haya que esperar; después, el botón.
+function loginTickAgain() {
+  clearInterval(loginTimer);
+  loginTimer = 0;
+  const update = () => {
+    const left = Math.ceil((loginSentUntil(loginAddress) - Date.now()) / 1000);
+    if (left > 0) {
+      loginAgain.disabled = true;
+      loginAgain.textContent = `${LOGIN_AGAIN_LABEL} en ${loginMmSs(left)}`;
+      return true;
+    }
+    loginAgain.disabled = false;
+    loginAgain.textContent = LOGIN_AGAIN_LABEL;
+    return false;
   };
-  tick();
-  // tick() pudo haber cerrado el cooldown en el acto (until ya vencido): en
-  // ese caso no queda nada que contar.
-  if (until - Date.now() > 0) {
-    cooldownTimer = setInterval(tick, 1000);
+  if (update()) {
+    loginTimer = setInterval(() => {
+      if (!update()) {
+        clearInterval(loginTimer);
+        loginTimer = 0;
+      }
+    }, 1000);
   }
 }
 
-function endCooldown() {
-  clearInterval(cooldownTimer);
-  cooldownTimer = null;
-  clearCooldown();
-  cooldownEl.hidden = true;
-  cooldownEl.textContent = '';
-  submitBtn.disabled = false;
-  submitBtn.textContent = 'Reenviar link';
-  emailInput.disabled = false;
+function loginGoToStep2(address, { already = false } = {}) {
+  loginAddress = address;
+  loginMailTo.textContent = address;
+  loginSentNote.textContent = already ? 'Ya te mandamos un link hace instantes a:' : 'Tocá el link que te mandamos a:';
+  loginClearError(loginErr2);
+  loginLive.textContent = '';
+  loginShowStep(2);
+  loginTickAgain();
+  document.getElementById('loginTitle2').focus();
 }
 
-form.addEventListener('submit', async (event) => {
-  event.preventDefault();
-  statusEl.textContent = '';
-  statusEl.className = 'login-status';
+// ---------- pedir el link ----------
 
-  const email = emailInput.value.trim();
-  if (!email) {
-    statusEl.textContent = 'Ingresá tu email.';
-    statusEl.classList.add('is-error');
-    emailInput.focus();
-    return;
-  }
-
-  // Estado de carga: si el SMTP tarda, que no parezca colgado.
-  const labelPrevio = submitBtn.textContent;
-  submitBtn.disabled = true;
-  submitBtn.textContent = 'Enviando…';
-  let cooldownArrancado = false;
-
+// { ok: true, seconds } o { ok: false, error }
+async function loginRequest(address) {
   try {
     const res = await fetch('/api/auth/magic-link', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({ email: address }),
     });
     const data = await res.json().catch(() => ({}));
-
-    if (res.status === 429) {
-      statusEl.textContent = data.error || 'Demasiados intentos. Probá en unos minutos.';
-      statusEl.classList.add('is-error');
-    } else if (!res.ok) {
-      statusEl.textContent = data.error || 'No se pudo enviar el link. Intentá de nuevo.';
-      statusEl.classList.add('is-error');
-    } else {
-      statusEl.textContent = data.message || GENERIC_MSG;
-      const seconds =
-        Number(data.retryAfterSeconds) > 0 ? Number(data.retryAfterSeconds) : COOLDOWN_FALLBACK_SECONDS;
-      const until = Date.now() + seconds * 1000;
-      saveCooldownUntil(until);
-      startCooldown(until);
-      cooldownArrancado = true;
+    if (res.ok) {
+      const seconds = Number(data.retryAfterSeconds) > 0 ? Number(data.retryAfterSeconds) : LOGIN_COOLDOWN_FALLBACK_SECONDS;
+      return { ok: true, seconds };
     }
+    if (res.status === 429) return { ok: false, error: 'Demasiados intentos. Probá en unos minutos.' };
+    if (res.status === 503) return { ok: false, error: 'El acceso no está disponible ahora. Avisale a quien administra la app.' };
+    return { ok: false, error: 'No se pudo mandar el link. Probá de nuevo.' };
   } catch {
-    statusEl.textContent = 'No se pudo enviar el link. Intentá de nuevo.';
-    statusEl.classList.add('is-error');
-  } finally {
-    if (!cooldownArrancado) {
-      submitBtn.disabled = false;
-      submitBtn.textContent = labelPrevio;
-    }
+    return { ok: false, error: 'No hay conexión con la app. Revisá la red y probá de nuevo.' };
   }
+}
+
+loginForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  if (loginBusy) return;
+  loginClearError(loginErr);
+  const address = loginEmail.value.trim();
+  if (!LOGIN_EMAIL_RE.test(address)) {
+    loginShowError(loginErr, address ? 'Revisá el correo: tiene que ser como nombre@buenosaires.gob.ar.' : 'Escribí tu correo.');
+    loginEmail.focus();
+    return;
+  }
+  // Ya se pidió hace instantes para esta dirección: el backend no mandaría
+  // otro; el que salió sigue sirviendo.
+  if (loginSentUntil(address) > Date.now()) {
+    loginGoToStep2(address, { already: true });
+    return;
+  }
+
+  loginBusy = true;
+  loginSubmit.setAttribute('aria-disabled', 'true');
+  loginSubmit.classList.add('busy');
+  loginSetLabel('Enviando el link…');
+  const result = await loginRequest(address);
+  loginSubmit.classList.remove('busy');
+  if (!result.ok) {
+    loginBusy = false;
+    loginSubmit.removeAttribute('aria-disabled');
+    loginSetLabel(LOGIN_LABEL);
+    loginShowError(loginErr, result.error);
+    return;
+  }
+  loginRememberSent(address, Date.now() + result.seconds * 1000);
+  loginSubmit.classList.add('ok');
+  loginSetLabel('Link enviado ✓');
+  await loginWait(700);
+  loginSubmit.classList.remove('ok');
+  loginSubmit.removeAttribute('aria-disabled');
+  loginSetLabel(LOGIN_LABEL);
+  loginBusy = false;
+  loginGoToStep2(address);
 });
 
-// Al cargar: si hay un cooldown vigente de una visita anterior, se restaura el
-// estado (recargar la página no debe permitir reenviar; el backend tampoco lo
-// permitiría, pero sin esto el botón parecería funcionar y el mail no saldría).
-const pendingUntil = readCooldownUntil();
-if (pendingUntil > Date.now()) {
-  startCooldown(pendingUntil);
-} else {
-  clearCooldown();
+loginEmail.addEventListener('input', () => {
+  if (!loginErr.hidden) loginClearError(loginErr);
+});
+
+loginAgain.addEventListener('click', async () => {
+  if (loginBusy || loginAgain.disabled) return;
+  loginClearError(loginErr2);
+  loginLive.textContent = '';
+  loginBusy = true;
+  clearInterval(loginTimer);
+  loginTimer = 0;
+  loginAgain.disabled = true;
+  loginAgain.textContent = 'Enviando…';
+  const address = loginAddress;
+  const result = await loginRequest(address);
+  loginBusy = false;
+  if (!result.ok) {
+    loginShowError(loginErr2, result.error);
+    loginTickAgain();
+    return;
+  }
+  loginRememberSent(address, Date.now() + result.seconds * 1000);
+  loginAgain.textContent = 'Link reenviado ✓';
+  loginLive.textContent = `Te mandamos otro link a ${address}.`;
+  await loginWait(2500);
+  if (loginAddress === address && !loginStep2.hidden) loginTickAgain();
+});
+
+loginBack.addEventListener('click', () => {
+  clearInterval(loginTimer);
+  loginTimer = 0;
+  loginClearError(loginErr);
+  loginShowStep(1);
+  loginEmail.focus();
+  loginEmail.select();
+});
+
+// El cooldown de antes (una sola hora para cualquier dirección) ya no se usa.
+try {
+  localStorage.removeItem(LOGIN_OLD_KEY);
+} catch {
+  /* nada que borrar */
 }
