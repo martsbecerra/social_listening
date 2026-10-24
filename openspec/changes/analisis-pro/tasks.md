@@ -33,7 +33,7 @@ un servidor de prueba en otro puerto y una copia de la base.
 
 ## Phase 4: cierre de la F1
 
-- [ ] 4.1 CLAUDE.md y README
-- [ ] 4.2 Suite con `IG_ACTOR=apidojo` y `apify`
+- [x] 4.1 CLAUDE.md y README
+- [x] 4.2 Suite con `IG_ACTOR=apidojo` y `apify`
 - [ ] 4.3 La corrida real autorizada y los fixtures (REQ-PRO-14)
 - [ ] 4.4 Revisor independiente y PR sin mergear
