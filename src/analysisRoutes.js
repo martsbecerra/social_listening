@@ -95,14 +95,16 @@ function vistaDe(analisis) {
 }
 
 /**
- * Los temas v2 como los lee la solapa de la fase E: título, texto vacío (el
- * informe nuevo ya los nombra) y los números de sus comentarios.
+ * Los temas v2 como los lee la solapa de la fase E: título, texto (solo el
+ * de uno agregado a mano; los del modelo no tienen) y los números de sus
+ * comentarios. La solapa ya no arma el texto para compartir con ellos: usa
+ * el informe, que los nombra.
  */
 function temasCompat(vista) {
   return vista.temas.map((t) => ({
     id: t.id,
     titulo: t.nombre,
-    texto: '',
+    texto: t.manual ? t.texto || '' : '',
     comentarios: vista.comentarios.filter((c) => c.temaId === t.id).map((c) => c.n),
   }));
 }

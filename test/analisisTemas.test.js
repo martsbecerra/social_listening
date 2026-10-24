@@ -42,6 +42,14 @@ describe('aplicarCambio', () => {
     assert.throws(() => aplicarCambio(t, { accion: 'renombrar', id: 1, nombre: 'Seguridad' }), /agregado a mano/);
   });
 
+  test('un tema del modelo no lleva texto; uno a mano sí, y renombrarlo lo conserva', () => {
+    assert.throws(() => aplicarCambio(BASE, { accion: 'renombrar', id: 1, nombre: 'Baches', texto: 'algo' }), /no llevan texto/);
+    assert.equal(aplicarCambio(BASE, { accion: 'renombrar', id: 1, nombre: 'Pozos', texto: '  ' }).lista[0].nombre, 'Pozos');
+    const t = aplicarCambio(BASE, { accion: 'agregar', nombre: 'Seguridad', texto: 'Patrullaje.' });
+    assert.equal(aplicarCambio(t, { accion: 'renombrar', id: 3, nombre: 'Inseguridad' }).lista[2].texto, 'Patrullaje.');
+    assert.equal(aplicarCambio(t, { accion: 'renombrar', id: 3, nombre: 'Seguridad', texto: 'Otro.' }).lista[2].texto, 'Otro.');
+  });
+
   test('quitar: solo los manuales', () => {
     const t = aplicarCambio(BASE, { accion: 'agregar', nombre: 'Seguridad' });
     assert.deepEqual(aplicarCambio(t, { accion: 'quitar', id: 3 }).lista, BASE.lista);

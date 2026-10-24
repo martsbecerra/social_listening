@@ -61,6 +61,9 @@ function aplicarCambio(temas, cambio) {
     const tema = porId(cambio.id);
     if (!tema) throw errorDeDatos('Ese tema no existe.');
     const nombre = nombreValido(cambio.nombre);
+    if (!tema.manual && typeof cambio.texto === 'string' && cambio.texto.trim()) {
+      throw errorDeDatos('Los temas del modelo no llevan texto: el informe los nombra con su cantidad de comentarios.');
+    }
     const otro = vigentes(lista).find((t) => t.id !== tema.id && claveTema(t.nombre) === claveTema(nombre));
     if (otro && (otro.manual || tema.manual)) throw errorDeDatos('Ya hay un tema agregado a mano con ese nombre.');
     if (otro) tema.unidoA = otro.id; // se unen: cuenta en el que ya existía

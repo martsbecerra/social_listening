@@ -572,7 +572,14 @@ describe('las rutas', { concurrency: false }, () => {
     );
     a = await (await patch([{ titulo: 'Plaza', texto: '' }, { titulo: 'Baches y pozos', texto: '' }, { titulo: 'Nuevo', texto: 'Uno a mano.' }])).json();
     assert.equal(a.vista.temas[2].manual, true);
-    const r = await patch([{ titulo: 'Plaza', texto: '' }]);
+    assert.equal(a.temas[2].texto, 'Uno a mano.', 'el editor de la E muestra el texto del manual');
+    // Renombrar el manual desde la E (manda su texto tal cual): lo conserva.
+    a = await (await patch([{ titulo: 'Plaza', texto: '' }, { titulo: 'Baches y pozos', texto: '' }, { titulo: 'A mano', texto: 'Uno a mano.' }])).json();
+    assert.deepEqual([a.vista.temas[2].nombre, a.vista.temas[2].texto], ['A mano', 'Uno a mano.']);
+    let r = await patch([{ titulo: 'Plaza', texto: 'Le escribo texto' }, { titulo: 'Baches y pozos', texto: '' }, { titulo: 'A mano', texto: 'Uno a mano.' }]);
+    assert.equal(r.status, 400, 'un tema del modelo no lleva texto');
+    assert.match((await r.json()).error, /no llevan texto/);
+    r = await patch([{ titulo: 'Plaza', texto: '' }]);
     assert.equal(r.status, 400, 'sacar uno del modelo no se puede');
   });
 

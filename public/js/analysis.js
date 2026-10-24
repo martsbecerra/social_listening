@@ -804,6 +804,8 @@ async function anaSaveTemas(temas, { focusAfter, cmtTema } = {}) {
     });
     if (anaShown !== a) return;
     a.temas = data.temas;
+    // Un v2 vuelve entero: el informe de 8 puntos, rehecho con los temas nuevos.
+    if (typeof data.informe === 'string') a.informe = data.informe;
     anaTemaEditing = null;
     anaShow(anaEls.temaForm, false);
     if (cmtTema !== undefined) anaCmtTema = cmtTema;
@@ -1151,6 +1153,9 @@ anaEls.cmtsMore.addEventListener('click', () => {
 
 function anaReportText() {
   if (!anaShown) return '';
+  // Fase F: un análisis v2 se comparte con el informe de 8 puntos, que ya
+  // trae los temas (también los agregados a mano); no se le suma la sección.
+  if (anaShown.vista && anaShown.vista.version === 2 && typeof anaShown.informe === 'string') return anaShown.informe;
   return window.TemasConversacion.assemble(anaShown.reporteAntes, anaTemas(), anaShown.reporteDespues);
 }
 
