@@ -1141,9 +1141,10 @@ en el tag `v3-riel-radar`.
 - **Login** (fase D): la pantalla partida de la maqueta. A la izquierda,
   siempre oscura, una constelación con los temas de los últimos 7 días (más
   grande el que más publicaciones tuvo), un ticker "tema · N publicaciones"
-  y cuatro contadores (publicaciones hoy, reclamos en el mapa, días
-  escuchando y publicaciones de 30 días): solo temas y cantidades, nunca una
-  publicación. A la derecha, el link mágico en dos pasos: "Mandarme el link
+  y cuatro contadores (publicaciones hoy, reclamos con pin en el mapa, días
+  escuchando desde la primera detección y publicaciones de 30 días): solo
+  temas y cantidades, nunca una publicación. El ticker va donde hay lugar:
+  en pantallas medianas (de unos 1000 a 1200 px) no se muestra. A la derecha, el link mágico en dos pasos: "Mandarme el link
   →" y "Revisá tu correo", con "Mandar otro link" (con su cuenta regresiva)
   y "Cambiar el correo". El link abre "Último paso": un clic en **Entrar** y
   al inicio; si venció o ya se usó, lo dice y ofrece pedir otro. Sin
@@ -1153,8 +1154,9 @@ en el tag `v3-riel-radar`.
   los últimos 7 días (los mismos números de Estadísticas) y su curva; X en
   pausa, con su última corrida real; Facebook y TikTok, "pronto". La
   **próxima corrida** con cuenta regresiva y anillo, la línea del día con las
-  corridas de hoy (terminada, cortada, en curso, la siguiente o la que no
-  corrió) y la última corrida (traídas, nuevas, relevantes y costo). Las
+  corridas de hoy (terminada, cortada, en curso, interrumpida —arrancó y el
+  proceso se cortó—, la siguiente o la que no corrió) y la última corrida
+  (traídas, nuevas, relevantes y costo). Las
   **últimas publicaciones** de Instagram: un clic abre esa publicación en el
   pop-up del Monitoreo. Se actualiza solo cada minuto. "Análisis recientes"
   llega en la fase E.
