@@ -36,7 +36,8 @@ function buildReclamosCsv(sample, classifications) {
 
   for (let i = 0; i < classifications.length; i++) {
     const item = classifications[i];
-    const reclamos = item.reclamosGeo;
+    // Sin clasificar (null): no tiene reclamos.
+    const reclamos = item && item.reclamosGeo;
     if (!reclamos || reclamos.length === 0) continue;
 
     const comment = sample[i];
@@ -68,7 +69,21 @@ function formatReferenceLines(refs) {
 }
 
 /**
+ * La aclaración de muestra parcial con los números reales: "Análisis
+ * realizado sobre 287 de 1.480 comentarios." Si además la muestra la
+ * recortó la app (no Instagram), dice cómo se priorizó. Sin los números,
+ * el texto de siempre.
+ */
+function partialDisclosure({ analizados, totalPost, priorizada }) {
+  if (!Number.isFinite(analizados) || !Number.isFinite(totalPost)) return PARTIAL_SAMPLE_DISCLOSURE;
+  const como = priorizada ? ' (priorizadas cuentas verificadas y comentarios con más likes)' : '';
+  return `Análisis realizado sobre ${formatCountWithDots(analizados)} de ${formatCountWithDots(totalPost)} comentarios${como}.`;
+}
+
+/**
  * @param {object} params
+ *   analizados / totalPost / priorizada (opcionales): los números reales de
+ *   la aclaración de muestra parcial (ver partialDisclosure).
  * @returns {{ report: string, csv: string, meta: object }}
  */
 function buildWhatsAppReport({
@@ -80,13 +95,16 @@ function buildWhatsAppReport({
   totalComments,
   classifications,
   qualitative,
+  analizados = null,
+  totalPost = null,
+  priorizada = false,
 }) {
   const metrics = computeWeightedSentimentPercentages(classifications);
   const performanceLevel = computePerformanceLevel(post);
 
   let posteoSobre = qualitative.posteoSobre || 'N/D';
   if (isPartial) {
-    posteoSobre += ` ${PARTIAL_SAMPLE_DISCLOSURE}`;
+    posteoSobre += ` ${partialDisclosure({ analizados, totalPost, priorizada })}`;
   }
 
   const apoyo = formatReferenceLines(qualitative.insightApoyo);

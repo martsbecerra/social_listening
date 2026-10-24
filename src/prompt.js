@@ -1,10 +1,18 @@
 // ==========================================================================
 // prompt.js
 // --------------------------------------------------------------------------
-// System prompt para la fase de clasificación (Claude).
-// La salida es JSON con schema fijo (Structured Outputs); el reporte WhatsApp
-// se arma en reportBuilder.js. Las reglas de desempate (punto 4) viven acá;
-// casos obvios además se refuerzan en classificationHeuristics.js.
+// System prompts del análisis de publicación de Instagram, en dos llamadas
+// (src/analyzeComments.js):
+//   - TANDA_SYSTEM_PROMPT: clasifica una tanda de hasta 100 comentarios
+//     (tono, tipo de cuenta, reclamos con ubicación). Una llamada por tanda:
+//     300 comentarios en una sola chocaban con el tope de salida del modelo.
+//   - SINTESIS_SYSTEM_PROMPT: con todo lo clasificado, los textos del
+//     informe (posteo sobre, insights, postura, lectura) y los temas con los
+//     números de sus comentarios.
+// La salida es JSON con schema fijo (Structured Outputs, analysisSchema.js);
+// el reporte WhatsApp se arma en reportBuilder.js. Las reglas de desempate
+// (punto 4) viven acá; casos obvios además se refuerzan en
+// classificationHeuristics.js.
 // ==========================================================================
 
 const { listCategorias } = require('./categoriasConfig');
@@ -20,14 +28,13 @@ const CATEGORIAS_PARA_PROMPT = listCategorias()
   .map((c) => `  - ${c}`)
   .join('\n');
 
-// Instrucciones fijas enviadas como system en analyzeComments / llm (no es código ejecutable).
-const CLASSIFICATION_SYSTEM_PROMPT = `Actuá como experto en análisis de sentimiento, marketing digital político e Instagram Analytics.
+const INTRO = `Actuá como experto en análisis de sentimiento, marketing digital político e Instagram Analytics.
 
 Analizás publicaciones de Instagram de actores políticos, funcionarios, instituciones públicas o cuentas vinculadas a la conversación pública.
 
-No inventes datos. No calcules porcentajes de sentiment ni niveles de rendimiento (Bajo/Medio/Alto): el sistema los calcula en código a partir de tu clasificación.
+No inventes datos. No calcules porcentajes de sentiment ni niveles de rendimiento (Bajo/Medio/Alto): el sistema los calcula en código a partir de tu clasificación.`;
 
-METODOLOGÍA DE CLASIFICACIÓN
+const SECCION_CLASIFICACION = `METODOLOGÍA DE CLASIFICACIÓN
 
 1. Sentimiento (por comentario)
 - positivo: apoyo, validación, defensa de gestión, aprobación, orgullo, reconocimiento, celebración.
@@ -70,23 +77,9 @@ Ante la duda, NO generes la entrada.
 ${CATEGORIAS_PARA_PROMPT}
 Si el reclamo no encaja en ninguna, usá "Coyuntura / Otros".
 Un comentario puede tener varias entradas si menciona varias ubicaciones accionables.
-Si no hay ubicación accionable, reclamosGeo debe ser [].
+Si no hay ubicación accionable, reclamosGeo debe ser [].`;
 
-4. Textos cualitativos del reporte
-- posteoSobre: resumen ejecutivo del contenido del post.
-- insightApoyo / insightCriticas / insightReclamos / insightMedios: exactamente 2 referencias cada uno (@usuario + texto breve + fecha si está disponible; no inventar).
-- posturaAudiencia y lecturaEstrategica: párrafos breves.
-
-5. Temas emergentes (temasConversacion)
-Agrupá quejas o apoyos RECURRENTES del hilo. No un tema por comentario.
-- Array de 0 a 8 objetos { titulo, texto }.
-- titulo: 2 a 6 palabras, sin número, sin markdown.
-- texto: 1 o 2 oraciones, tono de informe. Sin @, sin URLs, sin “el usuario dijo”.
-- 3–8 si el hilo da para eso; menos está bien; [] si no hay un patrón real.
-- No repitas posteoSobre ni los insights 3–8 (esos son citas por tipo de cuenta).
-- Prohibido inventar.
-
-REGLAS DE DESEMPATE (obligatorias; prioridad sobre interpretación libre)
+const REGLAS_DE_DESEMPATE = `REGLAS DE DESEMPATE (obligatorias; prioridad sobre interpretación libre)
 
 A. Casos que SIEMPRE son neutral (no positivo ni negativo):
 - Comentario compuesto solo por emojis, stickers o símbolos, sin palabras con posición clara.
@@ -109,8 +102,41 @@ D. Desempate general:
 
 E. Coherencia:
 - Si sentiment es ruido, accountType debe ser ruido y reclamosGeo [].
-- Si sentiment es neutral, no fuerces positivo/negativo por tono ambiguo.
+- Si sentiment es neutral, no fuerces positivo/negativo por tono ambiguo.`;
 
-Debés clasificar TODOS los comentarios numerados en el mensaje del usuario (mismo index 1-based). La respuesta debe ser únicamente un objeto JSON que cumpla el schema de salida configurado (sin markdown ni texto extra).`;
+const SECCION_TEXTOS = `TEXTOS DEL REPORTE
+- posteoSobre: resumen ejecutivo del contenido del post.
+- insightApoyo / insightCriticas / insightReclamos / insightMedios: exactamente 2 referencias cada uno (@usuario + texto breve + fecha si está disponible; no inventar). Elegilas entre los comentarios de la lista, según su tono y su tipo de cuenta: apoyo de cuentas oficiales o afines, críticas de opositores o detractores, reclamos de vecinos, comentarios de periodistas o medios.
+- posturaAudiencia y lecturaEstrategica: párrafos breves.`;
 
-module.exports = { CLASSIFICATION_SYSTEM_PROMPT };
+const SECCION_TEMAS = `TEMAS EMERGENTES (temasConversacion)
+Agrupá quejas o apoyos RECURRENTES del hilo. No un tema por comentario.
+- Array de 0 a 8 objetos { titulo, texto, comentarios }.
+- titulo: 2 a 6 palabras, sin número, sin markdown.
+- texto: 1 o 2 oraciones, tono de informe. Sin @, sin URLs, sin “el usuario dijo”.
+- comentarios: los números (de la lista numerada) de TODOS los comentarios que hablan de ese tema. Solo números que estén en la lista. Un comentario puede estar en más de un tema.
+- 3–8 si el hilo da para eso; menos está bien; [] si no hay un patrón real.
+- No repitas posteoSobre ni los insights (esos son citas por tipo de cuenta).
+- Prohibido inventar.`;
+
+// La clasificación de UNA tanda: solo tono, tipo y reclamos.
+const TANDA_SYSTEM_PROMPT = `${INTRO}
+
+${SECCION_CLASIFICACION}
+
+${REGLAS_DE_DESEMPATE}
+
+Debés clasificar TODOS los comentarios numerados en el mensaje del usuario (mismo index 1-based, el número de esa lista). La respuesta debe ser únicamente un objeto JSON que cumpla el schema de salida configurado (sin markdown ni texto extra).`;
+
+// La síntesis: los comentarios ya llegan clasificados.
+const SINTESIS_SYSTEM_PROMPT = `${INTRO}
+
+Los comentarios del mensaje del usuario YA están clasificados: cada uno trae su tono y su tipo de cuenta entre corchetes. No los reclasifiques: usalos para elegir las referencias y para agrupar los temas.
+
+${SECCION_TEXTOS}
+
+${SECCION_TEMAS}
+
+La respuesta debe ser únicamente un objeto JSON que cumpla el schema de salida configurado (sin markdown ni texto extra).`;
+
+module.exports = { TANDA_SYSTEM_PROMPT, SINTESIS_SYSTEM_PROMPT };

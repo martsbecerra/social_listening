@@ -19,9 +19,10 @@ const PERFORMANCE_LEVELS = ['Bajo', 'Medio', 'Alto', 'Muy Alto'];
 
 /**
  * Suma pesos de comentarios positivos vs negativos y devuelve % enteros que suman 100.
- * Neutral y ruido no entran al cálculo.
+ * Neutral y ruido no entran al cálculo, ni los comentarios sin clasificar
+ * (null: su tanda falló o el modelo no los devolvió).
  *
- * @param {Array<{ sentiment: string, accountType: string }>} rows
+ * @param {Array<{ sentiment: string, accountType: string } | null>} rows
  * @returns {{ positivoPct: number, negativoPct: number, weightedPos: number, weightedNeg: number }}
  */
 function computeWeightedSentimentPercentages(rows) {
@@ -29,6 +30,7 @@ function computeWeightedSentimentPercentages(rows) {
   let weightedNeg = 0;
 
   for (const row of rows) {
+    if (!row) continue;
     const { sentiment, accountType } = row;
     if (sentiment === 'neutral' || sentiment === 'ruido' || accountType === 'ruido') {
       continue;
@@ -53,6 +55,25 @@ function computeWeightedSentimentPercentages(rows) {
   const negativoPct = 100 - positivoPct;
 
   return { positivoPct, negativoPct, weightedPos, weightedNeg };
+}
+
+/**
+ * Cuántos comentarios clasificados hay de cada tono, sin pesos: lo que
+ * muestra la pantalla del análisis (el informe usa el ponderado de arriba).
+ * Los sin clasificar (null) no cuentan.
+ * @param {Array<{ sentiment: string } | null>} rows
+ * @returns {{ positivos: number, neutrales: number, negativos: number, ruido: number }}
+ */
+function countTones(rows) {
+  const out = { positivos: 0, neutrales: 0, negativos: 0, ruido: 0 };
+  for (const row of rows || []) {
+    if (!row) continue;
+    if (row.sentiment === 'positivo') out.positivos += 1;
+    else if (row.sentiment === 'negativo') out.negativos += 1;
+    else if (row.sentiment === 'ruido') out.ruido += 1;
+    else out.neutrales += 1;
+  }
+  return out;
 }
 
 /** Umbrales de visualizaciones/reproducciones (metodología §5). Devuelve índice 0–3 o null si N/D. */
@@ -128,6 +149,7 @@ function formatViewsShort(n) {
 module.exports = {
   ACCOUNT_WEIGHT,
   computeWeightedSentimentPercentages,
+  countTones,
   computePostInteractions,
   computePerformanceLevel,
   formatCountWithDots,
