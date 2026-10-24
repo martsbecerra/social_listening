@@ -450,65 +450,287 @@ footer.foot{border-top:1px solid var(--line);margin-top:40px;background:color-mi
 @media (max-width:900px){.map-wrap{grid-template-columns:1fr}.cv canvas{height:440px}}
 
 /* =====================================================================
-   3 · ANÁLISIS DE PUBLICACIÓN
+   3 · ANÁLISIS DE PUBLICACIÓN  (v5: hecho dominante, postura, quién habla,
+   pedidos, reclamos ubicables, comparación con la cuenta, galería)
    ===================================================================== */
 .urlbar{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center}
 .urlbar input{border:1px solid var(--line2);background:var(--surface2);color:var(--fg);border-radius:12px;padding:12px 14px;font:inherit;font-size:14px}
 .urlbar input::placeholder{color:var(--muted)}
 .urlbar .btn.primary{padding:11px 18px;border-radius:12px}
-.ana{grid-template-columns:360px 1fr;align-items:start}
-.posts{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;margin-bottom:12px}
-.posts button{flex:0 0 auto;width:64px;height:64px;border-radius:12px;border:2px solid transparent;cursor:pointer;position:relative;overflow:hidden;background:var(--surface2)}
-.posts button.on{border-color:var(--accent);box-shadow:0 0 16px color-mix(in oklab,var(--accent) 40%,transparent)}
-.posts button i{position:absolute;inset:0;background:linear-gradient(135deg,var(--a),var(--b));opacity:.85}
-.posts button small{position:absolute;left:6px;bottom:4px;font:500 10px/1 var(--mono);color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.6)}
-.posts .lbl{flex:0 0 auto;align-self:center;font:500 11px/1 var(--body);letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-right:4px}
-.post{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--surface2)}
-.post .img{height:180px;background:linear-gradient(135deg,var(--a),var(--b));position:relative}
-.post .img::after{content:"";position:absolute;inset:0;background:radial-gradient(240px 120px at 70% 80%,rgba(255,255,255,.25),transparent)}
-.post .body{padding:12px}
-.post .acc{display:flex;align-items:center;gap:8px;font-weight:600;font-size:13px}
-.post .acc .av{width:26px;height:26px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--glow))}
-.post .acc small{color:var(--muted);font-weight:400;margin-left:auto}
-.post p{margin:8px 0;font-size:13px;color:var(--fg2)}
-.post .mets{display:flex;gap:14px;font:500 12px/1 var(--mono);color:var(--muted)}
-.post .lnk{display:block;margin-top:8px;font-size:12px}
-.ai{margin-top:12px;border:1px solid color-mix(in oklab,var(--glow) 55%,var(--line));border-radius:12px;padding:12px;background:linear-gradient(180deg,color-mix(in oklab,var(--glow) 10%,var(--surface2)),var(--surface2))}
-.ai .ct2{display:flex;align-items:center;gap:8px;font:500 11px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--glow);margin-bottom:6px}
-.ai p{margin:0;font-size:13px;min-height:4.4em}
-.ai p.typing::after{content:"▍";color:var(--glow);animation:blink 1s steps(2) infinite}
-.stackbar{display:flex;height:16px;border-radius:8px;overflow:hidden;gap:2px;background:var(--line)}
-.stackbar i{display:block;height:100%;width:0;transition:width 1.2s cubic-bezier(.2,.8,.2,1)}
-.themes{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-.theme{padding:6px 11px;border-radius:999px;border:1px solid var(--line2);background:var(--surface2);font-weight:500;animation:pop .4s cubic-bezier(.2,.9,.3,1.4) both;cursor:default}
-.theme small{font:400 11px/1 var(--mono);color:var(--muted);margin-left:6px}
-.theme.add{border-style:dashed;color:var(--accent);cursor:pointer}
-.tl{width:100%;height:190px;display:block}
-.cmts{display:flex;flex-direction:column;gap:8px}
-.cmt{display:grid;grid-template-columns:3px 1fr;gap:10px;font-size:13px;border:1px solid var(--line);border-radius:10px;padding:8px 10px 8px 0;background:var(--surface2)}
-.cmt i{border-radius:0 2px 2px 0}
-.cmt .w{font-size:11.5px;color:var(--muted);display:flex;gap:8px;flex-wrap:wrap}
-.cmt .w b{color:var(--fg);font-weight:600}
-.cmt .w .tm{margin-left:auto;font-family:var(--mono)}
-.two{grid-template-columns:1fr 1fr;align-items:start}
-.exports{display:flex;gap:8px;flex-wrap:wrap}
-.wa{white-space:pre-wrap;font:12.5px/1.5 var(--mono);background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:12px;max-height:260px;overflow:auto;color:var(--fg2)}
+.an-cnt{font:500 10.5px/1 var(--mono);padding:3px 6px;border-radius:6px;background:var(--surface2);border:1px solid var(--line2);color:var(--muted);margin-left:6px}
+.seg button.on .an-cnt{color:var(--accent);border-color:color-mix(in oklab,var(--accent) 50%,var(--line2))}
+.an-view{display:none}.an-view.on{display:block;animation:fadeIn .35s ease both}
+.an-notice{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px;padding:10px 12px;border-radius:10px;font-size:13px;
+  background:color-mix(in oklab,var(--c5) 14%,var(--surface2));border:1px solid color-mix(in oklab,var(--c5) 45%,var(--line));animation:slideIn .4s both}
+.an-notice[hidden]{display:none}
+.an-notice b{font-weight:600}.an-notice .sp{flex:1}
 .ana-state{display:none}.ana-state.on{display:block}
+.an-prog{margin-top:14px}
+.an-prog .ph{display:flex;justify-content:space-between;align-items:center;font:500 12px/1 var(--mono);color:var(--fg2);margin-bottom:8px}
+.an-prog .pct{color:var(--accent)}
+.an-prog .bar{height:6px;border-radius:3px;background:var(--line);overflow:hidden}
+.an-prog .bar i{display:block;height:100%;width:0;border-radius:3px;background:linear-gradient(90deg,var(--accent),var(--glow));box-shadow:0 0 12px color-mix(in oklab,var(--accent) 60%,transparent);transition:width .7s cubic-bezier(.2,.8,.2,1)}
 .steps{display:flex;flex-direction:column;gap:10px;margin-top:14px}
 .step{display:flex;gap:12px;align-items:center;font-size:13px;color:var(--muted)}
 .step i{width:22px;height:22px;border-radius:50%;border:2px solid var(--line2);display:grid;place-items:center;font:600 10px/1 var(--mono);flex:none}
 .step.run{color:var(--fg)}.step.run i{border-color:var(--accent);color:var(--accent);box-shadow:0 0 12px color-mix(in oklab,var(--accent) 50%,transparent);animation:ping 1.4s infinite}
 .step.ok{color:var(--fg2)}.step.ok i{background:var(--pos);border-color:var(--pos);color:#fff}
 .step .n{margin-left:auto;font:500 11.5px/1 var(--mono)}
+.posts{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;margin-bottom:12px}
+.posts button{flex:0 0 auto;width:64px;height:64px;border-radius:12px;border:2px solid transparent;cursor:pointer;position:relative;overflow:hidden;background:var(--surface2);transition:transform .2s}
+.posts button:hover{transform:translateY(-2px)}
+.posts button.on{border-color:var(--accent);box-shadow:0 0 16px color-mix(in oklab,var(--accent) 40%,transparent)}
+.posts button i{position:absolute;inset:0;background:linear-gradient(135deg,var(--a),var(--b));opacity:.85}
+.posts button small{position:absolute;left:6px;bottom:4px;font:500 10px/1 var(--mono);color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.6)}
+.posts button em{position:absolute;right:5px;top:5px;width:8px;height:8px;border-radius:50%;background:var(--c2);box-shadow:0 0 0 2px rgba(255,255,255,.7)}
+.posts button.more{width:auto;height:auto;align-self:center;border:1px solid var(--line2);border-radius:8px;overflow:visible}
+.posts .lbl{flex:0 0 auto;align-self:center;font:500 11px/1 var(--body);letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-right:4px}
+
+/* ---- hero: publicación + hecho dominante ---- */
+.an-hero{grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:stretch}
+.an-2{align-items:start}.an-3{grid-template-columns:repeat(3,1fr);align-items:start}
+.an-post{display:grid;grid-template-columns:190px 1fr;gap:16px}
+.an-post .img{aspect-ratio:1;border-radius:12px;background:linear-gradient(135deg,var(--a),var(--b));position:relative;overflow:hidden}
+.an-post .img::after{content:"";position:absolute;inset:0;background:radial-gradient(160px 110px at 70% 85%,rgba(255,255,255,.3),transparent)}
+.an-post .img .ty{position:absolute;left:8px;top:8px;font:600 10px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:#fff;background:rgba(0,0,0,.35);padding:4px 7px;border-radius:6px;backdrop-filter:blur(4px)}
+.an-post .acc{display:flex;align-items:center;gap:8px;font-weight:600;font-size:13.5px}
+.an-post .acc .av{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;color:#fff;font:600 11px/1 var(--mono);background:linear-gradient(135deg,var(--accent),var(--glow))}
+.an-post .acc small{color:var(--muted);font-weight:400;margin-left:auto;font-family:var(--mono);font-size:11.5px}
+.an-post p{margin:8px 0;font-size:13px;color:var(--fg2);display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+.an-post .mets{display:flex;gap:14px;font:500 12px/1 var(--mono);color:var(--muted);flex-wrap:wrap}
+.an-post .mets b{color:var(--fg);font-weight:500}
+.an-post .lnk{display:inline-block;margin-top:10px;font-size:12px}
+.an-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:14px;padding-top:14px;border-top:1px dashed var(--line2)}
+.an-kpis>div{min-width:0}
+.an-kpis .v{font:600 22px/1.05 var(--display);margin:4px 0 2px;display:flex;align-items:baseline;gap:4px}
+.an-kpis .v small{font:500 11px/1 var(--mono);color:var(--muted)}
+.an-kpis .d{font-size:11.5px;color:var(--muted);line-height:1.35}
+.an-kpis .v.pos{color:var(--pos)}.an-kpis .v.neg{color:var(--neg)}.an-kpis .v.warn{color:var(--c2)}
+.an-kpis .mini{display:flex;height:5px;border-radius:3px;overflow:hidden;gap:1px;margin-top:6px;background:var(--line)}
+.an-kpis .mini i{display:block;height:100%;width:0;transition:width 1s .2s}
+
+.an-event{position:relative;overflow:hidden;display:flex;flex-direction:column;
+  border-color:color-mix(in oklab,var(--c2) 45%,var(--line));
+  background:linear-gradient(135deg,color-mix(in oklab,var(--c2) 11%,var(--surface)),color-mix(in oklab,var(--glow) 9%,var(--surface)) 75%)}
+.an-event.calm{border-color:color-mix(in oklab,var(--glow) 45%,var(--line));background:linear-gradient(135deg,color-mix(in oklab,var(--glow) 9%,var(--surface)),color-mix(in oklab,var(--accent) 7%,var(--surface)) 75%)}
+.an-event::before{content:"";position:absolute;inset:0;border-radius:inherit;padding:1px;pointer-events:none;
+  background:linear-gradient(120deg,transparent 35%,color-mix(in oklab,var(--c2) 75%,transparent) 50%,transparent 65%);background-size:300% 100%;
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;animation:anShine 4s linear infinite}
+.an-event.calm::before{background-image:linear-gradient(120deg,transparent 35%,color-mix(in oklab,var(--glow) 75%,transparent) 50%,transparent 65%)}
+@keyframes anShine{from{background-position:300% 0}to{background-position:-300% 0}}
+.an-event .ey{display:flex;align-items:center;gap:8px;font:500 11px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--c2)}
+.an-event.calm .ey{color:var(--glow)}
+.an-event .ey i{width:8px;height:8px;border-radius:50%;background:currentColor;box-shadow:0 0 0 0 currentColor;animation:anPing 1.8s infinite}
+@keyframes anPing{0%{box-shadow:0 0 0 0 color-mix(in oklab,currentColor 60%,transparent)}100%{box-shadow:0 0 0 10px transparent}}
+.an-event .big{display:flex;align-items:center;gap:14px;margin-top:10px}
+.an-event .big b{white-space:nowrap;font:700 58px/1 var(--display);letter-spacing:-.035em;background:linear-gradient(135deg,var(--c2),var(--glow));-webkit-background-clip:text;background-clip:text;color:transparent}
+.an-event .big span{font-size:13px;color:var(--fg2);max-width:30ch;line-height:1.4}
+.an-event h3{font-size:17px;margin-top:12px;line-height:1.3;font-weight:600}
+.an-event .desc{font-size:13px;color:var(--fg2);margin:6px 0 0;line-height:1.5}
+.an-quotes{display:flex;flex-direction:column;gap:6px;margin-top:12px}
+.an-quotes div{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:start;font-size:12.5px;padding:8px 10px;border-radius:10px;
+  background:color-mix(in oklab,var(--surface) 72%,transparent);border:1px solid var(--line);animation:slideIn .5s both}
+.an-quotes b{font-weight:600;color:var(--fg)}
+.an-quotes .l{font:500 11px/1.2 var(--mono);color:var(--muted);white-space:nowrap;text-align:right}
+.an-quotes .l em{display:block;font-style:normal;font-size:10px;color:var(--c2)}
+.an-event .foot{display:flex;gap:14px;margin-top:12px;font:500 11.5px/1.3 var(--mono);color:var(--muted);flex-wrap:wrap}
+.an-event .foot b{color:var(--fg);font-weight:500}
+.an-postcard{display:flex;flex-direction:column}
+.an-ai{margin-top:auto;padding-top:14px;border-top:1px dashed color-mix(in oklab,var(--glow) 40%,var(--line2))}
+.an-postcard .an-ai{margin-top:14px;padding:12px;border:1px solid color-mix(in oklab,var(--glow) 45%,var(--line));border-radius:12px;background:linear-gradient(180deg,color-mix(in oklab,var(--glow) 9%,var(--surface2)),var(--surface2));flex:1}
+.an-evfoot{margin-top:auto;padding-top:12px;border-top:1px dashed color-mix(in oklab,var(--c2) 40%,var(--line2))}
+.an-event.calm .an-evfoot{border-color:color-mix(in oklab,var(--glow) 40%,var(--line2))}
+.an-evfoot p{margin:6px 0 0;font-size:13px;line-height:1.5}
+.an-calm{display:flex;flex-direction:column;gap:8px;margin-top:12px}
+.an-calm>div{display:grid;grid-template-columns:minmax(120px,170px) 1fr 40px;gap:10px;align-items:center;font-size:12.5px;animation:rise .45s both}
+.an-calm .tr{height:8px;border-radius:4px;overflow:hidden;background:var(--line);display:flex;gap:1px}
+.an-calm .tr i{display:block;height:100%;width:var(--w);animation:anGrow 1.1s cubic-bezier(.2,.8,.2,1) both}
+@keyframes anGrow{from{width:0}}
+.an-calm b{font:500 12px/1 var(--mono);text-align:right}
+.an-hist{width:100%;height:92px;display:block;margin-top:14px;border-top:1px dashed var(--line2);padding-top:8px}
+.an-ai .ct2{display:flex;align-items:center;gap:8px;font:500 11px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--glow);margin-bottom:6px}
+.an-ai p{margin:0;font-size:13px;line-height:1.55;min-height:3em}
+.an-ai p.typing::after{content:"▍";color:var(--glow);animation:blink 1s steps(2) infinite}
+
+/* ---- tono / postura / desvío ---- */
+.an-donut{display:grid;grid-template-columns:118px 1fr;gap:14px;align-items:center}
+.an-donut .c{position:relative;width:118px;height:118px}
+.an-donut svg{width:118px;height:118px;transform:rotate(-90deg)}
+.an-donut svg circle{fill:none;stroke-width:12;transition:stroke-dasharray 1.3s cubic-bezier(.2,.8,.2,1)}
+.an-donut .mid{position:absolute;inset:0;display:grid;place-items:center;text-align:center;pointer-events:none}
+.an-donut .mid b{font:600 24px/1 var(--display);display:block}
+.an-donut .mid small{display:block;font:500 10px/1.2 var(--mono);color:var(--muted);margin-top:3px;letter-spacing:.04em}
+.an-rows{display:flex;flex-direction:column;gap:9px}
+.an-row{display:grid;grid-template-columns:minmax(70px,auto) 1fr 64px;gap:10px;align-items:center;font-size:12.5px}
+.an-row .lb{color:var(--fg2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.an-row .tr{height:8px;border-radius:4px;background:var(--line);overflow:hidden}
+.an-row .tr i{display:block;height:100%;width:0;border-radius:4px;transition:width 1.1s cubic-bezier(.2,.8,.2,1)}
+.an-row .n{font:500 12px/1 var(--mono);text-align:right;color:var(--fg)}
+.an-row .n small{display:block;color:var(--muted);font-size:10px;margin-top:3px;white-space:nowrap}
+.an-split{display:flex;height:24px;border-radius:12px;overflow:hidden;background:var(--line);font:600 11px/24px var(--mono);color:#fff;text-align:center;gap:2px}
+.an-split i{display:block;width:0;transition:width 1.1s cubic-bezier(.2,.8,.2,1);overflow:hidden;white-space:nowrap}
+.an-split i.on{background:var(--accent);color:var(--accent-ink)}.an-split i.off{background:var(--c2)}
+.an-desv{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+.an-desv .chip{cursor:default}
+
+/* ---- temas ---- */
+.an-themes{display:flex;flex-direction:column;gap:6px}
+.an-theme{display:grid;grid-template-columns:minmax(170px,240px) 1fr 44px 18px;gap:10px;align-items:center;font-size:13px;padding:7px 8px;border-radius:10px;cursor:pointer;border:1px solid transparent;transition:background .2s,border-color .2s;animation:rise .45s both}
+.an-theme:hover{background:var(--surface2)}
+.an-theme.on{border-color:var(--accent);background:color-mix(in oklab,var(--accent) 8%,var(--surface2))}
+.an-theme .nm{font-weight:500;display:flex;align-items:center;gap:7px;min-width:0}
+.an-theme .nm span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.an-theme .nm span[contenteditable="true"]{outline:1px dashed var(--accent);padding:0 4px;border-radius:4px;white-space:normal}
+.an-theme .star{font:600 9.5px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;padding:3px 6px;border-radius:999px;background:linear-gradient(135deg,var(--c5),var(--c2));color:#fff;flex:none;animation:pop .5s .4s both}
+.an-theme .tr{height:10px;border-radius:5px;overflow:hidden;background:var(--line);display:flex;gap:1px}
+.an-theme .tr i{display:block;height:100%;width:0;transition:width 1.1s cubic-bezier(.2,.8,.2,1)}
+.an-theme .n{font:500 12px/1 var(--mono);text-align:right;color:var(--fg)}
+.an-theme .ed{font-size:12px;color:var(--muted);opacity:0;transition:.2s;text-align:center}
+.an-theme:hover .ed{opacity:1}.an-theme .ed:hover{color:var(--accent)}
+.an-theme.add{grid-template-columns:1fr;color:var(--accent);border-style:dashed;border-color:var(--line2);justify-items:start;font-size:12.5px}
+.an-tlegend{display:flex;gap:14px;flex-wrap:wrap;font-size:11.5px;color:var(--muted);margin-top:10px}
+.an-tlegend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+
+/* ---- comparación con la cuenta ---- */
+.an-cmp{display:flex;flex-direction:column;gap:12px}
+.an-cmp .r{display:grid;grid-template-columns:1fr 64px;gap:10px;align-items:center;font-size:12.5px}
+.an-cmp .lb{color:var(--fg2);display:flex;justify-content:space-between;gap:8px;margin-bottom:5px}
+.an-cmp .lb b{font-family:var(--mono);font-weight:500;color:var(--fg)}
+.an-cmp .lb small{color:var(--muted);font-family:var(--mono)}
+.an-cmp .bars{display:flex;flex-direction:column;gap:3px}
+.an-cmp .bars i{display:block;height:6px;border-radius:3px;width:0;transition:width 1.1s cubic-bezier(.2,.8,.2,1)}
+.an-cmp .bars i.avg{background:var(--line2)}.an-cmp .bars i.now{background:var(--accent)}
+.an-cmp .bars i.now.bad{background:var(--neg)}.an-cmp .bars i.now.warn{background:var(--c2)}
+.an-cmp .dl{font:600 13px/1 var(--mono);text-align:right}
+.an-cmp .dl.bad{color:var(--neg)}.an-cmp .dl.good{color:var(--pos)}.an-cmp .dl.warn{color:var(--c2)}
+.an-cmp .dl small{display:block;font:500 9.5px/1.2 var(--mono);color:var(--muted);margin-top:3px}
+
+/* ---- línea de tiempo ---- */
+.an-tlcard{display:flex;flex-direction:column}
+.tl{width:100%;height:190px;display:block;flex:1}
+.an-tlk{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.an-tlk .chip{cursor:default}
+.an-tlk .chip b{font-family:var(--mono);font-weight:500}
+.an-tlk .chip i.dot{width:7px;height:7px;border-radius:50%;background:var(--pos);box-shadow:0 0 0 0 var(--pos);animation:ping 1.8s infinite}
+
+/* ---- pedidos y preguntas ---- */
+.an-asks{display:flex;flex-direction:column;gap:8px}
+.an-ask{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;font-size:13px;padding:9px 11px;border-radius:10px;background:var(--surface2);border:1px solid var(--line);animation:rise .45s both}
+.an-ask small{display:block;color:var(--muted);font-size:11.5px;margin-top:2px}
+.an-ask .n{font:600 15px/1 var(--display);color:var(--accent)}
+.an-ask .n small{display:block;font:500 9.5px/1 var(--mono);color:var(--muted);margin-top:3px;text-align:right}
+.an-ask.hot{border-color:color-mix(in oklab,var(--c2) 55%,var(--line));background:color-mix(in oklab,var(--c2) 8%,var(--surface2))}
+.an-ask.hot .n{color:var(--c2)}
+
+/* ---- quién habla ---- */
+.an-people{display:flex;flex-direction:column;gap:8px}
+.an-person{display:grid;grid-template-columns:40px 1fr auto;gap:12px;align-items:start;padding:10px;border:1px solid var(--line);border-radius:12px;background:var(--surface2);animation:rise .5s both;cursor:pointer;transition:border-color .2s,transform .2s}
+.an-person:hover{border-color:var(--accent);transform:translateY(-1px)}
+.an-person .av{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;color:#fff;font:600 12px/1 var(--mono);position:relative;background:var(--col)}
+.an-person .vf{position:absolute;right:-3px;bottom:-3px;width:16px;height:16px;border-radius:50%;background:#0095f6;color:#fff;display:grid;place-items:center;font-size:9px;font-weight:700;border:2px solid var(--surface2);animation:pop .4s .3s both}
+.an-person>div{min-width:0}
+.an-person .nm{font-weight:600;font-size:13px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;min-width:0}
+.an-person .nm small{color:var(--muted);font-weight:400;font-family:var(--mono);font-size:11px}
+.an-rl{display:inline-flex;gap:6px;align-items:center;font:500 10.5px/1 var(--mono);padding:3px 7px;border-radius:6px;background:var(--surface);border:1px solid var(--line2);color:var(--fg2);white-space:nowrap}
+.an-rl.op{border-color:color-mix(in oklab,var(--c2) 60%,var(--line2));color:var(--c2)}
+.an-rl.of{border-color:color-mix(in oklab,var(--c4) 60%,var(--line2));color:var(--c4)}
+.an-person .tx{font-size:12.5px;color:var(--fg2);margin-top:4px;line-height:1.45}
+.an-person .st{text-align:right;font:500 11.5px/1.3 var(--mono);color:var(--muted);display:flex;flex-direction:column;gap:5px;align-items:flex-end;white-space:nowrap}
+.an-person .st i{width:8px;height:8px;border-radius:50%;display:inline-block;vertical-align:-1px;margin-right:4px}
+.an-top{display:flex;flex-direction:column;gap:8px}
+.an-topc{display:grid;grid-template-columns:52px 1fr;gap:10px;align-items:start;padding:9px 10px;border-radius:10px;border:1px solid var(--line);background:var(--surface2);font-size:12.5px;animation:rise .45s both}
+.an-topc .lk{text-align:center;padding-top:2px}
+.an-topc .lk b{font:600 15px/1 var(--display);color:var(--fg);display:block}
+.an-topc .lk small{display:block;font:500 9.5px/1 var(--mono);color:var(--muted);margin-top:3px}
+.an-topc .w{font-size:11.5px;color:var(--muted);display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.an-topc .w b{color:var(--fg);font-weight:600}
+.an-topc .tx{margin-top:2px;line-height:1.45}
+.an-topc .bar{height:3px;border-radius:2px;background:var(--line);margin-top:7px;overflow:hidden}
+.an-topc .bar i{display:block;height:100%;width:0;border-radius:2px;transition:width 1s .2s}
+.vf-s{display:inline-grid;place-items:center;width:14px;height:14px;border-radius:50%;background:#0095f6;color:#fff;font-size:8px;font-weight:700;vertical-align:-2px}
+
+/* ---- reclamos, etiquetas, emojis ---- */
+.an-col{display:flex;flex-direction:column;gap:14px;min-width:0}.an-col .card{flex:1}
+.an-map{position:relative;height:250px;border-radius:12px;overflow:hidden;background:radial-gradient(260px 180px at 50% 50%,color-mix(in oklab,var(--accent) 12%,transparent),transparent 70%),var(--surface2);border:1px solid var(--line)}
+.an-map svg{width:100%;height:100%;display:block}
+.an-map .halo{animation:anHalo 2.4s ease-out infinite;transform-box:fill-box;transform-origin:center}
+@keyframes anHalo{0%{transform:scale(.6);opacity:.7}100%{transform:scale(3.2);opacity:0}}
+.an-map .dot{animation:pop .5s both;cursor:pointer;transform-box:fill-box;transform-origin:center}
+.an-recl{display:flex;flex-direction:column;gap:6px;margin-top:10px;font-size:12.5px}
+.an-recl div{display:grid;grid-template-columns:8px 1fr auto;gap:8px;align-items:center}
+.an-recl i{width:8px;height:8px;border-radius:50%}
+.an-recl small{color:var(--muted);font:500 11px/1 var(--mono)}
+.an-tags{display:flex;flex-wrap:wrap;gap:6px}
+.an-tags .chip.h{border-color:color-mix(in oklab,var(--glow) 50%,var(--line2));color:var(--glow)}
+.an-tags .chip{cursor:default;animation:pop .4s both}
+.an-emo{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;justify-content:center;padding:10px 0 4px}
+.an-emo div{display:flex;flex-direction:column;align-items:center;gap:6px;animation:pop .55s cubic-bezier(.2,.9,.3,1.4) both}
+.an-emo b{font-size:var(--sz);line-height:1;filter:drop-shadow(0 6px 10px rgba(0,0,0,.18));animation:anFloat 3.2s ease-in-out infinite;animation-delay:var(--dl)}
+.an-emo small{font:500 11px/1 var(--mono);color:var(--muted)}
+@keyframes anFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+
+/* ---- comentarios ---- */
+.an-cfilters{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.an-cfilters .field{padding:7px 10px;font-size:12.5px;min-width:200px}
+.cmts{display:flex;flex-direction:column;gap:8px}
+.cmt{display:grid;grid-template-columns:3px 1fr;gap:10px;font-size:13px;border:1px solid var(--line);border-radius:10px;padding:8px 10px 8px 0;background:var(--surface2)}
+.cmt i.sb{border-radius:0 2px 2px 0}
+.cmt .w{font-size:11.5px;color:var(--muted);display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:2px}
+.cmt .w b{color:var(--fg);font-weight:600}
+.cmt .w .tm{margin-left:auto;font-family:var(--mono)}
+.cmt .w .tg{font:500 10.5px/1 var(--mono);padding:3px 6px;border-radius:5px;background:var(--surface);border:1px solid var(--line2);color:var(--fg2)}
+.cmt .w .ps{font:500 10.5px/1 var(--mono);padding:3px 6px;border-radius:5px}
+.cmt .w .ps.c{background:color-mix(in oklab,var(--c2) 14%,var(--surface));color:var(--c2)}
+.cmt .w .ps.f{background:color-mix(in oklab,var(--c4) 14%,var(--surface));color:var(--c4)}
+.cmt .w .ps.n{background:var(--surface);color:var(--muted)}
+.cmt .w .q{color:var(--accent)}
+.an-cmtn{font-size:12px;color:var(--muted);margin-bottom:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.an-cmtn .chip{padding:4px 8px;font-size:11.5px}
+
+/* ---- compartir ---- */
+.exports{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.wa{white-space:pre-wrap;font:12.5px/1.5 var(--mono);background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:12px;max-height:300px;overflow:auto;color:var(--fg2)}
+.an-toast{position:fixed;left:50%;bottom:70px;transform:translate(-50%,16px);opacity:0;background:var(--fg);color:var(--bg);padding:10px 14px;border-radius:10px;font-size:13px;z-index:70;transition:.3s;pointer-events:none;box-shadow:0 10px 30px -10px rgba(0,0,0,.5)}
+.an-toast.on{opacity:1;transform:translate(-50%,0)}
+
+/* ---- galería de publicaciones analizadas ---- */
+.an-gal-tools{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+.an-gal-tools .field{padding:8px 10px;font-size:13px}
+.an-gal{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.an-gc{padding:0;overflow:hidden;cursor:pointer;transition:transform .25s,box-shadow .25s,border-color .25s;animation:rise .5s both;display:flex;flex-direction:column}
+.an-gc:hover{transform:translateY(-3px);border-color:var(--accent);box-shadow:0 24px 44px -26px color-mix(in oklab,var(--accent) 55%,transparent)}
+.an-gc .ph{aspect-ratio:4/3;background:linear-gradient(135deg,var(--a),var(--b));position:relative}
+.an-gc .ph::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.05),rgba(0,0,0,.45) 100%),radial-gradient(180px 100px at 75% 30%,rgba(255,255,255,.28),transparent)}
+.an-gc .ph>*{position:absolute;z-index:1}
+.an-gc .ev{left:10px;top:10px;font:600 10.5px/1 var(--mono);padding:5px 8px;border-radius:999px;background:rgba(20,26,43,.72);color:#fff;backdrop-filter:blur(6px);display:flex;gap:6px;align-items:center}
+.an-gc .ev i{width:6px;height:6px;border-radius:50%;background:var(--c2);box-shadow:0 0 0 0 var(--c2);animation:anPing 1.8s infinite;color:var(--c2)}
+.an-gc .dt{right:10px;top:10px;font:500 10.5px/1 var(--mono);color:#fff;background:rgba(0,0,0,.35);padding:4px 7px;border-radius:6px}
+.an-gc .who{left:12px;bottom:10px;display:flex;align-items:center;gap:8px;color:#fff;font-weight:600;font-size:12.5px;text-shadow:0 1px 4px rgba(0,0,0,.6)}
+.an-gc .who .av{width:26px;height:26px;border-radius:50%;border:2px solid #fff;display:grid;place-items:center;font:600 10px/1 var(--mono);background:linear-gradient(135deg,var(--accent),var(--glow))}
+.an-gc .bd{padding:12px 14px 14px;display:flex;flex-direction:column;flex:1}
+.an-gc h3{font-size:13.5px;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:2.7em;font-weight:600}
+.an-gc .stack{margin-top:10px;height:6px}
+.an-gc .stack i{width:0;transition:width 1s .2s}
+.an-gc .star{margin-top:10px;display:flex;align-items:center;gap:6px;font-size:12px;color:var(--fg2)}
+.an-gc .star i{width:8px;height:8px;border-radius:2px;background:linear-gradient(135deg,var(--c5),var(--c2));flex:none}
+.an-gc .star span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.an-gc .star small{color:var(--muted);font-family:var(--mono);margin-left:auto}
+.an-gc .ft{display:flex;justify-content:space-between;gap:8px;margin-top:auto;padding-top:10px;font:500 11.5px/1 var(--mono);color:var(--muted);flex-wrap:wrap}
+.an-gc .ft b{color:var(--fg);font-weight:500}
+.an-gc .ft .neg{color:var(--neg)}
+@media (max-width:1180px){.an-gal{grid-template-columns:repeat(3,1fr)}.an-theme{grid-template-columns:minmax(110px,150px) 1fr 44px 18px}}
+@media (max-width:980px){.an-hero,.an-3,.an-2{grid-template-columns:1fr!important}.an-gal{grid-template-columns:repeat(2,1fr)}.an-kpis{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:640px){.an-person{grid-template-columns:40px 1fr}.an-person .st{grid-column:2;flex-direction:row;gap:12px;align-items:center;white-space:normal}.an-rl{white-space:normal}.an-cfilters .seg,.an-gal-tools .seg{max-width:100%;overflow-x:auto}.an-cfilters,.an-gal-tools{width:100%}.an-gal-tools .note{margin-left:0!important}.an-post{grid-template-columns:1fr}.an-post .img{max-width:220px}.an-gal{grid-template-columns:1fr}.urlbar{grid-template-columns:1fr}.an-event .big b{font-size:40px}.an-donut{grid-template-columns:1fr;justify-items:center}.an-theme{grid-template-columns:1fr 44px 18px}.an-theme .tr{display:none}.an-cfilters .field{min-width:0;width:100%}}
+/* ---- "Análisis recientes" del inicio (comparte estilo con la galería) ---- */
 .recent{display:flex;flex-direction:column;gap:8px}
-.recent a{display:grid;grid-template-columns:36px 1fr auto;gap:10px;align-items:center;text-decoration:none;color:inherit;border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--surface2)}
-.recent a:hover{border-color:var(--accent)}
-.recent .th{width:36px;height:36px;border-radius:8px;background:linear-gradient(135deg,var(--a),var(--b))}
+.recent a{display:grid;grid-template-columns:36px 1fr auto;gap:10px;align-items:center;text-decoration:none;color:inherit;border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--surface2);transition:border-color .2s,transform .2s}
+.recent a:hover{border-color:var(--accent);transform:translateY(-1px)}
+.recent a>span{min-width:0}
+.recent .th{width:36px;height:36px;border-radius:8px;background:linear-gradient(135deg,var(--a),var(--b));position:relative}
+.recent .th em{position:absolute;right:-3px;top:-3px;width:9px;height:9px;border-radius:50%;background:var(--c2);border:2px solid var(--surface2)}
 .recent b{font-size:12.5px;font-weight:600;display:block}
-.recent small{color:var(--muted);font-size:11.5px}
-.recent .num{font-size:11.5px;color:var(--muted);text-align:right}
-@media (max-width:980px){.ana{grid-template-columns:1fr}}
-@media (max-width:640px){.two{grid-template-columns:1fr}.urlbar{grid-template-columns:1fr}}
+.recent small{color:var(--muted);font-size:11.5px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.recent .num{font-size:11.5px;color:var(--muted);text-align:right;line-height:1.35;white-space:nowrap}
 
 /* =====================================================================
    4 · ESTADÍSTICAS
@@ -923,38 +1145,86 @@ footer.foot{border-top:1px solid var(--line);margin-top:40px;background:color-mi
 <!-- ===================== 3 · ANÁLISIS DE PUBLICACIÓN ===================== -->
 <section class="panel" id="p-analisis">
   <div class="head rv">
-    <div><h1>Análisis de publicación</h1><p>Pegás el link de una publicación y la pestaña arma el cuadro completo: tono de los comentarios, temas, cuándo se comentó, qué dijo la gente y el informe para compartir.</p></div>
+    <div><h1>Análisis de publicación</h1><p>Pegás el link de una publicación y la pestaña arma el cuadro completo: qué pasó en los comentarios, quién habló, qué piden, dónde reclaman y el informe listo para compartir.</p></div>
+    <div class="tools"><div class="seg" id="anaView"><button class="on" data-v="1">Analizar</button><button data-v="2">Publicaciones analizadas<span class="an-cnt num" id="anaCount">0</span></button></div></div>
   </div>
-  <div class="card rv"><div class="urlbar"><input id="anaUrl" placeholder="https://www.instagram.com/p/…" aria-label="Link de la publicación"><button class="btn primary" id="anaGo">Analizar</button></div>
-    <div class="ana-state" id="anaRun">
-      <div class="steps" id="anaSteps"></div>
-    </div>
-  </div>
-  <div class="posts rv" id="posts" style="margin-top:14px"></div>
-  <div class="grid ana rv">
-    <div>
-      <div class="post" id="post"></div>
-      <div class="ai"><div class="ct2">◆ Resumen generado</div><p id="aiText"></p></div>
-      <div class="card" style="margin-top:12px"><div class="ct"><h2>Compartir</h2></div>
-        <div class="exports"><button class="btn sm" id="waBtn">Texto para WhatsApp</button><button class="btn sm">Descargar CSV</button><button class="btn sm">Informe completo</button></div>
-        <div class="wa" id="waText" style="display:none;margin-top:10px"></div>
+
+  <!-- ======== vista 1 · analizar + resultado ======== -->
+  <div class="an-view on" id="anaV1">
+    <div class="card rv">
+      <div class="urlbar"><input id="anaUrl" placeholder="https://www.instagram.com/p/… o /reel/…" aria-label="Link de la publicación" autocomplete="off"><button class="btn primary" id="anaGo">Analizar</button></div>
+      <div class="an-notice" id="anaNotice" hidden></div>
+      <div class="ana-state" id="anaRun">
+        <div class="an-prog"><div class="ph"><span id="anaPhase">Analizando…</span><span class="pct num" id="anaPct">0 %</span></div><div class="bar"><i id="anaBar"></i></div></div>
+        <div class="steps" id="anaSteps"></div>
       </div>
     </div>
-    <div style="display:flex;flex-direction:column;gap:14px;min-width:0">
-      <div class="grid two">
-        <div class="card"><div class="ct"><h2>Tono de los comentarios</h2><span class="hint" id="anaN"></span></div>
-          <div class="stackbar" id="stack"><i class="bg-pos"></i><i class="bg-neu"></i><i class="bg-neg"></i></div>
-          <div class="sb-lbl" id="stackLbl"></div>
-        </div>
-        <div class="card"><div class="ct"><h2>Temas detectados</h2><span class="hint">por el modelo · editables</span></div><div class="themes" id="themes"></div></div>
-      </div>
-      <div class="card"><div class="ct"><h2>Cuándo comentaron</h2><span class="hint">comentarios por hora desde la publicación</span></div>
-        <svg class="tl" id="tl" viewBox="0 0 640 190" preserveAspectRatio="none" aria-label="Comentarios por hora"></svg></div>
-      <div class="card"><div class="ct"><h2>Comentarios</h2>
-          <div class="tools"><div class="seg" id="cmtSeg"><button class="on" data-f="top">Destacados</button><button data-f="neg">Negativos</button><button data-f="pos">Positivos</button><button data-f="all">Todos</button></div></div></div>
-        <div class="cmts" id="cmts"></div></div>
+    <div class="posts rv" id="posts" style="margin-top:14px"></div>
+
+    <div class="grid an-hero rv">
+      <div class="card an-postcard"><div class="an-post" id="post"></div><div class="an-kpis" id="anaKpis"></div><div class="an-ai" id="anaAi"></div></div>
+      <div class="card an-event" id="anaEvent"></div>
     </div>
+
+    <div class="grid an-3 rv" style="margin-top:14px">
+      <div class="card"><div class="ct"><h2>Tono</h2><span class="hint" id="anaN"></span></div>
+        <div class="an-donut"><div class="c"><svg viewBox="0 0 118 118" id="anaDonut" aria-hidden="true"></svg><div class="mid" id="anaDonutMid"></div></div><div class="an-rows" id="anaTono"></div></div>
+        <p class="note" id="anaTonoNote" style="margin:12px 0 0"></p></div>
+      <div class="card"><div class="ct"><h2>Postura hacia la gestión</h2><span class="hint">no es lo mismo que el tono</span></div>
+        <div class="an-rows" id="anaPostura"></div>
+        <p class="note" style="margin:12px 0 0">“Qué lindo quedó, pero a Macri ni lo nombren” es <b>positivo</b> en tono y <b>crítico</b> en postura. Las dos lecturas juntas evitan festejar de más.</p></div>
+      <div class="card"><div class="ct"><h2>¿Hablan del posteo?</h2><span class="hint">o lo usan para otra cosa</span></div>
+        <div class="an-split" id="anaSplit"><i class="on"></i><i class="off"></i></div><div class="sb-lbl" id="anaSplitLbl"></div>
+        <div class="an-desv" id="anaDesv"></div></div>
+    </div>
+
+    <div class="grid an-2 rv" style="margin-top:14px;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr)">
+      <div class="card"><div class="ct"><h2>De qué hablan</h2><span class="hint">comentarios por tema · color = tono · click filtra abajo · ✎ edita el nombre</span></div><div class="an-themes" id="themes"></div>
+        <div class="an-tlegend"><span><i class="bg-pos"></i>positivo</span><span><i class="bg-neu"></i>neutro</span><span><i class="bg-neg"></i>negativo</span><span style="margin-left:auto">un comentario puede tocar más de un tema</span></div></div>
+      <div class="card"><div class="ct"><h2>Esta publicación vs. las anteriores de <span id="anaCmpAcc">@cuenta</span></h2><span class="hint" id="anaCmpHint"></span></div><div class="an-cmp" id="anaCmp"></div>
+        <svg class="an-hist" id="anaHist" viewBox="0 0 420 92" preserveAspectRatio="none" aria-label="Negativos en los últimos análisis"></svg><p class="note" id="anaHistLbl" style="margin:6px 0 0"></p></div>
+    </div>
+
+    <div class="grid an-2 rv" style="margin-top:14px;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);align-items:stretch">
+      <div class="card an-tlcard"><div class="ct"><h2>Cuándo comentaron</h2><span class="hint">comentarios por hora desde la publicación</span></div>
+        <svg class="tl" id="tl" viewBox="0 0 640 190" preserveAspectRatio="none" aria-label="Comentarios por hora"></svg><div class="an-tlk" id="anaTlk"></div></div>
+      <div class="card"><div class="ct"><h2>Pedidos y preguntas</h2><span class="hint">agrupados por el modelo · insumo para responder</span></div><div class="an-asks" id="anaAsks"></div></div>
+    </div>
+
+    <div class="grid an-2 rv" style="margin-top:14px;grid-template-columns:1fr 1fr">
+      <div class="card"><div class="ct"><h2>Verificados y figuras públicas</h2><span class="hint" id="anaVerHint"></span></div><div class="an-people" id="anaPeople"></div>
+        <p class="note" style="margin:10px 0 0">El rol y la alineación salen de la lista de figuras públicas que mantiene el equipo (editable). A los vecinos comunes no se los etiqueta: se mide la postura del comentario.</p></div>
+      <div class="card"><div class="ct"><h2>Los que más pegaron</h2><span class="hint">los comentarios con más likes · son los que marcan el clima</span></div><div class="an-top" id="anaTop"></div><p class="note" id="anaTopNote" style="margin:10px 0 0"></p></div>
+    </div>
+
+    <div class="grid an-2 rv" style="margin-top:14px;grid-template-columns:minmax(0,1fr) minmax(0,1fr)">
+      <div class="card"><div class="ct"><h2>Reclamos ubicables</h2><span class="hint" id="anaReclHint"></span></div><div class="an-map"><svg id="anaMap" viewBox="0 0 320 250" aria-label="Reclamos ubicados en la Ciudad"></svg></div><div class="an-recl" id="anaRecl"></div></div>
+      <div class="an-col">
+        <div class="card"><div class="ct"><h2>A quién etiquetan</h2><span class="hint">cuentas y hashtags en los comentarios</span></div><div class="an-rows" id="anaTagRows"></div><div class="eyebrow" style="margin:14px 0 8px">Hashtags</div><div class="an-tags" id="anaTags"></div><p class="note" id="anaTagsNote" style="margin:12px 0 0"></p></div>
+        <div class="card"><div class="ct"><h2>Emojis</h2><span class="hint">los más usados · tamaño = cantidad</span></div><div class="an-emo" id="anaEmo"></div><div class="eyebrow" style="margin:14px 0 8px">Apoyo vs. bronca</div><div class="an-split" id="anaEmoSplit"></div><p class="note" id="anaEmoNote" style="margin:12px 0 0"></p></div>
+      </div>
+    </div>
+
+    <div class="card rv" style="margin-top:14px"><div class="ct"><h2>Comentarios</h2>
+        <div class="an-cfilters"><input class="field" id="cmtQ" placeholder="Buscar en los comentarios…" aria-label="Buscar en los comentarios">
+          <div class="seg" id="cmtSeg"><button class="on" data-f="top">Destacados</button><button data-f="neg">Negativos</button><button data-f="pos">Positivos</button><button data-f="neu">Neutros</button><button data-f="q">Preguntas</button><button data-f="ver">Verificados</button><button data-f="all">Todos</button></div></div></div>
+      <div class="an-cmtn" id="cmtN"></div>
+      <div class="cmts" id="cmts"></div></div>
+
+    <div class="card rv" style="margin-top:14px"><div class="ct"><h2>Compartir</h2><span class="hint">informe de 8 puntos · listo para pegar en WhatsApp o en un mail</span></div>
+      <div class="exports"><button class="btn sm primary" id="cpBtn">Copiar informe</button><button class="btn sm" id="waBtn">Ver texto para WhatsApp</button><button class="btn sm" id="csvBtn">Descargar CSV</button><span class="note" id="anaCost" style="margin-left:auto"></span></div>
+      <div class="wa" id="waText" style="display:none;margin-top:10px"></div></div>
   </div>
+
+  <!-- ======== vista 2 · publicaciones analizadas ======== -->
+  <div class="an-view" id="anaV2">
+    <div class="an-gal-tools rv"><input class="field" id="galQ" placeholder="Buscar por cuenta o texto…" aria-label="Buscar análisis" style="min-width:240px">
+      <div class="seg" id="galSeg"><button class="on" data-f="all">Todas</button><button data-f="ev">Con un hecho dominante</button><button data-f="neg">Más críticas</button><button data-f="ver">Con verificados</button></div>
+      <select class="field" id="galOrd" aria-label="Ordenar"><option value="recent">Más recientes</option><option value="c">Más comentadas</option><option value="neg">Más negativas</option><option value="ver">Más verificados</option></select>
+      <span class="note" id="galN" style="margin-left:auto"></span></div>
+    <div class="an-gal rv" id="gal"></div>
+  </div>
+  <div class="an-toast" id="anaToast" role="status"></div>
 </section>
 
 <!-- ===================== 4 · ESTADÍSTICAS ===================== -->
@@ -1282,7 +1552,7 @@ function openPop(p,list){
    </div>`;
   const sc=$('.scroll',dlg),sw=$('.scrollwrap',dlg);const chk=()=>sw.classList.toggle('more',sc.scrollTop+sc.clientHeight<sc.scrollHeight-4);sc.onscroll=chk;requestAnimationFrame(chk);
   $('.ph',dlg).onwheel=e=>{sc.scrollTop+=e.deltaY;e.preventDefault()};
-  $('#popAna',dlg).onclick=()=>{closePop();go('analisis');$('#anaUrl').value=url;$('#anaUrl').focus();window.scrollTo({top:0,behavior:'smooth'})};
+  $('#popAna',dlg).onclick=()=>{closePop();go('analisis');anaShowView(1);$('#anaUrl').value=url;$('#anaUrl').focus();window.scrollTo({top:0,behavior:'smooth'})};
   m.querySelector('.x').onclick=closePop;
   $$('.sel button',m).forEach(b=>b.onclick=()=>{b.parentElement.querySelectorAll('button').forEach(x=>x.className='');b.className='on '+b.dataset.s});
   const has=popList&&popList.length>1;m.classList.toggle('nav-on',!!has);
@@ -1529,76 +1799,288 @@ INIT.mapa=()=>{
 <script>
 /* =====================================================================
    3 · ANÁLISIS DE PUBLICACIÓN  (datos: tabla analisis + /api/analyze)
+   v5: hecho dominante, tono + postura, desvío del tema, temas con tono,
+   comparación con la cuenta, verificados y figuras públicas, pedidos,
+   reclamos ubicables, etiquetas, emojis, galería de analizadas.
+   Cada comentario: s tono · u usuario · t texto · l likes · h horas desde la
+   publicación · tm tema · p postura (f a favor / n neutra / c crítica) ·
+   v verificado · q pedido o pregunta.
    ===================================================================== */
+const ROLES={leg:'Legislador porteño',legf:'Legisladora porteña',per:'Periodista',med:'Medio',org:'Organización',cre:'Creador de contenido',jc:'Junta Comunal'};
+const AL={op:'oposición',of:'oficialismo'};
 const POSTS=[
- {d:'12 oct',url:'https://www.instagram.com/p/DPq1xZ9/',acc:'jorgemacri',a:'#3987e5',b:'#9085e9',cap:'Inauguramos la nueva estación Sáenz de la línea H. Más conexión para el sur de la Ciudad. 🚇',likes:18400,c:2140,n:2140,s:[.31,.27,.42],
-  th:[['Subte',640],['Obras',410],['Sur de la Ciudad',230],['Represión',380],['Boleto',190],['Tiempos de viaje',120]],peak:9,
-  ai:'La publicación arrancó con tono positivo por la obra, pero a las 9 h de publicada se mezcló con la conversación sobre el operativo policial del mismo día. El 42 % negativo no es contra la estación: dos de cada tres comentarios negativos hablan de la marcha.',
-  cm:[['neg','marianoqq','Muy linda la estación, pero lo de ayer en Constitución no se puede justificar.',412,9],['pos','sofi.ok','Por fin, hace 10 años que esperábamos esta estación 🙌',388,1],['neu','nico_boedo','¿Cuándo abre el acceso por Perito Moreno?',96,2],['neg','agus_lugano','Y el boleto otra vez aumenta, no da.',210,11],['pos','vale.cab','Hermosa, pasé hoy y está impecable.',140,3],['neg','romi.ba','Mientras tanto la línea B sin aire.',120,14],['neu','juanma.r','¿Combina con el Premetro?',44,5]]},
- {d:'10 oct',url:'https://www.instagram.com/p/DPl3kQ2/',acc:'jorgemacri',a:'#199e70',b:'#3987e5',cap:'Más de 3.000 m² de veredas nuevas en Caballito. Seguimos en toda la Ciudad.',likes:9200,c:640,n:640,s:[.58,.30,.12],
-  th:[['Veredas',310],['Caballito',140],['Obras',120],['Árboles',60]],peak:3,
-  ai:'Posteo con mejor recepción de la semana. Los elogios se concentran en vecinos de Caballito y Flores; las pocas críticas piden lo mismo para otros barrios, no cuestionan la obra.',
-  cm:[['pos','caro.flores','Quedaron impecables, pasé hoy por Rivadavia 😍',150,2],['neu','tomi.devoto','¿Y para Devoto cuándo?',88,4],['pos','vale.cab','Gracias, al fin se puede caminar con el cochecito.',132,1],['neg','marto_89','Tres cuadras y para la foto.',40,6]]},
- {d:'8 oct',url:'https://www.instagram.com/p/DPg8aW1/',acc:'gcba',a:'#d95926',b:'#c98500',cap:'Nuevo operativo de seguridad en Constitución con 120 agentes más por turno.',likes:11300,c:1480,n:300,s:[.36,.22,.42],
-  th:[['Seguridad',720],['Constitución',410],['Policía',330],['Represión',150]],peak:2,
-  ai:'Conversación dividida. Los comentarios positivos son de usuarios del Roca; los negativos cuestionan la cantidad de agentes y se encadenan con el reclamo por el boleto.',
-  cm:[['pos','fede.saavedra','Se nota, hoy a las 7 había patrulleros en toda la plaza.',201,1],['neg','romi.ba','120 agentes para la foto y mañana nada.',187,2],['neu','juanma.r','¿Esto es permanente o solo esta semana?',70,3],['neg','lucia.fernandez','Y en Lugano cuándo.',90,5]]},
- {d:'6 oct',url:'https://www.instagram.com/p/DPb2mN7/',acc:'jorgemacri',a:'#9085e9',b:'#e66767',cap:'Presentamos el presupuesto 2027: más obras, más seguridad, menos deuda.',likes:6100,c:910,n:910,s:[.28,.44,.28],
-  th:[['Presupuesto',400],['Deuda',210],['Obras',180],['Impuestos',150]],peak:5,
-  ai:'Posteo informativo: casi la mitad de los comentarios son neutros (preguntas y pedidos de detalle). El tono negativo gira en torno a ABL e impuestos, no al presupuesto en sí.',
-  cm:[['neu','pau.palermo','¿Dónde se puede ver el detalle por comuna?',120,2],['neg','marto_89','Menos deuda y más ABL, gracias.',160,4],['pos','lucia.fernandez','Bien que lo publiquen, antes no se veía nada.',90,1]]},
- {d:'4 oct',url:'https://www.instagram.com/p/DPW5kL3/',acc:'buenosaires',a:'#c98500',b:'#199e70',cap:'Bacheo nocturno en Av. Juan B. Justo: 420 baches reparados en una semana.',likes:7800,c:520,n:520,s:[.61,.27,.12],
-  th:[['Bacheo',280],['Juan B. Justo',110],['Tránsito',90]],peak:4,
-  ai:'Posteo chico pero muy bien recibido: 6 de cada 10 comentarios son positivos y muchos mencionan calles puntuales que ya se arreglaron.',
-  cm:[['pos','nico_boedo','Confirmo, el de Boyacá y Juan B. Justo ya está.',140,2],['pos','sofi.ok','Gracias, me comía ese bache todos los días.',95,1],['neu','agus_lugano','¿Y Av. Escalada?',60,3]]}
+ {id:1,d:'19 oct',dt:new Date(2026,9,19,10,0),url:'https://www.instagram.com/reel/DQ4kPz1xM2a/',acc:'jorgemacri',a:'#1baf7a',b:'#2a78d6',ty:'Reel',
+  cap:'Reabrimos el Parque Centenario renovado: 12 hectáreas, el lago recuperado, juegos nuevos y 400 árboles más. Un lugar para todos los vecinos de Caballito y de toda la Ciudad. 🌳',
+  likes:24600,c:1284,n:300,s:[.28,.19,.53],sw:[.21,.12,.67],post:[.24,.22,.54],on:.38,ruido:14,
+  desv:[['El vendedor de churros',.46],['Seguridad en el parque',.07],['Tránsito en Díaz Vélez',.05],['Pedidos para otros barrios',.04]],
+  th:[['Vendedor de churros',138,[6,20,112]],['Parque y obra',96,[70,14,12]],['Árboles y lago',41,[30,7,4]],['Seguridad',22,[3,6,13]],['Venta ambulante en general',19,[2,5,12]],['Tránsito y estacionamiento',15,[1,8,6]],['Otros reclamos',12,[2,6,4]],['Mascotas y canil',9,[5,3,1]]],
+  ev:{share:.62,likes:.84,amp:2,t:'Le sacaron el carrito a un vendedor de churros frente al parque',
+      d:'Un video de la noche anterior muestra a un inspector decomisando el carrito de “Don Ramón”, churrero del Centenario hace 15 años. Se viralizó y entró de lleno en los comentarios de la inauguración.',
+      ej:[['marianoqq','Hermoso el parque, pero al churrero que labura ahí hace 15 años le sacaron el carrito. Eso también es el Centenario.',1240],['tomasferreyra.ok','Fui hoy y está increíble, pero Don Ramón es parte del parque. Devuélvanle el carrito.',1870,true],['nico_boedo','¿Se puede saber qué pasó con el señor de los churros? Lo vimos todos.',610]]},
+  ai:'La obra tiene buena recepción: 7 de cada 10 comentarios que hablan del parque son positivos y elogian el lago y los juegos. Pero la conversación la dominó otro hecho: el video del inspector sacándole el carrito a un vendedor de churros frente al parque, publicado la noche anterior. El 62 % de los comentarios lo menciona y concentra el 84 % de los likes; un legislador opositor y un creador con 1,2 M de seguidores lo amplificaron. La gente no está en contra del parque: está esperando una respuesta sobre el churrero.',
+  peak:2,half:4,last24:38,first:'4 min',
+  ver:[
+   {u:'facundodelgado.leg',nm:'Facundo Delgado',ini:'FD',col:'#d04a4a',role:'leg',al:'op',f:312000},
+   {u:'tomasferreyra.ok',nm:'Tomás Ferreyra',ini:'TF',col:'#6250d6',role:'cre',f:1200000},
+   {u:'mariana.perez.ok',nm:'Mariana Pérez',ini:'MP',col:'#eb6834',role:'per',f:540000},
+   {u:'vecinosdecaballito',nm:'Vecinos de Caballito',ini:'VC',col:'#0b7fc4',role:'org',f:89000},
+   {u:'lauraquiroga.leg',nm:'Laura Quiroga',ini:'LQ',col:'#1baf7a',role:'legf',al:'of',f:120000},
+   {u:'comunacaballito',nm:'Junta Comunal 6',ini:'C6',col:'#eda100',role:'jc',al:'of',f:48000}],
+  asks:[['Qué pasó con el vendedor de churros · que le devuelvan el carrito',71,'«¿Alguien va a explicar lo de Don Ramón?»'],['Cuándo abren el sector de juegos y el canil',18,'«¿El canil nuevo ya se puede usar?»'],['Iluminación nocturna del lago',14,'«De noche el lago sigue oscuro»'],['Lo mismo para otros barrios',12,'«¿Y para Lugano cuándo?»'],['Baños públicos en el parque',9,'«¿Va a haber baños?»'],['Bicis dentro del parque',6,'«¿Se puede andar en bici adentro?»']],
+  tags:[['@gcba',34],['@facundodelgado.leg',27],['@c5n',12],['@todonoticias',9],['@comunacaballito',8]],hts:[['#Centenario',22],['#DonRamon',19],['#Caballito',11]],
+  emo:[['😡',182],['🤦',96],['🌳',71],['👏',52],['😤',44],['❤️',38],['😂',21]],
+  recl:[{cat:'Espacio Público',sub:'Alumbrado',w:'Parque Centenario · sector lago',lo:-58.4350,la:-34.6068,u:'ricky.caballito'},{cat:'Espacio Público',sub:'Canil sin sombra',w:'Parque Centenario',lo:-58.4332,la:-34.6058,u:'vecinosdecaballito'},{cat:'Tránsito',sub:'Obra / corte',w:'Av. Díaz Vélez y L. Marechal',lo:-58.4372,la:-34.6042,u:'lau.rivadavia'},{cat:'Tránsito',sub:'Estacionamiento',w:'Av. Patricias Argentinas',lo:-58.4325,la:-34.6085,u:'fede.saavedra'},{cat:'Seguridad',sub:'Falta de patrullaje',w:'Parque Centenario · noche',lo:-58.4345,la:-34.6075,u:'viki.cab'},{cat:'Higiene',sub:'Basura acumulada',w:'Ángel Gallardo y Río de Janeiro',lo:-58.4385,la:-34.6035,u:'cele.c6'},{cat:'Espacio Público',sub:'Alumbrado',w:'Plaza Flores',lo:-58.4635,la:-34.6285,u:'sol.flores'},{cat:'Espacio Público',sub:'Juegos rotos',w:'Plaza de Lugano',lo:-58.4745,la:-34.6775,u:'agus_lugano'},{cat:'Espacio Público',sub:'Parque abandonado',w:'Parque Avellaneda',lo:-58.4855,la:-34.6455,u:'pato_flores'}],
+  prev:{n:12,neg:.31,c:740,ver:1.5,on:.78},cost:{apify:.70,model:.34},
+  cm:[
+   {s:'neg',u:'facundodelgado.leg',t:'Mientras inauguran con globos, la Ciudad le saca el laburo a un vendedor de churros. Vergüenza.',l:2310,h:1.9,tm:'Vendedor de churros',p:'c',v:1},
+   {s:'neu',u:'tomasferreyra.ok',t:'Fui hoy y está increíble, pero Don Ramón es parte del parque. Devuélvanle el carrito.',l:1870,h:2.6,tm:'Vendedor de churros',p:'c',v:1},
+   {s:'neg',u:'marianoqq',t:'Hermoso el parque, pero al churrero que labura ahí hace 15 años le sacaron el carrito. Eso también es el Centenario.',l:1240,h:1.2,tm:'Vendedor de churros',p:'c'},
+   {s:'neg',u:'sofi.ok',t:'Devuélvanle el carrito a Don Ramón y después hablamos de los árboles.',l:980,h:1.8,tm:'Vendedor de churros',p:'c'},
+   {s:'neu',u:'mariana.perez.ok',t:'¿Hay una explicación oficial sobre el operativo al vendedor? Lo pregunté y no responden.',l:890,h:3.2,tm:'Vendedor de churros',p:'c',v:1,q:1},
+   {s:'neg',u:'mauro_cab',t:'15 años vendiendo churros ahí y le sacan el carrito el día de la inauguración. No puede ser casualidad.',l:690,h:1,tm:'Vendedor de churros',p:'c'},
+   {s:'neu',u:'nico_boedo',t:'¿Se puede saber qué pasó con el señor de los churros? Lo vimos todos.',l:610,h:2.1,tm:'Vendedor de churros',p:'c',q:1},
+   {s:'neg',u:'romi.ba',t:'Globos e inauguración mientras un laburante se queda sin su carrito. Papelón.',l:540,h:1.5,tm:'Vendedor de churros',p:'c'},
+   {s:'neg',u:'vecinosdecaballito',t:'El canil quedó chico y sin sombra. Lo pedimos en la audiencia pública y no se escuchó.',l:530,h:5.5,tm:'Mascotas y canil',p:'c',v:1},
+   {s:'neg',u:'meli_vp',t:'Lo del churrero es una vergüenza. Van por los que menos tienen.',l:420,h:2.2,tm:'Vendedor de churros',p:'c'},
+   {s:'pos',u:'lauraquiroga.leg',t:'Orgullo porteño. 400 árboles más para Caballito 🌳',l:420,h:.5,tm:'Árboles y lago',p:'f',v:1},
+   {s:'pos',u:'vale.cab',t:'Fui hoy con los chicos y está impecable. Los juegos nuevos son un golazo 🙌',l:388,h:3.5,tm:'Parque y obra',p:'f'},
+   {s:'neg',u:'leo.caballito',t:'Vendedores ambulantes sí, pero el churrero de siempre no molesta a nadie. Devuélvanselo.',l:350,h:6.5,tm:'Venta ambulante en general',p:'c'},
+   {s:'neg',u:'nati.ok',t:'Se olvidaron de los manteros y churreros que hacen el parque. Mal.',l:310,h:3,tm:'Venta ambulante en general',p:'c'},
+   {s:'pos',u:'comunacaballito',t:'Gracias a todos los vecinos que participaron del proyecto. El parque es de ustedes.',l:310,h:1.1,tm:'Parque y obra',p:'f',v:1},
+   {s:'pos',u:'caro.flores',t:'El lago recuperado es otra cosa, hace años que no se veía así 🌳',l:302,h:4,tm:'Árboles y lago',p:'f'},
+   {s:'neg',u:'marto_89',t:'Tres fotos con globos y el churrero llorando al lado. Qué comunicación.',l:265,h:2.8,tm:'Vendedor de churros',p:'c'},
+   {s:'pos',u:'gaby.almagro',t:'Está lindo el parque, pero a Macri ni lo nombren: esto lo pidieron los vecinos hace 10 años.',l:230,h:8,tm:'Parque y obra',p:'c'},
+   {s:'neu',u:'ricky.caballito',t:'Vivo enfrente: de noche el sector del lago sigue sin luz, da miedo cruzar.',l:210,h:6,tm:'Seguridad',p:'c'},
+   {s:'pos',u:'hernan.cab',t:'Hace 20 años que vivo acá, nunca estuvo así de lindo.',l:201,h:28,tm:'Parque y obra',p:'f'},
+   {s:'neu',u:'cami.ok',t:'¿Hay algún comunicado sobre lo del vendedor? Pregunto en serio.',l:180,h:4.5,tm:'Vendedor de churros',p:'n',q:1},
+   {s:'pos',u:'flor_centenario',t:'400 árboles más 😍 gracias, Caballito lo necesitaba.',l:176,h:2.5,tm:'Árboles y lago',p:'f'},
+   {s:'neg',u:'agus_lugano',t:'Lindo. ¿Y para Lugano cuándo? Acá la plaza no tiene ni un juego sano.',l:150,h:5,tm:'Otros reclamos',p:'c',q:1},
+   {s:'pos',u:'seba.parque',t:'Se puede caminar sin esquivar pozos, parece otro parque.',l:140,h:12,tm:'Parque y obra',p:'f'},
+   {s:'pos',u:'lucia.fernandez',t:'Me emocionó ver el lago con patos otra vez 🦆',l:134,h:24,tm:'Árboles y lago',p:'f'},
+   {s:'pos',u:'gusti.ba',t:'Bien ahí. Lo del señor de los churros espero que lo arreglen rápido, pero la obra está muy bien.',l:120,h:15,tm:'Parque y obra',p:'f'},
+   {s:'pos',u:'rodri.boedo',t:'Gracias por recuperar el lago, era un pantano.',l:110,h:16,tm:'Árboles y lago',p:'f'},
+   {s:'neg',u:'viki.cab',t:'Más patrullaje de noche o va a pasar lo de siempre.',l:97,h:17,tm:'Seguridad',p:'c'},
+   {s:'pos',u:'el.tano.ok',t:'Impecable. Pasé a la mañana y ya estaba lleno de gente corriendo.',l:95,h:9,tm:'Parque y obra',p:'f'},
+   {s:'neg',u:'pato_flores',t:'Esto en Flores no pasa. Parque Avellaneda está abandonado.',l:88,h:14,tm:'Otros reclamos',p:'c'},
+   {s:'pos',u:'tomi.devoto',t:'Quedó muy bien, ojalá sigan con el Parque Saavedra.',l:76,h:18,tm:'Otros reclamos',p:'f'},
+   {s:'neg',u:'lau.rivadavia',t:'Díaz Vélez quedó intransitable con la obra, ¿lo van a resolver?',l:72,h:11,tm:'Tránsito y estacionamiento',p:'c',q:1},
+   {s:'neg',u:'sol.flores',t:'Mientras tanto la Plaza Flores sin luz hace un mes.',l:70,h:30,tm:'Otros reclamos',p:'c'},
+   {s:'pos',u:'ana.caballito',t:'Los juegos para los más chiquitos quedaron geniales.',l:66,h:19,tm:'Parque y obra',p:'f'},
+   {s:'neu',u:'juanma.r',t:'¿El canil nuevo ya se puede usar o falta habilitarlo?',l:64,h:7,tm:'Mascotas y canil',p:'n',q:1},
+   {s:'neg',u:'fede.saavedra',t:'Estacionar quedó imposible, sacaron 80 lugares y no pusieron nada.',l:61,h:22,tm:'Tránsito y estacionamiento',p:'c'},
+   {s:'neu',u:'dani.caba',t:'¿Van a poner baños públicos? Con tanta gente hacen falta.',l:58,h:10,tm:'Parque y obra',p:'n',q:1},
+   {s:'neu',u:'pau.palermo',t:'¿Cuánto costó la obra? No encuentro el dato.',l:52,h:20,tm:'Parque y obra',p:'n',q:1},
+   {s:'neg',u:'cele.c6',t:'Y la basura de Ángel Gallardo y Río de Janeiro, tres días sin levantarla.',l:44,h:40,tm:'Otros reclamos',p:'c'},
+   {s:'neu',u:'chechu.c6',t:'¿Se puede andar en bici adentro o sigue prohibido?',l:41,h:13,tm:'Parque y obra',p:'n',q:1},
+   {s:'neu',u:'mica.ok',t:'¿Alguien sabe si abren el sector de juegos de 0 a 3 años?',l:33,h:26,tm:'Parque y obra',p:'n',q:1},
+   {s:'neu',u:'ivan.ba',t:'Los árboles nuevos ¿son nativos? Sería bueno saber.',l:29,h:36,tm:'Árboles y lago',p:'n',q:1}]},
+ {id:2,d:'12 oct',dt:new Date(2026,9,12,11,0),url:'https://www.instagram.com/p/DPq1xZ9kLm2/',acc:'jorgemacri',a:'#3987e5',b:'#9085e9',ty:'Foto',cap:'Inauguramos la nueva estación Sáenz de la línea H. Más conexión para el sur de la Ciudad. 🚇',likes:18400,c:2140,n:300,s:[.31,.27,.42],post:[.30,.26,.44],on:.55,desv:[['Operativo en la marcha',.33],['Boleto',.09],['Otros reclamos',.03]],
+  th:[['Operativo en la marcha',118,[2,18,98]],['Estación y obra',96,[72,16,8]],['Boleto',41,[1,9,31]],['Sur de la Ciudad',38,[22,10,6]],['Tiempos de viaje',22,[12,8,2]],['Combinaciones',17,[3,12,2]]],peak:9,half:11,last24:3,first:'2 min',
+  ev:{share:.41,likes:.58,amp:1,t:'El operativo policial en la marcha de ese mismo día',d:'A las 9 h de publicada, la conversación se mezcló con las imágenes del operativo en Constitución. Dos de cada tres comentarios negativos hablan de la marcha, no de la estación.',ej:[['marianoqq','Muy linda la estación, pero lo de ayer en Constitución no se puede justificar.',412],['romi.ba','Inauguran subte y reprimen a dos cuadras. Todo el mismo día.',380],['agus_lugano','La estación está bien. Lo otro no.',150]]},
+  ai:'La publicación arrancó con tono positivo por la obra, pero a las 9 h se mezcló con la conversación sobre el operativo policial del mismo día. El 42 % negativo no es contra la estación: dos de cada tres comentarios negativos hablan de la marcha. El boleto aparece como segundo foco de queja.',
+  ver:[{u:'facundodelgado.leg',nm:'Facundo Delgado',ini:'FD',col:'#d04a4a',role:'leg',al:'op',f:312000}],
+  cm:[{s:'neg',u:'marianoqq',t:'Muy linda la estación, pero lo de ayer en Constitución no se puede justificar.',l:412,h:9,tm:'Operativo en la marcha',p:'c'},{s:'pos',u:'sofi.ok',t:'Por fin, hace 10 años que esperábamos esta estación 🙌',l:388,h:1,tm:'Estación y obra',p:'f'},{s:'neg',u:'facundodelgado.leg',t:'Cortan cintas mientras a dos cuadras reprimen jubilados. Ese es el modelo.',l:1020,h:10,tm:'Operativo en la marcha',p:'c',v:1},{s:'neu',u:'nico_boedo',t:'¿Cuándo abre el acceso por Perito Moreno?',l:96,h:2,tm:'Combinaciones',p:'n',q:1},{s:'neg',u:'agus_lugano',t:'Y el boleto otra vez aumenta, no da.',l:210,h:11,tm:'Boleto',p:'c'},{s:'pos',u:'vale.cab',t:'Hermosa, pasé hoy y está impecable.',l:140,h:3,tm:'Estación y obra',p:'f'},{s:'neg',u:'romi.ba',t:'Inauguran subte y reprimen a dos cuadras. Todo el mismo día.',l:380,h:9.5,tm:'Operativo en la marcha',p:'c'},{s:'neu',u:'juanma.r',t:'¿Combina con el Premetro?',l:44,h:5,tm:'Combinaciones',p:'n',q:1},{s:'pos',u:'fede.saavedra',t:'Del sur al centro en 20 minutos, cambia la vida.',l:160,h:4,tm:'Tiempos de viaje',p:'f'},{s:'neg',u:'lucia.fernandez',t:'Mientras tanto la línea B sin aire.',l:120,h:14,tm:'Boleto',p:'c'}]},
+ {id:3,d:'10 oct',dt:new Date(2026,9,10,9,30),url:'https://www.instagram.com/p/DPl3kQ2mNp4/',acc:'jorgemacri',a:'#199e70',b:'#3987e5',ty:'Foto',cap:'Más de 3.000 m² de veredas nuevas en Caballito. Seguimos en toda la Ciudad.',likes:9200,c:640,n:300,s:[.58,.30,.12],post:[.52,.33,.15],on:.81,
+  th:[['Veredas',150,[112,26,12]],['Otros barrios',48,[4,26,18]],['Obras',40,[28,8,4]],['Árboles',22,[14,6,2]]],peak:3,half:4,last24:0,first:'6 min',ev:null,
+  ai:'Posteo con mejor recepción de la semana. Los elogios se concentran en vecinos de Caballito y Flores; las pocas críticas piden lo mismo para otros barrios, no cuestionan la obra.',ver:[],
+  cm:[{s:'pos',u:'caro.flores',t:'Quedaron impecables, pasé hoy por Rivadavia 😍',l:150,h:2,tm:'Veredas',p:'f'},{s:'neu',u:'tomi.devoto',t:'¿Y para Devoto cuándo?',l:88,h:4,tm:'Otros barrios',p:'n',q:1},{s:'pos',u:'vale.cab',t:'Gracias, al fin se puede caminar con el cochecito.',l:132,h:1,tm:'Veredas',p:'f'},{s:'neg',u:'marto_89',t:'Tres cuadras y para la foto.',l:40,h:6,tm:'Obras',p:'c'},{s:'pos',u:'hernan.cab',t:'Se nota el cambio en toda la zona de Acoyte.',l:70,h:8,tm:'Veredas',p:'f'},{s:'neu',u:'ivan.ba',t:'¿Van a reponer los árboles que sacaron?',l:36,h:12,tm:'Árboles',p:'n',q:1}]},
+ {id:4,d:'8 oct',dt:new Date(2026,9,8,18,0),url:'https://www.instagram.com/p/DPg8aW1pQr7/',acc:'gcba',a:'#d95926',b:'#c98500',ty:'Video',cap:'Nuevo operativo de seguridad en Constitución con 120 agentes más por turno.',likes:11300,c:1480,n:300,s:[.36,.22,.42],post:[.34,.20,.46],on:.72,
+  th:[['Seguridad',140,[64,30,46]],['Constitución',88,[40,22,26]],['Policía',66,[18,14,34]],['Otros barrios',38,[2,12,24]]],peak:2,half:3,last24:0,first:'1 min',ev:null,
+  ai:'Conversación dividida. Los comentarios positivos son de usuarios del Roca; los negativos cuestionan la cantidad de agentes y se encadenan con el reclamo por el boleto. Una periodista preguntó por la duración del operativo y no tuvo respuesta.',
+  ver:[{u:'mariana.perez.ok',nm:'Mariana Pérez',ini:'MP',col:'#eb6834',role:'per',f:540000}],
+  cm:[{s:'pos',u:'fede.saavedra',t:'Se nota, hoy a las 7 había patrulleros en toda la plaza.',l:201,h:1,tm:'Seguridad',p:'f'},{s:'neg',u:'romi.ba',t:'120 agentes para la foto y mañana nada.',l:187,h:2,tm:'Policía',p:'c'},{s:'neu',u:'mariana.perez.ok',t:'¿Esto es permanente o solo esta semana? Pregunto para la nota.',l:240,h:3,tm:'Seguridad',p:'n',v:1,q:1},{s:'neg',u:'lucia.fernandez',t:'Y en Lugano cuándo.',l:90,h:5,tm:'Otros barrios',p:'c'},{s:'pos',u:'gusti.ba',t:'Hacía falta, Constitución a la noche era tierra de nadie.',l:130,h:4,tm:'Constitución',p:'f'}]},
+ {id:5,d:'6 oct',dt:new Date(2026,9,6,12,0),url:'https://www.instagram.com/p/DPb2mN7sTu9/',acc:'jorgemacri',a:'#9085e9',b:'#e66767',ty:'Foto',cap:'Presentamos el presupuesto 2027: más obras, más seguridad, menos deuda.',likes:6100,c:910,n:300,s:[.28,.44,.28],post:[.26,.40,.34],on:.66,
+  th:[['Presupuesto',130,[40,70,20]],['ABL e impuestos',70,[2,18,50]],['Deuda',44,[16,20,8]],['Obras',36,[22,10,4]]],peak:5,half:6,last24:0,first:'3 min',ev:null,
+  ai:'Posteo informativo: casi la mitad de los comentarios son neutros (preguntas y pedidos de detalle). El tono negativo gira en torno a ABL e impuestos, no al presupuesto en sí.',ver:[],
+  cm:[{s:'neu',u:'pau.palermo',t:'¿Dónde se puede ver el detalle por comuna?',l:120,h:2,tm:'Presupuesto',p:'n',q:1},{s:'neg',u:'marto_89',t:'Menos deuda y más ABL, gracias.',l:160,h:4,tm:'ABL e impuestos',p:'c'},{s:'pos',u:'lucia.fernandez',t:'Bien que lo publiquen, antes no se veía nada.',l:90,h:1,tm:'Presupuesto',p:'f'},{s:'neu',u:'ivan.ba',t:'¿Cuánto va a educación?',l:48,h:6,tm:'Presupuesto',p:'n',q:1}]},
+ {id:6,d:'4 oct',dt:new Date(2026,9,4,8,0),url:'https://www.instagram.com/p/DPW5kL3vWx1/',acc:'buenosaires',a:'#c98500',b:'#199e70',ty:'Reel',cap:'Bacheo nocturno en Av. Juan B. Justo: 420 baches reparados en una semana.',likes:7800,c:520,n:300,s:[.61,.27,.12],post:[.56,.30,.14],on:.84,
+  th:[['Bacheo',170,[130,30,10]],['Juan B. Justo',60,[40,14,6]],['Otros barrios',40,[6,22,12]],['Tránsito',26,[8,12,6]]],peak:4,half:5,last24:0,first:'5 min',ev:null,
+  ai:'Posteo chico pero muy bien recibido: 6 de cada 10 comentarios son positivos y muchos mencionan calles puntuales que ya se arreglaron. Las preguntas son pedidos de otras avenidas.',ver:[],
+  cm:[{s:'pos',u:'nico_boedo',t:'Confirmo, el de Boyacá y Juan B. Justo ya está.',l:140,h:2,tm:'Bacheo',p:'f'},{s:'pos',u:'sofi.ok',t:'Gracias, me comía ese bache todos los días.',l:95,h:1,tm:'Bacheo',p:'f'},{s:'neu',u:'agus_lugano',t:'¿Y Av. Escalada?',l:60,h:3,tm:'Otros barrios',p:'n',q:1},{s:'neg',u:'cele.c6',t:'Lo tapan y a los dos meses está igual.',l:38,h:9,tm:'Bacheo',p:'c'}]}
 ];
-let curPost=0, typeTimer=null, cmtFilter='top';
+/* publicaciones extra para la galería (forma idéntica, menos detalle) */
+const GEN=[
+ ['gcba','#199e70','#3987e5','Foto','2 oct','Nuevo Centro de Salud en Villa Soldati: 14 consultorios y guardia pediátrica. 🏥',8900,610,[.57,.28,.15],['Salud','Villa Soldati','Otros barrios','Turnos']],
+ ['jorgemacri','#eb6834','#eda100','Reel','30 sep','Recorrimos las obras del Metrobus del Bajo con los vecinos de Retiro. Nuevo tramo en diciembre.',12100,870,[.44,.31,.25],['Metrobus','Obras','Tránsito','Plazos']],
+ ['buenosaires','#6250d6','#0b7fc4','Foto','27 sep','La Noche de los Museos tuvo 1,2 millones de visitantes. Gracias por tanto. 🎨',21300,1150,[.78,.17,.05],['Cultura','Organización','Transporte','Otros barrios']],
+ ['jorgemacri','#d04a4a','#6250d6','Video','24 sep','200 patrulleros nuevos para la Policía de la Ciudad. Más presencia en cada barrio.',15800,1920,[.39,.18,.43],['Seguridad','Patrulleros','Otros barrios','Policía']],
+ ['gcba','#0b7fc4','#1baf7a','Foto','21 sep','Entregamos 180 viviendas en la Villa 20. Familias que hoy tienen su casa.',9400,730,[.63,.22,.15],['Vivienda','Villa 20','Otros barrios','Justicia']],
+ ['jorgemacri','#eda100','#d04a4a','Reel','18 sep','Docentes porteños: acordamos un aumento del 12 % para el último trimestre.',7200,1340,[.22,.26,.52],['Salarios','Educación','Paro','Otros gremios']]
+];
+const GCM={pos:['Muy buena noticia para el barrio 👏','Por fin, hacía falta hace años.','Pasé hoy y quedó muy bien.','Gracias por escuchar a los vecinos.','Se nota el cambio, sigan así.'],neu:['¿Desde cuándo funciona?','¿Dónde se puede ver más información?','¿Esto incluye a toda la comuna?','¿Cuánto costó?'],neg:['¿Y para nuestro barrio cuándo?','Mucha foto y poca gestión.','Mientras tanto el resto sigue igual.','Lo anunciaron tres veces ya.','Hace años que lo prometen.']};
+const GUS=['marianoqq','sofi.ok','nico_boedo','agus_lugano','vale.cab','romi.ba','juanma.r','caro.flores','tomi.devoto','marto_89','fede.saavedra','lucia.fernandez','pau.palermo','ricky.caballito','gusti.ba','hernan.cab','ivan.ba','cele.c6'];
+GEN.forEach((g,i)=>{
+  const [acc,a,b,ty,d,cap,likes,c,s,tn]=g;const n=Math.min(300,c);const th=tn.map((t,j)=>{const k=Math.round(n*[.36+i*.025,.24-i*.01,.16,.09][j]);const pp=Math.round(k*(j===2?.15:s[0])),nn=Math.round(k*(j===2?.6:s[2]));return [t,k,[pp,k-pp-nn,nn]]});
+  const cm=[];for(let k=0;k<9;k++){const sv=k<Math.round(9*s[0])?'pos':k<Math.round(9*(s[0]+s[1]))?'neu':'neg';const t=GCM[sv][k%GCM[sv].length];cm.push({s:sv,u:GUS[(i*5+k)%GUS.length],t,l:Math.round(rnd(20,320)),h:Math.round(rnd(1,30)),tm:th[k%th.length][0],p:sv==='pos'?'f':sv==='neg'?'c':'n',q:t.includes('¿')?1:0})}
+  POSTS.push({id:7+i,d,dt:[new Date(2026,9,2,11),new Date(2026,8,30,11),new Date(2026,8,27,11),new Date(2026,8,24,11),new Date(2026,8,21,11),new Date(2026,8,18,11)][i],url:`https://www.instagram.com/p/DP${['a','b','c','d','e','f'][i]}9${i}kZ${i}qL/`,acc,a,b,ty,cap,likes,c,n,s,ev:null,th,cm,ver:[],peak:Math.round(rnd(1,8)),half:Math.round(rnd(2,9)),last24:0,first:'3 min',ai:`Publicación con ${Math.round(s[0]*100)} % de comentarios positivos. El tema principal es ${tn[0].toLowerCase()}; las críticas se concentran en pedidos para otros barrios y en los plazos.`});
+});
+/* completa lo que falte en cada publicación (derivado de lo que sí tiene) */
+const ACCINI={jorgemacri:['JM','#3987e5'],gcba:['BA','#199e70'],buenosaires:['BA','#c98500']};
+const EMOPOOL={pos:['👏','❤️','🙌','😍','🌳','🙏'],neg:['😡','🤦','👎','😤','🙄'],neu:['🤔','👀','❓']};
+function enrich(p){
+  p.ini=p.ini||ACCINI[p.acc]?.[0]||p.acc.slice(0,2).toUpperCase();p.col=p.col||ACCINI[p.acc]?.[1]||'#3987e5';
+  p.sw=p.sw||norm([p.s[0]*.85,p.s[1]*.8,p.s[2]*1.25]);
+  p.post=p.post||norm([p.s[0]*.9,p.s[1]+p.s[0]*.1,p.s[2]*.95+p.s[1]*.15]);
+  if(p.on==null)p.on=p.ev?1-p.ev.share-.05:+rnd(.68,.9).toFixed(2);
+  p.desv=p.desv||p.th.slice(1).filter(t=>/otros|boleto|abl|tránsito|plazos|paro|justicia|policía/i.test(t[0])).slice(0,3).map((t,i)=>[t[0],+((1-p.on)*[.55,.3,.15][i]).toFixed(2)]);
+  if(p.ruido==null)p.ruido=Math.round(p.n*rnd(.02,.06));
+  p.cm.forEach((c,i)=>{c.p=c.p||(c.s==='pos'?'f':c.s==='neg'?'c':'n');c.tm=c.tm||p.th[i%p.th.length][0];if(c.q==null)c.q=/\?/.test(c.t)?1:0});
+  if(!p.asks){const qs=p.cm.filter(c=>c.q);p.asks=qs.slice(0,5).map((c,i)=>[c.t.replace(/[¿?]/g,'').replace(/^\w/,m=>m.toUpperCase()),Math.round(rnd(4,22)),'«'+c.t+'»'])}
+  if(!p.tags){p.tags=[['@'+(p.acc==='jorgemacri'?'gcba':'jorgemacri'),Math.round(rnd(6,30))],['@buenosaires',Math.round(rnd(3,12))]];if(p.ver.length)p.tags.push(['@'+p.ver[0].u,Math.round(rnd(5,20))]);p.tags.sort((x,y)=>y[1]-x[1])}
+  if(!p.hts)p.hts=[['#BuenosAires',Math.round(rnd(4,18))],['#'+p.th[0][0].replace(/\s.*/,''),Math.round(rnd(3,12))]];
+  if(!p.emo){const pool=[...EMOPOOL.pos.slice(0,3).map(e=>[e,Math.round(p.n*p.s[0]*rnd(.15,.4))]),...EMOPOOL.neg.slice(0,3).map(e=>[e,Math.round(p.n*p.s[2]*rnd(.15,.45))]),[pick(EMOPOOL.neu),Math.round(p.n*p.s[1]*rnd(.08,.2))]];p.emo=pool.filter(e=>e[1]>0).sort((x,y)=>y[1]-x[1]).slice(0,6)}
+  if(!p.recl){const k=Math.round(rnd(1,5));p.recl=RECL.filter(r=>r.origen==='comentario').slice(p.id*3,p.id*3+k).map(r=>{const cm=COMUNAS[r.comuna-1];return {cat:r.cat,sub:r.sub,w:r.barrio,lo:cm[2]+r.jx,la:cm[3]+r.jy,u:r.cuenta}})}
+  if(!p.prev){const neg=Math.max(.05,Math.min(.6,p.s[2]+rnd(-.12,.12)));p.prev={n:Math.round(rnd(5,14)),neg:+neg.toFixed(2),c:Math.round(p.c*rnd(.55,1.4)),ver:+rnd(.3,2).toFixed(1),on:+rnd(.7,.9).toFixed(2)}}
+  if(!p.cost)p.cost={apify:+(Math.max(.24,.7*p.n/300)).toFixed(2),model:+(Math.max(.08,.34*p.n/300)).toFixed(2)};
+  if(p.last24==null)p.last24=0;
+  return p;
+}
+function norm(a){const t=a.reduce((x,y)=>x+y,0);return a.map(v=>+(v/t).toFixed(2))}
+POSTS.forEach(enrich);
+const hh=h=>h<1?`+${Math.round(h*60)} min`:`+${Math.round(h)} h`;
+const fK=n=>n>=1e6?fmt(n/1e6,1)+' M':n>=1e3?fmt(Math.round(n/1e3))+' k':fmt(n);
+const codeOf=u=>(String(u).match(/\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/)||[])[1]||null;
+const roleTxt=v=>ROLES[v.role]+(v.al?' · '+AL[v.al]:'');
+const ps={f:['a favor','f'],n:['neutra','n'],c:['crítica','c']};
+
+let curPost=0, typeTimer=null, cmtFilter='top', cmtTema=null, cmtQ='', anaViewN=1, galF='all', galQ='', galOrd='recent';
 INIT.analisis=()=>{
-  renderStrip();renderPost();
-  $('#anaGo').onclick=startAnalysis;$('#anaUrl').onkeydown=e=>{if(e.key==='Enter')startAnalysis()};
+  $('#anaCount').textContent=POSTS.length;
+  renderStrip();renderPost();renderGal();
+  $('#anaGo').onclick=startAnalysis;$('#anaUrl').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();startAnalysis()}};
+  $('#anaUrl').oninput=()=>{$('#anaNotice').hidden=true};
+  $('#anaView').addEventListener('click',e=>{const b=e.target.closest('button');if(b)anaShowView(+b.dataset.v)});
   $('#cmtSeg').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;cmtFilter=b.dataset.f;renderCmts()});
-  $('#waBtn').onclick=()=>{const w=$('#waText');w.style.display=w.style.display==='none'?'':'none';w.textContent=waText(POSTS[curPost])};
+  $('#cmtQ').oninput=()=>{cmtQ=$('#cmtQ').value.trim().toLowerCase();renderCmts()};
+  $('#waBtn').onclick=()=>{const w=$('#waText');const show=w.style.display==='none';w.style.display=show?'':'none';w.textContent=report(POSTS[curPost]);$('#waBtn').textContent=show?'Ocultar texto':'Ver texto para WhatsApp'};
+  $('#cpBtn').onclick=()=>{const t=report(POSTS[curPost]);(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>toast('Informe copiado · '+fmt(t.length)+' caracteres'),()=>toast('No se pudo copiar automáticamente: usá el texto de abajo'))};
+  $('#csvBtn').onclick=()=>toast(`CSV con ${fmt(POSTS[curPost].n)} comentarios · fechas en hora argentina (demo)`);
+  $('#galQ').oninput=()=>{galQ=$('#galQ').value.trim().toLowerCase();renderGal()};
+  $('#galSeg').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;galF=b.dataset.f;renderGal()});
+  $('#galOrd').onchange=()=>{galOrd=$('#galOrd').value;renderGal()};
 };
+window.anaShowView=n=>{anaViewN=n;$$('#anaView button').forEach(b=>b.classList.toggle('on',+b.dataset.v===n));$('#anaV1').classList.toggle('on',n===1);$('#anaV2').classList.toggle('on',n===2);if(n===2)renderGal()};
+function toast(msg){const t=$('#anaToast');t.textContent=msg;t.classList.add('on');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('on'),2600)}
+function openPost(i){curPost=i;anaShowView(1);renderStrip();renderPost();window.scrollTo({top:0,behavior:RM?'auto':'smooth'})}
+
+/* ---------- tira de recientes ---------- */
 function renderStrip(){
-  $('#posts').innerHTML='<span class="lbl">Recientes</span>'+POSTS.map((p,i)=>`<button class="${i===curPost?'on':''}" data-i="${i}" style="--a:${p.a};--b:${p.b}" aria-label="Análisis del ${p.d}" data-tip="<b>@${p.acc} · ${p.d}</b>${esc(p.cap.slice(0,70))}…"><i></i><small>${p.d}</small></button>`).join('');
-  $$('#posts button').forEach(b=>b.onclick=()=>{curPost=+b.dataset.i;$$('#posts button').forEach(x=>x.classList.toggle('on',x===b));renderPost()});
+  $('#posts').innerHTML='<span class="lbl">Recientes</span>'+POSTS.slice(0,10).map((p,i)=>`<button class="${i===curPost?'on':''}" data-i="${i}" style="--a:${p.a};--b:${p.b}" aria-label="Análisis del ${p.d}" data-tip="<b>@${p.acc} · ${p.d}</b>${esc(p.cap.slice(0,70))}…${p.ev?'<br>⚡ hecho dominante':''}"><i></i>${p.ev?'<em></em>':''}<small>${p.d}</small></button>`).join('')+(POSTS.length>10?`<button class="btn sm ghost more" onclick="anaShowView(2)">+${POSTS.length-10} · ver todas</button>`:'');
+  $$('#posts button[data-i]').forEach(b=>b.onclick=()=>{curPost=+b.dataset.i;$$('#posts button').forEach(x=>x.classList.toggle('on',x===b));renderPost()});
 }
-function startAnalysis(){
+
+/* ---------- análisis nuevo (simulado con los pasos reales del servidor) ---------- */
+function startAnalysis(force){
   const url=$('#anaUrl').value.trim();if(!url){$('#anaUrl').focus();return}
+  const code=codeOf(url);const nt=$('#anaNotice');
+  if(!code){nt.hidden=false;nt.innerHTML=`<b>Ese link no es de una publicación.</b> Tiene que ser como instagram.com/p/… o /reel/… (el de la barra del navegador, no el de “Compartir” de la app).`;return}
+  const dup=POSTS.findIndex(p=>codeOf(p.url)===code);
+  if(dup>=0&&force!==true){nt.hidden=false;nt.innerHTML=`<b>Ya hay un análisis de esta publicación</b> (@${POSTS[dup].acc} · ${POSTS[dup].d} · ${fmt(POSTS[dup].n)} comentarios).<span class="sp"></span><button class="btn sm" id="ntVer">Ver</button><button class="btn sm primary" id="ntRe">Analizar de nuevo</button>`;
+    $('#ntVer').onclick=()=>{nt.hidden=true;openPost(dup);$('#anaUrl').value=''};$('#ntRe').onclick=()=>{nt.hidden=true;startAnalysis(true)};return}
+  nt.hidden=true;
   const box=$('#anaRun');box.classList.add('on');$('#anaGo').disabled=true;
-  const steps=['Traer la publicación','Traer los comentarios','Clasificar el tono de cada comentario','Detectar los temas','Armar el informe'];const res=[];let i=0;
-  const draw=()=>{$('#anaSteps').innerHTML=steps.map((s,j)=>`<div class="step ${j<i?'ok':j===i?'run':''}"><i>${j<i?'✓':j+1}</i>${s}${res[j]?`<span class="n">${res[j]}</span>`:''}</div>`).join('')};
+  const steps=[['Esperar turno en Apify','sin espera'],['Traer la publicación','@jorgemacri · 24.600 likes · 1.284 comentarios'],['Traer los comentarios','300 de 1.284 · 14 s'],['Clasificar tono, postura y temas',['100 de 300','200 de 300','300 de 300 · 3 tandas · 41 s']],['Detectar verificados y figuras públicas','6 verificados · 2 figuras públicas'],['Ubicar reclamos','9 ubicados'],['Armar el informe','listo · US$ 1,04']];
+  const res=[];let i=0,sub=0;
+  const draw=()=>{$('#anaSteps').innerHTML=steps.map((s,j)=>`<div class="step ${j<i?'ok':j===i?'run':''}"><i>${j<i?'✓':j+1}</i>${s[0]}${res[j]?`<span class="n">${res[j]}</span>`:''}</div>`).join('');
+    const k=(i+(Array.isArray(steps[i]?.[1])?sub/steps[i][1].length:0))/steps.length;$('#anaBar').style.width=Math.round(k*100)+'%';$('#anaPct').textContent=Math.round(k*100)+' %';$('#anaPhase').textContent=i<steps.length?steps[i][0]+'…':'Listo'};
   draw();
-  const tick=()=>{res[i]=['@jorgemacri · 12.300 likes','412 comentarios · 8 s','412 clasificados · 41 s','6 temas','listo'][i];i++;draw();if(i<steps.length)setTimeout(tick,RM?10:900);else setTimeout(()=>{
-    const np={...POSTS[0],d:'hoy',url,cap:'Nueva publicación analizada desde el link pegado. El texto, la foto y las métricas se traen de Instagram.',c:412,n:412,likes:12300,a:'#0b7fc4',b:'#6250d6'};
-    POSTS.unshift(np);curPost=0;renderStrip();renderPost();box.classList.remove('on');$('#anaGo').disabled=false;$('#anaUrl').value=''},500)};
-  setTimeout(tick,RM?10:900);
+  const tick=()=>{const s=steps[i];if(Array.isArray(s[1])){res[i]=s[1][sub];sub++;if(sub<s[1].length){draw();setTimeout(tick,RM?10:700);return}sub=0}else res[i]=s[1];
+    i++;draw();if(i<steps.length)setTimeout(tick,RM?10:800);else setTimeout(()=>{
+      const base=POSTS[0];const np={...base,id:Date.now(),d:'hoy',dt:new Date(HOY),url,a:'#0b7fc4',b:'#6250d6',cap:'Publicación analizada desde el link pegado. La foto, el texto y los números se traen de Instagram; el resto lo arma el análisis.'};
+      POSTS.unshift(np);curPost=0;$('#anaCount').textContent=POSTS.length;renderStrip();renderPost();renderGal();box.classList.remove('on');$('#anaGo').disabled=false;$('#anaUrl').value='';toast('Análisis listo · guardado como #analisis-'+(POSTS.length+41))},600)};
+  setTimeout(tick,RM?10:800);
 }
+
+/* ---------- resultado ---------- */
 function renderPost(){
-  const p=POSTS[curPost];
-  $('#post').innerHTML=`<div class="img" style="--a:${p.a};--b:${p.b}"></div><div class="body"><div class="acc"><span class="av"></span>${p.acc}<small>${p.d} · 2026</small></div><p>${esc(p.cap)}</p><div class="mets"><span>♥ ${fmt(p.likes)}</span><span>💬 ${fmt(p.c)}</span><span>analizados ${fmt(p.n)}</span></div><a class="lnk" href="${esc(p.url)}" target="_blank" rel="noopener">Ver en Instagram ↗</a></div>`;
-  $('#anaN').textContent=p.n<p.c?`${fmt(p.n)} de ${fmt(p.c)} comentarios (muestra)`:`${fmt(p.n)} comentarios`;
-  clearInterval(typeTimer);const el=$('#aiText');el.textContent='';el.classList.add('typing');
-  if(RM){el.textContent=p.ai;el.classList.remove('typing')}else{let i=0;typeTimer=setInterval(()=>{el.textContent=p.ai.slice(0,++i);if(i>=p.ai.length){clearInterval(typeTimer);el.classList.remove('typing')}},14)}
-  const bars=$$('#stack i');bars.forEach(b=>b.style.width='0');
-  setTimeout(()=>bars.forEach((b,i)=>b.style.width=(p.s[i]*100)+'%'),60);
-  $('#stackLbl').innerHTML=['pos','neu','neg'].map((k,i)=>`<span class="sent-${k}"><b>${Math.round(p.s[i]*100)} %</b> ${SENT[k].toLowerCase()} · ${fmt(Math.round(p.n*p.s[i]))}</span>`).join('');
-  const mx=p.th[0][1];
-  $('#themes').innerHTML=p.th.map((t,i)=>`<span class="theme" style="animation-delay:${i*70}ms;font-size:${12+10*(t[1]/mx)}px;border-color:${i===0?'var(--accent)':''}" data-tip="<b>${esc(t[0])}</b>${t[1]} comentarios · click para editar el nombre o quitarlo">${esc(t[0])}<small>${t[1]}</small></span>`).join('')+`<span class="theme add" data-tip="<b>Agregar un tema</b>Se guarda con el análisis y entra en el informe">+ tema</span>`;
-  timeline(p);renderCmts();
-  if($('#waText').style.display!=='none')$('#waText').textContent=waText(p);
+  const p=POSTS[curPost];cmtTema=null;cmtQ='';$('#cmtQ').value='';
+  /* publicación */
+  $('#post').innerHTML=`<div class="img" style="--a:${p.a};--b:${p.b}"><span class="ty">${p.ty}</span></div><div class="body"><div class="acc"><span class="av" style="background:${p.col}">${p.ini}</span>@${p.acc}<small>${p.d} · ${hora(p.dt)}</small></div><p>${esc(p.cap)}</p><div class="mets"><span>♥ <b>${fmt(p.likes)}</b></span><span>💬 <b>${fmt(p.c)}</b></span><span>analizados <b>${fmt(p.n)}</b>${p.n<p.c?` de ${fmt(p.c)}`:''}</span></div><a class="lnk" href="${esc(p.url)}" target="_blank" rel="noopener">Ver en Instagram ↗</a></div>`;
+  const neto=Math.round((p.s[0]-p.s[2])*100);
+  $('#anaKpis').innerHTML=`
+   <div><div class="eyebrow">Tono neto</div><div class="v num ${neto>5?'pos':neto<-5?'neg':''}" id="k1">0</div><div class="mini"><i class="bg-pos" data-w="${p.s[0]*100}"></i><i class="bg-neu" data-w="${p.s[1]*100}"></i><i class="bg-neg" data-w="${p.s[2]*100}"></i></div><div class="d">positivo menos negativo, en puntos</div></div>
+   <div><div class="eyebrow">Postura crítica</div><div class="v num ${p.post[2]>.45?'neg':''}" id="k2">0</div><div class="d">de los comentarios cuestiona la gestión</div></div>
+   <div><div class="eyebrow">Verificados</div><div class="v num ${p.ver.length>=3?'warn':''}" id="k3">0</div><div class="d">${p.ver.length?`comentaron · ${p.ver.filter(v=>v.al).length} con rol político`:'ningún verificado comentó'}</div></div>
+   <div><div class="eyebrow">Hablan del posteo</div><div class="v num ${p.on<.5?'warn':'pos'}" id="k4">0</div><div class="d">${p.on<.5?'la mayoría lo usa para otra cosa':'el resto lo usa para otra cosa'}</div></div>`;
+  countUp($('#k1'),neto,900,'');if(neto>0)setTimeout(()=>$('#k1').textContent='+'+$('#k1').textContent,RM?0:920);
+  countUp($('#k2'),Math.round(p.post[2]*100),900,' %');countUp($('#k3'),p.ver.length,700);countUp($('#k4'),Math.round(p.on*100),900,' %');
+  setTimeout(()=>$$('#anaKpis .mini i').forEach(i=>i.style.width=i.dataset.w+'%'),80);
+  $('#anaAi').innerHTML=`<div class="ct2">◆ Lectura estratégica</div><p id="aiText"></p>`;
+  renderEvent(p);renderTono(p);renderPostura(p);renderSplit(p);renderThemes(p);renderCmp(p);timeline(p);renderAsks(p);renderPeople(p);renderTop(p);renderMap(p);renderTags(p);renderEmo(p);renderCmts();
+  $('#anaCost').textContent=`Costo del análisis: US$ ${fmt(p.cost.apify+p.cost.model,2)} · Apify ${fmt(p.cost.apify,2)} · modelo ${fmt(p.cost.model,2)}`;
+  if($('#waText').style.display!=='none')$('#waText').textContent=report(p);
 }
-function renderCmts(){
-  const p=POSTS[curPost];let l=[...p.cm];
-  if(cmtFilter==='top')l=l.sort((a,b)=>b[3]-a[3]).slice(0,5);else if(cmtFilter!=='all')l=l.filter(c=>c[0]===cmtFilter);
-  $('#cmts').innerHTML=l.length?l.map((c,i)=>`<div class="cmt" style="animation:slideIn .5s ${i*80}ms both"><i class="bg-${c[0]}"></i><div><div class="w"><b>@${c[1]}</b><span>♥ ${c[3]}</span><span class="sent-${c[0]}">${SENT[c[0]]}</span><span class="tm">+${c[4]} h</span></div>${esc(c[2])}</div></div>`).join(''):'<div class="empty">No hay comentarios con ese tono.</div>';
+function typeInto(el,text){clearInterval(typeTimer);el.textContent='';el.classList.add('typing');if(RM){el.textContent=text;el.classList.remove('typing');return}let i=0;typeTimer=setInterval(()=>{el.textContent=text.slice(0,++i);if(i>=text.length){clearInterval(typeTimer);el.classList.remove('typing')}},12)}
+function renderEvent(p){
+  const el=$('#anaEvent');const e=p.ev;el.classList.toggle('calm',!e);
+  if(e){el.innerHTML=`<div class="ey"><i></i>Lo que pasó · hecho dominante</div><div class="big"><b class="num" id="evPct">0 %</b><span>de los comentarios habla de un mismo hecho, ajeno al posteo</span></div><h3>${esc(e.t)}</h3><p class="desc">${esc(e.d)}</p>
+    <div class="an-quotes">${[...e.ej].sort((x,y)=>y[2]-x[2]).map((q,i)=>`<div style="animation-delay:${.3+i*.15}s"><span><b>@${esc(q[0])}</b>${q[3]?' <span class="vf-s">✓</span>':''} ${esc(q[1])}</span><span class="l">♥ ${fmt(q[2])}<em>${i===0?'más likes':''}</em></span></div>`).join('')}</div>
+    <div class="foot"><span>concentra <b>${Math.round(e.likes*100)} %</b> de los likes</span><span>empezó <b>desde el primer comentario</b></span><span>lo amplificaron <b>${e.amp} verificado${e.amp===1?'':'s'}</b></span></div>
+    <div class="an-evfoot"><span class="eyebrow">Qué conviene mirar</span><p>${esc(e.tip||'Responder sobre el hecho antes de seguir publicando sobre la obra: la gente no está en contra del parque, está esperando esa respuesta.')}</p></div>`;countUp($('#evPct'),Math.round(e.share*100),1200,' %')}
+  else{const top=p.th[0];el.innerHTML=`<div class="ey"><i></i>Sin un hecho dominante</div><div class="big"><b class="num" id="evPct">0 %</b><span>es lo máximo que junta un solo tema: la conversación está repartida y responde al posteo</span></div><h3>Tema principal: ${esc(top[0])}</h3><p class="desc">${fmt(top[1])} comentarios lo tocan; ${pct(top[2][0],top[1])} % en tono positivo. Ningún hecho externo se metió en la conversación.</p>
+    <div class="an-calm">${p.th.slice(0,4).map((t,i)=>`<div style="animation-delay:${.3+i*.1}s"><span>${esc(t[0])}</span><span class="tr"><i class="bg-pos" style="--w:${t[2][0]/top[1]*100}%"></i><i class="bg-neu" style="--w:${t[2][1]/top[1]*100}%"></i><i class="bg-neg" style="--w:${t[2][2]/top[1]*100}%"></i></span><b>${fmt(t[1])}</b></div>`).join('')}</div>
+    <div class="an-evfoot"><span class="eyebrow">Qué conviene mirar</span><p>${esc(p.tip||'Conversación sana: conviene responder las preguntas concretas y tomar los pedidos para otros barrios como insumo.')}</p></div>`;countUp($('#evPct'),Math.round(top[1]/p.n*100),1200,' %')}
+  typeInto($('#aiText'),p.ai);
+}
+function renderTono(p){
+  const C=2*Math.PI*46;const segs=[['pos',p.s[0]],['neu',p.s[1]],['neg',p.s[2]]];let off=0;
+  $('#anaDonut').innerHTML=`<circle cx="59" cy="59" r="46" stroke="var(--line)"/>`+segs.map(([k,v])=>{const s=`<circle cx="59" cy="59" r="46" stroke="var(--${k})" stroke-dasharray="0 ${C}" stroke-dashoffset="${-off*C}" data-l="${v*C-2}"/>`;off+=v;return s}).join('');
+  setTimeout(()=>$$('#anaDonut circle[data-l]').forEach(c=>c.setAttribute('stroke-dasharray',`${c.dataset.l} ${C}`)),80);
+  const neto=Math.round((p.s[0]-p.s[2])*100);
+  $('#anaDonutMid').innerHTML=`<div><b class="${neto>5?'sent-pos':neto<-5?'sent-neg':''}">${neto>0?'+':''}${neto}</b><small>TONO NETO</small></div>`;
+  $('#anaTono').innerHTML=segs.map(([k,v])=>`<div class="an-row"><span class="lb sent-${k}">${SENT[k]}</span><span class="tr"><i class="bg-${k}" data-w="${v*100}"></i></span><span class="n">${Math.round(v*100)} %<small>${fmt(Math.round(p.n*v))} coment.</small></span></div>`).join('');
+  setTimeout(()=>$$('#anaTono .tr i').forEach(i=>i.style.width=i.dataset.w+'%'),80);
+  $('#anaN').textContent=p.n<p.c?`${fmt(p.n)} de ${fmt(p.c)} comentarios (muestra)`:`${fmt(p.n)} comentarios`;
+  const w=p.sw;$('#anaTonoNote').innerHTML=`<b>Ponderado por likes:</b> ${Math.round(w[0]*100)} % · ${Math.round(w[1]*100)} % · ${Math.round(w[2]*100)} % — ${w[2]>p.s[2]+.05?'los comentarios negativos juntan más likes que los demás.':w[0]>p.s[0]+.05?'los positivos son los que más likes juntan.':'parecido al conteo simple.'} Ruido (spam, solo emojis): ${p.ruido} sin clasificar.`;
+}
+function renderPostura(p){
+  const rows=[['A favor','f','var(--c4)',p.post[0]],['Neutra','n','var(--muted)',p.post[1]],['Crítica','c','var(--c2)',p.post[2]]];
+  $('#anaPostura').innerHTML=rows.map(r=>`<div class="an-row"><span class="lb">${r[0]}</span><span class="tr"><i style="background:${r[2]}" data-w="${r[3]*100}"></i></span><span class="n">${Math.round(r[3]*100)} %<small>${fmt(Math.round(p.n*r[3]))} coment.</small></span></div>`).join('');
+  setTimeout(()=>$$('#anaPostura .tr i').forEach(i=>i.style.width=i.dataset.w+'%'),80);
+}
+function renderSplit(p){
+  const on=Math.round(p.on*100),off=100-on;const sp=$('#anaSplit');const [a,b]=sp.children;a.style.width=b.style.width='0';a.textContent=`${on} %`;b.textContent=`${off} %`;
+  setTimeout(()=>{a.style.width=on+'%';b.style.width=off+'%'},80);
+  $('#anaSplitLbl').innerHTML=`<span><b>${on} %</b> hablan del posteo</span><span><b>${off} %</b> lo usan para otra cosa</span>`;
+  $('#anaDesv').innerHTML=(p.desv.length?'<span class="eyebrow" style="width:100%;margin-bottom:2px">Se desvían a</span>':'')+p.desv.map((d,i)=>`<span class="chip" style="animation:pop .4s ${.2+i*.1}s both">${esc(d[0])}<span class="n">${Math.round(d[1]*100)} %</span></span>`).join('');
+}
+function renderThemes(p){
+  const mx=p.th[0][1];
+  $('#themes').innerHTML=p.th.map((t,i)=>`<div class="an-theme ${cmtTema===t[0]?'on':''}" data-t="${esc(t[0])}" style="animation-delay:${i*60}ms" data-tip="<b>${esc(t[0])}</b>${fmt(t[1])} comentarios · ${t[2][0]} positivos · ${t[2][1]} neutros · ${t[2][2]} negativos<br>click: filtra los comentarios de abajo"><span class="nm">${i===0?'<span class="star">estrella</span>':''}<span>${esc(t[0])}</span></span><span class="tr"><i class="bg-pos" data-w="${t[2][0]/mx*100}"></i><i class="bg-neu" data-w="${t[2][1]/mx*100}"></i><i class="bg-neg" data-w="${t[2][2]/mx*100}"></i></span><span class="n">${fmt(t[1])}</span><span class="ed" title="Editar el nombre">✎</span></div>`).join('')+`<div class="an-theme add" data-tip="<b>Agregar un tema</b>Se guarda con el análisis y entra en el informe">+ tema</div>`;
+  setTimeout(()=>$$('#themes .tr i').forEach(i=>i.style.width=i.dataset.w+'%'),80);
+  $$('#themes .an-theme[data-t]').forEach(row=>{
+    row.onclick=e=>{if(e.target.closest('.ed')){const sp=row.querySelector('.nm span:last-child');sp.contentEditable='true';sp.focus();document.getSelection().selectAllChildren(sp);sp.onblur=()=>{sp.contentEditable='false';toast('Tema renombrado (se guarda con el análisis)')};sp.onkeydown=ev=>{if(ev.key==='Enter'){ev.preventDefault();sp.blur()}};return}
+      if(e.target.isContentEditable)return;cmtTema=cmtTema===row.dataset.t?null:row.dataset.t;$$('#themes .an-theme').forEach(r=>r.classList.toggle('on',r.dataset.t===cmtTema));renderCmts()};
+  });
+}
+function renderCmp(p){
+  const pr=p.prev;$('#anaCmpAcc').textContent='@'+p.acc;$('#anaCmpHint').textContent=`promedio de los últimos ${pr.n} análisis de la cuenta`;
+  const rows=[
+   ['Comentarios negativos',Math.round(p.s[2]*100),Math.round(pr.neg*100),'%','bad'],
+   ['Comentarios',p.c,pr.c,'','neutral'],
+   ['Verificados que comentaron',p.ver.length,pr.ver,'','warn'],
+   ['Hablan del posteo',Math.round(p.on*100),Math.round(pr.on*100),'%','good']];
+  $('#anaCmp').innerHTML=rows.map(r=>{const [lb,now,avg,u,kind]=r;const mx=Math.max(now,avg)||1;const d=now-avg;
+    let cls='',tag='igual';if(Math.abs(d)>(u==='%'?2:avg*.15)){if(kind==='bad'){cls=d>0?'bad':'good';tag=d>0?'peor':'mejor'}else if(kind==='good'){cls=d<0?'bad':'good';tag=d<0?'peor':'mejor'}else if(kind==='warn'){cls=d>0?'warn':'';tag=d>0?'atención':'normal'}else{cls='';tag=d>0?'más volumen':'menos volumen'}}
+    const dl=u==='%'?`${d>0?'+':''}${Math.round(d)} pts`:avg?`${fmt(now/avg,1)}×`:'—';
+    return `<div class="r"><div><div class="lb"><span>${lb}</span><b>${fmt(now,Number.isInteger(now)?0:1)}${u?' '+u:''} <small>vs. ${fmt(avg,Number.isInteger(avg)?0:1)}${u?' '+u:''}</small></b></div><div class="bars"><i class="now ${cls}" data-w="${now/mx*100}"></i><i class="avg" data-w="${avg/mx*100}"></i></div></div><div class="dl ${cls}">${dl}<small>${tag}</small></div></div>`}).join('');
+  setTimeout(()=>$$('#anaCmp .bars i').forEach(i=>i.style.width=i.dataset.w+'%'),80);
+  /* historial: % negativo en los últimos análisis de la cuenta, el actual resaltado */
+  let sd=p.id*104729+7;const r2=(a,b)=>{sd=(sd*1664525+1013904223)>>>0;return a+(sd/4294967296)*(b-a)};
+  const hist=Array.from({length:pr.n},()=>Math.max(4,Math.min(70,Math.round(pr.neg*100+r2(-11,11)))));hist.push(Math.round(p.s[2]*100));
+  const W=420,H=92,lo=Math.max(0,Math.min(...hist)-8),hi=Math.max(...hist)+8,x=i=>8+i/(hist.length-1)*(W-16),y=v=>H-14-((v-lo)/(hi-lo))*(H-28);
+  const d='M'+hist.map((v,i)=>`${x(i).toFixed(1)},${y(v).toFixed(1)}`).join('L');const last=hist.length-1;
+  $('#anaHist').innerHTML=`<line x1="8" x2="${W-8}" y1="${y(pr.neg*100).toFixed(1)}" y2="${y(pr.neg*100).toFixed(1)}" stroke="var(--line2)" stroke-dasharray="3 4"/>
+   <path d="${d}" fill="none" stroke="var(--neg)" stroke-width="2" stroke-linejoin="round" pathLength="1" style="stroke-dasharray:1;stroke-dashoffset:${RM?0:1};animation:draw 1.4s .2s ease forwards"/>
+   ${hist.map((v,i)=>`<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="${i===last?5:2.5}" fill="${i===last?'var(--neg)':'var(--surface)'}" stroke="var(--neg)" stroke-width="${i===last?2.5:1.5}" style="animation:pop .4s ${.2+i*.08}s both;transform-box:fill-box;transform-origin:center"><title>${i===last?'esta publicación':'análisis anterior'} · ${v} % negativo</title></circle>`).join('')}
+   <text x="${x(last).toFixed(1)}" y="${(y(hist[last])-10).toFixed(1)}" text-anchor="end" font-size="10" font-weight="600" fill="var(--neg)" font-family="IBM Plex Mono">${hist[last]} %</text>`;
+  $('#anaHistLbl').textContent=`% de comentarios negativos en los últimos ${pr.n} análisis de @${p.acc} · el punto grande es esta publicación · la línea punteada, el promedio (${Math.round(pr.neg*100)} %)`;
 }
 function timeline(p){
-  const H=48,W=640,Hh=190,data=[];
-  for(let h=0;h<H;h++){const base=p.n*0.08*Math.exp(-h/9)+p.n*0.004;const spike=h===p.peak||h===p.peak+1?p.n*0.06:0;data.push(base+spike*(h===p.peak?1:.5)+rnd(0,p.n*0.004))}
+  const H=48,W=640,Hh=190,data=[];let sd=p.id*7919+13;const r2=(a,b)=>{sd=(sd*1664525+1013904223)>>>0;return a+(sd/4294967296)*(b-a)};
+  for(let h=0;h<H;h++){const base=p.n*0.08*Math.exp(-h/9)+p.n*0.004;const spike=h===p.peak||h===p.peak+1?p.n*0.06:0;data.push(base+spike*(h===p.peak?1:.5)+r2(0,p.n*0.004))}
   const mx=Math.max(...data)*1.12,x=i=>24+i/(H-1)*(W-34),y=v=>Hh-24-(v/mx)*(Hh-44);
-  const line='M'+data.map((v,i)=>`${x(i).toFixed(1)},${y(v).toFixed(1)}`).join('L');
-  const area=line+`L${x(H-1)},${Hh-24}L${x(0)},${Hh-24}Z`;
+  const line='M'+data.map((v,i)=>`${x(i).toFixed(1)},${y(v).toFixed(1)}`).join('L');const area=line+`L${x(H-1)},${Hh-24}L${x(0)},${Hh-24}Z`;
   const ticks=[0,12,24,36,47];const gy=[0,.5,1].map(k=>Hh-24-k*(Hh-44));
   $('#tl').innerHTML=`<defs><linearGradient id="tlg" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="var(--accent)" stop-opacity=".5"/><stop offset="1" stop-color="var(--accent)" stop-opacity="0"/></linearGradient></defs>
    ${gy.map(g=>`<line x1="24" x2="${W-10}" y1="${g}" y2="${g}" stroke="var(--line)" stroke-dasharray="2 4"/>`).join('')}
@@ -1606,12 +2088,89 @@ function timeline(p){
    <path d="${area}" fill="url(#tlg)" style="animation:fadeIn 1.4s both"/>
    <path d="${line}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round" pathLength="1" style="stroke-dasharray:1;stroke-dashoffset:${RM?0:1};animation:draw 1.6s ease forwards"/>
    ${ticks.map(h=>`<text x="${x(h)}" y="${Hh-8}" font-size="9" fill="var(--muted)" text-anchor="${h===0?'start':h===47?'end':'middle'}" font-family="IBM Plex Mono">${h===0?'publicación':'+'+h+' h'}</text>`).join('')}
+   <g style="animation:fadeIn .6s 1.2s both"><line x1="${x(p.half)}" x2="${x(p.half)}" y1="30" y2="${Hh-24}" stroke="var(--glow)" stroke-dasharray="3 3" opacity=".7"/><text x="${x(p.half)+5}" y="${Hh-30}" font-size="9.5" fill="var(--glow)" font-family="IBM Plex Mono">50 % de los comentarios</text></g>
    <g style="animation:fadeIn .6s 1.4s both"><line x1="${x(p.peak)}" x2="${x(p.peak)}" y1="14" y2="${Hh-24}" stroke="var(--neg)" stroke-dasharray="3 3" opacity=".8"/><circle cx="${x(p.peak)}" cy="${y(data[p.peak])}" r="4" fill="var(--neg)" stroke="var(--surface)" stroke-width="2"/>
-   <text x="${x(p.peak)+6}" y="20" font-size="10" fill="var(--fg)" font-family="IBM Plex Mono">pico +${p.peak} h · ${fmt(Math.round(data[p.peak]))} coment.</text></g>`;
+   <text x="${x(p.peak)+6}" y="20" font-size="10" fill="var(--fg)" font-family="IBM Plex Mono">pico ${hh(p.peak)} · ${fmt(Math.round(data[p.peak]))} coment.</text></g>`;
   const svg=$('#tl');svg.onmousemove=e=>{const r=svg.getBoundingClientRect();const h=Math.max(0,Math.min(H-1,Math.round((e.clientX-r.left)/r.width*W/(W-34)*(H-1)-24/(W-34)*(H-1))));showTip(`<b>+${h} h</b>${fmt(Math.round(data[h]))} comentarios`,e.clientX,e.clientY)};svg.onmouseleave=hideTip;
+  $('#anaTlk').innerHTML=`<span class="chip">Primer comentario <b>+${p.first}</b></span><span class="chip">El 50 % llegó en <b>${p.half} h</b></span><span class="chip">Pico <b>${hh(p.peak)}</b></span>`+(p.last24?`<span class="chip"><i class="dot"></i>Últimas 24 h: <b>${p.last24}</b> · sigue vivo</span>`:`<span class="chip">Últimas 24 h: <b>0</b> · conversación cerrada</span>`);
 }
-function waText(p){
-  return `*Análisis de publicación · @${p.acc} · ${p.d}*\n${p.cap}\n\n♥ ${fmt(p.likes)} · 💬 ${fmt(p.c)} comentarios (${fmt(p.n)} analizados)\n\n*Tono:* ${Math.round(p.s[0]*100)} % positivo · ${Math.round(p.s[1]*100)} % neutro · ${Math.round(p.s[2]*100)} % negativo\n*Temas:* ${p.th.map(t=>t[0]+' ('+t[1]+')').join(', ')}\n\n*Lectura:* ${p.ai}\n\n*Comentarios destacados:*\n${[...p.cm].sort((a,b)=>b[3]-a[3]).slice(0,3).map(c=>`• @${c[1]}: “${c[2]}” (♥ ${c[3]})`).join('\n')}\n\n_Social Listening · DGAYD_`;
+function renderAsks(p){
+  const mx=p.asks[0]?.[1]||1;
+  $('#anaAsks').innerHTML=p.asks.length?p.asks.map((a,i)=>`<div class="an-ask ${i===0&&p.ev?'hot':''}" style="animation-delay:${i*70}ms"><div>${esc(a[0])}<small>${esc(a[2]||'')}</small></div><div class="n">${a[1]}<small>${pct(a[1],p.n)} %</small></div></div>`).join(''):'<div class="empty">No hubo pedidos ni preguntas concretas.</div>';
+}
+function renderPeople(p){
+  const list=p.ver.map(v=>({...v,c:p.cm.find(c=>c.u===v.u)})).sort((a,b)=>(b.c?.l||0)-(a.c?.l||0));
+  $('#anaVerHint').textContent=list.length?`${list.length} verificado${list.length===1?'':'s'} · ${list.filter(v=>v.al).length} con rol político · ordenados por likes`:'ninguno en esta publicación';
+  $('#anaPeople').innerHTML=list.length?list.map((v,i)=>`<div class="an-person" style="animation-delay:${i*80}ms" data-u="${esc(v.u)}" data-tip="<b>@${esc(v.u)}</b>${fK(v.f)} seguidores · click: ver su comentario abajo"><span class="av" style="--col:${v.col}">${v.ini}<span class="vf">✓</span></span><div><div class="nm">${esc(v.nm)}<small>@${esc(v.u)} · ${fK(v.f)}</small><span class="an-rl ${v.al||''}">${roleTxt(v)}</span></div>${v.c?`<div class="tx">${esc(v.c.t)}</div>`:''}</div>${v.c?`<div class="st"><span>♥ ${fmt(v.c.l)}</span><span><i class="bg-${v.c.s}"></i>${SENT[v.c.s]}</span><span>${hh(v.c.h)}</span></div>`:''}</div>`).join(''):'<div class="empty">Ningún verificado comentó esta publicación.</div>';
+  $$('#anaPeople .an-person').forEach(el=>el.onclick=()=>{cmtFilter='ver';cmtTema=null;$$('#themes .an-theme').forEach(r=>r.classList.remove('on'));cmtQ=el.dataset.u;$('#cmtQ').value=el.dataset.u;$$('#cmtSeg button').forEach(b=>b.classList.toggle('on',b.dataset.f==='ver'));renderCmts();$('#cmts').closest('.card').scrollIntoView({behavior:RM?'auto':'smooth',block:'start'})});
+}
+function renderTop(p){
+  const l=[...p.cm].sort((a,b)=>b.l-a.l).slice(0,6);const mx=l[0]?.l||1;
+  $('#anaTop').innerHTML=l.map((c,i)=>`<div class="an-topc" style="animation-delay:${i*70}ms"><div class="lk"><b>${fmt(c.l)}</b><small>likes</small></div><div><div class="w"><b>@${esc(c.u)}</b>${c.v?'<span class="vf-s">✓</span>':''}<span class="sent-${c.s}">${SENT[c.s]}</span><span>${hh(c.h)}</span></div><div class="tx">${esc(c.t)}</div><div class="bar"><i class="bg-${c.s}" data-w="${c.l/mx*100}"></i></div></div></div>`).join('');
+  setTimeout(()=>$$('#anaTop .bar i').forEach(i=>i.style.width=i.dataset.w+'%'),80);
+  const topLikes=l.reduce((a,c)=>a+c.l,0);const ev=p.ev?l.filter(c=>c.tm===p.th[0][0]).length:0;
+  $('#anaTopNote').innerHTML=p.ev?`<b>${ev} de los ${l.length}</b> más likeados hablan del hecho dominante, no del posteo. Juntos suman ${fmt(topLikes)} likes.`:`Los ${l.length} más likeados suman ${fmt(topLikes)} likes; ${l.filter(c=>c.s==='pos').length} son positivos.`;
+}
+function renderMap(p){
+  const lons=CABA.map(q=>q[0]),lats=CABA.map(q=>q[1]);const mnx=Math.min(...lons),mxx=Math.max(...lons),mny=Math.min(...lats),mxy=Math.max(...lats);
+  const W=320,Hh=250,pad=16;const sc=Math.min((W-pad*2)/(mxx-mnx),(Hh-pad*2)/((mxy-mny)*1.2));const ox=(W-(mxx-mnx)*sc)/2,oy=(Hh-(mxy-mny)*sc*1.2)/2;
+  const pr=(lo,la)=>[ox+(lo-mnx)*sc,oy+(mxy-la)*sc*1.2];
+  const outline=CABA.map(q=>pr(q[0],q[1]).map(v=>v.toFixed(1)).join(',')).join(' ');
+  /* agrupa los cercanos */
+  const cl=[];p.recl.forEach(r=>{const [x,y]=pr(r.lo,r.la);const c=cl.find(k=>Math.hypot(k.x-x,k.y-y)<16);if(c){c.items.push(r);c.x=(c.x*(c.items.length-1)+x)/c.items.length;c.y=(c.y*(c.items.length-1)+y)/c.items.length}else cl.push({x,y,items:[r]})});
+  $('#anaMap').innerHTML=`<polygon points="${outline}" fill="var(--surface)" stroke="var(--line2)" stroke-width="1.2" stroke-linejoin="round"/>
+   ${COMUNAS.map(c=>{const [x,y]=pr(c[2],c[3]);return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="1.5" fill="var(--line2)"/>`}).join('')}
+   ${cl.map((c,i)=>{const col=rcol(c.items[0].cat);const n=c.items.length;const r=n>1?9+Math.min(6,n):6;return `<g class="dot" style="animation-delay:${.2+i*.12}s" data-tip="<b>${n===1?esc(c.items[0].sub):n+' reclamos'}</b>${n===1?esc(c.items[0].w)+' · @'+esc(c.items[0].u):c.items.slice(0,4).map(k=>esc(k.sub)+' · '+esc(k.w)).join('<br>')+(n>4?'<br>…':'')}"><circle class="halo" cx="${c.x.toFixed(1)}" cy="${c.y.toFixed(1)}" r="${Math.min(r,7)}" fill="${col}" opacity=".35" style="animation-delay:${i*.4}s"/><circle cx="${c.x.toFixed(1)}" cy="${c.y.toFixed(1)}" r="${r}" fill="${col}" stroke="var(--surface)" stroke-width="2"/>${n>1?`<text x="${c.x.toFixed(1)}" y="${(c.y+3.5).toFixed(1)}" text-anchor="middle" font-size="10" font-weight="600" fill="#fff" font-family="IBM Plex Mono">${n}</text>`:''}</g>`}).join('')}`;
+  $('#anaReclHint').textContent=p.recl.length?`${p.recl.length} ubicado${p.recl.length===1?'':'s'} en ${cl.length} punto${cl.length===1?'':'s'} · van al Mapa con estado “pendiente”`:'ninguno en esta publicación';
+  $('#anaRecl').innerHTML=p.recl.slice(0,9).map(r=>`<div><i style="background:${rcol(r.cat)}"></i><span>${esc(r.sub)} · ${esc(r.w)}</span><small>@${esc(r.u)}</small></div>`).join('')+(p.recl.length>9?`<div><i style="background:transparent"></i><a href="#mapa" style="font-size:12px">+${p.recl.length-9} más · ver en el Mapa</a><small></small></div>`:`<div><i style="background:transparent"></i><a href="#mapa" style="font-size:12px">Ver en el Mapa de reclamos →</a><small></small></div>`);
+}
+function renderTags(p){
+  const mx=p.tags[0]?.[1]||1;
+  $('#anaTagRows').innerHTML=p.tags.map((t,i)=>{const v=p.ver.find(x=>'@'+x.u===t[0]);return `<div class="an-row" style="animation:rise .45s ${i*60}ms both"><span class="lb">${esc(t[0])}${v?' <span class="vf-s">✓</span>':''}</span><span class="tr"><i style="background:var(--glow)" data-w="${t[1]/mx*100}"></i></span><span class="n">${t[1]}</span></div>`}).join('');
+  setTimeout(()=>$$('#anaTagRows .tr i').forEach(i=>i.style.width=i.dataset.w+'%'),80);
+  $('#anaTags').innerHTML=p.hts.map((t,i)=>`<span class="chip h" style="animation-delay:${(p.tags.length+i)*60}ms">${esc(t[0])}<span class="n">${t[1]}</span></span>`).join('');
+  const tot=p.tags.reduce((a,t)=>a+t[1],0);
+  $('#anaTagsNote').innerHTML=`${tot} comentarios etiquetan a alguien. ${p.tags[0]?`La cuenta más etiquetada es <b>${esc(p.tags[0][0])}</b>${p.ver.some(v=>'@'+v.u===p.tags[1]?.[0])?`; <b>${esc(p.tags[1][0])}</b> es un verificado que comentó acá.`:'.'}`:''}`;
+}
+function renderEmo(p){
+  const mx=p.emo[0]?.[1]||1;
+  $('#anaEmo').innerHTML=p.emo.map((e,i)=>`<div style="--sz:${Math.round(18+26*e[1]/mx)}px;--dl:${(i*.4).toFixed(1)}s;animation-delay:${i*80}ms" data-tip="<b>${e[0]}</b>${e[1]} veces"><b>${e[0]}</b><small>${e[1]}</small></div>`).join('');
+  const neg=p.emo.filter(e=>EMOPOOL.neg.includes(e[0])).reduce((a,e)=>a+e[1],0),pos=p.emo.filter(e=>EMOPOOL.pos.includes(e[0])).reduce((a,e)=>a+e[1],0),tot=neg+pos||1;
+  const sp=$('#anaEmoSplit');sp.innerHTML=`<i class="on" style="background:var(--pos)"></i><i class="off"></i>`;const [a,b]=sp.children;a.textContent=`apoyo ${Math.round(pos/tot*100)} %`;b.textContent=`bronca ${Math.round(neg/tot*100)} %`;
+  setTimeout(()=>{a.style.width=pos/tot*100+'%';b.style.width=neg/tot*100+'%'},80);
+  $('#anaEmoNote').innerHTML=neg>pos?`El enojo le gana al aplauso: <b>${neg}</b> emojis de bronca contra <b>${pos}</b> de apoyo. El emoji más usado resume el clima mejor que cualquier porcentaje.`:`Dominan los emojis de apoyo: <b>${pos}</b> contra <b>${neg}</b> de bronca.`;
+}
+function renderCmts(){
+  const p=POSTS[curPost];let l=[...p.cm];
+  if(cmtTema)l=l.filter(c=>c.tm===cmtTema);
+  if(cmtQ)l=l.filter(c=>(c.t+' '+c.u).toLowerCase().includes(cmtQ));
+  if(cmtFilter==='top')l=l.sort((a,b)=>b.l-a.l).slice(0,6);else if(cmtFilter==='q')l=l.filter(c=>c.q);else if(cmtFilter==='ver')l=l.filter(c=>c.v);else if(cmtFilter!=='all')l=l.filter(c=>c.s===cmtFilter);
+  if(cmtFilter!=='top')l=l.sort((a,b)=>b.l-a.l);
+  $('#cmtN').innerHTML=`<span>${cmtFilter==='top'?'Los más likeados':`${l.length} de ${fmt(p.n)}`}${cmtQ?` · “${esc(cmtQ)}”`:''}</span>`+(cmtTema?`<span class="chip" id="cmtTemaX">Tema: ${esc(cmtTema)}<span class="x">✕</span></span>`:'')+(cmtFilter==='top'&&!cmtTema&&!cmtQ?'<span>· los demás filtros muestran la lista completa</span>':'');
+  if($('#cmtTemaX'))$('#cmtTemaX').onclick=()=>{cmtTema=null;$$('#themes .an-theme').forEach(r=>r.classList.remove('on'));renderCmts()};
+  $('#cmts').innerHTML=l.length?l.map((c,i)=>`<div class="cmt" style="animation:slideIn .45s ${Math.min(i,10)*60}ms both"><i class="sb bg-${c.s}"></i><div><div class="w"><b>@${esc(c.u)}</b>${c.v?'<span class="vf-s" title="Verificado">✓</span>':''}<span>♥ ${fmt(c.l)}</span><span class="sent-${c.s}">${SENT[c.s]}</span><span class="ps ${ps[c.p][1]}">${ps[c.p][0]}</span><span class="tg">${esc(c.tm)}</span>${c.q?'<span class="q">pregunta / pedido</span>':''}<span class="tm">${hh(c.h)}</span></div>${esc(c.t)}</div></div>`).join(''):'<div class="empty">No hay comentarios con ese filtro.</div>';
+}
+function report(p){
+  const e=p.ev;const tono=`${Math.round(p.s[0]*100)} % positivo · ${Math.round(p.s[1]*100)} % neutro · ${Math.round(p.s[2]*100)} % negativo (tono neto ${(p.s[0]-p.s[2])>0?'+':''}${Math.round((p.s[0]-p.s[2])*100)})`;
+  const vers=p.ver.map(v=>`${v.nm} (${roleTxt(v)})`).join(', ');
+  return `*Análisis de publicación · @${p.acc} · ${p.d}*\n“${p.cap.slice(0,110)}${p.cap.length>110?'…':''}”\n♥ ${fmt(p.likes)} · 💬 ${fmt(p.c)} comentarios (${fmt(p.n)} analizados)\n\n1) *Lo que pasó:* ${e?`el ${Math.round(e.share*100)} % de los comentarios habla de un mismo hecho ajeno al posteo: ${e.t}.`:`sin un hecho dominante; la conversación responde al posteo.`}\n2) *Tono:* ${tono}\n3) *Postura hacia la gestión:* ${Math.round(p.post[0]*100)} % a favor · ${Math.round(p.post[1]*100)} % neutra · ${Math.round(p.post[2]*100)} % crítica\n4) *Hablan del posteo:* ${Math.round(p.on*100)} %${p.desv.length?` · se desvían a: ${p.desv.map(d=>d[0]).join(', ')}`:''}\n5) *Temas:* ${p.th.map(t=>`${t[0]} (${t[1]})`).join(', ')}\n6) *Quién habló:* ${p.ver.length?`${p.ver.length} verificados — ${vers}`:'ningún verificado'}\n7) *Pedidos:* ${p.asks.slice(0,3).map(a=>`${a[0]} (${a[1]})`).join(' · ')||'sin pedidos concretos'}\n8) *Lectura:* ${p.ai}\n\n*Comentarios destacados:*\n${[...p.cm].sort((a,b)=>b.l-a.l).slice(0,3).map(c=>`• @${c.u}: “${c.t}” (♥ ${fmt(c.l)})`).join('\n')}\n\n_Social Listening · DGAYD · ${fecha(HOY)}_`;
+}
+
+/* ---------- galería de publicaciones analizadas ---------- */
+function renderGal(){
+  let l=POSTS.map((p,i)=>({p,i}));
+  if(galQ)l=l.filter(x=>(x.p.acc+' '+x.p.cap+' '+x.p.th.map(t=>t[0]).join(' ')).toLowerCase().includes(galQ));
+  if(galF==='ev')l=l.filter(x=>x.p.ev);else if(galF==='neg')l=l.filter(x=>x.p.s[2]>=.4);else if(galF==='ver')l=l.filter(x=>x.p.ver.length);
+  if(galOrd==='c')l.sort((a,b)=>b.p.c-a.p.c);else if(galOrd==='neg')l.sort((a,b)=>b.p.s[2]-a.p.s[2]);else if(galOrd==='ver')l.sort((a,b)=>b.p.ver.length-a.p.ver.length);else l.sort((a,b)=>b.p.dt-a.p.dt);
+  $('#galN').textContent=`${l.length} de ${POSTS.length} publicaciones analizadas · desde el ${POSTS[POSTS.length-1].d}`;
+  $('#gal').innerHTML=l.length?l.map((x,k)=>{const p=x.p;return `<article class="card an-gc" data-i="${x.i}" style="--a:${p.a};--b:${p.b};animation-delay:${Math.min(k,11)*50}ms" tabindex="0" role="button" aria-label="Abrir el análisis de @${esc(p.acc)} del ${p.d}">
+    <div class="ph">${p.ev?'<span class="ev"><i></i>hecho dominante</span>':''}<span class="dt">${p.d}</span><span class="who"><span class="av" style="background:${p.col}">${p.ini}</span>@${esc(p.acc)}</span></div>
+    <div class="bd"><h3>${esc(p.cap)}</h3>
+      <div class="stack"><i class="bg-pos" data-w="${p.s[0]*100}"></i><i class="bg-neu" data-w="${p.s[1]*100}"></i><i class="bg-neg" data-w="${p.s[2]*100}"></i></div>
+      <div class="star"><i></i><span>${esc(p.th[0][0])}</span><small>${fmt(p.th[0][1])}</small></div>
+      <div class="ft"><span>💬 <b>${fmt(p.n)}</b>${p.n<p.c?` de ${fmt(p.c)}`:''}</span><span class="${p.s[2]>=.4?'neg':''}">${Math.round(p.s[2]*100)} % neg.</span><span>✓ <b>${p.ver.length}</b></span><span>📍 <b>${p.recl.length}</b></span></div></div></article>`}).join(''):'<div class="empty" style="grid-column:1/-1">Ninguna publicación coincide con ese filtro.</div>';
+  setTimeout(()=>$$('#gal .stack i').forEach(i=>i.style.width=i.dataset.w+'%'),80);
+  $$('#gal .an-gc').forEach(a=>{a.onclick=()=>openPost(+a.dataset.i);a.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openPost(+a.dataset.i)}}});
 }
 </script>
 <script>
@@ -1766,7 +2325,8 @@ function initInicio(){
   const hf=$('#homeFeed');let hn=0;const mix=PUBS.slice(0,60);
   fillFeed(hf,mix,{big:true});hn=12;
   setInterval(()=>{if(!$('#s-inicio').classList.contains('on')||hf.matches(':hover'))return;const p={...mix[hn++%mix.length],dt:new Date(),live:true};pushFeed(false,p,hf,{big:true})},3200);
-  $('#homeAna').innerHTML=POSTS.slice(0,4).map(p=>`<a href="#analisis" style="--a:${p.a};--b:${p.b}"><span class="th"></span><span><b>@${p.acc} · ${p.d}</b><small>${esc(p.cap.slice(0,54))}…</small></span><span class="num">${Math.round(p.s[0]*100)} % pos<br>${fmt(p.n)} com.</span></a>`).join('');
+  $('#homeAna').innerHTML=POSTS.slice(0,5).map((p,i)=>`<a href="#analisis" data-i="${i}" style="--a:${p.a};--b:${p.b}" data-tip="<b>@${p.acc} · ${p.d}</b>${p.ev?'⚡ '+esc(p.ev.t):esc(p.th[0][0])+' · tema principal'}"><span class="th">${p.ev?'<em></em>':''}</span><span><b>@${p.acc} · ${p.d}</b><small>${esc(p.cap.slice(0,54))}…</small></span><span class="num">${Math.round(p.s[2]*100)} % neg.<br>${fmt(p.n)} analizados</span></a>`).join('');
+  $$('#homeAna a').forEach(a=>a.onclick=e=>{e.preventDefault();go('analisis');openPost(+a.dataset.i)});
 }
 /* =====================================================================
    LOGIN  (login.html → login-verify.html · /api/auth/*)

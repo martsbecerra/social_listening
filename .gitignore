@@ -25,3 +25,7 @@ config/monitoring-x.json.migrado
 
 # Logs del arranque con reinicio automatico (scripts/iniciar-con-reinicio.bat)
 logs/
+
+# Comprimidos sueltos (data.rar y cualquier .rar): nunca se versionan
+data.rar
+*.rar
