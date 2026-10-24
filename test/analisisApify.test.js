@@ -22,7 +22,7 @@ const assert = require('node:assert/strict');
 const db = require('../src/db');
 const apify = require('../src/apify');
 const { createLimiter } = require('../src/concurrencyLimiter');
-const { runWithContext } = require('../src/usageContext');
+const { runWithContext, getContext } = require('../src/usageContext');
 const { prepareCommentSample } = require('../src/commentSample');
 const { prepareXSample } = require('../src/x/sample');
 
@@ -160,5 +160,63 @@ describe('el limitador', () => {
     soltar('listo');
     assert.equal(await segunda, 'sigue');
     await primera;
+  });
+
+  test('la tarea que esperó cupo corre con el contexto de quien la encoló, no con el de la que lo soltó', async () => {
+    const limiter = createLimiter(1, 'test', { quiet: true });
+    let soltar;
+    const vistos = [];
+    const primera = runWithContext({ runId: 17, phase: 'benchmark' }, () =>
+      limiter.run(() => new Promise((r) => (soltar = r)).then(() => vistos.push(['benchmark', getContext()])))
+    );
+    const segunda = runWithContext({ phase: 'analisis', analisisId: 5 }, () => limiter.run(async () => vistos.push(['analisis', getContext()])));
+    const tercera = runWithContext({ runId: 18, phase: 'busqueda' }, () => limiter.run(async () => vistos.push(['busqueda', getContext()])));
+    await new Promise((r) => setImmediate(r));
+    soltar();
+    await Promise.all([primera, segunda, tercera]);
+    assert.deepEqual(vistos, [
+      ['benchmark', { runId: 17, phase: 'benchmark' }],
+      ['analisis', { phase: 'analisis', analisisId: 5 }],
+      ['busqueda', { runId: 18, phase: 'busqueda' }],
+    ]);
+  });
+
+  test('con el limitador de Apify lleno, la corrida del análisis queda con su analisis_id y las del ciclo sin él', async () => {
+    const sueltas = [];
+    global.fetch = async (url, opts) => {
+      const body = JSON.parse(opts.body);
+      if (body.resultsType !== 'posts') await new Promise((r) => sueltas.push(r));
+      const items = body.resultsType === 'posts' ? POST_FIXTURE : [];
+      return new Response(JSON.stringify(items), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    };
+    const analisisId = db.startAnalisis({ plataforma: 'instagram', url: 'https://www.instagram.com/p/LLENO1/' });
+    const ciclo = runWithContext({ phase: 'benchmark' }, () =>
+      Promise.all(
+        Array.from({ length: apify.APIFY_MAX_CONCURRENT }, (_, i) =>
+          apify.runActorSync({ directUrls: [`https://www.instagram.com/cuentallena${i}/`], resultsType: 'details' }, { plataforma: 'instagram' })
+        )
+      )
+    );
+    await new Promise((r) => setImmediate(r));
+    assert.equal(apify.apifyLimiter.inFlight(), apify.APIFY_MAX_CONCURRENT);
+    let encolada = false;
+    const delAnalisis = runWithContext({ phase: 'analisis', analisisId }, () =>
+      apify.fetchAnalysisPost('https://www.instagram.com/p/LLENO1/', { onQueued: () => (encolada = true) })
+    );
+    assert.equal(encolada, true, 'esperó cupo');
+    while (sueltas.length < apify.APIFY_MAX_CONCURRENT) await new Promise((r) => setImmediate(r));
+    sueltas.forEach((r) => r());
+    await Promise.all([ciclo, delAnalisis]);
+    const { DatabaseSync } = require('node:sqlite');
+    const base = new DatabaseSync(process.env.MONITORING_DB_PATH, { readOnly: true });
+    const filas = base.prepare("SELECT phase, analisis_id, target FROM apify_calls WHERE target LIKE '%LLENO1%' OR target LIKE '%cuentallena%'").all();
+    base.close();
+    const delPost = filas.filter((f) => f.target.includes('LLENO1'));
+    assert.equal(delPost.length, 1);
+    assert.equal(delPost[0].phase, 'analisis');
+    assert.equal(delPost[0].analisis_id, analisisId);
+    const delCiclo = filas.filter((f) => f.target.includes('cuentallena'));
+    assert.equal(delCiclo.length, apify.APIFY_MAX_CONCURRENT);
+    assert.ok(delCiclo.every((f) => f.phase === 'benchmark' && f.analisis_id === null));
   });
 });

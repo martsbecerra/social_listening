@@ -18,11 +18,19 @@
 // cola separada; compartir el VALOR de APIFY_MAX_CONCURRENT entre capas
 // está bien, compartir la INSTANCIA no.
 //
+// Contexto: cada tarea corre con el contexto asincrónico de quien la
+// encoló (AsyncResource.bind), no con el de la tarea que le soltó el cupo.
+// Sin eso, una llamada a Apify que esperó cupo leía en usageContext el
+// ciclo, la fase y el análisis de OTRA (la que terminó y la arrancó desde
+// release()), y quedaba anotada en apify_calls con el gasto ajeno.
+//
 // Logging siempre activo (sin flag de DEBUG, a propósito — ver Cambio G):
 // cada vez que una tarea espera cupo, lo adquiere o lo libera, y expone qué
 // tareas están activas en este momento (activeTargets) para el heartbeat
 // del ciclo (src/scheduler.js).
 // ==========================================================================
+
+const { AsyncResource } = require('node:async_hooks');
 
 /**
  * @param {number} max cuántas tareas pueden estar en vuelo a la vez (mínimo 1;
@@ -102,7 +110,7 @@ function createLimiter(max, label = 'limiter', { quiet = false } = {}) {
             }
           }
         }
-        queue.push({ fn, resolve, reject, target, taskId });
+        queue.push({ fn: AsyncResource.bind(fn), resolve, reject, target, taskId });
         next();
       });
     },
