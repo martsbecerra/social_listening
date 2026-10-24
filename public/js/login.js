@@ -49,6 +49,7 @@ let loginTimer = 0;
 // para otra dirección.
 let loginSending = false; // "Mandarme el link →"
 let loginResending = false; // "Mandar otro link"
+let loginResendingTo = ''; // a qué dirección (en minúsculas) va el reenvío en vuelo
 
 function loginWait(ms) {
   return new Promise((resolve) => setTimeout(resolve, loginReducedMotion.matches ? 0 : ms));
@@ -199,9 +200,10 @@ loginForm.addEventListener('submit', async (event) => {
     loginEmail.focus();
     return;
   }
-  // Ya se pidió hace instantes para esta dirección: el backend no mandaría
-  // otro; el que salió sigue sirviendo.
-  if (loginSentUntil(address) > Date.now()) {
+  // Ya se pidió hace instantes para esta dirección, o hay un reenvío en
+  // vuelo para ella: no se pide otro (un segundo link anularía el primero;
+  // el backend borra los que no se usaron al mandar uno nuevo).
+  if (loginSentUntil(address) > Date.now() || (loginResending && address.toLowerCase() === loginResendingTo)) {
     loginGoToStep2(address, { already: true });
     return;
   }
@@ -238,24 +240,34 @@ loginAgain.addEventListener('click', async () => {
   if (loginResending || loginAgain.getAttribute('aria-disabled') === 'true') return;
   loginClearError(loginErr2);
   loginLive.textContent = '';
+  const address = loginAddress;
   loginResending = true;
+  loginResendingTo = address.toLowerCase();
   clearInterval(loginTimer);
   loginTimer = 0;
   loginSetAgainOff(true);
   loginAgain.textContent = 'Enviando…';
-  const address = loginAddress;
   const result = await loginRequest(address);
   loginResending = false;
+  loginResendingTo = '';
+  // Mientras tanto se pudo volver al paso 1 o pasar a otra dirección: lo de
+  // esta respuesta no se escribe en la pantalla de otra; solo se anuncia.
+  const stillHere = () => loginAddress === address && !loginStep2.hidden;
   if (!result.ok) {
-    loginShowError(loginErr2, result.error);
-    loginTickAgain();
+    if (stillHere()) {
+      loginShowError(loginErr2, result.error);
+      loginTickAgain();
+    } else {
+      loginLive.textContent = `No se pudo mandar otro link a ${address}.`;
+    }
     return;
   }
   loginRememberSent(address, Date.now() + result.seconds * 1000);
-  loginAgain.textContent = 'Link reenviado ✓';
   loginLive.textContent = `Te mandamos otro link a ${address}.`;
+  if (!stillHere()) return;
+  loginAgain.textContent = 'Link reenviado ✓';
   await loginWait(2500);
-  if (loginAddress === address && !loginStep2.hidden) loginTickAgain();
+  if (stillHere()) loginTickAgain();
 });
 
 loginBack.addEventListener('click', () => {

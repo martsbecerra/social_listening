@@ -386,10 +386,14 @@ function lgStart() {
   if (lgCanvas && lgCtx) {
     lgResize();
     let resizeTimer = 0;
-    new ResizeObserver(() => {
+    // La visual y sus textos: cuando la fuente llega, el subtítulo cambia de
+    // tamaño unos milisegundos DESPUÉS de fonts.ready / loadingdone, y la
+    // visual no (en escritorio mide el alto de la ventana).
+    const resizeObserver = new ResizeObserver(() => {
       clearTimeout(resizeTimer);
       resizeTimer = setTimeout(lgRearrange, 120);
-    }).observe(lgVis);
+    });
+    for (const el of [lgVis, ...lgVis.querySelectorAll('h1, .sub, .lg-stats')]) resizeObserver.observe(el);
     // En celular la visual queda debajo de la tarjeta: fuera de la pantalla
     // no se dibuja.
     new IntersectionObserver((entries) => {
