@@ -1008,8 +1008,10 @@ de la base, sin scheduler ni Apify).
 trabajo (`src/analysisJob.js`) sigue en el mismo proceso, fuera del pedido,
 con el contexto `{ phase: 'analisis', analisisId }`: cerrar la pestaña no
 pierde nada ni vuelve a gastar. El link se normaliza a
-`https://www.instagram.com/p/<code>/` (también los reels,
-`normalizeAnalysisUrl`); el mismo link en curso devuelve el mismo id. Todo
+`https://www.instagram.com/p/<code>/` (también los reels y con el usuario
+adelante; nunca /reels/audio/ ni un link para compartir /share/…, cuyo
+token no es el código: `normalizeAnalysisUrl`, `checkAnalyzeUrl`); el mismo
+link en curso devuelve el mismo id. Todo
 queda en la tabla `analisis` (`db.startAnalisis`, `saveAnalisisPost`,
 `finishAnalisis`, `failAnalisis`…, todas por plataforma, sin default; las
 dos que no la reciben son por id o para todas: `markInterruptedAnalisis` y
@@ -1068,8 +1070,8 @@ tocar un análisis vivo. SDD en
 - **Reclamos**: `db.upsertReclamo(r, { conservarGestion: true })` en
   Instagram y X: re-analizar conserva el estado y, si la dirección detectada
   no cambió, el geocodificado; con la misma categoría, una subcategoría
-  vacía (la llamada falló) no borra la que había. El importador sigue como
-  antes.
+  vacía (la llamada falló o el modelo dijo "ninguna") no borra la que había.
+  El importador sigue como antes.
 - **Progreso** (`src/analysisProgress.js`,
   `GET /api/analyze/progress?plataforma=&id=`): turno (solo si alguna
   corrida esperó cupo), publicación, comentarios, tono (los clasificados de
@@ -1091,8 +1093,9 @@ tocar un análisis vivo. SDD en
   fila guarda sus `image_*`; `GET /api/analisis/:id/image` arma el archivo
   con el `post_id` de la fila.
 - **Lecturas**: `GET /api/analisis?plataforma=&limit=` (`recientes`
-  terminados bien y `enCurso`, cada uno con `propio`: lo arrancó esta
-  sesión; el correo no sale), `?url=` (`ultimo` y `enCurso`: el aviso de
+  terminados bien y `enCurso`, cada uno con `propio`: lo arrancó el
+  mismo correo, en cualquier sesión de esa persona, y sin login todos; el
+  correo no sale), `?url=` (`ultimo` y `enCurso`: el aviso de
   "ya se analizó"), `GET /api/analisis/:id`, `PATCH /api/analisis/:id/temas`
   (hasta 8, cada uno con título; los números de comentarios se limpian
   contra la fila). Al navegador no va el link original de la foto ni quién

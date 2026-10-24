@@ -1008,8 +1008,10 @@ const upsertReclamoStmt = db.prepare(`
 // analizada (upsertReclamo con conservarGestion): el reclamo ya existe y
 // alguien pudo haberle cambiado el estado ("En tratamiento", "Resuelto") y
 // el geocodificado ya corrió. Se conservan el estado, la primera detección
-// y, si la dirección detectada no cambió, todo el geocodificado; el resto
-// (texto, categoría, subcategoría) es lo que dijo el análisis nuevo.
+// y, si la dirección detectada no cambió, todo el geocodificado; con la
+// misma categoría, una subcategoría vacía (la llamada falló o el modelo dijo
+// "ninguna") no borra la que había. El resto (texto, categoría) es lo que
+// dijo el análisis nuevo.
 const GEO_SI_MISMA_DIRECCION = ['direccion_normalizada', 'calle', 'altura', 'cruce', 'x', 'y', 'comuna', 'barrio', 'precision', 'geo_status']
   .map((col) => `${col} = CASE WHEN reclamos.direccion_detectada IS excluded.direccion_detectada THEN reclamos.${col} ELSE excluded.${col} END`)
   .join(',\n    ');

@@ -49,6 +49,7 @@ describe('guard del análisis de publicación', () => {
       'https://www.instagram.com/stories/jorgemacri/123/',
       'https://www.instagram.com/',
       'https://www.instagram.com/reels/audio/1234567890/',
+      'https://www.instagram.com/stories/p/AAA/',
     ]) {
       const r = checkAnalyzeUrl(url, 'instagram');
       assert.equal(r.ok, false, url);
@@ -88,5 +89,14 @@ describe('guard del análisis de publicación', () => {
 
   test('una plataforma desconocida es un error de programación, no un 400', () => {
     assert.throws(() => checkAnalyzeUrl('https://www.instagram.com/p/AAA/', 'tiktok'), /plataforma desconocida/);
+  });
+  test('Instagram: un link para compartir (/share/…) no es la publicación → dice qué hacer, sin gastar', () => {
+    for (const url of ['https://www.instagram.com/share/p/BAJm1JX0Hc/', 'https://www.instagram.com/share/reel/_7mEmXSq5/', 'https://www.instagram.com/share/_7mEmXSq5/']) {
+      const r = checkAnalyzeUrl(url, 'instagram');
+      assert.equal(r.ok, false, url);
+      assert.equal(r.motivo, 'no_es_posteo');
+      assert.match(r.error, /link para compartir/);
+      assert.equal(isPostUrlOf(url, 'instagram'), false, url);
+    }
   });
 });

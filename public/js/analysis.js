@@ -228,6 +228,9 @@ function anaRenderSteps(pasos) {
     if (!row || row.dataset.key !== paso.key) {
       const nuevo = document.createElement('div');
       nuevo.dataset.key = paso.key;
+      // Al cambiar algo de la fila, el lector la lee entera ("Traer los
+      // comentarios (ok) 287 comentarios"), no el estado suelto.
+      nuevo.setAttribute('aria-atomic', 'true');
       const mark = document.createElement('i');
       mark.setAttribute('aria-hidden', 'true');
       const label = document.createElement('span');
@@ -315,7 +318,7 @@ async function anaPoll() {
     }
     if (err.status === 401) {
       anaStopFollow();
-      anaSetError('Se cerró la sesión. Volvé a entrar: el análisis sigue en el servidor y queda en "Recientes".');
+      anaSetError('Se cerró la sesión. Volvé a entrar para ver cómo terminó el análisis.');
       return;
     }
     // Un corte de red o un error del servidor: se vuelve a preguntar, más
@@ -323,10 +326,12 @@ async function anaPoll() {
     anaPollFails += 1;
     if (anaPollFails >= ANA_POLL_MAX_FAILS) {
       anaStopFollow();
-      anaSetError('Se perdió la conexión con el servidor. El análisis sigue ahí: recargá la página para ver cómo terminó.');
+      anaSetError('Se perdió la conexión con el servidor. Recargá la página más tarde: si el análisis terminó bien, va a estar en Recientes.');
       return;
     }
-    anaSetError('Sin respuesta del servidor; se vuelve a intentar…');
+    // Una sola vez: #anaError es role="alert" y reescribirlo cada 3 s lo
+    // haría leer de nuevo.
+    if (anaPollFails === 1) anaSetError('Sin respuesta del servidor; se vuelve a intentar…');
     anaPollTimer = setTimeout(anaPoll, ANA_POLL_RETRY_MS);
     return;
   }
@@ -351,8 +356,7 @@ async function anaPoll() {
     if (mismoLink && campo) anaEls.url.value = '';
     anaSkipAutoShow = true;
     await anaLoadRecientes();
-    // Con el mismo link en el campo, la persona lo está esperando: se muestra.
-    if (mismoLink && (seguido.mostrar || Boolean(campo))) await anaShowAnalysis(id);
+    if (mismoLink && seguido.mostrar) await anaShowAnalysis(id);
     else anaShowDoneNotice(id);
     anaRunHideTimer = setTimeout(() => anaEls.run.classList.remove('on'), anaReducedMotion() ? 0 : 1200);
   } else {
@@ -442,7 +446,11 @@ function anaShowDoneNotice(id) {
 // el campo, sin gastar nada. Si a la vista había el análisis de otra
 // publicación, deja de mostrarse; si ese link ya se analizó, se avisa.
 function anaPreload(url) {
+  // Precargar el mismo link que está corriendo es esperarlo: al terminar, se
+  // muestra. Otro link es elegir otra cosa.
+  const elMismo = anaRunningId !== null && anaRunningUrl && anaPostCode(url) === anaPostCode(anaRunningUrl);
   anaUserChose();
+  if (elMismo) anaFollowSwitch = true;
   anaLoadSeq += 1;
   anaEls.url.value = url || '';
   anaSetError('');
@@ -1234,9 +1242,18 @@ anaEls.noticeView.addEventListener('click', () => {
   anaHideNotice();
   if (!ultimo.conservarCampo) anaEls.url.value = '';
   anaUserChose();
-  anaShowAnalysis(ultimo.id);
+  // El botón se oculta con el aviso: el foco pasa al análisis en la tira (o
+  // al campo), no a <body>.
+  anaEls.url.focus();
+  anaShowAnalysis(ultimo.id).then(() => {
+    const enLaTira = anaEls.posts.querySelector(`button[data-id="${ultimo.id}"]`);
+    if (enLaTira && anaShown && anaShown.id === ultimo.id) enLaTira.focus();
+  });
 });
-anaEls.noticeRun.addEventListener('click', () => anaAnalyze({ force: true }));
+anaEls.noticeRun.addEventListener('click', () => {
+  anaEls.url.focus();
+  anaAnalyze({ force: true });
+});
 
 // Al abrir la solapa (main.js, openTab): la primera vez, el más reciente a
 // la vista, salvo que haya un link en el campo o ya se esté viendo otro.

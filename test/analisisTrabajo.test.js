@@ -255,6 +255,8 @@ describe('el trabajo del análisis', { concurrency: false }, () => {
     assert.equal(norm('https://www.instagram.com/tv/ABC'), 'https://www.instagram.com/p/ABC/');
     assert.equal(norm('https://www.instagram.com/reels/audio/123/'), null);
     assert.equal(norm('https://www.instagram.com/stories/gcba/123/'), null);
+    assert.equal(norm('https://www.instagram.com/share/p/BAJm1JX0Hc/'), null, 'el token de compartir no es el código');
+    assert.equal(norm('https://www.instagram.com/share/reel/_7mEmXSq5/'), null);
     assert.equal(norm('no es un link'), null);
   });
 

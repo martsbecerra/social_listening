@@ -256,6 +256,29 @@ describe('temas, tonos e informe', { concurrency: false }, () => {
     assert.equal(r.accounts.cuentados.accountType, 'oficial');
   });
 
+  test('el registro: un rename que Windows rechaza un momento se reintenta; si no hay caso, no queda el temporal', async () => {
+    const fsp = require('fs/promises');
+    const original = fsp.rename;
+    const dir = path.dirname(process.env.ACCOUNT_REGISTRY_PATH);
+    const temporales = () => fs.readdirSync(dir).filter((f) => f.endsWith('.tmp'));
+    let fallas = 2;
+    fsp.rename = async (...args) => {
+      if (fallas-- > 0) throw Object.assign(new Error('ocupado'), { code: 'EPERM' });
+      return original(...args);
+    };
+    try {
+      await updateAccountRegistry((r) => (r.accounts.cuentatres = { accountType: 'vecino' }));
+      assert.equal((await loadAccountRegistry()).accounts.cuentatres.accountType, 'vecino');
+      fsp.rename = async () => {
+        throw Object.assign(new Error('ocupado'), { code: 'EPERM' });
+      };
+      await assert.rejects(updateAccountRegistry((r) => (r.accounts.cuentacuatro = { accountType: 'vecino' })), /ocupado/);
+      assert.deepEqual(temporales(), []);
+    } finally {
+      fsp.rename = original;
+    }
+  });
+
   test('sin reclamos, el paso queda omitido', async () => {
     const { pasos, eventos } = pasosQueAnotan();
     await analyzeComments({ url: URL, post: POST, comments: comentarios(4), pasos });

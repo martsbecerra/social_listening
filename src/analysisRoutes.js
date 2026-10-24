@@ -129,9 +129,9 @@ function register(app) {
           enCurso: plataforma === 'instagram' ? analysisJob.enCursoDe(norm.url) : null,
         });
       }
-      // "propio": lo arrancó esta misma sesión. Al cargar, la solapa sigue
-      // solo esos (el de otra persona no le bloquea "Analizar"); el correo
-      // no sale de acá.
+      // "propio": lo arrancó el mismo correo (cualquier sesión de esa
+      // persona; sin login, todos). Al cargar, la solapa sigue solo esos (el
+      // de otra persona no le bloquea "Analizar"); el correo no sale de acá.
       const quien = (req.auth && req.auth.email) || null;
       return res.json({
         recientes: db.listAnalisis({ plataforma, limit: req.query.limit }).map(paraNavegador),

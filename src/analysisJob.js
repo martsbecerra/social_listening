@@ -55,8 +55,9 @@ function log(id, texto, detalle) {
 
 // El código sale del path, con el mismo criterio que checkAnalyzeUrl
 // (src/platforms/urlPlatform.js): /p/, /reel/, /reels/ o /tv/, con o sin el
-// usuario adelante, y nunca /reels/audio/.
-const ANALYSIS_PATH = /^\/(?:[A-Za-z0-9._]{1,30}\/)?(?:p|reel|reels|tv)\/(?!audio(?:\/|$))([A-Za-z0-9_-]{1,64})(?:\/|$)/;
+// usuario adelante (share/, stories/… no son usuarios), y nunca
+// /reels/audio/.
+const ANALYSIS_PATH = /^\/(?:(?!(?:share|stories|explore|accounts|direct|about|legal|web|developer)\/)[A-Za-z0-9._]{1,30}\/)?(?:p|reel|reels|tv)\/(?!audio(?:\/|$))([A-Za-z0-9_-]{1,64})(?:\/|$)/;
 
 /**
  * El link de una publicación de Instagram como se guarda y se compara:
