@@ -35,11 +35,15 @@ const PUBLIC_EXACT = new Set([
   '/js/login.js',
 ]);
 
+// /api/public/resumen: los números del login (src/publicResumen.js), solo
+// cantidades y nombres de tema. Exacta, como las demás: NUNCA un prefijo
+// "/api/public/", que dejaría pasar cualquier ruta futura.
 const PUBLIC_API = new Set([
   'POST /api/auth/magic-link',
   'POST /api/auth/verify',
   'GET /api/auth/me',
   'POST /api/auth/logout',
+  'GET /api/public/resumen',
 ]);
 
 /**
