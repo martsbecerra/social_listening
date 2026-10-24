@@ -358,62 +358,122 @@
   </section>
 
   <!-- ===================== Solapa: Análisis de publicación ===================== -->
-  <section id="tab-analysis" class="tab-panel hidden" role="tabpanel" aria-label="Análisis de publicación">
-    <div class="ana-wrap">
-      <div class="head rv">
-        <div>
-          <h1>Análisis de publicación</h1>
-          <p>Pegá el link de una publicación de Instagram y obtené un reporte ejecutivo listo para WhatsApp.</p>
+  <!-- La solapa de design/social-listening-v4.html (public/js/analysis.js):
+       el link y "Analizar", los pasos reales del trabajo
+       (GET /api/analyze/progress), los análisis recientes y el análisis a la
+       vista, que sale de la tabla analisis (GET /api/analisis/:id): la
+       publicación, el resumen, compartir, el tono, los temas, "Cuándo
+       comentaron" y los comentarios. El análisis corre en el servidor:
+       cerrar la pestaña no pierde nada. X tiene su propia solapa (x.html). -->
+  <section id="tab-analysis" class="tab-panel hidden ana4" role="tabpanel" aria-label="Análisis de publicación">
+    <div class="head rv">
+      <div>
+        <h1>Análisis de publicación</h1>
+        <p>Pegás el link de una publicación y la pestaña arma el cuadro completo: tono de los comentarios, temas, cuándo se comentó, qué dijo la gente y el informe para compartir.</p>
+      </div>
+    </div>
+
+    <div class="card rv ana-run">
+      <label for="url" class="sr">Link de la publicación</label>
+      <div class="urlbar">
+        <input type="text" id="url" placeholder="https://www.instagram.com/p/…" autocomplete="off" spellcheck="false" />
+        <button id="analyzeBtn" class="btn primary" type="button">Analizar</button>
+      </div>
+      <!-- "Ya se analizó": la fecha y las dos salidas, antes de gastar. -->
+      <div id="anaNotice" class="ana-notice hidden" role="status">
+        <span id="anaNoticeText"></span>
+        <span class="ana-notice-acts">
+          <button type="button" class="btn sm" id="anaNoticeView">Ver ese análisis</button>
+          <button type="button" class="btn sm ghost" id="anaNoticeRun">Analizar de nuevo</button>
+        </span>
+      </div>
+      <div id="anaError" class="ana-error hidden" role="alert"></div>
+      <!-- Los pasos del trabajo, con su detalle real. -->
+      <div class="ana-state" id="anaRun" aria-live="polite">
+        <div class="steps" id="anaSteps"></div>
+      </div>
+    </div>
+
+    <div class="posts rv" id="anaPosts" aria-label="Análisis recientes"></div>
+    <div id="anaEmpty" class="card empty hidden">Todavía no hay análisis guardados. Pegá el link de una publicación arriba.</div>
+
+    <div class="grid ana rv hidden" id="anaResult">
+      <div class="ana-side">
+        <article class="post" id="anaPost">
+          <div class="img" id="anaImg"></div>
+          <div class="body">
+            <div class="acc"><span class="av" id="anaAv" aria-hidden="true"></span><span id="anaAcc"></span><small id="anaDate"></small></div>
+            <p id="anaCaption"></p>
+            <div class="mets"><span id="anaLikes"></span><span id="anaComs"></span><span id="anaAnalizados"></span></div>
+            <a class="lnk" id="anaLink" target="_blank" rel="noopener">Ver en Instagram ↗</a>
+          </div>
+        </article>
+        <div class="ai">
+          <div class="ct2">◆ Resumen generado</div>
+          <p id="aiText"></p>
+        </div>
+        <div class="card ana-share">
+          <div class="ct"><h2>Compartir</h2><span class="hint" id="waLen"></span></div>
+          <div class="exports">
+            <button type="button" class="btn sm" id="waBtn" aria-expanded="false" aria-controls="waText">Texto para WhatsApp</button>
+            <button type="button" class="btn sm" id="copyBtn">Copiar</button>
+            <button type="button" class="btn sm" id="waShareBtn">Enviar por WhatsApp</button>
+            <button type="button" class="btn sm" id="csvBtn">Descargar CSV</button>
+          </div>
+          <p class="note ana-warn hidden" id="waWarn"></p>
+          <pre class="wa hidden" id="waText"></pre>
         </div>
       </div>
 
-      <div class="card rv">
-        <label for="url" class="sr">Link de la publicación</label>
-        <div class="urlbar">
-          <input type="text" id="url" placeholder="https://www.instagram.com/p/XXXXXXXX/" autocomplete="off" />
-          <button id="analyzeBtn" class="btn primary" type="button">Analizar</button>
-        </div>
-
-        <!-- Mensaje de estado / carga -->
-        <div id="status" class="load-status hidden">
-          <div>
-            <span class="spinner"></span>
-            <span id="statusText" class="status-text">Extrayendo comentarios de Instagram…</span>
+      <div class="ana-main">
+        <div class="grid two">
+          <div class="card">
+            <div class="ct"><h2>Tono de los comentarios</h2><span class="hint" id="anaN"></span></div>
+            <div class="stackbar" id="anaStack" aria-hidden="true"><i class="bg-pos"></i><i class="bg-neu"></i><i class="bg-neg"></i></div>
+            <div class="sb-lbl" id="anaStackLbl"></div>
+            <p class="note" id="anaToneNote"></p>
           </div>
-          <div class="progress-track">
-            <div id="progressFill" class="progress-fill"></div>
-          </div>
-        </div>
-
-        <!-- Mensaje de error -->
-        <div id="error" class="error hidden"></div>
-      </div>
-
-      <!-- Resultado -->
-      <div id="resultCard" class="card hidden">
-        <div class="result-header">
-          <span id="meta"></span>
-          <div class="actions">
-            <button id="clearBtn" class="btn-small btn-clear" type="button">Limpiar</button>
-            <button id="csvBtn" class="btn-small btn-copy" type="button">Descargar CSV</button>
-            <button id="copyBtn" class="btn-small btn-copy" type="button">Copiar</button>
-            <button id="waShareBtn" type="button" class="btn-small btn-whatsapp" aria-label="Compartir por WhatsApp"
-              title="Compartir por WhatsApp">
-              <svg class="btn-whatsapp-icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-                <path fill="#fff"
-                  d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.435 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" />
-              </svg>
-            </button>
+          <div class="card">
+            <div class="ct"><h2>Temas detectados</h2><span class="hint">por el modelo · editables</span></div>
+            <div class="themes" id="anaThemes"></div>
+            <!-- Editar, quitar o agregar un tema: se guarda con el análisis
+                 y entra en el informe. -->
+            <form class="tema-edit hidden" id="anaTemaForm" novalidate>
+              <label class="field-l" for="anaTemaTitulo">Título</label>
+              <input class="field" type="text" id="anaTemaTitulo" maxlength="120" autocomplete="off" />
+              <label class="field-l" for="anaTemaTexto">Texto para el informe</label>
+              <textarea class="field" id="anaTemaTexto" rows="3" maxlength="1000"></textarea>
+              <p class="note" id="anaTemaMsg"></p>
+              <div class="tema-edit-acts">
+                <button type="submit" class="btn sm primary" id="anaTemaSave">Guardar</button>
+                <button type="button" class="btn sm ghost" id="anaTemaDel">Quitar tema</button>
+                <button type="button" class="btn sm ghost" id="anaTemaCancel">Cancelar</button>
+              </div>
+            </form>
           </div>
         </div>
-        <pre id="reportBefore" class="report"></pre>
-        <div id="temasEditor" class="temas-editor">
-          <h3 class="temas-editor-title">Temas de la conversación</h3>
-          <p class="temas-editor-hint">Podés editar, agregar o quitar temas antes de copiar o mandar por WhatsApp. El resto del reporte no se toca.</p>
-          <div id="temasList"></div>
-          <button type="button" id="temasAddBtn" class="btn-small btn-copy">Agregar tema</button>
+        <div class="card" id="anaWhenCard">
+          <div class="ct"><h2>Cuándo comentaron</h2><span class="hint" id="anaWhenHint"></span></div>
+          <div class="tl-wrap" id="anaWhen"></div>
+          <p class="note" id="anaWhenNote"></p>
         </div>
-        <pre id="reportAfter" class="report"></pre>
+        <div class="card">
+          <div class="ct">
+            <h2 id="anaCmtsTitle" tabindex="-1">Comentarios</h2>
+            <div class="tools">
+              <div class="seg" id="cmtSeg" role="group" aria-label="Qué comentarios mostrar">
+                <button type="button" data-f="top" class="on" aria-pressed="true">Destacados</button>
+                <button type="button" data-f="negativo" aria-pressed="false">Negativos</button>
+                <button type="button" data-f="neutral" aria-pressed="false">Neutrales</button>
+                <button type="button" data-f="positivo" aria-pressed="false">Positivos</button>
+                <button type="button" data-f="all" aria-pressed="false">Todos</button>
+              </div>
+            </div>
+          </div>
+          <div class="cmt-tema hidden" id="anaCmtTema"></div>
+          <div class="cmts" id="anaCmts"></div>
+          <button type="button" class="btn sm ghost cmts-more hidden" id="anaCmtsMore"></button>
+        </div>
       </div>
     </div>
   </section>
@@ -571,13 +631,13 @@
   <script src="js/main.js"></script>
   <script src="js/tip.js"></script>
   <script src="js/temasEditor.js"></script>
-  <script src="js/analysis.js"></script>
   <script src="https://unpkg.com/tabulator-tables@6.3.0/dist/js/tabulator.min.js"></script>
   <script>window.SL_PLATFORM = 'instagram';</script>
   <script src="js/postView.js"></script>
   <script src="js/monitoring.js?v=plat"></script>
   <script src="js/monitoringFeed.js"></script>
   <script src="js/monitoringFeedPopup.js"></script>
+  <script src="js/analysis.js"></script>
   <script src="js/kpi.js"></script>
   <script src="js/monitoringPanel.js"></script>
   <script src="js/monitoringFlow.js"></script>

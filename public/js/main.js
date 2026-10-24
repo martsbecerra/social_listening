@@ -8,8 +8,9 @@
 // corre al botón elegido. La solapa abierta queda en el hash (#tab-<nombre>,
 // sin sumar pasos al historial), y un cambio de hash abre esa solapa sin
 // recargar: así navegan los enlaces del pie. Un botón con aria-disabled no
-// abre nada. Al abrir el Mapa o Estadísticas se les avisa
-// (refreshClaimsMap, openStats): cargan sus datos recién ahí.
+// abre nada. Al abrir el Mapa, Estadísticas o el Análisis de Instagram se
+// les avisa (refreshClaimsMap, openStats, openAnalysis): cargan sus datos
+// recién ahí. #analisis-<id> lo atiende analysis.js.
 // Teclas: 1, 2, 3... abren la solapa de ese número (no mientras se escribe
 // ni con un pop-up abierto); ← y → recorren la píldora con el foco en ella.
 // ---------------------------------------------------------------------------
@@ -64,6 +65,9 @@ function openTab(name, { updateHash = true } = {}) {
   }
   if (name === 'stats' && typeof window.openStats === 'function') {
     window.openStats();
+  }
+  if (name === 'analysis' && typeof window.openAnalysis === 'function') {
+    window.openAnalysis();
   }
   return true;
 }

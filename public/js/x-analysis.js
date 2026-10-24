@@ -144,6 +144,8 @@ function linkDeOtraRed(url) {
 }
 
 async function analyze() {
+  // Enter con un análisis en curso no dispara otro.
+  if (analyzeBtn.disabled) return;
   const url = urlInput.value.trim();
 
   hide(errorEl);
