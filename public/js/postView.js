@@ -183,7 +183,14 @@ function buildReachMeter(reach) {
   const cell = document.createElement('span');
   if (!reach) {
     cell.className = 'reach none';
-    cell.textContent = '—';
+    // La raya es para la vista; el lector lee qué quiere decir.
+    const dash = document.createElement('span');
+    dash.setAttribute('aria-hidden', 'true');
+    dash.textContent = '—';
+    const sr = document.createElement('span');
+    sr.className = 'sr';
+    sr.textContent = 'Alcance sin referencia';
+    cell.append(dash, sr);
     cell.dataset.tipTitle = 'Alcance sin referencia';
     cell.dataset.tip = 'Ninguna de sus dos métricas tiene con qué compararse en su cuenta.';
     return cell;

@@ -5691,6 +5691,20 @@ a.pl:focus-visible {
   font: 400 10px/1 var(--mono);
   white-space: nowrap;
 }
+/* dashboard.js (homeFitTrackLabels) les pone un ancho máximo con el lugar
+   que hay hasta la hora vecina; lo que no entra se corta. */
+.tl24 .run b,
+.tl24 .run small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tl24 .track.tight .run b {
+  font-size: 10px;
+}
+.tl24 .track.tight .run small {
+  font-size: 9px;
+  letter-spacing: -0.05em; /* "45 nuevas" entra en los 45 px que hay a 375 */
+}
 .tl24 .run.ok {
   background: var(--pos);
   border-color: var(--pos);
@@ -6046,12 +6060,14 @@ body.login-page {
   background-clip: text;
   color: transparent;
 }
+/* --fg: en ventanas bajas la mancha celeste sube hasta el subtítulo (con
+   --fg2 bajaba a 2,9:1). */
 .lg-vis .sub {
   position: relative;
   z-index: 2;
   margin: 0;
   max-width: 44ch;
-  color: var(--fg2);
+  color: var(--fg);
   font-size: 14.5px;
   animation: rise 0.8s 0.25s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
@@ -6087,7 +6103,10 @@ body.login-page {
    el salto del -50 % no se note; loginScene.js lo ubica entre los textos y
    los contadores (top y bottom con las medidas reales; sin lugar, .no-room),
    repite la lista hasta llenar el alto y ajusta la duración. */
+/* Sin transiciones: con movimiento reducido la regla global les da 0,01 ms a
+   todas, y loginScene.js leería el top viejo al recolocarlo. */
 .ticker {
+  transition-property: none;
   position: absolute;
   right: 34px;
   top: 30%;

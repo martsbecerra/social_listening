@@ -7,9 +7,9 @@
 //     corrida real; Facebook y TikTok, "pronto";
 //   - la próxima corrida: cuenta regresiva y anillo (cuánto pasó desde la
 //     corrida programada anterior), la línea de las 24 h con las corridas
-//     de hoy y su estado real (terminada, cortada, en curso, la siguiente o
-//     la que no corrió) y los números de la última terminada, con US$ como
-//     el Pipeline;
+//     de hoy y su estado real (terminada, cortada, en curso, interrumpida,
+//     la siguiente o la que no corrió) y los números de la última terminada,
+//     con US$ como el Pipeline;
 //   - las últimas publicaciones de Instagram (el listado de siempre),
 //     dibujadas con postView.js; cada una abre su pop-up en el Monitoreo
 //     (instagram.html#publicacion-<id>). Cuando cambia la última corrida se
@@ -31,6 +31,8 @@ const HOME_POLL_MS = 60 * 1000;
 const HOME_AGO_EVERY_MS = 30 * 1000;
 const HOME_POSTS = 12;
 const HOME_RING = 377; // largo del anillo: 2π·60
+// Con menos lugar que esto entre dos horas, los rótulos van más chicos.
+const HOME_LABEL_ROOM_PX = 60;
 const HOME_SVG = 'http://www.w3.org/2000/svg';
 const HOME_INT = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 });
 const HOME_USD = new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -251,12 +253,13 @@ function homeTick() {
 
 // ---------- la línea de las 24 h ----------
 
-// Estado de /api/inicio → [clase, nombre en pantalla].
+// Estado de /api/inicio → [clase, nombre, rótulo debajo del punto si el
+// nombre es largo para el lugar que hay entre dos horas].
 const HOME_RUN_STATES = {
   ok: ['ok', 'terminada'],
   cortada: ['cut', 'cortada'],
   'en curso': ['live', 'en curso'],
-  interrumpida: ['stop', 'interrumpida'],
+  interrumpida: ['stop', 'interrumpida', 'se cayó'],
 };
 
 function homeRunName(run) {
@@ -309,9 +312,9 @@ function homeRenderTrack() {
     const small = homeNode('small');
     let state = '';
     if (run) {
-      const [cls, name] = HOME_RUN_STATES[run.estado] || ['', run.estado];
+      const [cls, name, short] = HOME_RUN_STATES[run.estado] || ['', run.estado];
       if (cls) el.classList.add(cls);
-      small.textContent = run.estado === 'ok' && Number.isFinite(run.nuevas) ? `${HOME_INT.format(run.nuevas)} nuevas` : name;
+      small.textContent = run.estado === 'ok' && Number.isFinite(run.nuevas) ? `${HOME_INT.format(run.nuevas)} nuevas` : short || name;
       el.dataset.tip = homeRunTip(run);
       state = name;
     } else if (hour < nowHours - 0.25) {
@@ -339,6 +342,27 @@ function homeRenderTrack() {
   });
   track.setAttribute('aria-label', summary.length ? `Corridas de hoy: ${summary.join(', ')}` : 'Corridas de hoy');
   homeEl('homeRunsHint').textContent = hours.length ? `${hours.length} por día · ${homeHoursText(hours)} h` : '';
+  homeFitTrackLabels();
+}
+
+// Los rótulos de las horas no se enciman: con poco lugar entre dos horas
+// (celular, dos columnas angostas) van en letra más chica (.tight) y cada
+// uno, como mucho, del ancho que le deja el más cercano; lo que no entra se
+// corta con "…" (el estado entero está en el tip y en el aria-label).
+function homeFitTrackLabels() {
+  const track = homeEl('homeTrack');
+  const runs = [...track.querySelectorAll('.run:not(.extra)')];
+  const width = track.clientWidth;
+  if (!runs.length || !width) return;
+  const at = runs.map((el) => (parseFloat(el.style.left) / 100) * width);
+  const room = at.map((x, i) =>
+    Math.min(i > 0 ? x - at[i - 1] : Infinity, i < at.length - 1 ? at[i + 1] - x : Infinity)
+  );
+  track.classList.toggle('tight', Math.min(...room) < HOME_LABEL_ROOM_PX);
+  runs.forEach((el, i) => {
+    const max = Number.isFinite(room[i]) ? `${Math.max(24, room[i] - 4)}px` : '';
+    for (const label of el.querySelectorAll('b, small')) label.style.maxWidth = max;
+  });
 }
 
 // ---------- la última corrida ----------
@@ -502,6 +526,9 @@ async function homeLoad() {
     console.error('Error leyendo el inicio:', err);
     homeLoadFailed = true;
     homeTick();
+    // Las publicaciones se piden recién con el inicio: hasta que responda, lo
+    // mismo que dice la otra tarjeta, no "Cargando…".
+    if (homePostIds === null) homeEl('homeFeed').replaceChildren(homeNode('p', 'note empty', 'Sin respuesta del servidor.'));
     return;
   }
   homeLoadFailed = false;
@@ -529,6 +556,7 @@ async function homeLoad() {
 
 homeLoad();
 new ResizeObserver(homeFitFeed).observe(homeEl('homeFeed'));
+new ResizeObserver(homeFitTrackLabels).observe(homeEl('homeTrack'));
 setInterval(homeTick, 1000);
 setInterval(() => {
   if (!document.hidden) homeLoad();
