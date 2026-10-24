@@ -4,10 +4,12 @@ App web que:
 
 1. Recibe el link de una publicación de Instagram, extrae los comentarios y
    los datos del posteo con **Apify**, y los analiza con un **LLM** (Anthropic
-   Claude u **OpenRouter**) siguiendo una metodología de análisis político,
-   mostrando un **reporte ejecutivo** listo para WhatsApp. El reporte incluye
-   **temas emergentes** (editables en pantalla; el resto no se toca) entre el
-   KPI y los insights por tipo de cuenta.
+   Claude u **OpenRouter**) siguiendo una metodología de análisis político.
+   El análisis corre en el servidor (cerrar la pestaña no lo corta) y queda
+   guardado: la solapa muestra sus pasos reales, el tono de los comentarios,
+   los temas con su cantidad, cuándo comentaron, los comentarios y un
+   **reporte ejecutivo** listo para WhatsApp, con los **temas emergentes**
+   editables (se guardan con el análisis).
 2. Recibe el link de una publicación de **X**, trae el hilo y lo clasifica
    con **Grok** vía OpenRouter (`OPENROUTER_X_MODEL`, no Apify ni el Claude
    de Instagram) y arma el reporte con la plantilla de X (solapa Análisis
@@ -45,14 +47,18 @@ social_listening_app/
 ├── server.js                 # Servidor web (Express). Punto de entrada.
 ├── src/
 │   ├── apify.js              # Extrae comentarios y datos del posteo desde Apify.
-│   ├── analyzeComments.js    # Orquestación del análisis (Apify → LLM → reporte).
+│   ├── analysisJob.js        # El análisis de publicación en el servidor (Apify → modelo → la fila).
+│   ├── analysisProgress.js   # Los pasos de cada análisis, en memoria (GET /api/analyze/progress).
+│   ├── analysisRoutes.js     # Rutas del análisis: POST /api/analyze, progreso, recientes, temas, foto.
+│   ├── analyzeComments.js    # El modelo: tandas de 100 comentarios, síntesis y reporte.
+│   ├── commentTimeline.js    # "Cuándo comentaron": comentarios por tramo desde la publicación.
 │   ├── x/                    # Análisis de publicación de X: Grok fetch, KPIs, reporte, padrón.
 │   ├── platforms/            # Adapters del monitoreo por red (instagram.js con dos proveedores: instagramApidojo.js e instagramApify.js, elegidos por igActor.js; x.js) + registro y contrato.
 │   ├── llm/                  # Proveedores: anthropicProvider, openrouterProvider.
-│   ├── prompt.js             # La metodología de análisis (system prompt).
+│   ├── prompt.js             # La metodología de análisis (los system prompts de tanda y síntesis).
 │   ├── temasConversacion.js  # Temas emergentes del reporte (IG y X).
 │   ├── reclamosQuery.js      # Query del mapa: plataforma obligatoria + filtros.
-│   ├── db.js                 # SQLite: posteos detectados + reclamos del mapa.
+│   ├── db.js                 # SQLite: posteos detectados, reclamos del mapa y análisis de publicación.
 │   ├── reclamosAddress.js    # Obsoleto (heurística del seed viejo); sin uso.
 │   ├── tematica.js           # Normaliza etiquetas libres del CSV de reclamos (legacy).
 │   ├── categoriasConfig.js   # Carga y valida config/categorias-reclamos.json.
@@ -101,7 +107,7 @@ social_listening_app/
 ├── public/
 │   ├── index.html            # Login: la visual (temas y contadores) y el link mágico en dos pasos.
 │   ├── login-verify.html     # Último paso del link: clic en "Entrar" (POST, un solo uso).
-│   ├── dashboard.html        # Inicio: las redes, la próxima corrida y las últimas publicaciones.
+│   ├── dashboard.html        # Inicio: las redes, la próxima corrida, las últimas publicaciones y los análisis recientes.
 │   ├── instagram.html        # App Instagram: monitoreo + mapa de reclamos + análisis + estadísticas (píldora de solapas).
 │   ├── x.html                # App X: análisis (Grok) + monitoreo + mapa de reclamos.
 │   ├── css/styles.css        # Estilos del diseño v4 (tokens claro / oscuro de design/social-listening-v4.html).
@@ -114,9 +120,9 @@ social_listening_app/
 │       ├── login.js          # Tarjeta del login: link mágico en dos pasos (pedir, revisar el correo, reenviar).
 │       ├── loginScene.js     # Visual del login: constelación, ticker y contadores (GET /api/public/resumen).
 │       ├── loginVerify.js    # Último paso del login: verify por fetch y el aviso del link vencido.
-│       ├── dashboard.js      # El inicio (GET /api/inicio y las últimas publicaciones).
+│       ├── dashboard.js      # El inicio (GET /api/inicio, las últimas publicaciones y los análisis recientes).
 │       ├── postView.js       # Cómo se ve un posteo (piezas compartidas por el Monitoreo, Estadísticas y el inicio).
-│       ├── analysis.js       # Lógica de "Análisis de publicación" (Instagram).
+│       ├── analysis.js       # Solapa "Análisis de publicación" de Instagram (pasos, recientes, el análisis guardado).
 │       ├── x-analysis.js     # Análisis de publicación de X (`/api/x/analyze`).
 │       ├── temasEditor.js    # Temas emergentes editables (antes de copiar/WhatsApp).
 │       ├── monitoring.js     # Monitoreo en vivo (parametrizado por data-platform).
@@ -153,10 +159,19 @@ social_listening_app/
   `runActorSync` para que el adapter de Instagram
   (`src/platforms/instagram.js`) lo reuse, y marca los errores de clave,
   rate limit y cuota con `code` (ver `src/platforms/errors.js`).
-- **`src/analyzeComments.js`**: muestra estable, prompt, llamada al proveedor LLM,
-  validación y armado del reporte WhatsApp + CSV.
-- **`src/prompt.js`**: contiene la metodología completa de análisis (el
-  "system prompt"). Separado para que sea fácil de ajustar.
+- **`src/analysisJob.js`**: el análisis de publicación de Instagram. Abre su
+  fila en la tabla `analisis`, trae la publicación y los comentarios (dos
+  corridas en paralelo), guarda la foto sin pedir nada más, llama al modelo,
+  arma "Cuándo comentaron" y deja todo en la fila con el gasto. Lo arranca
+  `POST /api/analyze` (`src/analysisRoutes.js`), que responde el id sin
+  esperar.
+- **`src/analyzeComments.js`**: muestra estable, tandas de 100 comentarios
+  por llamada al modelo (tono, tipo de cuenta y reclamos), una síntesis con
+  todo lo clasificado (textos del informe y temas con sus comentarios),
+  reclamos y armado del reporte WhatsApp + CSV.
+- **`src/prompt.js`**: contiene la metodología completa de análisis (los
+  "system prompts" de tanda y de síntesis). Separado para que sea fácil de
+  ajustar.
 - **`public/index.html` + `dashboard.html` + `instagram.html` + `css/` + `js/`**: la
   interfaz (login con magic link → dashboard → app Instagram con tabs), separada en
   estructura/estilo/comportamiento.
@@ -902,8 +917,9 @@ mantiene la conexión abierta.
 
 Una en modo `comments` (los comentarios) y otra en modo `posts` (caption, likes,
 comentarios totales, reproducciones, autor). Corren **en paralelo**, así que casi
-no suma tiempo. Además, en la corrida de comentarios activamos `addParentData`
-como respaldo por si la de `posts` no trajera datos. Las dos pasan por la cola
+no suma tiempo. Si la de `posts` no trae nada, la publicación queda sin cuenta,
+likes ni texto: los datos de primer nivel de un comentario son del comentario,
+nunca del posteo. Las dos pasan por la cola
 de runs simultáneos (abajo) y siguen corriendo a la vez mientras haya lugar.
 
 ### Runs simultáneos de Apify (cola global)
@@ -1158,9 +1174,62 @@ en el tag `v3-riel-radar`.
   proceso se cortó—, la siguiente o la que no corrió) y la última corrida
   (traídas, nuevas, relevantes y costo). Las
   **últimas publicaciones** de Instagram: un clic abre esa publicación en el
-  pop-up del Monitoreo. Se actualiza solo cada minuto. "Análisis recientes"
-  llega en la fase E.
+  pop-up del Monitoreo. Se actualiza solo cada minuto. Los **análisis
+  recientes** (fase E): los 4 últimos, cada uno abre su análisis.
+- **Análisis de publicación** (fase E): la solapa de la maqueta. Ver
+  "Análisis de publicación en el servidor" más abajo.
 - **Favicon** nuevo: el ◎ de la marca.
+
+### Análisis de publicación en el servidor (octubre 2026)
+
+Pegás el link, apretás **Analizar** y el pedido vuelve enseguida con el id
+del análisis: el trabajo sigue en el servidor. Cerrar la pestaña no pierde
+nada ni vuelve a gastar, y el resultado queda en la tabla `analisis` y en
+"Recientes" (en la solapa y en el inicio). SDD en
+`openspec/changes/analisis-v4/`.
+
+- **Antes de gastar**: si ese link ya tiene un análisis terminado, la solapa
+  lo dice con su fecha y ofrece verlo o analizar de nuevo. Si hay uno en
+  curso, lo sigue. Enter con un análisis en curso no dispara otro.
+- **Pasos reales**: esperar turno en Apify (solo si había otras corridas
+  ocupando los lugares), traer la publicación, traer los comentarios,
+  clasificar el tono (los clasificados de las tandas que van terminando:
+  "87 de 287", "187 de 287"…), detectar los temas y
+  armar la lectura, ubicar los reclamos y armar el informe. Cada detalle lo
+  escribe el trabajo; nada es una frase fija ni un porcentaje simulado.
+- **Cuántos comentarios**: `COMMENTS_LIMIT` (los que se piden a Apify) y
+  `COMMENTS_ANALYSIS_LIMIT` (los que van al modelo) valen **300** por
+  defecto; un valor en el `.env` los pisa. Valen solo para Instagram: X
+  sigue con 150 y su propia variable, `X_COMMENTS_ANALYSIS_LIMIT`, porque
+  manda todo el hilo en una sola llamada. Se clasifican en **tandas de
+  100** por llamada (así no se choca con el tope de salida del modelo) y
+  después una síntesis arma los textos y los temas. "Analizados" es lo que
+  el modelo clasificó de verdad: si una tanda falla, sus comentarios no
+  cuentan y el análisis sigue. La pantalla dice "analizados N de M" con M
+  el total que informa Instagram.
+- **Tono**: cantidades de positivos, neutrales y negativos, con el ruido
+  (bots, spam) aparte. El informe sigue con su porcentaje ponderado por
+  tipo de cuenta, y la pantalla lo rotula así.
+- **Temas**: hasta 8, cada uno con la cantidad de comentarios que hablan
+  de él. Un clic muestra esos comentarios; ✎ cambia el nombre o el texto,
+  o lo quita; "+ tema" agrega uno. Se guardan con el análisis y entran en
+  el informe.
+- **Cuándo comentaron**: solo si la publicación trae su fecha y al menos 10
+  comentarios traen la suya. Por hora hasta 48 h, de a 6 h hasta 7 días y
+  por día después, con el pico marcado.
+- **La foto** sale de la misma corrida de la publicación (ningún pedido más
+  a Apify); si la publicación ya está en el Monitoreo con foto, se usa esa.
+- **Reclamos**: re-analizar una publicación (Instagram o X) ya no les borra
+  el estado ni, si la dirección no cambió, la ubicación.
+- **Compartir**: el informe con los temas editados (aviso si pasa los 4.000
+  caracteres, donde WhatsApp lo corta), Copiar, WhatsApp y el CSV de
+  reclamos (deshabilitado si no hubo ninguno).
+- **Gasto**: cada llamada a Apify del análisis queda en `apify_calls` con
+  su `analisis_id`; la fila guarda lo de Apify y lo del modelo.
+- Si el servidor se reinicia con un análisis en curso, al arrancar queda
+  como "interrumpido".
+- "Analizar comentarios" del pop-up del Monitoreo deja el link en el campo
+  sin analizar, y `instagram.html#analisis-<id>` abre un análisis guardado.
 
 ### Estadísticas: `GET /api/monitoring/stats` (octubre 2026)
 

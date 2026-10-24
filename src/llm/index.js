@@ -59,7 +59,11 @@ async function requestStructuredAnalysis({
  */
 async function requestText({ system, userPrompt, maxTokens, timeoutMs }) {
   const provider = getLlmProvider();
-  return providerModule(provider).requestText({ system, userPrompt, maxTokens, timeoutMs });
+  const result = await providerModule(provider).requestText({ system, userPrompt, maxTokens, timeoutMs });
+  // Con el costo estimado, como requestStructuredAnalysis: si no, la
+  // subcategoría de los reclamos sumaba tokens al análisis sin su costo.
+  if (result) result.usage = finalizeLlmUsage(result.usage, { provider, model: getAnalysisModel(provider) });
+  return result;
 }
 
 module.exports = { requestStructuredAnalysis, requestText };

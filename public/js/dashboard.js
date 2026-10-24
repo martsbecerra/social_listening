@@ -13,7 +13,9 @@
 //   - las últimas publicaciones de Instagram (el listado de siempre),
 //     dibujadas con postView.js; cada una abre su pop-up en el Monitoreo
 //     (instagram.html#publicacion-<id>). Cuando cambia la última corrida se
-//     vuelven a pedir y las nuevas entran con su animación.
+//     vuelven a pedir y las nuevas entran con su animación;
+//   - los 4 últimos análisis de publicación (GET /api/analisis), cada uno a
+//     su análisis (instagram.html#analisis-<id>).
 // /api/inicio se vuelve a pedir cada minuto (y al volver a la pestaña).
 // Horas de Argentina, UTC-3 fija (no hay horario de verano).
 //
@@ -30,6 +32,7 @@ const HOME_FRESH_MS = 5 * HOME_HOUR_MS;
 const HOME_POLL_MS = 60 * 1000;
 const HOME_AGO_EVERY_MS = 30 * 1000;
 const HOME_POSTS = 12;
+const HOME_ANALISIS = 4;
 const HOME_RING = 377; // largo del anillo: 2π·60
 // Con menos lugar que esto entre dos horas, los rótulos van más chicos.
 const HOME_LABEL_ROOM_PX = 60;
@@ -46,6 +49,7 @@ let homePostIds = null; // los ids ya dibujados en "Últimas publicaciones"
 let homePostsLoading = false;
 let homeLoadFailed = false; // el último pedido de /api/inicio falló
 let homeRetryTimer = 0;
+let homeAnaKey = null; // los análisis ya dibujados (ids y fechas)
 
 function homeEl(id) {
   return document.getElementById(id);
@@ -513,11 +517,104 @@ function homeTickAgo() {
   }
 }
 
+// ---------- análisis recientes ----------
+
+const HOME_ANA_DATE = new Intl.DateTimeFormat('es-AR', { timeZone: HOME_TZ, day: 'numeric', month: 'short' });
+const HOME_ANA_YEAR = new Intl.DateTimeFormat('es-AR', { timeZone: HOME_TZ, year: 'numeric' });
+const HOME_ANA_FULL = new Intl.DateTimeFormat('es-AR', { timeZone: HOME_TZ, day: '2-digit', month: '2-digit', year: 'numeric' });
+const HOME_ANA_TIME = new Intl.DateTimeFormat('es-AR', { timeZone: HOME_TZ, hour: '2-digit', minute: '2-digit', hour12: false });
+const HOME_ANA_CAPTION = 90; // el texto, recortado en el DOM (si no, el enlace se lee entero)
+
+function homeAnaDate(iso) {
+  const d = iso ? new Date(iso) : null;
+  return d && !Number.isNaN(d.getTime()) ? d : null;
+}
+
+// "27 sept" (con el año si no es este): la fecha de la publicación.
+function homeAnaShort(d) {
+  const corta = HOME_ANA_DATE.format(d).replace('.', '');
+  const anio = HOME_ANA_YEAR.format(d);
+  return anio === HOME_ANA_YEAR.format(new Date()) ? corta : `${corta} ${anio}`;
+}
+
+function homeAnaLine(a) {
+  const line = homeNode('a');
+  line.href = `instagram.html#analisis-${encodeURIComponent(a.id)}`;
+  const th = homeNode('span', 'th');
+  th.style.setProperty('--a', accountColor(a.cuenta));
+  th.setAttribute('aria-hidden', 'true');
+  if (a.imagen && a.imagen.thumbUrl) {
+    const img = homeNode('img');
+    img.alt = '';
+    img.loading = 'lazy';
+    img.src = a.imagen.thumbUrl;
+    img.addEventListener('error', () => img.remove());
+    th.appendChild(img);
+  }
+  const tx = homeNode('span', 'tx');
+  // La fecha de la publicación; si no vino, la del análisis, dicha así.
+  const publicada = homeAnaDate(a.postedAt);
+  const analizada = homeAnaDate(a.finishedAt);
+  const fecha = publicada ? homeAnaShort(publicada) : analizada ? `analizado ${homeAnaShort(analizada)}` : null;
+  const cuenta = a.cuenta ? `@${a.cuenta}` : 'Publicación';
+  tx.appendChild(homeNode('b', '', `${cuenta}${fecha ? ` · ${fecha}` : ''}`));
+  const caption = (a.caption || '').replace(/\s+/g, ' ').trim();
+  let corto = caption;
+  if (caption.length > HOME_ANA_CAPTION) {
+    const corte = caption.lastIndexOf(' ', HOME_ANA_CAPTION);
+    corto = `${caption.slice(0, corte > 40 ? corte : HOME_ANA_CAPTION)}…`;
+  }
+  tx.appendChild(homeNode('small', '', corto || 'Sin texto.'));
+  const t = a.tonos || {};
+  const base = (t.positivos || 0) + (t.neutrales || 0) + (t.negativos || 0);
+  const pos = base > 0 ? Math.round(((t.positivos || 0) / base) * 100) : null;
+  const num = homeNode('span', 'num');
+  if (pos !== null) num.appendChild(homeNode('span', 'sent-pos', `${pos} % pos`));
+  // Los analizados, dicho así: no es el total de comentarios de la publicación.
+  num.appendChild(homeNode('span', '', `${homeCount(a.analizados)} analizados`));
+  // Un nombre corto para el lector de pantalla (el texto entero no).
+  const total = Number.isFinite(a.comentariosTotal) && a.comentariosTotal > a.analizados ? ` de ${homeCount(a.comentariosTotal)}` : '';
+  const partes = [
+    `Análisis de ${cuenta}`,
+    publicada ? `publicación del ${HOME_ANA_FULL.format(publicada)}` : null,
+    analizada ? `analizado el ${HOME_ANA_FULL.format(analizada)}` : null,
+    pos !== null ? `${pos} % positivo` : null,
+    `${homeCount(a.analizados)}${total} comentarios analizados`,
+  ];
+  line.setAttribute('aria-label', partes.filter(Boolean).join(', '));
+  // Dos análisis de la misma publicación se distinguen por cuándo se hicieron.
+  if (analizada) line.dataset.tip = `Analizado el ${HOME_ANA_FULL.format(analizada)} a las ${HOME_ANA_TIME.format(analizada)}`;
+  line.append(th, tx, num);
+  return line;
+}
+
+async function homeLoadAnalisis() {
+  const box = homeEl('homeAna');
+  try {
+    const res = await fetch(`/api/analisis?plataforma=instagram&limit=${HOME_ANALISIS}`, { credentials: 'same-origin' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const list = (data.recientes || []).slice(0, HOME_ANALISIS);
+    const key = list.map((a) => `${a.id}:${a.finishedAt}`).join('|');
+    if (key === homeAnaKey) return;
+    homeAnaKey = key;
+    if (!list.length) {
+      box.replaceChildren(homeNode('p', 'note empty', 'Todavía no hay análisis. Pegá el link de una publicación en Análisis de publicación.'));
+      return;
+    }
+    box.replaceChildren(...list.map(homeAnaLine));
+  } catch (err) {
+    console.error('Error leyendo los análisis recientes:', err);
+    if (homeAnaKey === null) box.replaceChildren(homeNode('p', 'note empty', 'No se pudieron cargar los análisis.'));
+  }
+}
+
 // ---------- carga ----------
 
 async function homeLoad() {
   clearTimeout(homeRetryTimer);
   homeRetryTimer = 0;
+  homeLoadAnalisis();
   try {
     const res = await fetch('/api/inicio', { credentials: 'same-origin' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);

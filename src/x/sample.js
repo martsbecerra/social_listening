@@ -1,6 +1,6 @@
 // ==========================================================================
 // sample.js — Muestra estable del hilo X hacia el LLM.
-// Prioriza RTs y handles del padrón; tope = COMMENTS_ANALYSIS_LIMIT.
+// Prioriza RTs y handles del padrón; tope = X_COMMENTS_ANALYSIS_LIMIT (150).
 // ==========================================================================
 
 const { resolveMaxCommentsLimit } = require('../commentSample');
@@ -37,7 +37,17 @@ function compareItems(a, b, influencerMap) {
 /**
  * El post original siempre va primero (index 1). El resto se recorta.
  */
-function prepareXSample({ post, items }, influencerMap, max = resolveMaxCommentsLimit()) {
+// X sigue con 150 por defecto y con su propia variable (Instagram pasó a
+// 300 con tandas de 100 y COMMENTS_ANALYSIS_LIMIT es solo suyo; X manda
+// todo el hilo en una sola llamada a Grok).
+const X_DEFAULT_MAX_ITEMS = 150;
+
+/** El tope de la muestra de X: X_COMMENTS_ANALYSIS_LIMIT o 150. */
+function resolveXMaxItems() {
+  return resolveMaxCommentsLimit(X_DEFAULT_MAX_ITEMS, 'X_COMMENTS_ANALYSIS_LIMIT');
+}
+
+function prepareXSample({ post, items }, influencerMap, max = resolveXMaxItems()) {
   const original = { ...post, kind: 'original' };
   const rest = dedupeItems((items || []).filter((item) => item && item.kind !== 'original'));
   const sorted = [...rest].sort((a, b) => compareItems(a, b, influencerMap));
@@ -55,4 +65,4 @@ function prepareXSample({ post, items }, influencerMap, max = resolveMaxComments
 const PARTIAL_SAMPLE_DISCLOSURE =
   'Análisis realizado sobre muestra parcial del hilo (priorizados RTs y cuentas del padrón ANTIK-PRO).';
 
-module.exports = { prepareXSample, dedupeItems, compareItems, PARTIAL_SAMPLE_DISCLOSURE };
+module.exports = { prepareXSample, resolveXMaxItems, dedupeItems, compareItems, PARTIAL_SAMPLE_DISCLOSURE };

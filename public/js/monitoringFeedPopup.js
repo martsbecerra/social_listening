@@ -499,7 +499,8 @@ async function confirmFeedPopIgnore() {
 
 // "Analizar comentarios": cierra el pop-up, abre la solapa Análisis y deja
 // el link del posteo en el campo, con el foco ahí. No analiza nada: eso
-// recién con "Analizar".
+// recién con "Analizar". anaPreload (analysis.js) además saca de la vista el
+// análisis de otra publicación y avisa si este link ya se analizó.
 function analyzeFromFeedPop() {
   const post = feedPopPost();
   if (!post) return;
@@ -507,8 +508,8 @@ function analyzeFromFeedPop() {
   openTabFromUser('analysis');
   const input = document.getElementById('url');
   if (!input) return;
-  input.value = post.url;
-  input.dispatchEvent(new Event('input', { bubbles: true }));
+  if (typeof window.anaPreload === 'function') window.anaPreload(post.url);
+  else input.value = post.url;
   input.focus();
 }
 

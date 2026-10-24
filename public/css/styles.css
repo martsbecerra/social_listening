@@ -4086,6 +4086,567 @@ svg.line {
   }
 }
 
+/* ==========================================================================
+   Análisis de publicación de Instagram (diseño v4, fase E): la solapa de la
+   maqueta. El link y los pasos reales; los recientes; a la izquierda la
+   publicación, el resumen y compartir; a la derecha el tono, los temas,
+   "Cuándo comentaron" y los comentarios. Lo dibuja public/js/analysis.js.
+   Todo bajo .ana4 (la sección de instagram.html): la solapa de X (x.html)
+   sigue con las clases de antes (.ana-wrap, #resultCard, .temas-editor…).
+   ========================================================================== */
+.ana4 .ana-state {
+  display: none;
+}
+.ana4 .ana-state.on {
+  display: block;
+}
+.ana4 .steps {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+}
+.ana4 .step {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: center;
+  font-size: 13px;
+  color: var(--muted);
+}
+.ana4 .step i {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid var(--line2);
+  display: grid;
+  place-items: center;
+  font: 600 10px/1 var(--mono);
+  font-style: normal;
+  flex: none;
+}
+.ana4 .step.run {
+  color: var(--fg);
+}
+.ana4 .step.run i {
+  border-color: var(--accent);
+  color: var(--accent-text);
+  box-shadow: 0 0 12px color-mix(in oklab, var(--accent) 50%, transparent);
+  animation: ping 1.4s infinite;
+}
+.ana4 .step.ok {
+  color: var(--fg2);
+}
+.ana4 .step.ok i {
+  background: var(--pos);
+  border-color: var(--pos);
+  color: #fff;
+}
+.ana4 .step.err {
+  color: var(--neg-text);
+}
+.ana4 .step.err i {
+  background: var(--neg);
+  border-color: var(--neg);
+  color: #fff;
+}
+.ana4 .step.skip i {
+  border-style: dashed;
+}
+.ana4 .step .n {
+  margin-left: auto;
+  font: 500 11.5px/1.3 var(--mono);
+}
+.ana4 .ana-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in oklab, var(--accent) 40%, var(--line));
+  border-radius: 10px;
+  background: color-mix(in oklab, var(--accent) 8%, var(--surface2));
+  font-size: 13px;
+}
+.ana4 .ana-notice-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.ana4 .ana-error {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in oklab, var(--neg) 35%, var(--line));
+  border-radius: 10px;
+  /* Fondo liso: la tinta roja sobre el fondo teñido no llegaba a 4,5:1. */
+  background: var(--surface2);
+  color: var(--neg-text);
+  font-size: 13px;
+}
+
+/* ---------- recientes ---------- */
+.ana4 .posts {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 2px 2px 4px;
+  margin: 14px 0 12px;
+}
+.ana4 .posts button {
+  flex: 0 0 auto;
+  width: 64px;
+  height: 64px;
+  border-radius: 12px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  background: var(--surface2);
+  padding: 0;
+}
+.ana4 .posts button.on {
+  border-color: var(--accent);
+  box-shadow: 0 0 16px color-mix(in oklab, var(--accent) 40%, transparent);
+}
+.ana4 .posts button i {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, var(--a), color-mix(in oklab, var(--a) 40%, var(--glow)));
+  opacity: 0.85;
+}
+.ana4 .posts button img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.ana4 .posts button small {
+  position: absolute;
+  left: 6px;
+  bottom: 4px;
+  font: 500 10px/1 var(--mono);
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.75);
+}
+.ana4 .posts .lbl {
+  flex: 0 0 auto;
+  align-self: center;
+  font: 500 11px/1 var(--body);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-right: 4px;
+}
+
+/* ---------- las dos columnas ---------- */
+.ana4 .grid.ana {
+  grid-template-columns: 360px 1fr;
+  align-items: start;
+  transition: opacity 0.2s;
+}
+.ana4 .grid.ana.loading {
+  opacity: 0.55;
+}
+.ana4 .ana-side {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.ana4 .ana-main {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+/* ---------- la publicación ---------- */
+.ana4 .post {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--surface2);
+}
+.ana4 .post .img {
+  height: 240px;
+  background: #000;
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+}
+.ana4 .post .img img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+.ana4 .post .img.none {
+  background: linear-gradient(135deg, var(--a), color-mix(in oklab, var(--a) 40%, var(--glow)));
+}
+.ana4 .post .img.none span {
+  font: 500 12px/1 var(--mono);
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+.ana4 .post .body {
+  padding: 12px;
+}
+.ana4 .post .acc {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 13px;
+  min-width: 0;
+}
+.ana4 .post .acc .av {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  flex: none;
+  color: #fff;
+  font: 600 12px/1 var(--display);
+}
+.ana4 .post .acc > span:not(.av) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ana4 .post .acc small {
+  color: var(--muted);
+  font-weight: 400;
+  margin-left: auto;
+  white-space: nowrap;
+}
+.ana4 .post p {
+  margin: 8px 0;
+  font-size: 13px;
+  color: var(--fg2);
+  max-height: 9.6em;
+  overflow-y: auto;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+.ana4 .post .mets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  font: 500 12px/1.2 var(--mono);
+  color: var(--muted);
+}
+.ana4 .post .lnk {
+  display: inline-block;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--accent-text);
+}
+
+/* ---------- resumen ---------- */
+.ana4 .ai {
+  border: 1px solid color-mix(in oklab, var(--glow) 55%, var(--line));
+  border-radius: 12px;
+  padding: 12px;
+  background: linear-gradient(180deg, color-mix(in oklab, var(--glow) 10%, var(--surface2)), var(--surface2));
+}
+.ana4 .ai .ct2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font: 500 11px/1 var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  /* --fg2: el acento sobre el degradé de arriba no llegaba a 4,5:1; el ◆ sí
+     va en el acento (es un adorno, aria-hidden). */
+  color: var(--fg2);
+  margin-bottom: 6px;
+}
+.ana4 .ai p {
+  margin: 0;
+  font-size: 13px;
+  min-height: 4.4em;
+}
+.ana4 .ai p.typing::after {
+  content: '▍';
+  color: var(--accent-text);
+  animation: blink 1s steps(2) infinite;
+}
+
+/* ---------- compartir ---------- */
+.ana4 .exports {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.ana4 .ana-warn {
+  margin: 10px 0 0;
+  color: var(--warn-ink);
+}
+.ana4 .wa {
+  white-space: pre-wrap;
+  font: 12.5px/1.5 var(--mono);
+  background: var(--surface2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px;
+  max-height: 260px;
+  overflow: auto;
+  color: var(--fg2);
+  margin: 10px 0 0;
+}
+
+/* ---------- tono ---------- */
+.ana4 .stackbar {
+  display: flex;
+  height: 16px;
+  border-radius: 8px;
+  overflow: hidden;
+  gap: 2px;
+  background: var(--line);
+}
+.ana4 .stackbar i {
+  display: block;
+  height: 100%;
+  width: 0;
+  transition: width 1.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.ana4 #anaToneNote {
+  margin: 10px 0 0;
+}
+.ana4 #anaToneNote:empty {
+  display: none;
+}
+
+/* ---------- temas ---------- */
+.ana4 .themes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.ana4 .theme {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid var(--line2);
+  background: var(--surface2);
+  font-weight: 500;
+  animation: pop 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.4) both;
+  max-width: 100%;
+}
+.ana4 .theme.first {
+  border-color: var(--accent);
+}
+.ana4 .theme.on {
+  border-color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 12%, var(--surface2));
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 16%, transparent);
+}
+.ana4 .theme-name {
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  padding: 6px 4px 6px 11px;
+  cursor: pointer;
+  text-align: left;
+  min-width: 0;
+  border-radius: 999px 0 0 999px;
+}
+.ana4 .theme-name small {
+  font: 400 11px/1 var(--mono);
+  color: var(--muted);
+  margin-left: 6px;
+}
+/* El tema elegido tiene el fondo teñido: --muted ahí no llega a 4,5:1. */
+.ana4 .theme.on .theme-name small {
+  color: var(--fg2);
+}
+.ana4 .ai .ct2 .dot {
+  color: var(--accent);
+}
+.ana4 .theme-edit {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: 500 12px/1 var(--body);
+  padding: 6px 10px 6px 4px;
+  cursor: pointer;
+  border-radius: 0 999px 999px 0;
+}
+.ana4 .theme-edit:hover {
+  color: var(--accent-text);
+}
+.ana4 .theme.add {
+  border-style: dashed;
+  color: var(--accent-text);
+  cursor: pointer;
+  padding: 6px 11px;
+  font: 500 12.5px/1 var(--body);
+}
+.ana4 .theme.add:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.ana4 .tema-edit {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--line2);
+}
+.ana4 .tema-edit .field {
+  width: 100%;
+}
+.ana4 .tema-edit textarea.field {
+  resize: vertical;
+}
+.ana4 .field-l {
+  font-size: 12px;
+  color: var(--muted);
+}
+.ana4 .tema-edit .note {
+  margin: 0;
+}
+.ana4 .tema-edit-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* ---------- cuándo comentaron ---------- */
+.ana4 .tl-wrap {
+  width: 100%;
+  min-height: 190px;
+}
+.ana4 .tl {
+  display: block;
+  width: 100%;
+  height: 190px;
+  overflow: visible;
+}
+.ana4 .tl-grid {
+  stroke: var(--line);
+  stroke-dasharray: 2 4;
+}
+.ana4 .tl-txt {
+  font: 9px var(--mono);
+  fill: var(--muted);
+}
+.ana4 .tl-area {
+  animation: fadeIn 1.4s both;
+}
+.ana4 .tl-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: draw 1.6s ease forwards;
+}
+.ana4 .tl-peak {
+  animation: fadeIn 0.6s 1.4s both;
+}
+.ana4 .tl-peak line {
+  stroke: var(--neg);
+  stroke-dasharray: 3 3;
+  opacity: 0.8;
+}
+.ana4 .tl-peak circle {
+  fill: var(--neg);
+  stroke: var(--surface);
+  stroke-width: 2;
+}
+.ana4 .tl-peak-txt {
+  font: 10px var(--mono);
+  fill: var(--fg);
+}
+.ana4 .tl-hit {
+  fill: transparent;
+}
+.ana4 .tl-hit:hover {
+  fill: color-mix(in oklab, var(--accent) 10%, transparent);
+}
+.ana4 #anaWhenNote {
+  margin: 6px 0 0;
+}
+
+/* ---------- comentarios ---------- */
+.ana4 .cmt-tema {
+  margin-bottom: 10px;
+}
+.ana4 .cmts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ana4 .cmt {
+  display: grid;
+  grid-template-columns: 3px 1fr;
+  gap: 10px;
+  font-size: 13px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 10px 8px 0;
+  background: var(--surface2);
+  animation: slideIn 0.5s both;
+}
+.ana4 .cmt i {
+  border-radius: 0 2px 2px 0;
+}
+.ana4 .cmt i.bg-none {
+  background: var(--line2);
+}
+.ana4 .cmt .w {
+  font-size: 11.5px;
+  color: var(--muted);
+  display: flex;
+  gap: 4px 8px;
+  flex-wrap: wrap;
+}
+.ana4 .cmt .w b {
+  color: var(--fg);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.ana4 .cmt .w .tm {
+  margin-left: auto;
+  font-family: var(--mono);
+}
+.ana4 .cmt p {
+  margin: 3px 0 0;
+  overflow-wrap: anywhere;
+}
+.ana4 .cmts-more {
+  margin-top: 10px;
+}
+
+@media (max-width: 980px) {
+  .ana4 .grid.ana {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 640px) {
+  .ana4 .two {
+    grid-template-columns: 1fr;
+  }
+  .ana4 .ct .tools,
+  .ana4 .ct .seg {
+    max-width: 100%;
+  }
+  .ana4 .ct .seg {
+    overflow-x: auto;
+  }
+}
+
 /* ---------- Monitoreo: vista Feed (solo Instagram, public/js/monitoringFeed.js) ----
    Las tarjetas de siempre con el aspecto de .pc de la maqueta: borde de
    arriba del color del tono, foto cuadrada entera sobre negro. */
@@ -5547,7 +6108,7 @@ a.pl:focus-visible {
 }
 
 .home3 {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr) minmax(0, 1fr);
   align-items: stretch;
   margin-top: 14px;
 }
@@ -5902,9 +6463,103 @@ a.fl {
   color: var(--fg2);
   font: 500 11px/1 var(--mono);
 }
+/* Análisis recientes (la tercera columna): una fila por análisis, con la
+   foto, la cuenta y la fecha, el texto y sus números. */
+.recent {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.recent a {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  text-decoration: none;
+  color: inherit;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: var(--surface2);
+  animation: slideIn 0.5s both;
+}
+.recent a:hover {
+  border-color: var(--accent);
+}
+.recent .th {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  overflow: hidden;
+  position: relative;
+  background: linear-gradient(135deg, var(--a), color-mix(in oklab, var(--a) 40%, var(--glow)));
+}
+.recent .th img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.recent .tx {
+  min-width: 0;
+}
+.recent b {
+  font-size: 12.5px;
+  font-weight: 600;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recent small {
+  color: var(--muted);
+  font-size: 11.5px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.recent .num {
+  font-size: 11.5px;
+  color: var(--muted);
+  text-align: right;
+  white-space: nowrap;
+  font-family: var(--mono);
+}
+.recent .num .sent-pos {
+  display: block;
+}
+/* En celular los números van debajo del texto, en un renglón: al costado
+   le quitaban el lugar a la cuenta y la fecha. */
+@media (max-width: 560px) {
+  .recent a {
+    grid-template-columns: 36px minmax(0, 1fr);
+  }
+  .recent .num {
+    grid-column: 2;
+    display: flex;
+    gap: 10px;
+    text-align: left;
+  }
+  .recent .num .sent-pos {
+    display: inline;
+  }
+}
 @media (max-width: 1100px) {
   .plats {
     grid-template-columns: 1fr 1fr;
+  }
+}
+/* Con tres columnas, por debajo de ~1200 px la "Próxima corrida" queda tan
+   angosta que se cortan los rótulos de la línea de 24 h: los análisis van
+   abajo, a todo el ancho. */
+@media (max-width: 1200px) {
+  .home3 {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+  }
+  .homeana {
+    grid-column: 1 / -1;
   }
 }
 /* En una columna la tarjeta crece con su contenido: seis publicaciones. */

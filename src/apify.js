@@ -172,26 +172,36 @@ function isConcurrentRunsError(err) {
  * La duración se mide desde que la llamada obtiene su lugar en la cola.
  *
  * @param {object} input - La configuración (input) que espera el actor.
- * @param {{ actorId?: string, plataforma: string }} options - Actor a
- *   correr. Por defecto el oficial (scrapeInstagram, abajo, no lo pasa);
- *   los adapters de src/platforms/ pasan el suyo, así este módulo queda
- *   genérico. plataforma: para la fila de apify_calls, obligatoria (sin
- *   default a instagram: el gasto de otra red no se etiqueta como Instagram
- *   en silencio).
+ * @param {{ actorId?: string, plataforma: string, onQueued?: () => void, onAcquired?: () => void }} options -
+ *   Actor a correr. Por defecto el oficial (el análisis, abajo, no lo
+ *   pasa); los adapters de src/platforms/ pasan el suyo, así este módulo
+ *   queda genérico. plataforma: para la fila de apify_calls, obligatoria
+ *   (sin default a instagram: el gasto de otra red no se etiqueta como
+ *   Instagram en silencio). onQueued / onAcquired: avisos para el progreso
+ *   del análisis (tuvo que esperar cupo / lo consiguió); un error suyo no
+ *   afecta la llamada.
  * @returns {Promise<Array>} Lista de items scrapeados.
  */
-async function runActorSync(input, { actorId = APIFY_ACTOR, plataforma } = {}) {
+async function runActorSync(input, { actorId = APIFY_ACTOR, plataforma, onQueued, onAcquired } = {}) {
   if (typeof plataforma !== 'string' || !plataforma.trim()) {
     throw new Error('runActorSync: falta plataforma (instagram | x); no hay default.');
   }
   const { target } = describeInput(input);
   return apifyLimiter.run(async () => {
+    if (typeof onAcquired === 'function') {
+      try {
+        onAcquired();
+      } catch {
+        /* el aviso no frena la llamada */
+      }
+    }
     const context = getContext();
     const phase = (context && context.phase) || 'desconocida';
     const startedAt = Date.now();
     const record = ({ items, error, run }) =>
       recordApifyCall({
         runId: context && context.runId != null ? context.runId : null,
+        analisisId: context && context.analisisId != null ? context.analisisId : null,
         phase,
         plataforma,
         actor: actorId,
@@ -244,7 +254,7 @@ async function runActorSync(input, { actorId = APIFY_ACTOR, plataforma } = {}) {
     console.log(`[apify] ← ok target=${target || '(sin target)'} en ${Date.now() - startedAt}ms, items=${(result.items || []).length}`);
     record({ items: result.items, run: result.run });
     return result.items;
-  }, target);
+  }, target, { onQueued });
 }
 
 /** Texto de la columna `error` de apify_calls: 'QUOTA_EXCEEDED'/'TIMEOUT' para esos casos, si no el mensaje acotado. */
@@ -420,101 +430,135 @@ function isQuotaExceededError(err) {
   return String((err && err.message) || '').includes('Monthly usage hard limit exceeded');
 }
 
+// Cuántos comentarios se le piden al actor en un análisis: COMMENTS_LIMIT,
+// 300 por defecto (decisión del dueño, octubre 2026), hasta
+// COMMENTS_LIMIT_MAX. Cada comentario devuelto se cobra (0,0023 dólares
+// en Starter): 300 son unos 0,70 por análisis. Se lee en cada análisis.
+const COMMENTS_LIMIT_DEFAULT = 300;
+const COMMENTS_LIMIT_MAX = 500;
+
+function resolveCommentsLimit() {
+  const n = Number(process.env.COMMENTS_LIMIT);
+  if (Number.isFinite(n) && n > 0) return Math.min(Math.floor(n), COMMENTS_LIMIT_MAX);
+  return COMMENTS_LIMIT_DEFAULT;
+}
+
 /**
- * Extrae comentarios y datos del posteo de una URL de Instagram.
- *
- * Hacemos DOS corridas del actor en paralelo:
- *   - Una en modo "comments" -> trae los comentarios.
- *   - Una en modo "posts"    -> trae los datos del posteo (caption, likes, etc.).
- *
- * Correrlas en paralelo (Promise.all) hace que no sea mucho más lento que una.
- * Además, en la corrida de comentarios pedimos "addParentData: true" para que
- * cada comentario venga acompañado de info del posteo, como respaldo por si la
- * corrida de "posts" no trajera datos.
- *
- * @param {string} postUrl - URL de la publicación de Instagram.
- * @returns {Promise<{post: object, comments: Array}>}
+ * La corrida de la PUBLICACIÓN de un análisis (modo "posts", un ítem). Va
+ * aparte de la de los comentarios para que cada una avise al terminar (el
+ * progreso del análisis, src/analysisJob.js); las dos corren en paralelo.
+ * @param {string} postUrl
+ * @param {{ onQueued?: () => void, onAcquired?: () => void }} [hooks]
+ * @returns {Promise<Array>} los ítems crudos
  */
-async function scrapeInstagram(postUrl) {
-  const commentsInput = {
-    directUrls: [postUrl],
-    resultsType: 'comments',
-    resultsLimit: Number(process.env.COMMENTS_LIMIT || 100),
-    addParentData: true,
-  };
+function fetchAnalysisPost(postUrl, hooks = {}) {
+  return runActorSync({ directUrls: [postUrl], resultsType: 'posts', resultsLimit: 1 }, { plataforma: 'instagram', ...hooks });
+}
 
-  const postInput = {
-    directUrls: [postUrl],
-    resultsType: 'posts',
-    resultsLimit: 1,
-  };
+/**
+ * La corrida de los COMENTARIOS de un análisis (modo "comments", hasta
+ * COMMENTS_LIMIT), con addParentData (lo que el actor agregue del posteo
+ * a cada comentario no se usa como dato de la publicación: ver
+ * normalizePost).
+ * @param {string} postUrl
+ * @param {{ onQueued?: () => void, onAcquired?: () => void }} [hooks]
+ * @returns {Promise<{ items: Array, limit: number }>} los ítems crudos y el tope pedido
+ */
+async function fetchAnalysisComments(postUrl, hooks = {}) {
+  const limit = resolveCommentsLimit();
+  const items = await runActorSync(
+    { directUrls: [postUrl], resultsType: 'comments', resultsLimit: limit, addParentData: true },
+    { plataforma: 'instagram', ...hooks }
+  );
+  return { items, limit };
+}
 
-  const commentsLimitRequested = commentsInput.resultsLimit;
-
-  const [commentItems, postItems] = await Promise.all([
-    runActorSync(commentsInput, { plataforma: 'instagram' }),
-    runActorSync(postInput, { plataforma: 'instagram' }),
-  ]);
-
+/**
+ * Junta lo que trajeron las dos corridas: la publicación y los comentarios
+ * normalizados, y los conteos para el log y la pantalla.
+ * @returns {{ post: object, comments: Array, scrapeMeta: object }}
+ */
+function buildAnalysisData(postItems, commentItems, postUrl, commentsLimitRequested = null) {
   const rawCommentItems = Array.isArray(commentItems) ? commentItems.length : 0;
   const post = normalizePost(postItems, commentItems, postUrl);
   const comments = normalizeComments(commentItems);
-
   const scrapeMeta = {
     commentsLimitRequested,
     rawCommentItems,
     commentsOnPost: post.commentsCount,
     comentariosTrasNormalizar: comments.length,
   };
-
-  if (
-    Number.isFinite(commentsLimitRequested) &&
-    rawCommentItems > 0 &&
-    rawCommentItems < commentsLimitRequested
-  ) {
-    const apifyFreeHint =
-      rawCommentItems <= 15
-        ? ' Apify en plan gratuito suele devolver ~15 comentarios (una página); con plan pago podés pedir más (hasta ~50 por post en este actor).'
-        : '';
+  if (Number.isFinite(commentsLimitRequested) && rawCommentItems > 0 && rawCommentItems < commentsLimitRequested) {
     console.warn(
-      `[apify] Apify devolvió ${rawCommentItems} ítems de comentarios, menos que COMMENTS_LIMIT=${commentsLimitRequested}.${apifyFreeHint}` +
-      (post.commentsCount != null && post.commentsCount > rawCommentItems
-        ? ` Instagram reporta ${post.commentsCount} comentarios en el post.`
-        : '')
+      `[apify] Apify devolvió ${rawCommentItems} ítems de comentarios, menos que COMMENTS_LIMIT=${commentsLimitRequested}.` +
+        (post.commentsCount != null && post.commentsCount > rawCommentItems ? ` Instagram reporta ${post.commentsCount} comentarios en el post.` : '')
     );
   }
-
   return { post, comments, scrapeMeta };
+}
+
+/**
+ * Las dos corridas del análisis juntas (publicación y comentarios, en
+ * paralelo), para quien no necesita los avisos de cada una.
+ * @param {string} postUrl
+ * @returns {Promise<{ post: object, comments: Array, scrapeMeta: object }>}
+ */
+async function scrapeInstagram(postUrl) {
+  const [postItems, { items: commentItems, limit }] = await Promise.all([fetchAnalysisPost(postUrl), fetchAnalysisComments(postUrl)]);
+  return buildAnalysisData(postItems, commentItems, postUrl, limit);
+}
+
+// El actor devuelve -1 en likesCount cuando el autor ocultó los "me gusta"
+// (igual que en src/platforms/instagramApify.js): es "sin dato", null,
+// nunca -1 ni 0.
+function countOrNull(value) {
+  if (value === undefined || value === null || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
 /**
  * Toma los datos crudos del posteo y los deja en un formato limpio y predecible.
  * Los nombres de campos que devuelve Apify pueden variar según la versión del
  * actor, por eso probamos varias alternativas ("??" usa la primera que exista).
+ * Suma lo que el análisis guarda y muestra: el id y el código, la fecha de
+ * publicación (para "Cuándo comentaron"), el tipo y el link de la foto (para
+ * su copia, sin pedir nada más: src/postImages.js). El tipo y la foto salen
+ * de las mismas funciones del monitoreo (instagramApify.derivePostType y
+ * pickImageUrl), pedidas recién acá porque ese módulo requiere a este.
+ *
+ * Sin la corrida de la publicación, cuenta, likes y texto quedan sin dato:
+ * los campos de primer nivel de un ítem de comentario (ownerUsername,
+ * likesCount) son DEL COMENTARIO, nunca del posteo. Antes se tomaban como
+ * respaldo y el informe ponía al primer comentarista como autor.
+ * `commentItems` queda en la firma por quienes lo pasan; no se lee.
  */
 function normalizePost(postItems, commentItems, postUrl) {
   const raw = (Array.isArray(postItems) && postItems[0]) || {};
-
-  // Respaldo: si la corrida de "posts" vino vacía, intentamos con la info de
-  // posteo que viene adjunta a los comentarios (parent data).
-  const parent = (Array.isArray(commentItems) && commentItems[0]) || {};
-
   const pick = (...values) => values.find((v) => v !== undefined && v !== null && v !== '');
+  const { derivePostType, pickImageUrl } = require('./platforms/instagramApify');
+  const hasPost = Object.keys(raw).length > 0;
 
   return {
     url: postUrl,
-    ownerFullName: pick(raw.ownerFullName, parent.ownerFullName, 'N/D'),
-    ownerUsername: pick(raw.ownerUsername, parent.ownerUsername, 'N/D'),
-    caption: pick(raw.caption, parent.caption, ''),
-    likesCount: pick(raw.likesCount, parent.likesCount, null),
-    commentsCount: pick(raw.commentsCount, parent.commentsCount, null),
-    videoPlayCount: pick(raw.videoPlayCount, raw.videoViewCount, parent.videoPlayCount, null),
+    id: hasPost && pick(raw.id, raw.pk) != null ? String(pick(raw.id, raw.pk)) : null,
+    shortCode: hasPost ? pick(raw.shortCode, raw.code, null) : null,
+    ownerFullName: pick(raw.ownerFullName, 'N/D'),
+    ownerUsername: pick(raw.ownerUsername, 'N/D'),
+    caption: pick(raw.caption, ''),
+    likesCount: countOrNull(pick(raw.likesCount, null)),
+    commentsCount: countOrNull(pick(raw.commentsCount, null)),
+    videoPlayCount: countOrNull(pick(raw.videoPlayCount, raw.videoViewCount, null)),
+    postedAt: hasPost ? pick(raw.timestamp, null) : null,
+    postType: hasPost ? derivePostType(raw) : null,
+    imageUrl: hasPost ? pickImageUrl(raw) : null,
   };
 }
 
 /**
  * Deja cada comentario en un formato limpio con solo los campos que necesitamos.
  * El orden del array no se garantiza; commentSample.js lo normaliza antes del análisis.
+ * Likes sin dato (o negativos) quedan null, no 0: "sin dato" no es cero.
  */
 function normalizeComments(commentItems) {
   if (!Array.isArray(commentItems)) return [];
@@ -529,7 +573,7 @@ function normalizeComments(commentItems) {
       isVerified: Boolean(
         c.ownerIsVerified ?? (c.owner && c.owner.is_verified) ?? false
       ),
-      likesCount: Number(c.likesCount || 0),
+      likesCount: countOrNull(c.likesCount),
       timestamp: c.timestamp || null,
       text: c.text.trim(),
     }));
@@ -537,6 +581,14 @@ function normalizeComments(commentItems) {
 
 module.exports = {
   scrapeInstagram,
+  fetchAnalysisPost,
+  fetchAnalysisComments,
+  buildAnalysisData,
+  normalizePost,
+  normalizeComments,
+  resolveCommentsLimit,
+  COMMENTS_LIMIT_DEFAULT,
+  COMMENTS_LIMIT_MAX,
   runActorSync,
   fetchRunCost,
   mapApifyError,

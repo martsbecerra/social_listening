@@ -40,9 +40,11 @@ saber antes de tocar algo.
   comportamiento anterior, sin cambios). `src/platforms/instagram.js` es la
   fachada: monitor, accountStats, metricsRefresh, db, server y frontend no
   saben qué actor hay abajo. Un valor desconocido aborta el arranque.
-- **Análisis de publicación** (`src/apify.js` → `scrapeInstagram`,
+- **Análisis de publicación** (`src/apify.js` → `fetchAnalysisPost` y
+  `fetchAnalysisComments`, que llama `src/analysisJob.js` desde
   `POST /api/analyze`): SIEMPRE `apify/instagram-scraper`, porque apidojo no
-  devuelve comentarios. No migrarlo.
+  devuelve comentarios. No migrarlo. Ver "Análisis de publicación de
+  Instagram".
 - Todas las llamadas pasan por `runActorSync` (`src/apify.js`): cola global
   de `APIFY_MAX_CONCURRENT` runs, un reintento del 402
   `concurrent-runs-limit-exceeded`, y registro de cada llamada en
@@ -120,7 +122,8 @@ entero no se anota nada.
   0,005 (`APIDOJO_RATE_*`, `APIDOJO_INCLUDED_*`). Uso de plataforma incluido.
 - `apify_calls` guarda por llamada: fase, ciclo, `actor`, `query_type`
   (user | hashtag | search | post | details), items, `usd` estimado,
-  `usd_real`, `apify_run_id`. `monitoring_runs`, una fila por ciclo. Fases:
+  `usd_real`, `apify_run_id` y, en un análisis de publicación,
+  `analisis_id` (del contexto de `usageContext`). `monitoring_runs`, una fila por ciclo. Fases:
   `monitoreo`, `busqueda`, `benchmark`, `refresco` (las marcan
   `src/scheduler.js` y `src/monitor.js` con `src/usageContext.js`),
   `validacion`, `recalc-script`, `analisis`, `fotos` (la carga única de
@@ -493,7 +496,8 @@ páginas), B `monitoreo-v4`, C `estadisticas`, D `inicio-y-login`, E
 en el tag `v3-riel-radar`. SDD de la fase A en
 `openspec/changes/sistema-visual-v4/`; de la B, en
 `openspec/changes/monitoreo-v4/`; de la C, en `openspec/changes/estadisticas/`.
-La D va sin SDD (decisión del dueño).
+La D va sin SDD (decisión del dueño). De la E, en
+`openspec/changes/analisis-v4/` (ver "Análisis de publicación de Instagram").
 
 - **Sistema visual** (`public/css/styles.css`, en tres partes comentadas):
   1) los tokens y componentes de la maqueta tal cual (`--bg`, `--surface`,
@@ -519,14 +523,16 @@ La D va sin SDD (decisión del dueño).
   `.pipe`, `.al`, `.fbar`, `.combo`, `.fstatus`, `.ups`/`.up`, `.reach`),
   las Estadísticas (`.cloud`, `.rows`, `.donut`, `.topic`, `.heat`,
   `.acc-row`, `.rk`; los badges de los temas llevan la tinta oscura donde
-  el blanco de la maqueta no pasaba 4,5:1), el inicio (`.hero`,
+  el blanco de la maqueta no pasaba 4,5:1), el Análisis de publicación
+  (todo bajo `.ana4`: `.step`, `.ana-notice`, `.posts`, `.post`,
+  `.ai`, `.stackbar`, `.theme`, `.tl`, `.cmt`), el inicio (`.hero`,
   `.plats`/`.pl`, `.nextcard` con `.nring` y `.tl24`, `.homefeed` con
-  `.fl.big`), el login (`.lg-vis` con `.ticker`/`.tk` y `.lg-stats`;
+  `.fl.big`, `.homeana` con `.recent`), el login (`.lg-vis` con `.ticker`/`.tk` y `.lg-stats`;
   `.lg-card` con `.lg-state`, `.lg-err`, `.lg-mail`, `.lg-foot`,
   `.lg-trust`) y,
   con los mismos tokens, lo que la maqueta no dibuja o que todavía no se
-  rehizo (progreso, Tabulator, feed, pop-up, modales, análisis, mapa, el
-  Monitoreo de X). La visual del login es SIEMPRE oscura: el bloque de los
+  rehizo (progreso, Tabulator, feed, pop-up, modales, mapa, el Monitoreo y
+  el análisis de X). La visual del login es SIEMPRE oscura: el bloque de los
   tokens oscuros vale también para ella (`:root[data-theme="dark"],
   .lg-vis`), más `--vis-1` / `--vis-2`, las manchas de color. Todo color sale de los tokens: los únicos sueltos son los de marca de cada
   red, los de las categorías del mapa y el negro de las fotos. Los tokens
@@ -815,8 +821,19 @@ La D va sin SDD (decisión del dueño).
     les gana `.lg-card p`.
 - **Inicio** (fase D, `dashboard.html` + `public/js/dashboard.js`, prefijo
   `home`): la pantalla de la maqueta con datos reales, sin el selector
-  Hoy / 7 días, sin reloj y sin "datos de ejemplo"; "Análisis recientes"
-  pasa a la fase E, con la tabla de análisis.
+  Hoy / 7 días, sin reloj y sin "datos de ejemplo". "Análisis recientes"
+  (fase E) es la tercera columna de `.home3` (1fr 1.25fr 1fr; entre 861 y
+  1200 px va abajo, a todo el ancho: más angosta, la "Próxima corrida"
+  cortaba sus rótulos): los 4 últimos de
+  `GET /api/analisis?plataforma=instagram&limit=4` (`homeLoadAnalisis`, con
+  el resto del inicio; redibuja solo si cambiaron), cada uno a
+  `instagram.html#analisis-<id>`, con estado vacío. Cada fila: la foto,
+  "@cuenta · fecha de la publicación" (con el año si no es este; sin ella,
+  "analizado <fecha>"), el texto recortado a 90 caracteres en el DOM, "N %
+  pos" y "N analizados" (no es el total de la publicación); un
+  `aria-label` corto (cuenta, fechas, % y "N de M comentarios
+  analizados") y el `data-tip` con la fecha y hora del análisis, que
+  distingue dos análisis de la misma publicación.
   - `GET /api/inicio` (`src/inicioRoutes.js`, con sesión) arma una entrada
     por red: `enCron` (las de `MONITOR_PLATFORMS`), `nextRunAt` (null
     fuera del cron), `hoy` (publicadas desde las 00:00 de Argentina),
@@ -983,6 +1000,165 @@ vigente es `design/social-listening-v4.html`. SDD en
 `openspec/changes/monitoreo-v4/`. La suite no cubre el frontend: se
 prueba en el navegador con un servidor de prueba aparte (otro puerto, copia
 de la base, sin scheduler ni Apify).
+
+## Análisis de publicación de Instagram (fase E)
+
+`POST /api/analyze` (`src/analysisRoutes.js`) valida el link
+(`checkAnalyzeUrl`) y responde 202 `{ id, yaEnCurso }` ANTES de gastar; el
+trabajo (`src/analysisJob.js`) sigue en el mismo proceso, fuera del pedido,
+con el contexto `{ phase: 'analisis', analisisId }`: cerrar la pestaña no
+pierde nada ni vuelve a gastar. El link se normaliza a
+`https://www.instagram.com/p/<code>/` (también los reels y con el usuario
+adelante; nunca /reels/audio/ ni un link para compartir /share/…, cuyo
+token no es el código: `normalizeAnalysisUrl`, `checkAnalyzeUrl`); el mismo
+link en curso devuelve el mismo id. Todo
+queda en la tabla `analisis` (`db.startAnalisis`, `saveAnalisisPost`,
+`finishAnalisis`, `failAnalisis`…, todas por plataforma, sin default; las
+dos que no la reciben son por id o para todas: `markInterruptedAnalisis` y
+`sumApifyUsdForAnalisis`):
+`en curso` | `ok` | `sin comentarios` | `error` | `interrumpido`. Los "en
+curso" de un arranque anterior los pasa a "interrumpido" SOLO `server.js`
+al arrancar (`db.markInterruptedAnalisis`, con el `usd_apify` que ya
+gastaron), nunca la carga de `db.js`: un script que abre la base no puede
+tocar un análisis vivo. SDD en
+`openspec/changes/analisis-v4/`.
+
+- **Apify**: dos corridas del actor oficial en paralelo (la publicación y
+  los comentarios con `addParentData`), por `runActorSync` con los avisos
+  `onQueued` (el limitador lleno, `concurrencyLimiter.run(fn, target, {
+  onQueued })`) y `onAcquired`. Cada llamada queda en
+  `apify_calls.analisis_id`; `usd_apify` de la fila es su suma
+  (`db.sumApifyUsdForAnalisis`). `COMMENTS_LIMIT` (lo que se pide a Apify)
+  y `COMMENTS_ANALYSIS_LIMIT` (lo que va al modelo) valen 300 por defecto
+  (decisión del dueño, 24/10/2026; tope 500); el `.env` los pisa. Los dos
+  son solo de Instagram: X sigue con 150 y su propia variable,
+  `X_COMMENTS_ANALYSIS_LIMIT` (`resolveXMaxItems`, src/x/sample.js), porque
+  manda todo el hilo en una sola llamada (subir el de Instagram no puede
+  subir el de X). La línea de arranque muestra los tres. `normalizePost` suma id, código, `postedAt`, tipo e `imageUrl`
+  (las funciones del monitoreo); likes -1 o ausentes → null, también en
+  los comentarios. Sin la corrida de la publicación (vacía o un ítem de
+  error), cuenta, likes y texto quedan sin dato: los campos de primer nivel
+  de un comentario son del comentario, nunca del posteo.
+- **Modelo** (`src/analyzeComments.js`): la muestra (`commentSample.js`)
+  va en tandas de `BATCH_SIZE` 100 por llamada (`TANDA_SYSTEM_PROMPT`,
+  `TANDA_JSON_SCHEMA`, cada tanda numerada desde 1; hasta 3 a la vez) y
+  después una síntesis (`SINTESIS_SYSTEM_PROMPT`, `SINTESIS_JSON_SCHEMA`)
+  con todo lo clasificado: posteo sobre, insights, postura, lectura
+  estratégica y hasta 8 temas con los números de sus comentarios
+  (`normalizeTemasConComentarios`: solo comentarios clasificados de la
+  muestra, sin repetidos). Una tanda que falla deja sus comentarios en null
+  y el análisis sigue (el contador del paso suma solo lo clasificado); si
+  fallan todas, error con el `userMessage` del proveedor (sin crédito,
+  clave inválida: reintentar no lo arregla), y si falla la síntesis, con el
+  suyo. El error lleva lo ya gastado (`err.tokenUsage`): la fila guarda
+  `usd_modelo` y `tokens` también al fallar. La subcategoría de los
+  reclamos (`llm.requestText`) sale con su costo estimado, como el resto.
+  El registro de cuentas se actualiza de a uno (`updateAccountRegistry`:
+  relee el archivo, suma lo suyo y lo guarda con un temporal y un rename),
+  así dos análisis a la vez no se pisan.
+  **"Analizados" son los clasificados de verdad**:
+  `normalizeBatchClassifications` ya no completa con neutral lo que el
+  modelo no devolvió; la pantalla dice "analizados N de M" con M el total
+  que informa Instagram, nunca un número fijo. Los tonos de la pantalla son
+  cantidades simples (`countTones`, el ruido aparte); el informe
+  (`reportBuilder.js`) conserva su porcentaje ponderado por tipo de cuenta
+  (la pantalla lo rotula así) y dice "Análisis realizado sobre N de M
+  comentarios", con "(priorizadas…)" solo si la app recortó la muestra. El
+  prompt, el schema y la validación de X no cambiaron. Los tests stubean
+  `llm.requestStructuredAnalysis` y `clasificarReclamo.asignarSubcategorias`
+  por el objeto del módulo.
+- **Reclamos**: `db.upsertReclamo(r, { conservarGestion: true })` en
+  Instagram y X: re-analizar conserva el estado y, si la dirección detectada
+  no cambió, el geocodificado; con la misma categoría, una subcategoría
+  vacía (la llamada falló o el modelo dijo "ninguna") no borra la que había.
+  El importador sigue como antes.
+- **Progreso** (`src/analysisProgress.js`,
+  `GET /api/analyze/progress?plataforma=&id=`): turno (solo si alguna
+  corrida esperó cupo), publicación, comentarios, tono (los clasificados de
+  las tandas que van terminando, en el orden en que terminan: "87 de 287"
+  si termina primero la corta), temas, reclamos e informe, cada uno `pendiente` | `en curso` |
+  `ok` | `omitido` | `error` con un detalle que escribe el trabajo. Queda
+  en memoria 10 min después de terminar; después la ruta devuelve la fila
+  (`pasos: null`).
+- **"Cuándo comentaron"** (`src/commentTimeline.js`, sin dependencias):
+  sobre TODOS los comentarios traídos (la muestra está ordenada por likes),
+  solo con la fecha de la publicación y 10 o más con fecha; por hora hasta
+  48 h, de a 6 h hasta 7 días, por día después; un comentario anterior a la
+  publicación cuenta en el primer tramo; pico = el de más (el primero si
+  empatan). Si no, `cuando` es null y la pantalla no muestra el bloque.
+- **Foto**: la del Monitoreo si la publicación ya la tiene guardada; si no,
+  `postImages.savePostImage` con el link de la corrida de la publicación
+  (mismo archivo `data/media/instagram/<id>_*.jpg`; si el posteo está en
+  `detected_posts` sin foto, se le anota). Ningún pedido nuevo a Apify. La
+  fila guarda sus `image_*`; `GET /api/analisis/:id/image` arma el archivo
+  con el `post_id` de la fila.
+- **Lecturas**: `GET /api/analisis?plataforma=&limit=` (`recientes`
+  terminados bien y `enCurso`, cada uno con `propio`: lo arrancó el
+  mismo correo, en cualquier sesión de esa persona, y sin login todos; el
+  correo no sale), `?url=` (`ultimo` y `enCurso`: el aviso de
+  "ya se analizó"), `GET /api/analisis/:id`, `PATCH /api/analisis/:id/temas`
+  (hasta 8, cada uno con título; los números de comentarios se limpian
+  contra la fila). Al navegador no va el link original de la foto ni quién
+  lo corrió (`paraNavegador`).
+- **Pantalla** (`public/js/analysis.js`, prefijo `ana`; solo
+  `instagram.html`, después de `postView.js`; CSS bajo `.ana4`, así X no
+  cambia): "Analizar" pregunta primero `?url=` (si hay uno terminado,
+  "ya se analizó el …" con "Ver ese análisis" / "Analizar de nuevo"; si hay
+  uno en curso, lo sigue), después POST, y consulta los pasos cada 1 s.
+  Enter con uno en curso no dispara otro (también en `x-analysis.js`). Al
+  cargar la página sigue solo uno en curso PROPIO (el de otra persona le
+  bloquearía "Analizar"). Al terminar el que se sigue, el campo se vacía y
+  se muestra solo si la persona no eligió otra cosa mientras tanto (otro
+  link en el campo, un reciente, un `#analisis-<id>`); si no, "Terminó el
+  análisis de @cuenta" con "Ver ese análisis", sin tocarle el campo. Los
+  pasos se actualizan en el lugar (la lista es una región viva: se anuncia
+  lo que cambió); el sondeo corta con un 401 (sesión cerrada) o a los ~3 min
+  sin respuesta, y sin conexión dice "No hay conexión con el servidor". La
+  vista sale entera de
+  la fila: la foto entera sobre negro, "analizados N de M", el resumen (la
+  lectura estratégica, escrita en ~1,5 s; quieta con movimiento reducido),
+  el tono, los temas (tamaño por conteo; clic filtra los comentarios con
+  una pastilla ✕; ✎ edita título y texto o quita; "+ tema"; sin texto el
+  tema no entra en el informe), "Cuándo comentaron" (SVG al ancho real, una
+  franja por tramo con `data-tip`; tres marcas en el eje bajo 480 px; con
+  la solapa oculta no se dibuja y se arma al aparecer; el rótulo del pico
+  se mide y queda adentro), los
+  comentarios (Destacados = los 5 con más likes, Negativos, Neutrales,
+  Positivos, Todos de a 50) y compartir: el informe con los temas editados
+  (`TemasConversacion.assemble`), aviso pasados los 4.000 caracteres
+  (WhatsApp lo corta ahí), Copiar, WhatsApp y el CSV (deshabilitado sin
+  reclamos; `reclamos-<cuenta>-<AAAA-MM-DD>.csv` con la fecha del análisis en
+  Argentina). La primera vez que se abre la solapa (`openAnalysis`, desde
+  `openTab`) muestra el más reciente, salvo que haya un link en el campo.
+  `#analisis-<id>` abre ese análisis; con uno a la vista, el hash es el
+  suyo. `anaPreload(url)` ("Analizar comentarios" del pop-up) deja el link
+  sin analizar, saca de la vista el análisis de otra publicación y avisa si
+  ese link ya se analizó. El campo sigue siendo `#url`.
+- Tests: `test/analisisBase.test.js` (tabla, recientes, interrumpidos,
+  `analisis_id`, `conservarGestion`), `test/analisisApify.test.js`
+  (normalización, topes, las dos corridas, el limitador lleno),
+  `test/analisisModelo.test.js` (tandas, una caída, índices omitidos, temas,
+  tonos, informe, registro de cuentas), `test/analisisTrabajo.test.js`
+  (línea de tiempo, progreso, el trabajo y las rutas con el gate de login) y
+  `test/analisisFixtureReal.test.js` (REQ-ANA-18: la forma real del actor y
+  el análisis entero contra `test/fixtures/apify/analisis-publicacion.json`
+  y `analisis-comentarios.json`, de la corrida autorizada del 24/10/2026,
+  anonimizados: sin usuarios, textos, ids ni links reales; fechas corridas,
+  desfasajes reales).
+- **Lo que trae de verdad el actor** (esa corrida, un reel con 138
+  comentarios según Instagram): 64 comentarios, solo los de primer nivel
+  (`repliesCount` y `replies` en null: el total de Instagram suma las
+  respuestas, por eso "analizados 64 de 138"). Cada comentario: `id`,
+  `text`, `ownerUsername`, `ownerProfilePicUrl`, `timestamp` (ISO con
+  milisegundos y Z), `likesCount` (0 es 0), `commentUrl`, `owner`
+  (`username`, `profile_pic_url`, `is_verified` —la verificada está ahí,
+  no en el primer nivel—, `id`, `fbid_v2`; `full_name`, `is_private` y
+  los demás en null) y lo que agrega `addParentData`: `postUrl` y
+  `metaData.id` (el código de la publicación). Sin campo de menciones: las
+  @ están en el texto. La publicación trae además `latestComments` (13, con
+  la misma forma), `musicInfo`, `alt`, `isPinned`, `videoDuration`. La pantalla se
+  prueba con el servidor de prueba aparte (análisis sembrados y
+  `/api/analyze` simulado con el progreso real).
 
 ## Fotos de los posteos (solo Instagram)
 

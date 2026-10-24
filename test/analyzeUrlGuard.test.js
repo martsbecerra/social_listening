@@ -19,6 +19,8 @@ describe('guard del análisis de publicación', () => {
       'https://instagram.com/reel/BBB_456',
       'https://www.instagram.com/reels/CCC/',
       'https://www.instagram.com/tv/DDD/?utm_source=ig',
+      'https://www.instagram.com/jorgemacri/p/EEE_9/',
+      'https://www.instagram.com/jorge.macri/reel/FFF/',
     ]) {
       assert.deepEqual(checkAnalyzeUrl(url, 'instagram'), { ok: true }, url);
       assert.equal(isPostUrlOf(url, 'instagram'), true, url);
@@ -42,7 +44,13 @@ describe('guard del análisis de publicación', () => {
   });
 
   test('Instagram: perfil o story de instagram.com no es una publicación → mensaje de formato con ejemplo', () => {
-    for (const url of ['https://www.instagram.com/jorgemacri/', 'https://www.instagram.com/stories/jorgemacri/123/', 'https://www.instagram.com/']) {
+    for (const url of [
+      'https://www.instagram.com/jorgemacri/',
+      'https://www.instagram.com/stories/jorgemacri/123/',
+      'https://www.instagram.com/',
+      'https://www.instagram.com/reels/audio/1234567890/',
+      'https://www.instagram.com/stories/p/AAA/',
+    ]) {
       const r = checkAnalyzeUrl(url, 'instagram');
       assert.equal(r.ok, false, url);
       assert.equal(r.motivo, 'no_es_posteo', url);
@@ -81,5 +89,14 @@ describe('guard del análisis de publicación', () => {
 
   test('una plataforma desconocida es un error de programación, no un 400', () => {
     assert.throws(() => checkAnalyzeUrl('https://www.instagram.com/p/AAA/', 'tiktok'), /plataforma desconocida/);
+  });
+  test('Instagram: un link para compartir (/share/…) no es la publicación → dice qué hacer, sin gastar', () => {
+    for (const url of ['https://www.instagram.com/share/p/BAJm1JX0Hc/', 'https://www.instagram.com/share/reel/_7mEmXSq5/', 'https://www.instagram.com/share/_7mEmXSq5/']) {
+      const r = checkAnalyzeUrl(url, 'instagram');
+      assert.equal(r.ok, false, url);
+      assert.equal(r.motivo, 'no_es_posteo');
+      assert.match(r.error, /link para compartir/);
+      assert.equal(isPostUrlOf(url, 'instagram'), false, url);
+    }
   });
 });

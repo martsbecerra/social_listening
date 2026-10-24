@@ -3,7 +3,9 @@
 // --------------------------------------------------------------------------
 // Punto de entrada de la aplicación. Levanta un servidor web con Express que:
 //   1) Sirve la página web (public/index.html).
-//   2) Expone /api/analyze (Instagram + Apify) y /api/x/analyze (X + Grok).
+//   2) Expone el análisis de publicación: el de Instagram (Apify + el
+//      modelo) corre en el servidor (src/analysisRoutes.js,
+//      src/analysisJob.js); el de X (Grok), /api/x/analyze.
 // ==========================================================================
 
 // dotenv carga las variables del archivo .env a process.env (APIFY_API_TOKEN, etc.)
@@ -30,11 +32,11 @@ try {
 const express = require('express');
 const path = require('path');
 
-const { scrapeInstagram } = require('./src/apify');
+const { resolveCommentsLimit } = require('./src/apify');
 const apifyCost = require('./src/apifyCost');
-const { runWithContext } = require('./src/usageContext');
-const { analyzeComments } = require('./src/analyzeComments');
 const { resolveMaxCommentsLimit } = require('./src/commentSample');
+const { resolveXMaxItems } = require('./src/x/sample');
+const analysisRoutes = require('./src/analysisRoutes');
 const { checkAnalyzeUrl } = require('./src/platforms/urlPlatform');
 const { fetchXThread, getModel: getXaiModel, getFetchBackend } = require('./src/x/grokFetch');
 const { analyzeXThread } = require('./src/x/analyze');
@@ -101,12 +103,6 @@ const MAGIC_LINK_GENERIC = {
   message: 'Si el email está autorizado, te mandamos un link. Revisá tu casilla.',
   retryAfterSeconds: RESEND_COOLDOWN_MS / 1000,
 };
-
-/** Log de alto nivel por tarea del pipeline (no por comentario). */
-function logTask(phase, detail = {}) {
-  const payload = Object.keys(detail).length ? ` ${JSON.stringify(detail)}` : '';
-  console.log(`[analyze] ${phase}${payload}`);
-}
 
 function logAuth(phase, detail = {}) {
   const payload = Object.keys(detail).length ? ` ${JSON.stringify(detail)}` : '';
@@ -254,103 +250,11 @@ app.post('/api/auth/logout', (req, res) => {
 });
 
 // --------------------------------------------------------------------------
-// Endpoint principal: recibe el link y devuelve el reporte.
+// Análisis de publicación de Instagram: POST /api/analyze responde el id
+// (202) y el trabajo sigue en el servidor; el progreso, los recientes, el
+// análisis guardado, sus temas y su foto, en src/analysisRoutes.js.
 // --------------------------------------------------------------------------
-app.post('/api/analyze', async (req, res) => {
-  const { url } = req.body || {};
-  const startedAt = Date.now();
-
-  // 1) Validación del link: esta sección solo analiza publicaciones de
-  //    Instagram (un link de X u otra red se rechaza acá, sin llamar a Apify).
-  const guard = checkAnalyzeUrl(url, 'instagram');
-  if (!guard.ok) {
-    logTask('validación fallida', { url: url || null, motivo: guard.motivo });
-    return res.status(400).json({ error: guard.error });
-  }
-
-  logTask('inicio', { url });
-
-  try {
-    // 2) Extraemos datos con Apify (comentarios + datos del posteo).
-    logTask('extracción Apify iniciada');
-    const scrapeStartedAt = Date.now();
-    // Fase 'analisis' para el registro de gasto en Apify (src/apifyCost.js).
-    const { post, comments, scrapeMeta } = await runWithContext({ phase: 'analisis' }, () => scrapeInstagram(url));
-    logTask('extracción Apify completada', {
-      ms: Date.now() - scrapeStartedAt,
-      comentariosExtraidos: comments?.length ?? 0,
-      commentsLimit: scrapeMeta?.commentsLimitRequested ?? null,
-      apifyItemsCrudos: scrapeMeta?.rawCommentItems ?? null,
-      comentariosEnPost: scrapeMeta?.commentsOnPost ?? null,
-      cuenta: post?.ownerUsername ?? null,
-    });
-
-    // 3) Si no hay comentarios, no hay nada que analizar.
-    if (!comments || comments.length === 0) {
-      logTask('sin comentarios', { url, msTotal: Date.now() - startedAt });
-      return res.status(422).json({
-        error: 'La publicación no tiene comentarios visibles o no se pudieron extraer. Probá con otra publicación.',
-      });
-    }
-
-    // 4) Analizamos con el LLM configurado (devuelve reporte + CSV de reclamos).
-    logTask('análisis LLM iniciado', {
-      proveedor: getLlmProvider(),
-      comentariosExtraidos: comments.length,
-    });
-    const analysisStartedAt = Date.now();
-    const { report, csv, meta: analysisMeta, temas, reportParts } = await analyzeComments({ url, post, comments });
-    logTask('análisis LLM completado', {
-      ms: Date.now() - analysisStartedAt,
-      comentariosAnalizados: analysisMeta?.sampleSize ?? comments.length,
-      muestraParcial: Boolean(
-        analysisMeta?.sampleSize != null &&
-        analysisMeta?.totalComments != null &&
-        analysisMeta.sampleSize < analysisMeta.totalComments
-      ),
-      tokens: analysisMeta?.tokenUsage ?? null,
-      costUsd: analysisMeta?.tokenUsage?.costUsd ?? null,
-      costSource: analysisMeta?.tokenUsage?.costSource ?? null,
-      llmIntentos: analysisMeta?.llmAttempts ?? null,
-    });
-
-    logTask('respuesta OK', { msTotal: Date.now() - startedAt });
-
-    // 5) Devolvemos el reporte y el CSV al navegador.
-    res.json({
-      report,
-      csv,
-      temas: temas || [],
-      reportParts: reportParts || { beforeTemas: report, afterTemas: '' },
-      meta: {
-        // Extraídos por Apify vs enviados a Claude (muestra estable en commentSample.js).
-        comentariosExtraidos: comments.length,
-        comentariosAnalizados: analysisMeta?.sampleSize ?? comments.length,
-        comentariosUnicos: analysisMeta?.totalComments ?? comments.length,
-        muestraParcial: Boolean(analysisMeta?.sampleSize < analysisMeta?.totalComments),
-        tokenUsage: analysisMeta?.tokenUsage ?? null,
-        llmAttempts: analysisMeta?.llmAttempts ?? null,
-      },
-    });
-
-    // Los reclamos con ubicación ya quedaron guardados en 'pendiente'
-    // (analyzeComments.js); geocodificarlos pega a USIG por red, así que se
-    // dispara después de responder y sin esperar, para no demorar el endpoint.
-    processPendingReclamosInBackground();
-    return;
-  } catch (err) {
-    logTask('error', {
-      msTotal: Date.now() - startedAt,
-      message: err.message,
-      fase: err.userMessage ? 'servicio externo' : 'interno',
-    });
-    console.error('Error en /api/analyze:', err);
-    // Si alguno de nuestros servicios agregó un "userMessage" amigable, lo usamos.
-    return res.status(502).json({
-      error: err.userMessage || 'Ocurrió un error al procesar la publicación. Intentá de nuevo en unos minutos.',
-    });
-  }
-});
+analysisRoutes.register(app);
 
 function logXTask(phase, detail = {}) {
   const payload = Object.keys(detail).length ? ` ${JSON.stringify(detail)}` : '';
@@ -789,6 +693,15 @@ try {
 } catch (err) {
   console.warn('[x] no se pudo cargar el padrón ANTIK-PRO:', err.message);
 }
+// Un análisis que quedó "en curso" de un arranque anterior ya no corre: pasa
+// a "interrumpido". Solo acá, nunca al cargar db.js (un script que abre la
+// base mientras la app corre no tiene que tocar un análisis vivo).
+try {
+  const interrumpidos = db.markInterruptedAnalisis();
+  if (interrumpidos > 0) console.log(`[analisis] ${interrumpidos} análisis en curso de un arranque anterior quedaron como interrumpidos`);
+} catch (err) {
+  console.warn('[analisis] no se pudieron cerrar los análisis interrumpidos:', err.message);
+}
 startScheduler();
 const server = app.listen(PORT, () => {
   const provider = getLlmProvider();
@@ -813,7 +726,7 @@ const server = app.listen(PORT, () => {
   );
   console.log(`   Alcance (REACH_*): ${describeReachRule(resolveReachRule())}`);
   console.log(
-    `   Límites: COMMENTS_LIMIT (Apify)=${process.env.COMMENTS_LIMIT || 100}, COMMENTS_ANALYSIS_LIMIT (LLM)=${resolveMaxCommentsLimit()}`
+    `   Límites del análisis: COMMENTS_LIMIT (Apify)=${resolveCommentsLimit()}, COMMENTS_ANALYSIS_LIMIT (modelo)=${resolveMaxCommentsLimit()}, en tandas de 100 · X: X_COMMENTS_ANALYSIS_LIMIT=${resolveXMaxItems()}`
   );
   console.log(
     `   Login: APP_BASE_URL=${process.env.APP_BASE_URL || '(falta)'} | SMTP=${process.env.SMTP_HOST || '(falta SMTP_HOST)'}\n`

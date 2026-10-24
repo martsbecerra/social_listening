@@ -49,12 +49,25 @@ function platformForUrl(url) {
 // --------------------------------------------------------------------------
 const LABEL = { instagram: 'Instagram', x: 'X' };
 const EJEMPLO = { instagram: 'https://www.instagram.com/p/XXXXXXXX/', x: 'https://x.com/usuario/status/1234567890' };
-// Qué path es "una publicación" en cada red. Instagram: post, reel o tv. X:
-// el mismo criterio que src/x/url.js (parseXPostUrl), sin depender de él.
+// Qué path es "una publicación" en cada red. Instagram: post, reel o tv,
+// también con el usuario adelante (/<usuario>/p/<code>/, como lo muestra
+// Instagram web desde un perfil; un primer segmento reservado como share/ o
+// stories/ no es un usuario); nunca /reels/audio/<id>/ (la página de un
+// audio) ni /share/p/<token>/ (el token no es el código): se gastarían dos
+// corridas para nada. X: el mismo criterio que src/x/url.js
+// (parseXPostUrl), sin depender de él.
 const POST_PATH = {
-  instagram: /^\/(p|reel|reels|tv)\/[\w-]+/,
+  instagram: /^\/(?:(?!(?:share|stories|explore|accounts|direct|about|legal|web|developer)\/)[A-Za-z0-9._]{1,30}\/)?(p|reel|reels|tv)\/(?!audio(?:\/|$))[\w-]+/,
   x: /^\/([A-Za-z0-9_]+\/status\/\d+|i\/web\/status\/\d+)/i,
 };
+
+function pathOf(url) {
+  try {
+    return new URL(String(url).trim()).pathname;
+  } catch {
+    return '';
+  }
+}
 
 /** ¿La url es una publicación (no un perfil, story, etc.) de esa red? */
 function isPostUrlOf(url, plataforma) {
@@ -89,6 +102,13 @@ function checkAnalyzeUrl(url, plataforma) {
   if (red !== plataforma) {
     const otraSolapa = red && LABEL[red] ? ` Usá la solapa de ${LABEL[red]}.` : '';
     return { ok: false, motivo: 'otra_red', error: `Esta sección solo analiza publicaciones de ${label}.${otraSolapa}` };
+  }
+  if (plataforma === 'instagram' && /^\/share\//i.test(pathOf(url))) {
+    return {
+      ok: false,
+      motivo: 'no_es_posteo',
+      error: 'Ese es un link para compartir de la app: abrilo y copiá el de la publicación (…/p/… o …/reel/…).',
+    };
   }
   if (!isPostUrlOf(url, plataforma)) return { ok: false, motivo: 'no_es_posteo', error: formato };
   return { ok: true };

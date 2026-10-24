@@ -11,7 +11,9 @@
 // 'refresco'. Fuera de un ciclo el contexto es null: run_id queda null y la
 // fase la fija el caller que la conoce ('validacion' al agregar cuenta o
 // hashtag, 'recalc-script', 'analisis'). Una llamada sin contexto ni fase se
-// registra igual, como 'desconocida', para no perder el gasto.
+// registra igual, como 'desconocida', para no perder el gasto. Un análisis
+// de publicación suma su id (analisisId, src/analysisJob.js): queda en
+// apify_calls.analisis_id.
 // ==========================================================================
 
 const { AsyncLocalStorage } = require('node:async_hooks');
@@ -21,7 +23,7 @@ const storage = new AsyncLocalStorage();
 /**
  * Corre fn con el contexto dado, combinado con el vigente si lo hay (un
  * caller puede fijar solo la fase y heredar el runId del ciclo, o al revés).
- * @param {{ runId?: number|null, phase?: string }} values
+ * @param {{ runId?: number|null, phase?: string, analisisId?: number|null }} values
  * @param {() => any} fn
  * @returns {any} lo que devuelva fn (promesa incluida)
  */
@@ -30,7 +32,7 @@ function runWithContext(values, fn) {
   return storage.run({ ...current, ...(values || {}) }, fn);
 }
 
-/** @returns {{ runId?: number|null, phase?: string } | null} null fuera de todo contexto. */
+/** @returns {{ runId?: number|null, phase?: string, analisisId?: number|null } | null} null fuera de todo contexto. */
 function getContext() {
   return storage.getStore() || null;
 }

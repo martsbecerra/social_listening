@@ -7,21 +7,29 @@
 // comentarios → mismo prompt → clasificaciones alineadas por índice.
 // ==========================================================================
 
-const DEFAULT_MAX_COMMENTS_TO_SEND = 150;
+// 300 por defecto (decisión del dueño, octubre 2026): el análisis de
+// Instagram los clasifica en tandas de 100 (src/analyzeComments.js), así que
+// no chocan con el tope de salida del modelo. X tiene su propio tope y su
+// propia variable (src/x/sample.js).
+const DEFAULT_MAX_COMMENTS_TO_SEND = 300;
 // Tope duro por costo/latencia aunque el .env pida más.
 const HARD_CAP_COMMENTS = 500;
 
 /**
  * Límite de comentarios enviados al análisis (distinto de COMMENTS_LIMIT de Apify,
- * que controla cuántos trae el scraper).
+ * que controla cuántos trae el scraper). COMMENTS_ANALYSIS_LIMIT es el de
+ * Instagram; X lee X_COMMENTS_ANALYSIS_LIMIT (subir uno no sube el otro: X
+ * manda todo el hilo en una sola llamada).
+ * @param {number} [defaultMax] el de Instagram si no se pasa (X manda el suyo).
+ * @param {string} [variable] la variable del .env que lo pisa.
  */
-function resolveMaxCommentsLimit() {
-  const raw = process.env.COMMENTS_ANALYSIS_LIMIT;
+function resolveMaxCommentsLimit(defaultMax = DEFAULT_MAX_COMMENTS_TO_SEND, variable = 'COMMENTS_ANALYSIS_LIMIT') {
+  const raw = process.env[variable];
   const n = Number(raw);
   if (Number.isFinite(n) && n > 0) {
     return Math.min(Math.floor(n), HARD_CAP_COMMENTS);
   }
-  return DEFAULT_MAX_COMMENTS_TO_SEND;
+  return defaultMax;
 }
 
 /** Timestamp numérico seguro para comparar (null/inválido → 0). */
@@ -44,6 +52,7 @@ function compareCommentsForSample(a, b) {
     return (b.isVerified ? 1 : 0) - (a.isVerified ? 1 : 0);
   }
 
+  // Likes sin dato (null) cuentan como 0 para ordenar.
   const likesA = Number(a.likesCount) || 0;
   const likesB = Number(b.likesCount) || 0;
   if (likesB !== likesA) return likesB - likesA;
@@ -83,7 +92,7 @@ function dedupeComments(comments) {
 
 /**
  * @param {Array} comments Lista normalizada desde apify.js
- * @param {number} [max] Si no se pasa, usa COMMENTS_ANALYSIS_LIMIT o 150.
+ * @param {number} [max] Si no se pasa, usa COMMENTS_ANALYSIS_LIMIT o 300.
  * @returns {{ sample: Array, total: number, totalBeforeDedupe: number, isPartial: boolean, maxUsed: number }}
  */
 function prepareCommentSample(comments, max = resolveMaxCommentsLimit()) {

@@ -7,7 +7,7 @@
 // ==========================================================================
 
 const { listCategorias } = require('./categoriasConfig');
-const { TEMAS_ARRAY_SCHEMA } = require('./temasConversacion');
+const { TEMAS_ARRAY_SCHEMA, MAX_TEMAS } = require('./temasConversacion');
 
 // Valores permitidos; deben coincidir con validateAnalysis.js y el system prompt.
 const SENTIMENTS = ['positivo', 'negativo', 'neutral', 'ruido'];
@@ -114,8 +114,73 @@ const ANALYSIS_JSON_SCHEMA = {
   ],
 };
 
+// El análisis de publicación de Instagram va en dos llamadas
+// (src/analyzeComments.js): una por tanda de hasta 100 comentarios, que solo
+// clasifica, y una de síntesis. ANALYSIS_JSON_SCHEMA (arriba) queda como el
+// schema por defecto de los proveedores; el análisis pasa estos dos.
+
+/** Una tanda: un ítem por comentario numerado de la tanda (index 1-based). */
+const TANDA_JSON_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    classifications: {
+      type: 'array',
+      description: 'Un ítem por cada comentario numerado de esta tanda (index 1-based, el número de la lista).',
+      items: CLASSIFICATION_ITEM_SCHEMA,
+    },
+  },
+  required: ['classifications'],
+};
+
+// Un tema con los números de sus comentarios (solo Instagram: el schema de
+// temas de X, TEMAS_ARRAY_SCHEMA, no cambia).
+const TEMA_CON_COMENTARIOS_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    titulo: { type: 'string' },
+    texto: { type: 'string' },
+    comentarios: {
+      type: 'array',
+      description: 'Los números (de la lista numerada) de los comentarios que hablan de este tema.',
+      items: { type: 'integer', minimum: 1 },
+    },
+  },
+  required: ['titulo', 'texto', 'comentarios'],
+};
+
+/** La síntesis: los textos del informe y los temas, sobre lo ya clasificado. */
+const SINTESIS_JSON_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    posteoSobre: { type: 'string', description: 'Resumen ejecutivo del contenido del posteo.' },
+    insightApoyo: INSIGHT_PAIR_SCHEMA,
+    insightCriticas: INSIGHT_PAIR_SCHEMA,
+    insightReclamos: INSIGHT_PAIR_SCHEMA,
+    insightMedios: INSIGHT_PAIR_SCHEMA,
+    posturaAudiencia: { type: 'string' },
+    lecturaEstrategica: { type: 'string' },
+    temasConversacion: { type: 'array', items: TEMA_CON_COMENTARIOS_SCHEMA, maxItems: MAX_TEMAS },
+  },
+  required: [
+    'posteoSobre',
+    'insightApoyo',
+    'insightCriticas',
+    'insightReclamos',
+    'insightMedios',
+    'posturaAudiencia',
+    'lecturaEstrategica',
+    'temasConversacion',
+  ],
+};
+
 module.exports = {
   ANALYSIS_JSON_SCHEMA,
+  TANDA_JSON_SCHEMA,
+  SINTESIS_JSON_SCHEMA,
+
   SENTIMENTS,
   ACCOUNT_TYPES,
   TIPOS_UBICACION,

@@ -47,6 +47,29 @@ async function loadAccountRegistry(filePath = defaultRegistryPath()) {
   }
 }
 
+// En Windows el rename falla (EPERM, EACCES, EBUSY) si otro proceso tiene
+// abierto el destino en ese instante (otro análisis que lo lee, el
+// antivirus): se reintenta unas veces y, si no hay caso, se borra el
+// temporal para no dejarlo en data/.
+const RENAME_REINTENTOS = 5;
+const RENAME_ESPERA_MS = 60;
+
+async function renombrarConReintento(tmp, filePath) {
+  for (let intento = 1; ; intento += 1) {
+    try {
+      await fs.rename(tmp, filePath);
+      return;
+    } catch (err) {
+      if (!['EPERM', 'EACCES', 'EBUSY'].includes(err.code) || intento >= RENAME_REINTENTOS) {
+        await fs.unlink(tmp).catch(() => {});
+        throw err;
+      }
+      await new Promise((resolve) => setTimeout(resolve, RENAME_ESPERA_MS * intento));
+    }
+  }
+}
+
+/** Guarda el registro entero: a un temporal y después renombra, así nunca queda un JSON a medias. */
 async function saveAccountRegistry(registry, filePath = defaultRegistryPath()) {
   const dir = path.dirname(filePath);
   await fs.mkdir(dir, { recursive: true });
@@ -54,7 +77,40 @@ async function saveAccountRegistry(registry, filePath = defaultRegistryPath()) {
     version: REGISTRY_VERSION,
     accounts: registry.accounts || {},
   };
-  await fs.writeFile(filePath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+  const tmp = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+  await fs.writeFile(tmp, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+  await renombrarConReintento(tmp, filePath);
+}
+
+// Las actualizaciones van de a una: cada una relee el archivo, le aplica lo
+// suyo y lo guarda. Dos análisis en curso a la vez no se pisan las cuentas.
+let colaDelRegistro = Promise.resolve();
+
+/**
+ * Relee el registro, le aplica `apply` y lo guarda, de a una actualización
+ * por vez. Si el archivo existe pero no se puede leer como JSON, no guarda
+ * nada (guardar ahí reemplazaría todo el registro por lo de una corrida).
+ * @param {(registry: { version: number, accounts: object }) => void} apply
+ */
+function updateAccountRegistry(apply, filePath = defaultRegistryPath()) {
+  const paso = colaDelRegistro.then(async () => {
+    let registry = emptyRegistry();
+    try {
+      const data = JSON.parse(await fs.readFile(filePath, 'utf8'));
+      if (data && typeof data === 'object' && data.accounts && typeof data.accounts === 'object') {
+        registry = { version: REGISTRY_VERSION, accounts: data.accounts };
+      }
+    } catch (err) {
+      if (err.code !== 'ENOENT') {
+        console.warn(`No se pudo leer account-types.json; no se guarda nada para no pisarlo: ${err.message}`);
+        return;
+      }
+    }
+    apply(registry);
+    await saveAccountRegistry(registry, filePath);
+  });
+  colaDelRegistro = paso.catch(() => {});
+  return paso;
 }
 
 function getRegisteredAccountType(registry, username) {
@@ -162,6 +218,7 @@ function recordAccountTypesFromRun(sample, classifications, registry) {
 module.exports = {
   loadAccountRegistry,
   saveAccountRegistry,
+  updateAccountRegistry,
   normalizeUsername,
   getRegisteredAccountType,
   countRegisteredInSample,

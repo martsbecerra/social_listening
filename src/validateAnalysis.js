@@ -1,16 +1,22 @@
 // ==========================================================================
 // validateAnalysis.js
 // --------------------------------------------------------------------------
-// Normaliza el JSON que devuelve Claude (structured output) antes de armar
-// el reporte. La API ya valida el schema, pero acá corregimos enums raros,
-// filas de CSV incompletas y comentarios que el modelo omitió por index.
+// Normaliza el JSON que devuelve el modelo (structured output) en el
+// análisis de publicación de Instagram, antes de armar el reporte. La API ya
+// valida el schema, pero acá corregimos enums raros, filas de CSV
+// incompletas, índices que no existen y temas con números de comentarios que
+// no están en la muestra.
+//
+// Un comentario que el modelo NO devolvió queda sin clasificar (null), no
+// como neutral: "analizados" es la cantidad de clasificados de verdad
+// (src/analyzeComments.js), y un relleno contaba de más.
 // ==========================================================================
 
 const { SENTIMENTS, ACCOUNT_TYPES, TIPOS_UBICACION } = require('./analysisSchema');
 const { applyClassificationHeuristics } = require('./classificationHeuristics');
 const { normalizeTematica } = require('./tematica');
 const { normalizeCategoria } = require('./categoriaReclamo');
-const { normalizeTemas } = require('./temasConversacion');
+const { MAX_TEMAS } = require('./temasConversacion');
 
 const SENTIMENT_SET = new Set(SENTIMENTS);
 const ACCOUNT_SET = new Set(ACCOUNT_TYPES);
@@ -49,33 +55,34 @@ function sanitizeReclamosGeo(raw) {
 }
 
 /**
- * Pasa de lista con index a array paralelo a sample[0..n-1].
- * Índices faltantes → neutral (excluido del % en sentimentAggregate.js).
+ * Las clasificaciones de UNA tanda, en un array paralelo a la tanda: el
+ * ítem i es el comentario i+1 de la lista que se le mandó. Lo que el modelo
+ * no devolvió (o devolvió con un índice que no existe) queda null.
+ * @param {unknown} rawList parsed.classifications
+ * @param {number} batchLength
+ * @returns {Array<{ sentiment: string, accountType: string, reclamosGeo: Array } | null>}
  */
-function normalizeClassifications(rawList, sampleLength) {
-  const byIndex = new Map();
-  if (Array.isArray(rawList)) {
-    for (const row of rawList) {
-      if (!row || typeof row.index !== 'number' || row.index < 1) continue;
-      byIndex.set(row.index, {
-        sentiment: pickEnum(row.sentiment, SENTIMENT_SET, 'neutral'),
-        accountType: pickEnum(row.accountType, ACCOUNT_SET, 'vecino'),
-        reclamosGeo: sanitizeReclamosGeo(row.reclamosGeo),
-      });
-    }
-  }
-
-  const out = [];
-  for (let i = 1; i <= sampleLength; i++) {
-    out.push(
-      byIndex.get(i) || {
-        sentiment: 'neutral',
-        accountType: 'vecino',
-        reclamosGeo: [],
-      }
-    );
+function normalizeBatchClassifications(rawList, batchLength) {
+  const out = new Array(batchLength).fill(null);
+  if (!Array.isArray(rawList)) return out;
+  for (const row of rawList) {
+    if (!row || !Number.isInteger(row.index) || row.index < 1 || row.index > batchLength) continue;
+    if (out[row.index - 1]) continue; // el primero gana
+    out[row.index - 1] = {
+      sentiment: pickEnum(row.sentiment, SENTIMENT_SET, 'neutral'),
+      accountType: pickEnum(row.accountType, ACCOUNT_SET, 'vecino'),
+      reclamosGeo: sanitizeReclamosGeo(row.reclamosGeo),
+    };
   }
   return out;
+}
+
+/**
+ * Las heurísticas de classificationHeuristics.js, solo sobre lo
+ * clasificado: lo sin clasificar sigue null.
+ */
+function applyHeuristicsToClassified(sample, classifications) {
+  return classifications.map((row, i) => (row ? applyClassificationHeuristics([sample[i]], [row])[0] : null));
 }
 
 /** El template exige 2 líneas por insight; rellenamos con N/D si hace falta. */
@@ -86,43 +93,57 @@ function normalizeInsightPair(raw) {
 }
 
 /**
- * Punto de entrada tras message.parsed_output.
- *
- * @param {unknown} parsed Salida de message.parsed_output
- * @param {number} sampleLength Cantidad de comentarios en la muestra
- * @param {Array<{ text: string }>} [sample] Comentarios en orden (heurísticas punto 4)
- * @returns {{ qualitative: object, classifications: Array }}
+ * Los temas de la síntesis: título y texto, y los números de sus
+ * comentarios que existen en la muestra (sin repetidos, en orden). Un tema
+ * sin título o sin texto se descarta; a lo sumo MAX_TEMAS.
  */
-function validateAndNormalizeAnalysis(parsed, sampleLength, sample = []) {
+function normalizeTemasConComentarios(raw, sampleLength, validos = null) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const titulo = typeof item.titulo === 'string' ? item.titulo.trim() : '';
+    const texto = typeof item.texto === 'string' ? item.texto.trim() : '';
+    if (!titulo || !texto) continue;
+    const comentarios = Array.isArray(item.comentarios)
+      ? [...new Set(item.comentarios.filter((n) => Number.isInteger(n) && n >= 1 && n <= sampleLength && (!validos || validos.has(n))))].sort((a, b) => a - b)
+      : [];
+    out.push({ titulo, texto, comentarios });
+    if (out.length >= MAX_TEMAS) break;
+  }
+  return out;
+}
+
+/**
+ * La síntesis (posteo sobre, insights, postura, lectura y temas).
+ * @param {unknown} parsed
+ * @param {number} sampleLength
+ * @param {Set<number>|null} [validos] los números (desde 1) que un tema puede
+ *   nombrar: los comentarios clasificados. Sin él, cualquiera de la muestra.
+ */
+function normalizeSynthesis(parsed, sampleLength, validos = null) {
   if (!parsed || typeof parsed !== 'object') {
-    const e = new Error('Structured output vacío o inválido.');
-    e.userMessage =
-      'El servicio de análisis no devolvió un resultado válido. Intentá de nuevo en unos minutos.';
+    const e = new Error('Structured output de la síntesis vacío o inválido.');
+    e.userMessage = 'El servicio de análisis no devolvió un resultado válido. Intentá de nuevo en unos minutos.';
     throw e;
   }
-
   const p = /** @type {Record<string, unknown>} */ (parsed);
-
-  const qualitative = {
-    posteoSobre: typeof p.posteoSobre === 'string' ? p.posteoSobre.trim() : 'N/D',
+  const text = (value) => (typeof value === 'string' && value.trim() ? value.trim() : 'N/D');
+  return {
+    posteoSobre: text(p.posteoSobre),
     insightApoyo: normalizeInsightPair(p.insightApoyo),
     insightCriticas: normalizeInsightPair(p.insightCriticas),
     insightReclamos: normalizeInsightPair(p.insightReclamos),
     insightMedios: normalizeInsightPair(p.insightMedios),
-    posturaAudiencia:
-      typeof p.posturaAudiencia === 'string' ? p.posturaAudiencia.trim() : 'N/D',
-    lecturaEstrategica:
-      typeof p.lecturaEstrategica === 'string' ? p.lecturaEstrategica.trim() : 'N/D',
-    temasConversacion: normalizeTemas(p.temasConversacion),
+    posturaAudiencia: text(p.posturaAudiencia),
+    lecturaEstrategica: text(p.lecturaEstrategica),
+    temasConversacion: normalizeTemasConComentarios(p.temasConversacion, sampleLength, validos),
   };
-
-  let classifications = normalizeClassifications(p.classifications, sampleLength);
-  // Heurísticas solo si tenemos el texto original alineado por índice con classifications.
-  if (Array.isArray(sample) && sample.length === classifications.length) {
-    classifications = applyClassificationHeuristics(sample, classifications);
-  }
-
-  return { qualitative, classifications };
 }
 
-module.exports = { validateAndNormalizeAnalysis, normalizeClassifications };
+module.exports = {
+  normalizeBatchClassifications,
+  applyHeuristicsToClassified,
+  normalizeSynthesis,
+  normalizeTemasConComentarios,
+};
