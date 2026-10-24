@@ -48,7 +48,7 @@ const BATCH_MAX_TOKENS = 8000;
 const SYNTHESIS_MAX_TOKENS = 6000;
 const INT = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 });
 
-const NO_PASOS = { start() {}, update() {}, done() {}, skip() {} };
+const NO_PASOS = { start() {}, update() {}, done() {}, skip() {}, fail() {} };
 
 function chunk(list, size) {
   const out = [];
@@ -77,7 +77,7 @@ function llmError(err, provider) {
 }
 
 /**
- * @param {{ url: string, post: object, comments: Array, pasos?: { start: Function, update: Function, done: Function, skip: Function } }} params
+ * @param {{ url: string, post: object, comments: Array, pasos?: { start: Function, update: Function, done: Function, skip: Function, fail: Function } }} params
  *   pasos: los avisos del progreso (src/analysisProgress.js) para los pasos
  *   'tono', 'temas' y 'reclamos'; opcional.
  * @returns {Promise<object>} el reporte (report, csv, temas, reportParts),
@@ -127,7 +127,7 @@ async function analyzeComments({ url, post, comments, pasos = NO_PASOS }) {
   classifications = classifications.map((row, i) => (row ? applyRegistryAccountTypes([sample[i]], [row], registry)[0] : null));
   const analizados = classifications.filter(Boolean).length;
   if (analizados === 0) {
-    pasos.done('tono', 'no se pudo clasificar');
+    pasos.fail('tono', 'no se pudo clasificar');
     throw llmError(new Error('ninguna tanda devolvió clasificaciones'), provider);
   }
   const segundos = Math.round((Date.now() - tonoDesde) / 1000);
@@ -151,7 +151,7 @@ async function analyzeComments({ url, post, comments, pasos = NO_PASOS }) {
     qualitative = normalizeSynthesis(result.parsed, sample.length);
     sumUsage(result.usage);
   } catch (err) {
-    pasos.done('temas', 'falló');
+    pasos.fail('temas', 'falló');
     throw llmError(err, provider);
   }
   const nTemas = qualitative.temasConversacion.length;

@@ -92,7 +92,7 @@ function stubModelo() {
 function pasosQueAnotan() {
   const eventos = [];
   const anotar = (tipo) => (key, detalle) => eventos.push([tipo, key, detalle]);
-  return { eventos, pasos: { start: anotar('start'), update: anotar('update'), done: anotar('done'), skip: anotar('skip') } };
+  return { eventos, pasos: { start: anotar('start'), update: anotar('update'), done: anotar('done'), skip: anotar('skip'), fail: anotar('fail') } };
 }
 
 beforeEach(() => {
