@@ -35,13 +35,16 @@
  *   ahí ese rastro es el que permite diagnosticar un ciclo trabado.
  *   activeTargets() funciona igual en los dos casos.
  * @returns {{
- *   run: (fn: () => Promise<any>, target?: string) => Promise<any>,
+ *   run: (fn: () => Promise<any>, target?: string, hooks?: { onQueued?: () => void }) => Promise<any>,
  *   inFlight: () => number, pending: () => number, limit: number,
  *   activeTargets: () => Array<{ target: string|undefined, elapsedMs: number }>,
  * }}
- *   run(fn, target): ejecuta fn cuando hay lugar y devuelve su resultado (o
- *   su error); `target` es solo para los logs y activeTargets(), no afecta
- *   el orden ni el resultado.
+ *   run(fn, target, hooks): ejecuta fn cuando hay lugar y devuelve su
+ *   resultado (o su error); `target` es solo para los logs y
+ *   activeTargets(), no afecta el orden ni el resultado. hooks.onQueued se
+ *   llama si la tarea tiene que esperar cupo (el análisis de publicación lo
+ *   muestra como "Esperar turno en Apify"); un error suyo no afecta a la
+ *   tarea.
  */
 function createLimiter(max, label = 'limiter', { quiet = false } = {}) {
   const limit = Math.max(1, Math.floor(Number(max) || 1));
@@ -86,11 +89,18 @@ function createLimiter(max, label = 'limiter', { quiet = false } = {}) {
   };
 
   return {
-    run(fn, target) {
+    run(fn, target, { onQueued } = {}) {
       return new Promise((resolve, reject) => {
         const taskId = nextTaskId++;
         if (inFlight >= limit) {
           log(`[limiter:${label}] esperando cupo${target ? ` (${target})` : ''}: cola=${queue.length + 1} activos=${inFlight}/${limit}`);
+          if (typeof onQueued === 'function') {
+            try {
+              onQueued();
+            } catch {
+              /* el aviso no frena la tarea */
+            }
+          }
         }
         queue.push({ fn, resolve, reject, target, taskId });
         next();

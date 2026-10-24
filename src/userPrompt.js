@@ -8,7 +8,7 @@ function buildUserPrompt({ url, post, sample, total, isPartial, registry }) {
   const commentsText = sample
     .map((c, i) => {
       const verified = c.isVerified ? ' [VERIFICADA]' : '';
-      const likes = `${c.likesCount} likes`;
+      const likes = c.likesCount == null ? 'likes sin dato' : `${c.likesCount} likes`;
       const fecha = c.timestamp ? ` | ${c.timestamp}` : '';
       return `${i + 1}. @${c.username}${verified} (${likes}${fecha}): ${c.text}`;
     })

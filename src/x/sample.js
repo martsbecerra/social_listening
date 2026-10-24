@@ -37,7 +37,11 @@ function compareItems(a, b, influencerMap) {
 /**
  * El post original siempre va primero (index 1). El resto se recorta.
  */
-function prepareXSample({ post, items }, influencerMap, max = resolveMaxCommentsLimit()) {
+// X sigue con 150 por defecto (Instagram pasó a 300 con tandas de 100; X
+// manda todo el hilo en una sola llamada a Grok).
+const X_DEFAULT_MAX_ITEMS = 150;
+
+function prepareXSample({ post, items }, influencerMap, max = resolveMaxCommentsLimit(X_DEFAULT_MAX_ITEMS)) {
   const original = { ...post, kind: 'original' };
   const rest = dedupeItems((items || []).filter((item) => item && item.kind !== 'original'));
   const sorted = [...rest].sort((a, b) => compareItems(a, b, influencerMap));
