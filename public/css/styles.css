@@ -6098,7 +6098,7 @@ a.pl:focus-visible {
 }
 
 .home3 {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr) minmax(0, 1fr);
   align-items: stretch;
   margin-top: 14px;
 }
@@ -6453,9 +6453,82 @@ a.fl {
   color: var(--fg2);
   font: 500 11px/1 var(--mono);
 }
+/* Análisis recientes (la tercera columna): una fila por análisis, con la
+   foto, la cuenta y la fecha, el texto y sus números. */
+.recent {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.recent a {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  text-decoration: none;
+  color: inherit;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: var(--surface2);
+  animation: slideIn 0.5s both;
+}
+.recent a:hover {
+  border-color: var(--accent);
+}
+.recent .th {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  overflow: hidden;
+  position: relative;
+  background: linear-gradient(135deg, var(--a), color-mix(in oklab, var(--a) 40%, var(--glow)));
+}
+.recent .th img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.recent .tx {
+  min-width: 0;
+}
+.recent b {
+  font-size: 12.5px;
+  font-weight: 600;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recent small {
+  color: var(--muted);
+  font-size: 11.5px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.recent .num {
+  font-size: 11.5px;
+  color: var(--muted);
+  text-align: right;
+  white-space: nowrap;
+  font-family: var(--mono);
+}
+.recent .num .sent-pos {
+  display: block;
+}
 @media (max-width: 1100px) {
   .plats {
     grid-template-columns: 1fr 1fr;
+  }
+  .home3 {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+  }
+  .homeana {
+    grid-column: 1 / -1;
   }
 }
 /* En una columna la tarjeta crece con su contenido: seis publicaciones. */

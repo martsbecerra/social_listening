@@ -13,7 +13,9 @@
 //   - las últimas publicaciones de Instagram (el listado de siempre),
 //     dibujadas con postView.js; cada una abre su pop-up en el Monitoreo
 //     (instagram.html#publicacion-<id>). Cuando cambia la última corrida se
-//     vuelven a pedir y las nuevas entran con su animación.
+//     vuelven a pedir y las nuevas entran con su animación;
+//   - los 4 últimos análisis de publicación (GET /api/analisis), cada uno a
+//     su análisis (instagram.html#analisis-<id>).
 // /api/inicio se vuelve a pedir cada minuto (y al volver a la pestaña).
 // Horas de Argentina, UTC-3 fija (no hay horario de verano).
 //
@@ -30,6 +32,7 @@ const HOME_FRESH_MS = 5 * HOME_HOUR_MS;
 const HOME_POLL_MS = 60 * 1000;
 const HOME_AGO_EVERY_MS = 30 * 1000;
 const HOME_POSTS = 12;
+const HOME_ANALISIS = 4;
 const HOME_RING = 377; // largo del anillo: 2π·60
 // Con menos lugar que esto entre dos horas, los rótulos van más chicos.
 const HOME_LABEL_ROOM_PX = 60;
@@ -46,6 +49,7 @@ let homePostIds = null; // los ids ya dibujados en "Últimas publicaciones"
 let homePostsLoading = false;
 let homeLoadFailed = false; // el último pedido de /api/inicio falló
 let homeRetryTimer = 0;
+let homeAnaKey = null; // los análisis ya dibujados (ids y fechas)
 
 function homeEl(id) {
   return document.getElementById(id);
@@ -513,11 +517,67 @@ function homeTickAgo() {
   }
 }
 
+// ---------- análisis recientes ----------
+
+const HOME_ANA_DATE = new Intl.DateTimeFormat('es-AR', { timeZone: HOME_TZ, day: 'numeric', month: 'short' });
+
+function homeAnaLine(a) {
+  const line = homeNode('a');
+  line.href = `instagram.html#analisis-${encodeURIComponent(a.id)}`;
+  const th = homeNode('span', 'th');
+  th.style.setProperty('--a', accountColor(a.cuenta));
+  th.setAttribute('aria-hidden', 'true');
+  if (a.imagen && a.imagen.thumbUrl) {
+    const img = homeNode('img');
+    img.alt = '';
+    img.loading = 'lazy';
+    img.src = a.imagen.thumbUrl;
+    img.addEventListener('error', () => img.remove());
+    th.appendChild(img);
+  }
+  const tx = homeNode('span', 'tx');
+  const fechaIso = a.postedAt || a.finishedAt;
+  const fecha = fechaIso && !Number.isNaN(new Date(fechaIso).getTime()) ? HOME_ANA_DATE.format(new Date(fechaIso)).replace('.', '') : null;
+  tx.appendChild(homeNode('b', '', `${a.cuenta ? `@${a.cuenta}` : 'Publicación'}${fecha ? ` · ${fecha}` : ''}`));
+  const caption = (a.caption || '').replace(/s+/g, ' ').trim();
+  tx.appendChild(homeNode('small', '', caption || 'Sin texto.'));
+  const t = a.tonos || {};
+  const base = (t.positivos || 0) + (t.neutrales || 0) + (t.negativos || 0);
+  const num = homeNode('span', 'num');
+  if (base > 0) num.appendChild(homeNode('span', 'sent-pos', `${Math.round(((t.positivos || 0) / base) * 100)} % pos`));
+  num.appendChild(homeNode('span', '', `${homeCount(a.analizados)} com.`));
+  num.title = `${homeCount(a.analizados)} comentarios analizados`;
+  line.append(th, tx, num);
+  return line;
+}
+
+async function homeLoadAnalisis() {
+  const box = homeEl('homeAna');
+  try {
+    const res = await fetch(`/api/analisis?plataforma=instagram&limit=${HOME_ANALISIS}`, { credentials: 'same-origin' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const list = (data.recientes || []).slice(0, HOME_ANALISIS);
+    const key = list.map((a) => `${a.id}:${a.finishedAt}`).join('|');
+    if (key === homeAnaKey) return;
+    homeAnaKey = key;
+    if (!list.length) {
+      box.replaceChildren(homeNode('p', 'note empty', 'Todavía no hay análisis. Pegá el link de una publicación en Análisis de publicación.'));
+      return;
+    }
+    box.replaceChildren(...list.map(homeAnaLine));
+  } catch (err) {
+    console.error('Error leyendo los análisis recientes:', err);
+    if (homeAnaKey === null) box.replaceChildren(homeNode('p', 'note empty', 'No se pudieron cargar los análisis.'));
+  }
+}
+
 // ---------- carga ----------
 
 async function homeLoad() {
   clearTimeout(homeRetryTimer);
   homeRetryTimer = 0;
+  homeLoadAnalisis();
   try {
     const res = await fetch('/api/inicio', { credentials: 'same-origin' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
