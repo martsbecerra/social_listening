@@ -45,7 +45,10 @@ const loginLive = document.getElementById('loginLive');
 const loginSentMemory = new Map();
 let loginAddress = ''; // la dirección del paso 2
 let loginTimer = 0;
-let loginBusy = false;
+// Uno por pedido: con un reenvío en vuelo se puede volver al paso 1 y pedir
+// para otra dirección.
+let loginSending = false; // "Mandarme el link →"
+let loginResending = false; // "Mandar otro link"
 
 function loginWait(ms) {
   return new Promise((resolve) => setTimeout(resolve, loginReducedMotion.matches ? 0 : ms));
@@ -119,6 +122,13 @@ function loginShowStep(step) {
   show.classList.add('in');
 }
 
+// aria-disabled y no disabled: deshabilitar el botón que tiene el foco lo
+// manda a <body> (y con Tab ya no se llegaría a la cuenta regresiva).
+function loginSetAgainOff(off) {
+  if (off) loginAgain.setAttribute('aria-disabled', 'true');
+  else loginAgain.removeAttribute('aria-disabled');
+}
+
 // "Mandar otro link en 1:52" mientras haya que esperar; después, el botón.
 function loginTickAgain() {
   clearInterval(loginTimer);
@@ -126,11 +136,11 @@ function loginTickAgain() {
   const update = () => {
     const left = Math.ceil((loginSentUntil(loginAddress) - Date.now()) / 1000);
     if (left > 0) {
-      loginAgain.disabled = true;
+      loginSetAgainOff(true);
       loginAgain.textContent = `${LOGIN_AGAIN_LABEL} en ${loginMmSs(left)}`;
       return true;
     }
-    loginAgain.disabled = false;
+    loginSetAgainOff(false);
     loginAgain.textContent = LOGIN_AGAIN_LABEL;
     return false;
   };
@@ -181,7 +191,7 @@ async function loginRequest(address) {
 
 loginForm.addEventListener('submit', async (event) => {
   event.preventDefault();
-  if (loginBusy) return;
+  if (loginSending) return;
   loginClearError(loginErr);
   const address = loginEmail.value.trim();
   if (!LOGIN_EMAIL_RE.test(address)) {
@@ -196,14 +206,14 @@ loginForm.addEventListener('submit', async (event) => {
     return;
   }
 
-  loginBusy = true;
+  loginSending = true;
   loginSubmit.setAttribute('aria-disabled', 'true');
   loginSubmit.classList.add('busy');
   loginSetLabel('Enviando el link…');
   const result = await loginRequest(address);
   loginSubmit.classList.remove('busy');
   if (!result.ok) {
-    loginBusy = false;
+    loginSending = false;
     loginSubmit.removeAttribute('aria-disabled');
     loginSetLabel(LOGIN_LABEL);
     loginShowError(loginErr, result.error);
@@ -216,7 +226,7 @@ loginForm.addEventListener('submit', async (event) => {
   loginSubmit.classList.remove('ok');
   loginSubmit.removeAttribute('aria-disabled');
   loginSetLabel(LOGIN_LABEL);
-  loginBusy = false;
+  loginSending = false;
   loginGoToStep2(address);
 });
 
@@ -225,17 +235,17 @@ loginEmail.addEventListener('input', () => {
 });
 
 loginAgain.addEventListener('click', async () => {
-  if (loginBusy || loginAgain.disabled) return;
+  if (loginResending || loginAgain.getAttribute('aria-disabled') === 'true') return;
   loginClearError(loginErr2);
   loginLive.textContent = '';
-  loginBusy = true;
+  loginResending = true;
   clearInterval(loginTimer);
   loginTimer = 0;
-  loginAgain.disabled = true;
+  loginSetAgainOff(true);
   loginAgain.textContent = 'Enviando…';
   const address = loginAddress;
   const result = await loginRequest(address);
-  loginBusy = false;
+  loginResending = false;
   if (!result.ok) {
     loginShowError(loginErr2, result.error);
     loginTickAgain();

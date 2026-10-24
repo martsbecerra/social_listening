@@ -5648,8 +5648,8 @@ a.pl:focus-visible {
   font-weight: 500;
 }
 /* La línea de las 24 h: las corridas programadas de hoy en su hora, con
-   su estado real (terminada, cortada, en curso, la siguiente o la que no
-   corrió), las manuales como puntitos y la hora actual. */
+   su estado real (terminada, cortada, en curso, interrumpida, la siguiente
+   o la que no corrió), las manuales como puntitos y la hora actual. */
 .tl24 {
   margin-top: 30px;
 }
@@ -5696,10 +5696,18 @@ a.pl:focus-visible {
   border-color: var(--pos);
   color: var(--accent-ink);
 }
+/* La cortada no lleva la tilde de terminada: lo dice "cortada". */
 .tl24 .run.cut {
   background: var(--c5);
   border-color: var(--c5);
-  color: var(--accent-ink);
+}
+/* Interrumpida: arrancó y no cerró (el proceso se cayó en el medio). */
+.tl24 .run.stop {
+  border-color: var(--neg);
+  border-style: dashed;
+}
+.tl24 .run.stop small {
+  color: var(--neg-text);
 }
 .tl24 .run.cut small {
   color: var(--warn-ink);
@@ -5745,7 +5753,7 @@ a.pl:focus-visible {
   transform: translateX(-50%);
   padding: 0 3px;
   background: var(--surface);
-  color: var(--glow);
+  color: var(--fg2); /* --glow, el de la maqueta, daba 4,49:1 en oscuro */
   font: 500 9px/1 var(--mono);
   font-style: normal;
   letter-spacing: 0.08em;
@@ -6014,8 +6022,9 @@ body.login-page {
   z-index: 2;
   align-self: flex-start;
 }
+/* --fg y no --fg2: la mancha violeta (.b1) queda debajo (4,42:1 con --fg2). */
 .lg-vis .brand small {
-  color: var(--fg2);
+  color: var(--fg);
 }
 .lg-vis .brand .logo {
   box-shadow: 0 0 34px color-mix(in oklab, var(--accent) 60%, transparent);
@@ -6064,16 +6073,20 @@ body.login-page {
   font: 600 30px/1 var(--display);
   font-variant-numeric: tabular-nums;
 }
+/* Los rótulos chicos van en --fg, no en --muted ni --fg2: debajo está la
+   mancha celeste (.b2), que aclara el fondo; --muted daba 2,3:1 y --fg2 4:1
+   en su punto más claro. */
 .lg-stats small {
   font: 500 11px/1.3 var(--mono);
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--muted);
+  color: var(--fg);
 }
 /* El ticker: los temas de la semana subiendo despacio. Cada fila lleva su
    margen (no un gap) para que las dos mitades de la pista midan lo mismo y
-   el salto del -50 % no se note; loginScene.js repite la lista hasta llenar
-   el alto y ajusta la duración. */
+   el salto del -50 % no se note; loginScene.js lo ubica entre los textos y
+   los contadores (top y bottom con las medidas reales; sin lugar, .no-room),
+   repite la lista hasta llenar el alto y ajusta la duración. */
 .ticker {
   position: absolute;
   right: 34px;
@@ -6086,10 +6099,14 @@ body.login-page {
   mask-image: linear-gradient(to bottom, transparent, #000 12%, #000 85%, transparent);
   pointer-events: none;
 }
-.ticker[hidden] {
+.ticker[hidden],
+.ticker.no-room {
   display: none;
 }
+/* flow-root: el margen de la última fila queda adentro de la pista (si no,
+   se escapa y las mitades no miden lo mismo: el -50 % salta unos píxeles). */
 .ticker .track {
+  display: flow-root;
   animation: lgTick 38s linear infinite;
 }
 @keyframes lgTick {
@@ -6134,7 +6151,7 @@ body.login-page {
 .tk small {
   display: block;
   font: 400 11px/1.3 var(--mono);
-  color: var(--fg2);
+  color: var(--fg);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -6288,7 +6305,9 @@ body.login-page {
 .lg-foot button:hover {
   text-decoration: underline;
 }
-.lg-foot button:disabled {
+/* aria-disabled y no disabled: deshabilitar el botón con el foco lo manda
+   a <body>. */
+.lg-foot button[aria-disabled="true"] {
   color: var(--muted);
   cursor: default;
   text-decoration: none;
@@ -6380,7 +6399,7 @@ body.login-page {
   /* Los textos arriba y, debajo de los contadores, una franja para la
      constelación (loginScene.js la ubica en el hueco más alto). */
   .lg-vis {
-    padding: 24px 20px 300px;
+    padding: 24px 20px 340px;
   }
   .lg-vis > .brand {
     display: none;

@@ -8,7 +8,9 @@
 // La constelación es un canvas (#lgNet): un círculo por tema (el radio por
 // su cantidad, el color --cat-N por su lugar en la config, como en la app)
 // y puntitos sin nombre unidos a dos temas, con una chispa que viaja por
-// cada hilo. Con movimiento reducido se dibuja un cuadro quieto; con la
+// cada hilo; en una franja baja van los temas que entran sin encimarse. El
+// ticker va entre los textos y los contadores, donde haya lugar (si no,
+// no va). Con movimiento reducido se dibuja un cuadro quieto; con la
 // pestaña oculta o la visual fuera de la pantalla el dibujo se frena (no
 // queda un requestAnimationFrame dando vueltas). Sin datos, solo los
 // puntitos, sin ticker, y los contadores en "—".
@@ -21,6 +23,9 @@ const LG_INT = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 });
 const LG_DOTS = 18;
 const LG_TICKER_PX_PER_S = 14;
 const LG_LABEL_FONT = '600 12px Sora, system-ui, sans-serif';
+const LG_ROW_MIN_PX = 56; // una fila de la constelación: el círculo, su nombre y el vaivén
+const LG_TICKER_MIN_H = 150; // menos alto que esto (tres filas), el ticker no va
+const LG_TICKER_MIN_W = 230; // menos ancho, "N publicaciones · 7 días" no entra
 const LG_NUMBER_WORDS = ['', 'una', 'dos', 'tres', 'cuatro', 'cinco', 'seis', 'siete', 'ocho'];
 const lgReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 const lgVis = document.querySelector('.lg-vis');
@@ -103,18 +108,26 @@ function lgLayout() {
   const h = area.bottom - area.top;
   const max = Math.max(1, ...lgTemas.map((t) => t.n));
   const cols = Math.max(2, Math.min(3, Math.round(w / 170)));
-  const rows = Math.max(1, Math.ceil(lgTemas.length / cols));
-  // El radio crece con la cantidad (de 5 a 18 px), más chico si la franja es
-  // baja (celular).
-  const scale = Math.min(1, h / rows / 90);
+  // Van los temas que entran en filas de LG_ROW_MIN_PX (ya vienen de mayor a
+  // menor): en una franja baja, los de menos publicaciones quedan afuera
+  // antes que encimar nombres.
+  const shown = lgTemas.slice(0, cols * Math.max(1, Math.floor(h / LG_ROW_MIN_PX)));
+  const rows = Math.max(1, Math.ceil(shown.length / cols));
+  const rowH = h / rows;
+  const colW = w / cols;
+  // El radio crece con la cantidad (de 5 a 18 px), más chico si la fila es
+  // baja (celular). El vaivén y el desvío al azar, a la medida de la fila.
+  const scale = Math.min(1, rowH / 90);
+  const swayX = Math.min(lgWidth * 0.02, colW * 0.08);
+  const swayY = Math.min(lgHeight * 0.02, rowH * 0.1);
   if (lgCtx) lgCtx.font = LG_LABEL_FONT;
-  const themes = lgTemas.map((tema, i) => {
+  const themes = shown.map((tema, i) => {
     const row = Math.floor(i / cols);
     const col = i % cols;
     const shift = row % 2 ? (cols >= 3 ? 0.35 : 0.2) : 0;
     // El nombre entero adentro de la franja (con lugar para el vaivén).
-    const half = (lgCtx ? lgCtx.measureText(tema.tema).width : 80) / 2 + lgWidth * 0.02 + 4;
-    const x = area.left + ((col + 0.5 + shift) / cols) * w * 0.92 + (random() - 0.5) * 30;
+    const half = (lgCtx ? lgCtx.measureText(tema.tema).width : 80) / 2 + swayX + 4;
+    const x = area.left + ((col + 0.5 + shift) / cols) * w * 0.92 + (random() - 0.5) * Math.min(30, colW * 0.15);
     const hi = Math.min(area.right + 20, lgWidth - 8) - half;
     return {
       label: tema.tema,
@@ -122,7 +135,9 @@ function lgLayout() {
       color: lgToken(lgCatVar(tema.orden)) || lgToken('--accent'),
       r: (5 + 13 * (tema.n / max)) * Math.max(0.6, scale),
       x0: Math.min(Math.max(x, half), Math.max(half, hi)),
-      y0: area.top + ((row + 0.5) / rows) * h + (random() - 0.5) * 24,
+      y0: area.top + (row + 0.5) * rowH + (random() - 0.5) * Math.min(24, rowH * 0.2),
+      swayX,
+      swayY,
       ph: random() * 6.28,
       sp: 0.4 + random() * 0.5,
     };
@@ -134,6 +149,8 @@ function lgLayout() {
     r: 2.5 + random() * 1.5,
     x0: area.left + random() * w,
     y0: area.top - 30 + random() * (h + 40),
+    swayX: lgWidth * 0.02,
+    swayY: lgHeight * 0.02,
     ph: random() * 6.28,
     sp: 0.5 + random() * 0.6,
   }));
@@ -154,8 +171,8 @@ function lgLayout() {
 
 function lgPos(node) {
   return [
-    node.x0 + Math.sin(lgTime * 0.004 * node.sp + node.ph) * lgWidth * 0.02,
-    node.y0 + Math.cos(lgTime * 0.003 * node.sp + node.ph) * lgHeight * 0.02,
+    node.x0 + Math.sin(lgTime * 0.004 * node.sp + node.ph) * node.swayX,
+    node.y0 + Math.cos(lgTime * 0.003 * node.sp + node.ph) * node.swayY,
   ];
 }
 
@@ -257,6 +274,33 @@ function lgTickerRow({ tema, n, orden }) {
   return row;
 }
 
+// El ticker va a la derecha, entre los textos de arriba y los contadores,
+// con el lugar que de verdad queda: con poco ancho el subtítulo baja y los
+// contadores pasan a dos renglones. Si no hay lugar (menos de
+// LG_TICKER_MIN_H de alto o LG_TICKER_MIN_W de ancho), no va. Medidas del
+// layout (offset*), sin las animaciones de entrada.
+function lgPlaceTicker(box) {
+  box.classList.remove('no-room');
+  box.style.top = '';
+  box.style.bottom = '';
+  if (box.hidden || box.offsetParent !== lgVis) return; // sin temas, o en celular (sin ticker)
+  const left = box.offsetLeft;
+  let top = box.offsetTop;
+  for (const el of lgVis.querySelectorAll('h1, .sub')) {
+    if (el.offsetParent === lgVis && el.offsetLeft + el.offsetWidth > left - 16) {
+      top = Math.max(top, el.offsetTop + el.offsetHeight + 24);
+    }
+  }
+  const stats = lgVis.querySelector('.lg-stats');
+  const bottom = (stats && stats.offsetParent === lgVis ? stats.offsetTop : lgVis.clientHeight) - 24;
+  if (bottom - top < LG_TICKER_MIN_H || box.offsetWidth < LG_TICKER_MIN_W) {
+    box.classList.add('no-room');
+    return;
+  }
+  box.style.top = `${top}px`;
+  box.style.bottom = `${lgVis.clientHeight - bottom}px`;
+}
+
 // La lista se repite hasta llenar el alto y después se duplica entera: la
 // pista sube hasta la mitad y vuelve a empezar sin que se note.
 function lgFillTicker() {
@@ -265,6 +309,11 @@ function lgFillTicker() {
   const box = track.parentElement;
   box.hidden = !lgTemas.length;
   if (!lgTemas.length) return;
+  lgPlaceTicker(box);
+  if (box.offsetParent !== lgVis) {
+    track.replaceChildren();
+    return;
+  }
   track.replaceChildren(...lgTemas.map(lgTickerRow));
   const one = track.scrollHeight;
   const copies = one > 0 ? Math.max(1, Math.ceil(box.clientHeight / one)) : 1;
@@ -323,6 +372,11 @@ async function lgLoad() {
   lgCount('lgReclamos', Number(resumen.reclamosEnMapa));
   lgCount('lgDias', Number(resumen.diasEscuchando));
   lgCount('lg30', Number(resumen.publicaciones30Dias));
+  lgRearrange();
+}
+
+// El ticker primero: de si se ve depende dónde cabe la constelación.
+function lgRearrange() {
   lgFillTicker();
   lgResize();
 }
@@ -334,10 +388,7 @@ function lgStart() {
     let resizeTimer = 0;
     new ResizeObserver(() => {
       clearTimeout(resizeTimer);
-      resizeTimer = setTimeout(() => {
-        lgFillTicker();
-        lgResize();
-      }, 120);
+      resizeTimer = setTimeout(lgRearrange, 120);
     }).observe(lgVis);
     // En celular la visual queda debajo de la tarjeta: fuera de la pantalla
     // no se dibuja.
@@ -351,8 +402,8 @@ function lgStart() {
     // fuente cambian las medidas y se vuelve a armar (con movimiento
     // reducido, además, no habría otro cuadro).
     if (document.fonts && document.fonts.ready) {
-      document.fonts.ready.then(lgResize);
-      document.fonts.addEventListener('loadingdone', lgResize);
+      document.fonts.ready.then(lgRearrange);
+      document.fonts.addEventListener('loadingdone', lgRearrange);
     }
     lgUpdateMotion();
   }
