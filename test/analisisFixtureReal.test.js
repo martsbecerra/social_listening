@@ -16,7 +16,6 @@ const path = require('path');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sl-analisis-fixture-'));
 process.env.MONITORING_DB_PATH = path.join(tmp, 'monitoring.db'); // ANTES de cargar db.js
-process.env.ACCOUNT_REGISTRY_PATH = path.join(tmp, 'account-types.json');
 process.env.MONITORING_MEDIA_DIR = path.join(tmp, 'media');
 process.env.APIFY_API_TOKEN = 'token-de-test';
 delete process.env.COMMENTS_LIMIT;
@@ -142,20 +141,28 @@ describe('el análisis entero con lo que devolvió el actor', { concurrency: fal
       if (schemaName === 'tanda_instagram') {
         const lista = [...userPrompt.matchAll(/^(\d+)\. @(\S+)/gm)].map((m) => Number(m[1]));
         return {
-          parsed: { classifications: lista.map((index) => ({ index, sentiment: index % 3 ? 'positivo' : 'negativo', accountType: 'vecino', reclamosGeo: [] })) },
+          parsed: {
+            temas: [{ numero: 1, nombre: 'Un tema' }],
+            classifications: lista.map((index) => ({
+              index,
+              sentiment: index % 3 ? 'positivo' : 'negativo',
+              postura: index % 3 ? 'favor' : 'critica',
+              tema: 1,
+              sobre_posteo: true,
+              pedido: false,
+              reclamosGeo: [],
+            })),
+          },
           usage: { inputTokens: 1000, outputTokens: 300, totalTokens: 1300, costUsd: 0.01 },
         };
       }
       return {
         parsed: {
-          posteoSobre: 'Una publicación de prueba',
-          insightApoyo: ['a', 'b'],
-          insightCriticas: ['c', 'd'],
-          insightReclamos: ['e', 'f'],
-          insightMedios: ['g', 'h'],
-          posturaAudiencia: 'Dividida.',
-          lecturaEstrategica: 'Lectura de prueba.',
-          temasConversacion: [{ titulo: 'Un tema', texto: 'Texto del tema.', comentarios: [1, 2, 3] }],
+          lectura: 'Lectura de prueba.',
+          hecho_dominante: { hay: false, tema: 0, titulo: '', descripcion: '' },
+          pedidos: [],
+          que_mirar: 'Mirar de prueba.',
+          figuras_sugeridas: [],
         },
         usage: { inputTokens: 2000, outputTokens: 400, totalTokens: 2400, costUsd: 0.02 },
       };
@@ -189,6 +196,7 @@ describe('el análisis entero con lo que devolvió el actor', { concurrency: fal
     assert.equal(a.cuando.conFecha, 64);
     // (1 + 64) resultados a 0,0023: lo mismo que cobró la corrida real.
     assert.ok(Math.abs(a.usdApify - 65 * 0.0023) < 1e-9);
-    assert.match(a.reporteAntes, /Análisis realizado sobre 64 de 138 comentarios\./);
+    assert.match(a.reporteAntes, /💬 138 comentarios \(64 analizados\)/);
+    assert.equal(a.nVerificados, 1);
   });
 });

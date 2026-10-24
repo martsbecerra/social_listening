@@ -1,19 +1,12 @@
 // ==========================================================================
 // reportBuilder.js
 // --------------------------------------------------------------------------
-// Arma el texto final para WhatsApp y el CSV de reclamos.
-// Combina métricas calculadas en sentimentAggregate.js con los textos
-// cualitativos que devolvió Claude (structured output).
+// El informe del análisis de publicación de Instagram (8 puntos, fase F) y
+// sus CSV: el de comentarios y el de reclamos. Los números salen de
+// analysisMetrics.js, nunca del modelo. X tiene el suyo (src/x/reportBuilder.js).
 // ==========================================================================
 
-const {
-  computeWeightedSentimentPercentages,
-  computePerformanceLevel,
-  formatCountWithDots,
-  formatViewsShort,
-} = require('./sentimentAggregate');
-const { PARTIAL_SAMPLE_DISCLOSURE } = require('./commentSample');
-const { assembleReport } = require('./temasConversacion');
+const { formatCountWithDots } = require('./sentimentAggregate');
 const { rolTexto } = require('./figuras');
 
 // Encabezado fijo exigido por la metodología (descarga en el front).
@@ -62,114 +55,10 @@ function buildReclamosCsv(sample, classifications) {
   return `${rows.join('\n')}\n`;
 }
 
-/** El template pide 2 referencias; rellenamos con N/D si Claude mandó menos. */
-function formatReferenceLines(refs) {
-  const lines = Array.isArray(refs) ? refs.filter(Boolean).slice(0, 2) : [];
-  while (lines.length < 2) lines.push('N/D');
-  return lines;
-}
-
-/**
- * La aclaración de muestra parcial con los números reales: "Análisis
- * realizado sobre 287 de 1.480 comentarios." Si además la muestra la
- * recortó la app (no Instagram), dice cómo se priorizó. Sin los números,
- * el texto de siempre.
- */
-function partialDisclosure({ analizados, totalPost, priorizada }) {
-  if (!Number.isFinite(analizados) || !Number.isFinite(totalPost)) return PARTIAL_SAMPLE_DISCLOSURE;
-  const como = priorizada ? ' (priorizadas cuentas verificadas y comentarios con más likes)' : '';
-  return `Análisis realizado sobre ${formatCountWithDots(analizados)} de ${formatCountWithDots(totalPost)} comentarios${como}.`;
-}
-
-/**
- * @param {object} params
- *   analizados / totalPost / priorizada (opcionales): los números reales de
- *   la aclaración de muestra parcial (ver partialDisclosure).
- * @returns {{ report: string, csv: string, meta: object }}
- */
-function buildWhatsAppReport({
-  url,
-  post,
-  sample,
-  isPartial,
-  sampleSize,
-  totalComments,
-  classifications,
-  qualitative,
-  analizados = null,
-  totalPost = null,
-  priorizada = false,
-}) {
-  const metrics = computeWeightedSentimentPercentages(classifications);
-  const performanceLevel = computePerformanceLevel(post);
-
-  let posteoSobre = qualitative.posteoSobre || 'N/D';
-  if (isPartial) {
-    posteoSobre += ` ${partialDisclosure({ analizados, totalPost, priorizada })}`;
-  }
-
-  const apoyo = formatReferenceLines(qualitative.insightApoyo);
-  const criticas = formatReferenceLines(qualitative.insightCriticas);
-  const reclamos = formatReferenceLines(qualitative.insightReclamos);
-  const medios = formatReferenceLines(qualitative.insightMedios);
-  const temas = Array.isArray(qualitative.temasConversacion) ? qualitative.temasConversacion : [];
-
-  const ownerName = post.ownerFullName ?? 'N/D';
-  const ownerUser = post.ownerUsername ?? 'N/D';
-
-  const beforeTemas = `🔍 ANÁLISIS DE POSTEO EN INSTAGRAM: ${ownerName} / @${ownerUser}
-
-👉🏼 Posteo sobre: ${posteoSobre}
-
-❤️ ${formatCountWithDots(post.likesCount)} Likes
-💬 ${formatCountWithDots(post.commentsCount)} Comentarios
-👁️ ${formatViewsShort(post.videoPlayCount)} visualizaciones / alcance
-Link a publicación 👉🏼 ${url}
-
-💡 INSIGHTS
-
-1️⃣ Sentiment positivo: ${metrics.positivoPct}% | Sentiment negativo: ${metrics.negativoPct}%
-
-2️⃣ Según los KPI's establecidos, el posteo alcanza un nivel ${performanceLevel} en cuanto a visualizaciones/interacciones.`;
-
-  const afterTemas = `3️⃣ Apoyo de funcionarios, cuentas aliadas o usuarios afines enfocados en validar la gestión o el mensaje principal.
-${apoyo[0]}
-${apoyo[1]}
-
-4️⃣ Críticas de opositores, militantes adversarios o usuarios detractores enfocadas en cuestionar la medida, la gestión o el encuadre comunicacional.
-${criticas[0]}
-${criticas[1]}
-
-5️⃣ Reclamos de vecinos o audiencia orgánica sobre problemas concretos vinculados al tema del posteo.
-${reclamos[0]}
-${reclamos[1]}
-
-6️⃣ Comentarios de periodistas, medios, influencers o cuentas con alcance relevante que amplifican o reinterpretan la conversación.
-${medios[0]}
-${medios[1]}
-
-7️⃣ Postura de la audiencia orgánica: ${qualitative.posturaAudiencia || 'N/D'}
-
-8️⃣ Lectura estratégica: ${qualitative.lecturaEstrategica || 'N/D'}`;
-
-  const report = assembleReport(beforeTemas, temas, afterTemas);
-
-  const csv = buildReclamosCsv(sample, classifications);
-
-  return {
-    report,
-    csv,
-    meta: { sampleSize, totalComments, ...metrics, performanceLevel },
-    temas,
-    reportParts: { beforeTemas, afterTemas },
-  };
-}
-
-// ---------------------------------------------------------------- fase F
-// El informe de 8 puntos (reemplaza al institucional de arriba, solo en
-// Instagram; X tiene el suyo) y el CSV de comentarios. Los dos salen de la
-// vista de analysisMetrics.buildAnalysisView: los mismos números que la
-// pantalla.
+// ---------------------------------------------------------------- informe
+// El informe de 8 puntos (reemplazó al institucional en la fase F, solo en
+// Instagram) y el CSV de comentarios. Los dos salen de la vista de
+// analysisMetrics.buildAnalysisView: los mismos números que la pantalla.
 
 const TZ = 'America/Argentina/Buenos_Aires';
 const DIA_MES = new Intl.DateTimeFormat('es-AR', { timeZone: TZ, day: '2-digit', month: '2-digit' });
@@ -305,4 +194,4 @@ function buildComentariosCsv(vista) {
   return `${rows.join('\n')}\n`;
 }
 
-module.exports = { buildWhatsAppReport, buildReclamosCsv, buildInforme, buildComentariosCsv };
+module.exports = { buildReclamosCsv, buildInforme, buildComentariosCsv };

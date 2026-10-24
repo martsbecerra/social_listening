@@ -34,32 +34,31 @@ function looksLikeSpamOrSorteo(text) {
 
 /**
  * Aplica overrides conservadores por comentario (misma longitud que sample).
+ * Desde la fase F no hay tipo de cuenta: las reglas fijan tono, postura,
+ * tema, pedido y reclamos; lo demás queda como lo dijo el modelo.
  *
  * @param {Array<{ text: string }>} sample
- * @param {Array<{ sentiment: string, accountType: string, reclamosGeo: Array }>} classifications
+ * @param {Array<{ sentiment: string, postura: string, tema: number, pedido: boolean, reclamosGeo: Array }>} classifications
  */
 function applyClassificationHeuristics(sample, classifications) {
   return classifications.map((row, i) => {
     const text = sample[i]?.text ?? '';
-    let { sentiment, accountType, reclamosGeo } = row;
 
     // Primero casos sin opinión política (no pisan un reclamo geolocalizable del modelo).
     if (isEmojiOrSymbolOnly(text) || isMentionsOnly(text)) {
-      return { sentiment: 'neutral', accountType: 'vecino', reclamosGeo: [] };
+      return { ...row, sentiment: 'neutral', postura: 'neutra', pedido: false, reclamosGeo: [] };
     }
 
     if (looksLikeSpamOrSorteo(text)) {
-      return { sentiment: 'ruido', accountType: 'ruido', reclamosGeo: [] };
+      return { ...row, sentiment: 'ruido', postura: 'neutra', tema: 0, pedido: false, reclamosGeo: [] };
     }
 
-    // Coherencia ruido ↔ tipo de cuenta.
-    if (sentiment === 'ruido' || accountType === 'ruido') {
-      sentiment = 'ruido';
-      accountType = 'ruido';
-      reclamosGeo = [];
+    // El ruido no tiene postura, tema, pedido ni reclamos.
+    if (row.sentiment === 'ruido') {
+      return { ...row, postura: 'neutra', tema: 0, pedido: false, reclamosGeo: [] };
     }
 
-    return { sentiment, accountType, reclamosGeo };
+    return row;
   });
 }
 

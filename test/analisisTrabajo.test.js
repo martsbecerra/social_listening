@@ -16,7 +16,6 @@ const path = require('path');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sl-analisis-trabajo-'));
 const MEDIA = path.join(tmp, 'media');
 process.env.MONITORING_DB_PATH = path.join(tmp, 'monitoring.db'); // ANTES de cargar db.js
-process.env.ACCOUNT_REGISTRY_PATH = path.join(tmp, 'account-types.json');
 process.env.MONITORING_MEDIA_DIR = MEDIA;
 process.env.APIFY_API_TOKEN = 'token-de-test';
 process.env.SESSION_SECRET = 'secreto-de-test';
@@ -98,10 +97,19 @@ function stubs() {
       const lista = [...userPrompt.matchAll(/^(\d+)\. @(\S+)/gm)];
       return {
         parsed: {
+          temas: /DEFINÍ LOS TEMAS/.test(userPrompt)
+            ? [
+                { numero: 1, nombre: 'Baches' },
+                { numero: 2, nombre: 'Plaza' },
+              ]
+            : [],
           classifications: lista.map((m) => ({
             index: Number(m[1]),
             sentiment: Number(m[2].replace('vecino', '')) % 4 === 0 ? 'negativo' : 'positivo',
-            accountType: 'vecino',
+            postura: Number(m[2].replace('vecino', '')) % 4 === 0 ? 'critica' : 'favor',
+            tema: Number(m[2].replace('vecino', '')) % 2 === 0 ? 1 : 2,
+            sobre_posteo: Number(m[2].replace('vecino', '')) % 2 !== 0,
+            pedido: false,
             reclamosGeo: m[2] === 'vecino2' ? [{ direccionDetectada: 'Salta 250', direccionNormalizada: 'Salta 250', tematica: 'bache', categoria: 'Infraestructura', tipoUbicacion: 'calle_altura' }] : [],
           })),
         },
@@ -110,14 +118,11 @@ function stubs() {
     }
     return {
       parsed: {
-        posteoSobre: 'Un anuncio',
-        insightApoyo: ['a', 'b'],
-        insightCriticas: ['c', 'd'],
-        insightReclamos: ['e', 'f'],
-        insightMedios: ['g', 'h'],
-        posturaAudiencia: 'A favor.',
-        lecturaEstrategica: 'La lectura estratégica.',
-        temasConversacion: [{ titulo: 'Baches', texto: 'Piden arreglar calles.', comentarios: [2, 3, 3, 99] }],
+        lectura: 'La lectura estratégica.',
+        hecho_dominante: { hay: true, tema: 1, titulo: 'Un pozo enorme en Salta', descripcion: 'Lo mencionan muchos.' },
+        pedidos: [{ texto: 'Arreglar las calles', ids: [2, 3, 99] }],
+        que_mirar: 'Responder por los baches.',
+        figuras_sugeridas: [],
       },
       usage: { inputTokens: 300, outputTokens: 80, totalTokens: 380, costUsd: 0.02 },
     };
@@ -195,14 +200,43 @@ describe('el trabajo del análisis', { concurrency: false }, () => {
     assert.equal(a.comentariosTotal, 480);
     assert.deepEqual([a.traidos, a.unicos, a.enviados, a.analizados], [25, 25, 25, 25]);
     assert.deepEqual(a.tonos, { positivos: 19, neutrales: 0, negativos: 6, ruido: 0 });
-    assert.equal(a.resultado.lecturaEstrategica, 'La lectura estratégica.');
-    assert.equal(a.resultado.temasConversacion, undefined, 'los temas van en su columna');
-    assert.deepEqual(a.temas, [{ titulo: 'Baches', texto: 'Piden arreglar calles.', comentarios: [2, 3] }]);
+    assert.equal(a.resultado.version, 2);
+    assert.equal(a.resultado.lectura, 'La lectura estratégica.');
+    assert.equal(a.resultado.lecturaEstrategica, 'La lectura estratégica.', 'la que lee la solapa de la fase E');
+    assert.deepEqual(a.resultado.hecho, { temaId: 1, titulo: 'Un pozo enorme en Salta', descripcion: 'Lo mencionan muchos.' });
+    assert.deepEqual(a.resultado.pedidos, [{ texto: 'Arreglar las calles', ids: [2, 3] }]);
+    assert.equal(a.resultado.queMirar, 'Responder por los baches.');
+    assert.deepEqual(a.temas, {
+      version: 2,
+      lista: [
+        { id: 1, nombre: 'Baches' },
+        { id: 2, nombre: 'Plaza' },
+      ],
+    });
     assert.equal(a.comentarios.length, 25);
-    assert.deepEqual(a.comentarios[0], { n: 1, usuario: 'vecino1', verificada: false, likes: 500, fecha: respuestaComentarios[0].timestamp, texto: 'Comentario 1', tono: 'positivo', tipo: 'vecino' });
+    assert.deepEqual(a.comentarios[0], {
+      n: 1,
+      usuario: 'vecino1',
+      verificada: false,
+      likes: 500,
+      fecha: respuestaComentarios[0].timestamp,
+      texto: 'Comentario 1',
+      tono: 'positivo',
+      postura: 'favor',
+      tema: 2,
+      sobrePosteo: true,
+      pedido: false,
+    });
     assert.equal(a.cuando.unidadHoras, 1);
     assert.equal(a.cuando.conFecha, 25);
-    assert.match(a.reporteAntes, /Análisis realizado sobre 25 de 480 comentarios\./);
+    // El informe de 8 puntos, con la misma cuenta que la pantalla.
+    assert.match(a.reporteAntes, /^\*Análisis de publicación · @gcba · /);
+    assert.match(a.reporteAntes, /\(25 analizados\)/);
+    assert.match(a.reporteAntes, /1\) \*Lo que pasó:\* el 48 % de los comentarios habla de un mismo hecho ajeno al posteo: Un pozo enorme en Salta\./);
+    assert.equal(a.reporteDespues, '');
+    assert.equal(a.positivoPct, null, 'sin el ponderado por tipo de cuenta');
+    // Las columnas de la galería: 6 de 25 negativos; el hecho (12 de 25 en "Baches", fuera del posteo); "Plaza", 13.
+    assert.deepEqual([a.pctNeg, a.tieneHecho, a.nVerificados, a.temaEstrella], [24, true, 0, 'Plaza']);
     assert.equal(a.reclamos, 1);
     assert.equal(geocodificaciones, 1, 'los reclamos se geocodifican después');
     assert.equal(a.tokens, 150 + 380);
@@ -217,8 +251,9 @@ describe('el trabajo del análisis', { concurrency: false }, () => {
     assert.equal(detalle.turno, undefined, 'sin espera, el paso del turno no aparece');
     assert.match(detalle.publicacion, /^ok · @gcba · 900 likes · \d+ s$/);
     assert.match(detalle.comentarios, /^ok · 25 comentarios · \d+ s$/);
-    assert.match(detalle.tono, /^ok · 25 clasificados · \d+ s$/);
-    assert.match(detalle.temas, /^ok · 1 tema · \d+ s$/);
+    assert.match(detalle.clasificar, /^ok · 25 de 25 · 1 tanda · \d+ s$/);
+    assert.equal(detalle.verificados, 'ok · 0 verificados · 0 figuras públicas');
+    assert.equal(view.porcentaje, 100);
     assert.equal(detalle.reclamos, 'ok · 1 reclamo');
     assert.match(detalle.informe, /^ok · listo · [\d.]+ caracteres$/);
     assert.equal(progress.getView(id, 'x'), null, 'por plataforma');
@@ -279,16 +314,16 @@ describe('el trabajo del análisis', { concurrency: false }, () => {
     const view = progress.getView(id, 'instagram');
     assert.equal(view.error, 'Se agotó el crédito de Apify.');
     assert.equal(view.pasos.find((p) => p.key === 'publicacion').estado, 'error');
-    assert.equal(view.pasos.find((p) => p.key === 'tono').estado, 'pendiente');
+    assert.equal(view.pasos.find((p) => p.key === 'clasificar').estado, 'pendiente');
   });
 
-  test('si el modelo falla en todas las tandas: error, y el paso del tono en error', async () => {
+  test('si el modelo falla en todas las tandas: error, y el paso de clasificar en error', async () => {
     llm.requestStructuredAnalysis = async () => {
       throw new Error('caído');
     };
     const id = await analizar('https://www.instagram.com/p/SINLLM/');
     assert.equal(db.getAnalisis(id, 'instagram').estado, 'error');
-    assert.equal(progress.getView(id, 'instagram').pasos.find((p) => p.key === 'tono').estado, 'error');
+    assert.equal(progress.getView(id, 'instagram').pasos.find((p) => p.key === 'clasificar').estado, 'error');
   });
 
   test('si la síntesis falla después de clasificar, la fila guarda lo gastado en el modelo', async () => {

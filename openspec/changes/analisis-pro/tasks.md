@@ -18,16 +18,16 @@ un servidor de prueba en otro puerto y una copia de la base.
 
 ## Phase 2: modelo
 
-- [ ] 2.1 Tanda v2 sin tipo de cuenta (REQ-PRO-01)
-- [ ] 2.2 La primera tanda define los temas (REQ-PRO-02)
-- [ ] 2.3 Síntesis v2 con los números del servidor (REQ-PRO-03, REQ-PRO-05, REQ-PRO-06)
-- [ ] 2.4 Informe de 8 puntos y CSV de comentarios (REQ-PRO-09)
+- [x] 2.1 Tanda v2 sin tipo de cuenta (REQ-PRO-01)
+- [x] 2.2 La primera tanda define los temas (REQ-PRO-02)
+- [x] 2.3 Síntesis v2 con los números del servidor (REQ-PRO-03, REQ-PRO-05, REQ-PRO-06)
+- [x] 2.4 Informe de 8 puntos y CSV de comentarios (REQ-PRO-09)
 
 ## Phase 3: servidor
 
-- [ ] 3.1 `src/analysisMetrics.js` (REQ-PRO-04, REQ-PRO-05, REQ-PRO-07, REQ-PRO-08)
-- [ ] 3.2 Pasos y porcentaje (REQ-PRO-13)
-- [ ] 3.3 El trabajo v2 y las columnas
+- [x] 3.1 `src/analysisMetrics.js` (REQ-PRO-04, REQ-PRO-05, REQ-PRO-07, REQ-PRO-08)
+- [x] 3.2 Pasos y porcentaje (REQ-PRO-13)
+- [x] 3.3 El trabajo v2 y las columnas
 - [ ] 3.4 Rutas: galería, forma completa, PATCH de temas, CSV, compatibilidad con la solapa de la fase E (REQ-PRO-10, REQ-PRO-12)
 - [ ] 3.5 `/api/figuras` (REQ-PRO-06)
 

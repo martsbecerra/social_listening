@@ -1,65 +1,19 @@
 // ==========================================================================
 // sentimentAggregate.js
 // --------------------------------------------------------------------------
-// Cálculo determinístico de métricas cuantitativas del reporte.
-// Claude solo clasifica comentarios; acá aplicamos pesos, porcentajes y KPI
-// según la metodología (antes estaba “a ojo” en el LLM).
+// Cálculo determinístico de métricas cuantitativas del análisis de
+// Instagram: cantidades por tono, nivel de rendimiento y formatos. El
+// porcentaje ponderado por tipo de cuenta del informe institucional se fue
+// con la fase F (no hay tipo de cuenta en Instagram; el tono ponderado por
+// likes vive en src/analysisMetrics.js). X tiene sus KPI en src/x/kpis.js.
 // ==========================================================================
-
-// Pesos por tipo de cuenta (metodología §3). "ruido" no tiene peso: se excluye.
-const ACCOUNT_WEIGHT = {
-  oficial: 2.5,
-  periodista: 2.0,
-  opositor: 1.8,
-  vecino: 1.0,
-};
 
 // Índices 0–3 usados en levelFromViews / levelFromInteractions.
 const PERFORMANCE_LEVELS = ['Bajo', 'Medio', 'Alto', 'Muy Alto'];
 
 /**
- * Suma pesos de comentarios positivos vs negativos y devuelve % enteros que suman 100.
- * Neutral y ruido no entran al cálculo, ni los comentarios sin clasificar
- * (null: su tanda falló o el modelo no los devolvió).
- *
- * @param {Array<{ sentiment: string, accountType: string } | null>} rows
- * @returns {{ positivoPct: number, negativoPct: number, weightedPos: number, weightedNeg: number }}
- */
-function computeWeightedSentimentPercentages(rows) {
-  let weightedPos = 0;
-  let weightedNeg = 0;
-
-  for (const row of rows) {
-    if (!row) continue;
-    const { sentiment, accountType } = row;
-    if (sentiment === 'neutral' || sentiment === 'ruido' || accountType === 'ruido') {
-      continue;
-    }
-    if (sentiment !== 'positivo' && sentiment !== 'negativo') continue;
-
-    const weight = ACCOUNT_WEIGHT[accountType] ?? ACCOUNT_WEIGHT.vecino;
-    if (sentiment === 'positivo') weightedPos += weight;
-    else weightedNeg += weight;
-  }
-
-  const total = weightedPos + weightedNeg;
-  // Sin comentarios clasificables: evitamos división por cero; 50/50 es convención.
-  if (total === 0) {
-    return { positivoPct: 50, negativoPct: 50, weightedPos: 0, weightedNeg: 0 };
-  }
-
-  // Redondeamos positivo y negativo = 100 - positivo para cumplir la regla del reporte.
-  let positivoPct = Math.round((weightedPos / total) * 100);
-  if (positivoPct < 0) positivoPct = 0;
-  if (positivoPct > 100) positivoPct = 100;
-  const negativoPct = 100 - positivoPct;
-
-  return { positivoPct, negativoPct, weightedPos, weightedNeg };
-}
-
-/**
- * Cuántos comentarios clasificados hay de cada tono, sin pesos: lo que
- * muestra la pantalla del análisis (el informe usa el ponderado de arriba).
+ * Cuántos comentarios clasificados hay de cada tono, sin pesos (las
+ * columnas positivos / neutrales / negativos / ruido de la fila).
  * Los sin clasificar (null) no cuentan.
  * @param {Array<{ sentiment: string } | null>} rows
  * @returns {{ positivos: number, neutrales: number, negativos: number, ruido: number }}
@@ -147,8 +101,6 @@ function formatViewsShort(n) {
 }
 
 module.exports = {
-  ACCOUNT_WEIGHT,
-  computeWeightedSentimentPercentages,
   countTones,
   computePostInteractions,
   computePerformanceLevel,

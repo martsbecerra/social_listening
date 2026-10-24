@@ -2,24 +2,29 @@
 // analyzeComments.js
 // --------------------------------------------------------------------------
 // El análisis de publicación de Instagram con el modelo (Anthropic u
-// OpenRouter), en dos partes:
+// OpenRouter). Desde la fase F (openspec/changes/analisis-pro):
 //   1) Muestra estable (commentSample.js): sin repetidos, en orden fijo,
 //      hasta COMMENTS_ANALYSIS_LIMIT (300 por defecto).
-//   2) Clasificación en TANDAS de BATCH_SIZE (100) comentarios por llamada,
-//      hasta BATCH_CONCURRENCY a la vez: tono, tipo de cuenta y reclamos con
-//      ubicación (TANDA_JSON_SCHEMA). Una tanda que falla deja sus
+//   2) Clasificación en TANDAS de BATCH_SIZE (100) comentarios por llamada:
+//      por comentario tono, postura hacia la gestión, tema, si habla del
+//      posteo, si pide algo y reclamos con ubicación (TANDA_JSON_SCHEMA). La
+//      primera tanda va SOLA y define los temas de la publicación; las demás
+//      (hasta BATCH_CONCURRENCY a la vez) reciben esa lista y pueden sumar
+//      temas nuevos, que se unen por nombre. Una tanda que falla deja sus
 //      comentarios sin clasificar (null) y el análisis sigue; si fallan
-//      todas, tira. Antes era una sola llamada con todo, y 300 comentarios
-//      chocaban con el tope de salida del modelo.
-//   3) Síntesis: con todo lo clasificado, los textos del informe y hasta 8
-//      temas con los números de sus comentarios (SINTESIS_JSON_SCHEMA).
-//   4) Registro de cuentas, reclamos (subcategoría y guardado, conservando
-//      la gestión de los que ya existían) y el reporte (reportBuilder.js).
-// "Analizados" son los clasificados de verdad: lo que el modelo no devolvió
-// no cuenta (validateAnalysis.js ya no lo completa como neutral), y un tema
-// solo nombra comentarios clasificados.
-// Si algo tira después de alguna llamada, el error lleva lo ya gastado en
-// el modelo (err.tokenUsage): la fila del análisis lo guarda igual.
+//      todas, tira con el mensaje del proveedor.
+//   3) Verificados y figuras públicas: todos los que comentaron se cruzan
+//      con la tabla figuras_publicas.
+//   4) Reclamos (subcategoría y guardado, conservando la gestión de los que
+//      ya existían).
+//   5) Síntesis: con los números ya contados (analysisMetrics.js), la
+//      lectura, el hecho dominante, los pedidos agrupados, qué mirar y
+//      sugerencias de rol para verificados sin ficha, que quedan en la tabla
+//      como "sugerida" (nunca pisan una fila del equipo).
+// Sin tipo de cuenta ni registro de cuentas: la postura lo reemplaza.
+// "Analizados" son los clasificados de verdad. Si algo tira después de
+// alguna llamada, el error lleva lo ya gastado en el modelo (err.tokenUsage):
+// la fila del análisis lo guarda igual.
 //
 // El LLM y la subcategoría se llaman por el objeto del módulo (llm.,
 // clasificarReclamo.) para que los tests los puedan reemplazar.
@@ -28,27 +33,29 @@
 const { TANDA_SYSTEM_PROMPT, SINTESIS_SYSTEM_PROMPT } = require('./prompt');
 const { TANDA_JSON_SCHEMA, SINTESIS_JSON_SCHEMA } = require('./analysisSchema');
 const { prepareCommentSample } = require('./commentSample');
-const { normalizeBatchClassifications, applyHeuristicsToClassified, normalizeSynthesis } = require('./validateAnalysis');
-const { buildWhatsAppReport } = require('./reportBuilder');
+const { normalizeBatchClassifications, normalizeTemasDeTanda, applyHeuristicsToClassified, normalizeSynthesis } = require('./validateAnalysis');
+const { buildReclamosCsv } = require('./reportBuilder');
 const { countTones } = require('./sentimentAggregate');
 const { buildBatchPrompt, buildSynthesisPrompt } = require('./userPrompt');
+const { buildAnalysisView } = require('./analysisMetrics');
 const llm = require('./llm');
 const { getLlmProvider, getProviderLabel } = require('./llm/providerConfig');
 const { buildReclamosFromAnalysis } = require('./reclamosFromAnalysis');
 const clasificarReclamo = require('./clasificarReclamo');
 const { addTokenUsage } = require('./llm/usage');
 const db = require('./db');
-const {
-  loadAccountRegistry,
-  updateAccountRegistry,
-  applyRegistryAccountTypes,
-  recordAccountTypesFromRun,
-} = require('./accountRegistry');
 
 const BATCH_SIZE = 100;
 const BATCH_CONCURRENCY = 3;
-const BATCH_MAX_TOKENS = 8000;
+const BATCH_MAX_TOKENS = 12000;
 const SYNTHESIS_MAX_TOKENS = 6000;
+// Tope de temas de una publicación: los que lleguen después quedan sin tema.
+const MAX_TEMAS_ANALISIS = 15;
+// La muestra de la síntesis: lo que más pesa, sin mandar los 300 de nuevo.
+const MUESTRA_TOP = 40;
+const MUESTRA_PEDIDOS = 80;
+const MUESTRA_HECHO = 25;
+const MUESTRA_MAX = 160;
 const INT = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 });
 
 const NO_PASOS = { start() {}, update() {}, done() {}, skip() {}, fail() {} };
@@ -79,14 +86,83 @@ function llmError(err, provider) {
   return e;
 }
 
+// Sin acentos ni mayúsculas ni espacios de más: "Seguridad en el parque" y
+// "seguridad en el Parque" son el mismo tema.
+function claveTema(nombre) {
+  return String(nombre || '')
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+/** La lista de temas del análisis: ids desde 1, unidos por nombre. */
+function crearTemas() {
+  const lista = [];
+  const porClave = new Map();
+  return {
+    lista,
+    /** @returns {number|null} el id (el existente si el nombre ya está); null pasado el tope. */
+    agregar(nombre) {
+      const clave = claveTema(nombre);
+      if (!clave) return null;
+      if (porClave.has(clave)) return porClave.get(clave);
+      if (lista.length >= MAX_TEMAS_ANALISIS) return null;
+      const id = lista.length + 1;
+      lista.push({ id, nombre: String(nombre).replace(/\s+/g, ' ').trim() });
+      porClave.set(clave, id);
+      return id;
+    },
+    paraPrompt() {
+      return lista.map((t) => ({ numero: t.id, nombre: t.nombre }));
+    },
+  };
+}
+
+/** Los comentarios como los guarda la fila (v2), numerados desde 1 en la muestra. */
+function comentariosParaGuardar(sample, classifications) {
+  return sample.map((c, i) => {
+    const row = classifications[i];
+    return {
+      n: i + 1,
+      usuario: c.username,
+      verificada: Boolean(c.isVerified),
+      likes: c.likesCount ?? null,
+      fecha: c.timestamp || null,
+      texto: c.text,
+      tono: row ? row.sentiment : null,
+      postura: row ? row.postura : null,
+      tema: row ? row.temaId : null,
+      sobrePosteo: row ? row.sobrePosteo : null,
+      pedido: row ? row.pedido : null,
+    };
+  });
+}
+
+/** La muestra que lee la síntesis: los pedidos, los de más likes, los del tema principal fuera del posteo y los verificados. */
+function muestraParaSintesis(vista) {
+  const porLikes = (a, b) => (b.likes || 0) - (a.likes || 0) || a.n - b.n;
+  const clasificados = vista.comentarios.filter((c) => c.tono !== null);
+  const principal = vista.sobrePosteo && vista.sobrePosteo.desvios.length ? vista.sobrePosteo.desvios[0].temaId : null;
+  const elegidos = new Map();
+  const sumar = (lista) => lista.forEach((c) => elegidos.size < MUESTRA_MAX && elegidos.set(c.n, c));
+  sumar(clasificados.filter((c) => c.pedido).sort(porLikes).slice(0, MUESTRA_PEDIDOS));
+  sumar([...clasificados].sort(porLikes).slice(0, MUESTRA_TOP));
+  if (principal !== null) sumar(clasificados.filter((c) => c.temaId === principal && c.sobrePosteo === false).sort(porLikes).slice(0, MUESTRA_HECHO));
+  sumar(clasificados.filter((c) => c.verificada));
+  return [...elegidos.values()].sort((a, b) => a.n - b.n);
+}
+
 /**
  * @param {{ url: string, post: object, comments: Array, pasos?: { start: Function, update: Function, done: Function, skip: Function, fail: Function } }} params
  *   pasos: los avisos del progreso (src/analysisProgress.js) para los pasos
- *   'tono', 'temas' y 'reclamos'; opcional.
- * @returns {Promise<object>} el reporte (report, csv, temas, reportParts),
- *   lo que guarda la fila del análisis (qualitative, sample,
- *   classifications, tonos, numeros, metricas, reclamos) y tokenUsage.
- *   Si tira, el error lleva err.tokenUsage con lo ya gastado.
+ *   'clasificar', 'verificados', 'reclamos' e 'informe' (este lo arranca acá
+ *   la síntesis y lo cierra el trabajo al guardar).
+ * @returns {Promise<object>} sample, classifications (con temaId), temas,
+ *   comentarios (como los guarda la fila), sintesis, tonos, numeros,
+ *   reclamos, reclamosCsv y tokenUsage. Si tira, el error lleva
+ *   err.tokenUsage con lo ya gastado.
  */
 async function analyzeComments(params) {
   const gasto = { tokenUsage: null };
@@ -101,91 +177,91 @@ async function analyzeComments(params) {
 /** El análisis en sí; `gasto.tokenUsage` va sumando cada llamada al modelo. */
 async function analizar({ url, post, comments, pasos = NO_PASOS }, gasto) {
   const provider = getLlmProvider();
-  const registry = await loadAccountRegistry();
-  const { sample, total: unicos, isPartial: recortadaPorLaApp } = prepareCommentSample(comments);
+  const { sample, total: unicos } = prepareCommentSample(comments);
   const sumUsage = (usage) => {
     if (usage) gasto.tokenUsage = gasto.tokenUsage ? addTokenUsage(gasto.tokenUsage, usage) : usage;
   };
 
-  // ---- 1) tandas
+  // ---- 1) clasificar: la primera tanda sola define los temas; las demás los reusan
   const tandas = chunk(sample, BATCH_SIZE);
   const porTanda = new Array(tandas.length);
+  const temas = crearTemas();
   let hechos = 0;
   let fallidas = 0;
   let ultimoError = null;
-  const tonoDesde = Date.now();
-  pasos.start('tono', `0 de ${INT.format(sample.length)}`);
-  await runPool(
-    tandas.map((tanda, t) => async () => {
-      try {
-        const result = await llm.requestStructuredAnalysis({
-          system: TANDA_SYSTEM_PROMPT,
-          userPrompt: buildBatchPrompt({ url, post, batch: tanda, numero: t + 1, tandas: tandas.length, registry }),
-          schema: TANDA_JSON_SCHEMA,
-          schemaName: 'tanda_instagram',
-          maxTokens: BATCH_MAX_TOKENS,
-        });
-        porTanda[t] = normalizeBatchClassifications(result.parsed && result.parsed.classifications, tanda.length);
-        sumUsage(result.usage);
-      } catch (err) {
-        porTanda[t] = new Array(tanda.length).fill(null);
-        fallidas += 1;
-        ultimoError = err;
-        console.warn(`[analisis] la tanda ${t + 1} de ${tandas.length} falló (${tanda.length} comentarios sin clasificar): ${err && err.message}`);
+  const desde = Date.now();
+  const total = sample.length;
+  pasos.start('clasificar', `0 de ${INT.format(total)}`);
+  pasos.update('clasificar', `0 de ${INT.format(total)}`, { avance: 0 });
+  const correrTanda = async (t) => {
+    const tanda = tandas[t];
+    const lista = temas.paraPrompt();
+    try {
+      const result = await llm.requestStructuredAnalysis({
+        system: TANDA_SYSTEM_PROMPT,
+        userPrompt: buildBatchPrompt({ url, post, batch: tanda, numero: t + 1, tandas: tandas.length, temas: lista }),
+        schema: TANDA_JSON_SCHEMA,
+        schemaName: 'tanda_instagram',
+        maxTokens: BATCH_MAX_TOKENS,
+      });
+      sumUsage(result.usage);
+      const parsed = result.parsed || {};
+      // Los números de la tanda → los ids del análisis: los de la lista que
+      // recibió quedan; los nuevos se unen por nombre.
+      const deLaLista = new Set(lista.map((x) => x.numero));
+      const nuevos = new Map();
+      for (const x of normalizeTemasDeTanda(parsed.temas)) {
+        if (!deLaLista.has(x.numero)) nuevos.set(x.numero, temas.agregar(x.nombre));
       }
-      // Solo lo clasificado: una tanda caída no avanza el contador.
-      hechos += porTanda[t].filter(Boolean).length;
-      pasos.update('tono', `${INT.format(hechos)} de ${INT.format(sample.length)}`);
-    }),
+      const idDe = (n) => (deLaLista.has(n) ? n : nuevos.has(n) ? nuevos.get(n) : null);
+      porTanda[t] = normalizeBatchClassifications(parsed.classifications, tanda.length).map((row) => (row ? { ...row, temaId: row.tema ? idDe(row.tema) : null } : null));
+    } catch (err) {
+      porTanda[t] = new Array(tanda.length).fill(null);
+      fallidas += 1;
+      ultimoError = err;
+      console.warn(`[analisis] la tanda ${t + 1} de ${tandas.length} falló (${tanda.length} comentarios sin clasificar): ${err && err.message}`);
+    }
+    // Solo lo clasificado: una tanda caída no avanza el contador.
+    hechos += porTanda[t].filter(Boolean).length;
+    pasos.update('clasificar', `${INT.format(hechos)} de ${INT.format(total)}`, { avance: total ? hechos / total : 1 });
+  };
+  if (tandas.length) await correrTanda(0);
+  await runPool(
+    tandas.slice(1).map((_, k) => () => correrTanda(k + 1)),
     BATCH_CONCURRENCY
   );
-  let classifications = porTanda.flat();
-  classifications = applyHeuristicsToClassified(sample, classifications);
-  classifications = classifications.map((row, i) => (row ? applyRegistryAccountTypes([sample[i]], [row], registry)[0] : null));
+  let classifications = applyHeuristicsToClassified(sample, porTanda.flat());
+  // El ruido no tiene tema (las heurísticas lo dejan en 0).
+  classifications = classifications.map((row) => (row && !row.tema ? { ...row, temaId: null } : row));
   const analizados = classifications.filter(Boolean).length;
   if (analizados === 0) {
-    pasos.fail('tono', 'no se pudo clasificar');
+    pasos.fail('clasificar', 'no se pudo clasificar');
     // El error del proveedor trae el mensaje que sirve (sin crédito, clave
     // inválida, modelo sin schema): reintentar no lo arregla.
     throw llmError(ultimoError || new Error('ninguna tanda devolvió clasificaciones'), provider);
   }
-  const segundos = Math.round((Date.now() - tonoDesde) / 1000);
+  const segundos = Math.round((Date.now() - desde) / 1000);
+  const tandasTexto = `${tandas.length} ${tandas.length === 1 ? 'tanda' : 'tandas'}`;
   pasos.done(
-    'tono',
-    `${INT.format(analizados)} clasificados · ${segundos} s${fallidas ? ` · ${fallidas === 1 ? 'una tanda falló' : `${fallidas} tandas fallaron`}` : ''}`
+    'clasificar',
+    `${INT.format(analizados)} de ${INT.format(total)} · ${tandasTexto} · ${segundos} s${fallidas ? ` · ${fallidas === 1 ? 'una tanda falló' : `${fallidas} tandas fallaron`}` : ''}`
+  );
+  const comentarios = comentariosParaGuardar(sample, classifications);
+  const temasV2 = { version: 2, lista: temas.lista.map((t) => ({ id: t.id, nombre: t.nombre })) };
+
+  // ---- 2) verificados y figuras públicas: todos los que comentaron, contra la tabla
+  pasos.start('verificados');
+  const figuras = db.getFigurasPorUsernames(sample.map((c) => c.username));
+  const verificados = new Set(sample.filter((c) => c.isVerified).map((c) => String(c.username || '').toLowerCase()));
+  // Con ficha = confirmada por el equipo; una sugerida el modelo la puede
+  // volver a sugerir (se actualiza) y en pantalla va como "sugerido".
+  const conFicha = new Set([...figuras.entries()].filter(([, x]) => x.origen === 'equipo').map(([u]) => u));
+  pasos.done(
+    'verificados',
+    `${verificados.size === 1 ? '1 verificado' : `${INT.format(verificados.size)} verificados`} · ${conFicha.size === 1 ? '1 figura pública' : `${conFicha.size} figuras públicas`}`
   );
 
-  // ---- 2) síntesis
-  const temasDesde = Date.now();
-  pasos.start('temas');
-  let qualitative;
-  try {
-    const result = await llm.requestStructuredAnalysis({
-      system: SINTESIS_SYSTEM_PROMPT,
-      userPrompt: buildSynthesisPrompt({ url, post, sample, classifications, analizados }),
-      schema: SINTESIS_JSON_SCHEMA,
-      schemaName: 'sintesis_instagram',
-      maxTokens: SYNTHESIS_MAX_TOKENS,
-    });
-    const clasificados = new Set(classifications.map((row, i) => (row ? i + 1 : null)).filter(Boolean));
-    qualitative = normalizeSynthesis(result.parsed, sample.length, clasificados);
-    sumUsage(result.usage);
-  } catch (err) {
-    pasos.fail('temas', 'falló');
-    throw llmError(err, provider);
-  }
-  const nTemas = qualitative.temasConversacion.length;
-  pasos.done('temas', `${nTemas === 1 ? '1 tema' : `${nTemas} temas`} · ${Math.round((Date.now() - temasDesde) / 1000)} s`);
-
-  // ---- 3) registro de cuentas: sobre el archivo de ahora, no sobre el que
-  // se leyó al empezar (otro análisis pudo sumar cuentas mientras tanto).
-  try {
-    await updateAccountRegistry((actual) => recordAccountTypesFromRun(sample, classifications, actual));
-  } catch (err) {
-    console.warn('No se pudo guardar account-types.json:', err.message);
-  }
-
-  // ---- 4) reclamos: la categoría ya vino en la tanda; la subcategoría es
+  // ---- 3) reclamos: la categoría ya vino en la tanda; la subcategoría es
   // una llamada aparte para todos (clasificarReclamo.js), que nunca tira.
   const reclamos = buildReclamosFromAnalysis({ url, sample, classifications });
   if (reclamos.length > 0) {
@@ -213,38 +289,53 @@ async function analizar({ url, post, comments, pasos = NO_PASOS }, gasto) {
     pasos.skip('reclamos', 'sin reclamos con ubicación');
   }
 
-  // ---- 5) el reporte
-  const totalPost = Number.isFinite(post.commentsCount) ? post.commentsCount : null;
-  const isPartial = totalPost !== null ? analizados < totalPost : analizados < unicos;
-  const reportResult = buildWhatsAppReport({
-    url,
-    post,
-    sample,
-    isPartial,
-    sampleSize: analizados,
-    totalComments: unicos,
-    classifications,
-    qualitative,
-    analizados,
-    totalPost: totalPost !== null ? totalPost : unicos,
-    priorizada: recortadaPorLaApp,
-  });
+  // ---- 4) síntesis, con los números del servidor
+  pasos.start('informe', 'lectura, hecho dominante y pedidos');
+  const vista = buildAnalysisView(
+    { resultado: { version: 2 }, temas: temasV2, comentarios, analizados, postedAt: post.postedAt, comentariosTotal: post.commentsCount },
+    { figuras }
+  );
+  const verificadosSinFicha = [...verificados].filter((u) => !conFicha.has(u)).sort();
+  let sintesis;
+  try {
+    const result = await llm.requestStructuredAnalysis({
+      system: SINTESIS_SYSTEM_PROMPT,
+      userPrompt: buildSynthesisPrompt({ url, post, vista, muestra: muestraParaSintesis(vista), verificadosSinFicha }),
+      schema: SINTESIS_JSON_SCHEMA,
+      schemaName: 'sintesis_instagram',
+      maxTokens: SYNTHESIS_MAX_TOKENS,
+    });
+    sumUsage(result.usage);
+    sintesis = normalizeSynthesis(result.parsed, {
+      temasValidos: new Set(temasV2.lista.map((t) => t.id)),
+      comentariosValidos: new Set(comentarios.filter((c) => c.tono !== null).map((c) => c.n)),
+      verificadosSinFicha: new Set(verificadosSinFicha),
+    });
+  } catch (err) {
+    pasos.fail('informe', 'falló la lectura');
+    throw llmError(err, provider);
+  }
+  // Las sugerencias quedan en la tabla como "sugerida" (nunca pisan al equipo).
+  for (const s of sintesis.figurasSugeridas) {
+    try {
+      db.upsertFiguraSugerida(s);
+    } catch (err) {
+      console.warn(`[analisis] no se pudo guardar la sugerencia de @${s.username}: ${err && err.message}`);
+    }
+  }
 
   return {
-    ...reportResult,
-    qualitative,
     sample,
     classifications,
+    temas: temasV2,
+    comentarios,
+    sintesis,
     tonos: countTones(classifications),
     numeros: { traidos: comments.length, unicos, enviados: sample.length, analizados, tandas: tandas.length, fallidas },
-    metricas: {
-      positivoPct: reportResult.meta.positivoPct,
-      negativoPct: reportResult.meta.negativoPct,
-      nivel: reportResult.meta.performanceLevel,
-    },
     reclamos: reclamos.length,
+    reclamosCsv: buildReclamosCsv(sample, classifications),
     tokenUsage: gasto.tokenUsage,
   };
 }
 
-module.exports = { analyzeComments, BATCH_SIZE, BATCH_CONCURRENCY };
+module.exports = { analyzeComments, comentariosParaGuardar, claveTema, BATCH_SIZE, BATCH_CONCURRENCY, MAX_TEMAS_ANALISIS };
