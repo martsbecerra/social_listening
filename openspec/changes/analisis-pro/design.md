@@ -6,9 +6,10 @@ El trabajo de la fase E (`src/analysisJob.js`) no cambia de forma: trae la
 publicación y los comentarios, llama a `analyzeComments` y deja la fila.
 Lo que cambia es qué pide al modelo y qué se guarda.
 
-1. **Clasificar** (`analyzeComments`): la muestra en tandas de 100. La
+1. **Clasificar** (`analyzeComments`): la muestra en tandas de 50 (eran
+   100 hasta la corrida real: ver "Lo que mostró la corrida real"). La
    tanda 1 va sola: clasifica y define la lista de temas de la
-   publicación. Las tandas 2..n van de a 3 en paralelo con esa lista;
+   publicación. Las tandas 2..n van de a 5 en paralelo con esa lista;
    cada una puede devolver temas nuevos, que se unen a la lista global por
    nombre normalizado (sin acentos ni mayúsculas). Por comentario: tono
    (positivo / neutral / negativo / ruido), postura (favor / neutra /
@@ -82,7 +83,7 @@ necesitan campos v2 dicen que no están disponibles.
     POST /api/analyze ─→ analysisJob.run
        ├─ Apify: publicación + comentarios (como en E)
        └─ analyzeComments
-            ├─ tanda 1 (define temas) ─→ tandas 2..n (de a 3, reusan y suman)
+            ├─ tanda 1 (define temas) ─→ tandas 2..n (de a 5, reusan y suman)
             ├─ verificados (figuras_publicas)
             ├─ reclamos (subcategoría, upsert)
             └─ síntesis (números del servidor) ─→ sugerencias → figuras
@@ -90,6 +91,35 @@ necesitan campos v2 dicen que no están disponibles.
 
     GET /api/analisis/:id ─→ analysisMetrics.buildAnalysisView(fila,
        figuras, reclamos del posteo, anteriores de la cuenta) ─→ forma completa
+
+## Lo que mostró la corrida real (24/10/2026)
+
+Una publicación de @jorgemacri con 385 comentarios según Instagram: Apify
+devolvió 155 ítems (150 comentarios con texto: solo los de primer nivel,
+como en la E). La tanda 1 (100 comentarios) se cortó en el tope de salida
+de 12.000 tokens, dos veces: el modelo razona antes de contestar y ese
+razonamiento cuenta para el tope (la tanda de 50 que anduvo gastó 10.653
+tokens de salida para un JSON de unos 2.000). El proveedor la reintentaba
+igual, y lo gastado en los dos intentos no quedaba en el costo del
+análisis. Quedaron 50 de 150 analizados. Cambios:
+
+- Tandas de 50 con 16.000 de tope, hasta 5 a la vez (los mismos ~250
+  comentarios en vuelo que antes con 3 × 100).
+- `SALIDA_CORTADA` (`src/llm/errors.js`): una respuesta cortada no se
+  reintenta igual; la tanda se parte en dos mitades, una después de la
+  otra, una sola vez.
+- Todo error de `requestStructuredAnalysis` lleva lo ya gastado y el
+  análisis lo suma, también en la síntesis.
+- El punto 1 del informe decía "la conversación responde al posteo" con
+  el 57 % desviado: ahora lo dice solo si la mayoría habla del posteo.
+- El modelo armó un tema "Comentarios de spam o ruido" que quedó con 0: un
+  tema del modelo sin comentarios no se muestra, y el prompt pide no
+  armarlo. Agrupó 8 pedidos, 6 de un solo comentario y varios irónicos: el
+  prompt pide dejar afuera las preguntas retóricas o en chiste.
+- El modelo no marcó hecho dominante sobre el tema principal fuera del
+  posteo (ataques personales, 30 % de los analizados): bien, no es un
+  hecho. No sugirió a los dos verificados sin ficha. La postura salió casi
+  igual que el tono (2 de 46 distintos).
 
 ## Testing Strategy
 

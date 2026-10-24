@@ -60,6 +60,7 @@ Ejemplo: "Qué lindo quedó, pero a Macri ni lo nombren" es tono positivo y post
 3. tema (el número de un tema de la lista de temas de la publicación)
 - Cada comentario va al tema que mejor lo describe. 0 si es ruido o no encaja en ninguno.
 - Los temas son concretos y de 2 a 5 palabras ("Vendedor de churros", "Iluminación del lago", "Pedidos para otros barrios"), sin número ni signos.
+- No armes un tema para el ruido, el spam ni los emojis sueltos: esos comentarios van con tema 0.
 - Si el mensaje dice "DEFINÍ LOS TEMAS": armá de 4 a 10 temas que cubran la conversación de esta tanda, numerados desde 1, devolvelos en "temas" y usalos.
 - Si el mensaje trae una LISTA DE TEMAS: usala. Si un asunto que se repite en esta tanda no entra en ninguno, sumalo a "temas" con el número que sigue al último de la lista (como mucho 3 nuevos por tanda). Si no sumás ninguno, "temas" va vacío.
 
@@ -68,8 +69,8 @@ Ejemplo: "Qué lindo quedó, pero a Macri ni lo nombren" es tono positivo y post
 - false si usa el posteo para hablar de otra cosa (otro hecho, otro barrio, la política en general, un reclamo ajeno al posteo).
 
 5. pedido
-- true si pide algo concreto o pregunta ("¿y para Lugano cuándo?", "pongan baños", "¿cuánto costó?").
-- false si no.
+- true si pide algo concreto o pregunta en serio ("¿y para Lugano cuándo?", "pongan baños", "¿cuánto costó?").
+- false si no, y también si la pregunta es retórica, irónica o un chiste ("¿te arrodillaste?", "¿quién te votó?").
 
 6. Reclamos geolocalizables (reclamosGeo)
 Generá una entrada SOLO si el comentario menciona una ubicación ACCIONABLE, es decir, un lugar al que se podría mandar una cuadrilla. Ser estricto acá importa más que no perderse un caso: una ubicación inventada ensucia el mapa para siempre.
@@ -135,7 +136,7 @@ Los comentarios del mensaje del usuario YA están clasificados (tono, postura, t
 
 - lectura: la lectura estratégica, de 3 a 5 oraciones: qué pasó en la conversación, cómo se recibió el posteo y qué conviene saber. Tono de informe, sin @ ni URLs.
 - hecho_dominante: mirá el TEMA PRINCIPAL FUERA DEL POSTEO. hay = true SOLO si es un hecho concreto (algo que pasó: un operativo, un video que circuló, un accidente, una declaración), no una queja genérica (impuestos, inseguridad en general, "¿y para mi barrio?"). Con hay = true: tema = el número de ese tema; titulo = una frase que nombre el hecho; descripcion = una o dos oraciones con lo que se sabe por los comentarios, sin inventar. Con hay = false: tema 0, titulo y descripcion vacíos.
-- pedidos: agrupá los comentarios marcados PEDIDO por lo que piden o preguntan (hasta 8 grupos). texto = lo que piden, en una línea; ids = los números de los comentarios de ese grupo. Cada comentario, en un solo grupo. Si no hay pedidos, [].
+- pedidos: agrupá los comentarios marcados PEDIDO por lo que piden o preguntan (hasta 8 grupos). texto = lo que piden, en una línea; ids = los números de los comentarios de ese grupo. Cada comentario, en un solo grupo. Juntá los que piden lo mismo aunque lo digan distinto. Dejá afuera las preguntas irónicas o en chiste aunque estén marcadas PEDIDO. Si no hay pedidos, [].
 - que_mirar: una o dos oraciones, una sugerencia práctica para el equipo de comunicación.
 - figuras_sugeridas: SOLO para los usuarios de la sección VERIFICADOS SIN FICHA. Si por el usuario y lo que escribió es claramente una figura pública, sugerí su rol y su alineación. Ante la duda, no lo incluyas. Nunca incluyas a alguien que no está en esa sección. Roles:
 ${ROLES_PARA_PROMPT}

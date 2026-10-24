@@ -97,11 +97,18 @@ function buildInforme(vista) {
   lineas.push(`♥ ${formatCountWithDots(vista.likes)} · 💬 ${formatCountWithDots(vista.comentariosTotal)} comentarios (${analizados})`);
   lineas.push('');
 
-  // 1) lo que pasó
+  // 1) lo que pasó. Sin hecho, "responde al posteo" solo si la mayoría habla
+  // del posteo (corrida real del 24/10: lo decía con el 57 % desviado).
   let hechoTexto;
+  const sp = vista.sobrePosteo;
+  const fuera = sp && Number.isFinite(sp.proporcion) && sp.base > 0 ? 1 - sp.proporcion : null;
   if (!vista.disponible.hecho) hechoTexto = NO_DISPONIBLE;
   else if (vista.hecho) hechoTexto = `el ${pct(vista.hecho.proporcion)} de los comentarios habla de un mismo hecho ajeno al posteo: ${vista.hecho.titulo}.`;
-  else hechoTexto = 'sin un hecho dominante; la conversación responde al posteo.';
+  else if (fuera !== null && fuera >= 0.5) {
+    const adonde = sp.desvios.length ? `, sobre todo a ${sp.desvios[0].tema}` : '';
+    // Lo que falta para 100 del punto 4, así los dos suman lo mismo.
+    hechoTexto = `sin un hecho dominante, pero el ${100 - Math.round(sp.proporcion * 100)} % se desvía del posteo${adonde}.`;
+  } else hechoTexto = 'sin un hecho dominante; la conversación responde al posteo.';
   lineas.push(`1) *Lo que pasó:* ${hechoTexto}`);
 
   // 2) tono

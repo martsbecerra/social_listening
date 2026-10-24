@@ -52,7 +52,7 @@ social_listening_app/
 │   ├── analysisRoutes.js     # Rutas del análisis: POST /api/analyze, progreso, galería, temas, CSV, foto.
 │   ├── analysisMetrics.js    # Todo lo numérico del análisis, calculado al leer la fila (fase F).
 │   ├── analysisTemas.js      # Renombrar, unir, agregar y quitar temas de un análisis.
-│   ├── analyzeComments.js    # El modelo: tandas de 100 comentarios, figuras públicas y síntesis.
+│   ├── analyzeComments.js    # El modelo: tandas de 50 comentarios, figuras públicas y síntesis.
 │   ├── figuras.js            # Figuras públicas: roles, alineaciones y validación.
 │   ├── figurasRoutes.js      # /api/figuras: la lista de figuras públicas.
 │   ├── commentTimeline.js    # "Cuándo comentaron": comentarios por tramo desde la publicación.
@@ -169,7 +169,7 @@ social_listening_app/
   arma "Cuándo comentaron" y deja todo en la fila con el gasto. Lo arranca
   `POST /api/analyze` (`src/analysisRoutes.js`), que responde el id sin
   esperar.
-- **`src/analyzeComments.js`**: muestra estable, tandas de 100 comentarios
+- **`src/analyzeComments.js`**: muestra estable, tandas de 50 comentarios
   por llamada al modelo (tono, postura hacia la gestión, tema, si habla del
   posteo, si pide algo y reclamos; la primera tanda define los temas), el
   cruce con las figuras públicas y una síntesis que escribe la lectura, el
@@ -1212,9 +1212,12 @@ nada ni vuelve a gastar, y el resultado queda en la tabla `analisis` y en
   defecto; un valor en el `.env` los pisa. Valen solo para Instagram: X
   sigue con 150 y su propia variable, `X_COMMENTS_ANALYSIS_LIMIT`, porque
   manda todo el hilo en una sola llamada. Se clasifican en **tandas de
-  100** por llamada (así no se choca con el tope de salida del modelo): la
-  primera sola, que define los temas de la publicación, y las demás con
-  esa lista. Después una síntesis escribe la lectura, el hecho dominante y
+  50** por llamada (así no se choca con el tope de salida del modelo, que
+  también cuenta lo que el modelo razona: en la corrida real del 24/10/2026
+  una tanda de 100 se cortó): la primera sola, que define los temas de la
+  publicación, y las demás con esa lista, hasta 5 a la vez. Si una
+  respuesta igual se corta, esa tanda se parte en dos en vez de pedirse
+  igual otra vez, y lo que gastó el intento cortado se suma al costo. Después una síntesis escribe la lectura, el hecho dominante y
   los pedidos. "Analizados" es lo que el modelo clasificó de verdad: si una
   tanda falla, sus comentarios no cuentan y el análisis sigue. La pantalla
   dice "analizados N de M" con M el total que informa Instagram.

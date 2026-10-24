@@ -12,9 +12,15 @@ Cada comentario clasificado MUST tener tono (positivo / neutral / negativo / rui
 
 #### Scenario: Una tanda que omite un comentario
 
-- GIVEN una tanda de 100 comentarios
-- WHEN el modelo devuelve 98
+- GIVEN una tanda de 50 comentarios
+- WHEN el modelo devuelve 48
 - THEN los 2 que faltan quedan sin clasificar y no cuentan como analizados
+
+#### Scenario: Una tanda cuya respuesta se corta por el tope de salida
+
+- GIVEN una tanda cuya respuesta llega al tope de salida (el razonamiento del modelo también cuenta)
+- WHEN el proveedor la devuelve cortada
+- THEN no se reintenta igual: la tanda va en dos mitades, una después de la otra, y lo gastado en el intento cortado se suma al costo del análisis
 
 ---
 

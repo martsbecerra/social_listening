@@ -1045,12 +1045,24 @@ públicas). La F va en dos PR: F1 (modelo y servidor, tag `v4-fase-f1`) y F2
   de un comentario son del comentario, nunca del posteo.
 - **Modelo, v2 desde la fase F** (`src/analyzeComments.js`, `prompt.js`,
   `userPrompt.js`, `analysisSchema.js`, `validateAnalysis.js`): la muestra
-  (`commentSample.js`) va en tandas de `BATCH_SIZE` 100 por llamada
-  (`TANDA_SYSTEM_PROMPT`, `TANDA_JSON_SCHEMA`). Por comentario: tono,
+  (`commentSample.js`) va en tandas de `BATCH_SIZE` 50 por llamada
+  (`TANDA_SYSTEM_PROMPT`, `TANDA_JSON_SCHEMA`), con `BATCH_MAX_TOKENS`
+  16.000 de tope de salida. Con un modelo que razona, el razonamiento
+  cuenta para ese tope: en la corrida real del 24/10/2026, 50 comentarios
+  gastaron 10.653 tokens de salida (el JSON, unos 2.000) y una tanda de 100
+  se cortó en 12.000, dos veces. Una respuesta cortada (`SALIDA_CORTADA`,
+  `src/llm/errors.js`: `finish_reason` `length` en OpenRouter,
+  `stop_reason` `max_tokens` en Anthropic) no se reintenta igual: la tanda
+  se parte en dos mitades, una después de la otra, una sola vez. Todo
+  error de `llm.requestStructuredAnalysis` lleva lo ya gastado
+  (`err.tokenUsage`, con su costo) y el análisis lo suma: un intento
+  fallido también se cobra. Por comentario: tono,
   postura hacia la gestión (`favor` | `neutra` | `critica`), tema (el
-  número de la lista; 0 ninguno), si habla del posteo, si pide algo y los
+  número de la lista; 0 ninguno, también el ruido: el modelo no arma un
+  tema para eso), si habla del posteo, si pide algo en serio (no una
+  pregunta irónica) y los
   reclamos con ubicación. La PRIMERA tanda va sola y define los temas
-  ("DEFINÍ LOS TEMAS"); las demás (hasta 3 a la vez) reciben esa lista
+  ("DEFINÍ LOS TEMAS"); las demás (hasta 5 a la vez) reciben esa lista
   ("LISTA DE TEMAS") y pueden sumar hasta 12 nuevos cada una, que se unen
   por nombre (`claveTema`: sin acentos, mayúsculas ni espacios de más; tope
   `MAX_TEMAS_ANALISIS` 15 por publicación; los que llegan después quedan
@@ -1088,7 +1100,8 @@ públicas). La F va en dos PR: F1 (modelo y servidor, tag `v4-fase-f1`) y F2
   y postura (sobre los clasificados sin el ruido; lo sin clasificar
   tampoco entra), el ponderado por likes (cada comentario pesa likes + 1),
   el tono neto, "hablan del posteo" y a qué se desvían, los temas (con sus
-  renombres y uniones), el hecho dominante, quién habló (verificados y
+  renombres y uniones; uno del modelo sin ningún comentario no sale, en un
+  v1 sí), el hecho dominante, quién habló (verificados y
   figuras públicas), los pedidos, etiquetas (@ mencionadas), emojis (sin
   tono de piel ni U+FE0F; una secuencia ZWJ cuenta por su primer emoji;
   listas fijas `APOYO` y `BRONCA`), los de más likes, el tiempo, la
@@ -1107,7 +1120,10 @@ públicas). La F va en dos PR: F1 (modelo y servidor, tag `v4-fase-f1`) y F2
 - **Informe y CSV** (`src/reportBuilder.js`): `buildInforme(vista)` es el
   de 8 puntos (lo que pasó, tono, postura, hablan del posteo, temas, quién
   habló, pedidos, lectura), más "Comentarios destacados" y el pie
-  `_Social Listening · DGAYD · dd/mm/aaaa_`. Reemplazó al institucional
+  `_Social Listening · DGAYD · dd/mm/aaaa_`. Sin hecho, el punto 1 dice
+  "la conversación responde al posteo" solo si la mayoría habla del
+  posteo; si no, cuánto se desvía (lo que falta para 100 del punto 4) y
+  adónde. Reemplazó al institucional
   solo en Instagram (X tiene el suyo, `src/x/reportBuilder.js`); Copiar y
   WhatsApp usan el mismo texto. Un rol y una alineación salen en el informe
   solo para una figura del equipo; una sugerida va como @usuario. Un v1

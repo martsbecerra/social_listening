@@ -145,6 +145,111 @@ describe('OpenRouter: timeout y reintento ante fallos transitorios', { concurren
   });
 });
 
+describe('OpenRouter: respuesta cortada por el tope de salida y lo gastado en los errores', { concurrency: false }, () => {
+  const originales = { fetch: global.fetch, warn: console.warn, error: console.error };
+  beforeEach(() => {
+    console.warn = () => {};
+    console.error = () => {};
+  });
+  afterEach(() => {
+    global.fetch = originales.fetch;
+    console.warn = originales.warn;
+    console.error = originales.error;
+  });
+  // Como en la corrida real del 24/10/2026: el razonamiento llenó el tope y el contenido vino vacío.
+  const CORTADA = { choices: [{ finish_reason: 'length', native_finish_reason: 'MAX_TOKENS', message: { content: '' } }], usage: { prompt_tokens: 6000, completion_tokens: 12000, total_tokens: 18000 } };
+  const INVALIDA = { choices: [{ finish_reason: 'stop', message: { content: '{"ok": tr' } }], usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } };
+
+  test('cortada: no se reintenta igual, tira SALIDA_CORTADA con lo gastado', async () => {
+    const llamadas = stubFetch([respuesta(200, CORTADA), respuesta(200, CONTENIDO_OK)]);
+    await assert.rejects(pedir({ maxTokens: 12000 }), (err) => {
+      assert.equal(err.code, 'SALIDA_CORTADA');
+      assert.match(err.message, /12000 tokens/);
+      assert.ok(err.userMessage);
+      assert.equal(err.tokenUsage.totalTokens, 18000);
+      return true;
+    });
+    assert.equal(llamadas.length, 1, 'otro intento igual se cortaría igual');
+  });
+
+  test('JSON inválido dos veces: dos intentos, y el error lleva lo de los dos', async () => {
+    const llamadas = stubFetch([respuesta(200, INVALIDA), respuesta(200, INVALIDA)]);
+    await assert.rejects(pedir(), (err) => {
+      assert.match(err.message, /contenido vacío o JSON inválido/);
+      assert.equal(err.tokenUsage.totalTokens, 30);
+      return true;
+    });
+    assert.equal(llamadas.length, 2);
+  });
+
+  test('un intento inválido y después un 402: el error del 402 lleva lo del primero', async () => {
+    stubFetch([respuesta(200, INVALIDA), respuesta(402, { error: { message: 'Insufficient credits' } })]);
+    await assert.rejects(pedir(), (err) => {
+      assert.ok(err.userMessage);
+      assert.equal(err.tokenUsage.totalTokens, 15);
+      return true;
+    });
+  });
+
+  test('por la fachada, lo gastado en el error lleva su costo estimado', async () => {
+    process.env.LLM_INPUT_USD_PER_MTOK = '2';
+    process.env.LLM_OUTPUT_USD_PER_MTOK = '10';
+    try {
+      stubFetch([respuesta(200, CORTADA)]);
+      await assert.rejects(llm.requestStructuredAnalysis({ system: 's', userPrompt: 'u', schema: SCHEMA, schemaName: 'test', timeoutMs: 1000 }), (err) => {
+        assert.equal(err.code, 'SALIDA_CORTADA');
+        assert.equal(err.tokenUsage.costSource, 'estimate_env');
+        assert.ok(Math.abs(err.tokenUsage.costUsd - (6000 * 2 + 12000 * 10) / 1e6) < 1e-9);
+        return true;
+      });
+    } finally {
+      delete process.env.LLM_INPUT_USD_PER_MTOK;
+      delete process.env.LLM_OUTPUT_USD_PER_MTOK;
+    }
+  });
+});
+
+describe('Anthropic: respuesta cortada por el tope de salida y lo gastado en los errores', { concurrency: false }, () => {
+  // El cliente del proveedor es interno: se reemplaza parse en el prototipo de Messages, que comparten todos.
+  const Anthropic = require('@anthropic-ai/sdk');
+  const anthropic = require('../src/llm/anthropicProvider');
+  const proto = Object.getPrototypeOf(new Anthropic({ apiKey: 'clave-de-test' }).messages);
+  const originales = { parse: proto.parse, warn: console.warn, error: console.error };
+  let respuestas;
+  let llamadas;
+  beforeEach(() => {
+    llamadas = 0;
+    console.warn = () => {};
+    console.error = () => {};
+    proto.parse = async () => respuestas[Math.min(llamadas++, respuestas.length - 1)];
+  });
+  afterEach(() => {
+    proto.parse = originales.parse;
+    console.warn = originales.warn;
+    console.error = originales.error;
+  });
+  const pedirA = () => anthropic.requestStructuredAnalysis({ system: 's', userPrompt: 'u', schema: SCHEMA, maxTokens: 16000 });
+
+  test('stop_reason max_tokens: no se reintenta, tira SALIDA_CORTADA con lo gastado', async () => {
+    respuestas = [{ stop_reason: 'max_tokens', parsed_output: null, usage: { input_tokens: 5000, output_tokens: 16000 } }];
+    await assert.rejects(pedirA(), (err) => {
+      assert.equal(err.code, 'SALIDA_CORTADA');
+      assert.equal(err.tokenUsage.outputTokens, 16000);
+      return true;
+    });
+    assert.equal(llamadas, 1);
+  });
+
+  test('sin resultado dos veces (no cortada): dos intentos, y el error lleva lo de los dos', async () => {
+    respuestas = [{ stop_reason: 'end_turn', parsed_output: null, usage: { input_tokens: 10, output_tokens: 5 } }];
+    await assert.rejects(pedirA(), (err) => {
+      assert.equal(err.tokenUsage.totalTokens, 30);
+      return true;
+    });
+    assert.equal(llamadas, 2);
+  });
+});
+
 describe('clasificarPosteo pide su timeout', { concurrency: false }, () => {
   test('60 s por llamada, pasado por la fachada src/llm', async () => {
     const original = llm.requestStructuredAnalysis;

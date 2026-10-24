@@ -7,7 +7,10 @@
 //
 // Dos modos de uso, con el mismo modelo:
 //   - requestStructuredAnalysis: response_format json_schema (análisis de
-//                                post y clasificador del monitoreo)
+//                                post y clasificador del monitoreo). Una
+//                                respuesta cortada por el tope de salida no
+//                                se reintenta (SALIDA_CORTADA) y todo error
+//                                lleva lo ya gastado (ver ./errors.js).
 //   - requestText:               texto plano (reclamos, importador)
 // Toda request tiene timeout (`timeoutMs`, ver DEFAULT_TIMEOUT_MS) y un
 // fallo transitorio (429, 5xx, corte de red, timeout) se reintenta UNA vez
@@ -17,6 +20,7 @@
 const { ANALYSIS_JSON_SCHEMA } = require('../analysisSchema');
 const { addTokenUsage, fromOpenRouterUsage } = require('./usage');
 const { getAnalysisModel } = require('./providerConfig');
+const { salidaCortadaError, conGasto } = require('./errors');
 
 const DEFAULT_BASE_URL = 'https://openrouter.ai/api/v1';
 const STRUCTURED_OUTPUT_MAX_ATTEMPTS = 2;
@@ -195,6 +199,13 @@ async function requestStructuredAnalysis({
   }
 }
 
+/** ¿La respuesta llegó al tope de salida? (finish_reason "length"; el del proveedor, por si acaso). */
+function salidaCortada(data) {
+  const choice = data && Array.isArray(data.choices) ? data.choices[0] : null;
+  if (!choice) return false;
+  return choice.finish_reason === 'length' || /max_tokens|max_output_tokens/i.test(String(choice.native_finish_reason || ''));
+}
+
 async function runStructuredAttempts(body, timeoutMs) {
   let lastError;
   let usage = null;
@@ -209,18 +220,20 @@ async function runStructuredAttempts(body, timeoutMs) {
       if (parsed != null) {
         return { parsed, usage, attempts: attempt };
       }
+      // Cortada por el tope de salida: otro intento igual se corta igual.
+      if (salidaCortada(data)) throw salidaCortadaError(body.max_tokens);
       lastError = new Error('contenido vacío o JSON inválido');
     } catch (err) {
       lastError = err;
       if (err.userMessage && !/structured|json_schema|response_format/i.test(err.userMessage)) {
-        throw err;
+        throw conGasto(err, usage);
       }
       console.warn(
         `OpenRouter structured output intento ${attempt}/${STRUCTURED_OUTPUT_MAX_ATTEMPTS} falló:`,
         err.message
       );
       if (attempt === STRUCTURED_OUTPUT_MAX_ATTEMPTS) {
-        throw err.userMessage ? err : mapOpenRouterError(lastError);
+        throw conGasto(err.userMessage ? err : mapOpenRouterError(lastError), usage);
       }
     }
   }
@@ -228,7 +241,7 @@ async function runStructuredAttempts(body, timeoutMs) {
   const e = new Error(`Structured output falló: ${lastError?.message || 'desconocido'}`);
   e.userMessage =
     'El servicio de análisis no devolvió un resultado válido. Intentá de nuevo en unos minutos.';
-  throw e;
+  throw conGasto(e, usage);
 }
 
 /**

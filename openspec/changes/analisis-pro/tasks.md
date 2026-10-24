@@ -35,5 +35,7 @@ un servidor de prueba en otro puerto y una copia de la base.
 
 - [x] 4.1 CLAUDE.md y README
 - [x] 4.2 Suite con `IG_ACTOR=apidojo` y `apify`
-- [ ] 4.3 La corrida real autorizada y los fixtures (REQ-PRO-14)
+- [x] 4.3 La corrida real autorizada (24/10/2026)
+- [x] 4.3a Lo que mostró: tandas de 50 con 16.000 de tope, la respuesta cortada se parte en dos, lo gastado en los errores, el punto 1 del informe, los temas vacíos, el prompt de ruido y pedidos
+- [ ] 4.3b Los fixtures anonimizados y su test (REQ-PRO-14)
 - [ ] 4.4 Revisor independiente y PR sin mergear

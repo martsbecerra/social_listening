@@ -5,14 +5,17 @@
 // OpenRouter). Desde la fase F (openspec/changes/analisis-pro):
 //   1) Muestra estable (commentSample.js): sin repetidos, en orden fijo,
 //      hasta COMMENTS_ANALYSIS_LIMIT (300 por defecto).
-//   2) Clasificación en TANDAS de BATCH_SIZE (100) comentarios por llamada:
+//   2) Clasificación en TANDAS de BATCH_SIZE (50) comentarios por llamada:
 //      por comentario tono, postura hacia la gestión, tema, si habla del
 //      posteo, si pide algo y reclamos con ubicación (TANDA_JSON_SCHEMA). La
 //      primera tanda va SOLA y define los temas de la publicación; las demás
 //      (hasta BATCH_CONCURRENCY a la vez) reciben esa lista y pueden sumar
-//      temas nuevos, que se unen por nombre. Una tanda que falla deja sus
-//      comentarios sin clasificar (null) y el análisis sigue; si fallan
-//      todas, tira con el mensaje del proveedor.
+//      temas nuevos, que se unen por nombre. Una tanda cuya respuesta se
+//      corta por el tope de salida (SALIDA_CORTADA) se parte en dos mitades,
+//      una después de la otra; una que falla deja sus comentarios sin
+//      clasificar (null) y el análisis sigue; si fallan todas, tira con el
+//      mensaje del proveedor. Lo gastado en una llamada fallida también se
+//      suma (err.tokenUsage).
 //   3) Verificados y figuras públicas: todos los que comentaron se cruzan
 //      con la tabla figuras_publicas.
 //   4) Reclamos (subcategoría y guardado, conservando la gestión de los que
@@ -43,11 +46,17 @@ const { getLlmProvider, getProviderLabel } = require('./llm/providerConfig');
 const { buildReclamosFromAnalysis } = require('./reclamosFromAnalysis');
 const clasificarReclamo = require('./clasificarReclamo');
 const { addTokenUsage } = require('./llm/usage');
+const { SALIDA_CORTADA } = require('./llm/errors');
 const db = require('./db');
 
-const BATCH_SIZE = 100;
-const BATCH_CONCURRENCY = 3;
-const BATCH_MAX_TOKENS = 12000;
+// Corrida real del 24/10/2026: con un modelo que razona, 50 comentarios
+// gastaron 10.653 tokens de salida (el JSON, unos 2.000; el resto, el
+// razonamiento) y una tanda de 100 se cortó en el tope de 12.000. Tandas de
+// 50 con 16.000 de tope; la que igual se corta se parte en dos (correrTanda).
+// Cinco a la vez: los mismos ~250 comentarios en vuelo que antes con 3 × 100.
+const BATCH_SIZE = 50;
+const BATCH_CONCURRENCY = 5;
+const BATCH_MAX_TOKENS = 16000;
 const SYNTHESIS_MAX_TOKENS = 6000;
 // Tope de temas de una publicación: los que lleguen después quedan sin tema.
 const MAX_TEMAS_ANALISIS = 15;
@@ -182,33 +191,60 @@ async function analizar({ url, post, comments, pasos = NO_PASOS }, gasto) {
   const total = sample.length;
   pasos.start('clasificar', `0 de ${INT.format(total)}`);
   pasos.update('clasificar', `0 de ${INT.format(total)}`, { avance: 0 });
+  // Una llamada para un lote: sus filas (con temaId), o tira con lo gastado.
+  const clasificarLote = async (lote, numero) => {
+    const lista = temas.paraPrompt();
+    const result = await llm.requestStructuredAnalysis({
+      system: TANDA_SYSTEM_PROMPT,
+      userPrompt: buildBatchPrompt({ url, post, batch: lote, numero, tandas: tandas.length, temas: lista }),
+      schema: TANDA_JSON_SCHEMA,
+      schemaName: 'tanda_instagram',
+      maxTokens: BATCH_MAX_TOKENS,
+    });
+    sumUsage(result.usage);
+    const parsed = result.parsed || {};
+    // Los números de la tanda → los ids del análisis: los de la lista que
+    // recibió quedan; los nuevos se unen por nombre.
+    const deLaLista = new Set(lista.map((x) => x.numero));
+    const nuevos = new Map();
+    for (const x of normalizeTemasDeTanda(parsed.temas)) {
+      if (!deLaLista.has(x.numero)) nuevos.set(x.numero, temas.agregar(x.nombre));
+    }
+    const idDe = (n) => (deLaLista.has(n) ? n : nuevos.has(n) ? nuevos.get(n) : null);
+    return normalizeBatchClassifications(parsed.classifications, lote.length).map((row) => (row ? { ...row, temaId: row.tema ? idDe(row.tema) : null } : null));
+  };
+  // Un lote que no se pudo clasificar: sus comentarios quedan en null.
+  const sinClasificar = (lote, numero, err) => {
+    sumUsage(err && err.tokenUsage);
+    fallidas += 1;
+    ultimoError = err;
+    console.warn(`[analisis] la tanda ${numero} de ${tandas.length} falló (${lote.length} comentarios sin clasificar): ${err && err.message}`);
+    return new Array(lote.length).fill(null);
+  };
   const correrTanda = async (t) => {
     const tanda = tandas[t];
-    const lista = temas.paraPrompt();
     try {
-      const result = await llm.requestStructuredAnalysis({
-        system: TANDA_SYSTEM_PROMPT,
-        userPrompt: buildBatchPrompt({ url, post, batch: tanda, numero: t + 1, tandas: tandas.length, temas: lista }),
-        schema: TANDA_JSON_SCHEMA,
-        schemaName: 'tanda_instagram',
-        maxTokens: BATCH_MAX_TOKENS,
-      });
-      sumUsage(result.usage);
-      const parsed = result.parsed || {};
-      // Los números de la tanda → los ids del análisis: los de la lista que
-      // recibió quedan; los nuevos se unen por nombre.
-      const deLaLista = new Set(lista.map((x) => x.numero));
-      const nuevos = new Map();
-      for (const x of normalizeTemasDeTanda(parsed.temas)) {
-        if (!deLaLista.has(x.numero)) nuevos.set(x.numero, temas.agregar(x.nombre));
-      }
-      const idDe = (n) => (deLaLista.has(n) ? n : nuevos.has(n) ? nuevos.get(n) : null);
-      porTanda[t] = normalizeBatchClassifications(parsed.classifications, tanda.length).map((row) => (row ? { ...row, temaId: row.tema ? idDe(row.tema) : null } : null));
+      porTanda[t] = await clasificarLote(tanda, t + 1);
     } catch (err) {
-      porTanda[t] = new Array(tanda.length).fill(null);
-      fallidas += 1;
-      ultimoError = err;
-      console.warn(`[analisis] la tanda ${t + 1} de ${tandas.length} falló (${tanda.length} comentarios sin clasificar): ${err && err.message}`);
+      if (err && err.code === SALIDA_CORTADA && tanda.length > 1) {
+        // Se cortó por larga: va en dos mitades, una después de la otra (la
+        // segunda recibe los temas que haya sumado la primera). Una vez.
+        sumUsage(err.tokenUsage);
+        const mitad = Math.ceil(tanda.length / 2);
+        console.warn(`[analisis] la tanda ${t + 1} de ${tandas.length} se cortó por larga: va en dos partes de ${mitad} y ${tanda.length - mitad}`);
+        const partes = [];
+        for (const [k, parte] of [tanda.slice(0, mitad), tanda.slice(mitad)].entries()) {
+          const numero = `${t + 1}.${k + 1}`;
+          try {
+            partes.push(await clasificarLote(parte, numero));
+          } catch (errParte) {
+            partes.push(sinClasificar(parte, numero, errParte));
+          }
+        }
+        porTanda[t] = partes.flat();
+      } else {
+        porTanda[t] = sinClasificar(tanda, t + 1, err);
+      }
     }
     // Solo lo clasificado: una tanda caída no avanza el contador.
     hechos += porTanda[t].filter(Boolean).length;
@@ -301,6 +337,7 @@ async function analizar({ url, post, comments, pasos = NO_PASOS }, gasto) {
       verificadosSinFicha: new Set(verificadosSinFicha),
     });
   } catch (err) {
+    sumUsage(err && err.tokenUsage); // una síntesis fallida también se cobra
     pasos.fail('informe', 'falló la lectura');
     throw llmError(err, provider);
   }

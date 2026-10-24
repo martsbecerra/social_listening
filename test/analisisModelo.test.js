@@ -25,10 +25,13 @@ const assert = require('node:assert/strict');
 const db = require('../src/db');
 const llm = require('../src/llm');
 const clasificarReclamo = require('../src/clasificarReclamo');
-const { analyzeComments } = require('../src/analyzeComments');
+const { analyzeComments, BATCH_SIZE } = require('../src/analyzeComments');
 const { claveTema } = require('../src/analysisMetrics');
 
 const URL = 'https://www.instagram.com/p/TEST/';
+// Tres tandas, la última por la mitad (con BATCH_SIZE 50: 125 comentarios).
+const B = BATCH_SIZE;
+const N = B * 2 + B / 2;
 const POST = { ownerFullName: 'GCBA', ownerUsername: 'gcba', caption: 'Anuncio', likesCount: 900, commentsCount: 1480, videoPlayCount: null, postedAt: '2026-10-20T12:00:00.000Z' };
 
 // vecino3 y vecino6 son verificados; vecino6 está en la tabla de figuras.
@@ -54,15 +57,20 @@ let llamadas;
 let terminadas;
 let tandaFalla;
 let errorDeTanda;
+let cortadas;
 let omitir;
 let sintesis;
 let subcategoria;
+const GASTO_CORTADA = { inputTokens: 4000, outputTokens: 16000, totalTokens: 20000, costUsd: 0.17 };
 function stubModelo() {
   llm.requestStructuredAnalysis = async ({ schemaName, userPrompt }) => {
     if (schemaName === 'tanda_instagram') {
-      const numero = Number(/tanda (\d+) de/.exec(userPrompt)[1]);
-      llamadas.push({ schemaName, numero, userPrompt, conTerminadas: [...terminadas] });
+      // "tanda 2 de 3" o, partida, "tanda 1.2 de 3".
+      const etiqueta = /tanda ([\d.]+) de/.exec(userPrompt)[1];
+      const numero = Number(etiqueta.split('.')[0]);
+      llamadas.push({ schemaName, numero, etiqueta, userPrompt, conTerminadas: [...terminadas] });
       await new Promise((r) => setImmediate(r));
+      if (cortadas.has(etiqueta)) throw Object.assign(new Error('la respuesta se cortó en el tope de salida'), { code: 'SALIDA_CORTADA', userMessage: 'cortada', tokenUsage: GASTO_CORTADA });
       if (tandaFalla === numero || (Array.isArray(tandaFalla) && tandaFalla.includes(numero))) throw errorDeTanda || new Error('se cayó la tanda');
       const define = /DEFINÍ LOS TEMAS/.test(userPrompt);
       const cuantos = define ? 0 : [...userPrompt.matchAll(/^(\d+)\. (?!@)/gm)].length;
@@ -76,7 +84,7 @@ function stubModelo() {
         : [{ numero: cuantos + 1, nombre: numero === 2 ? 'Seguridad en el parque' : 'seguridad en el PARQUE ' }];
       const nuevo = define ? null : cuantos + 1;
       const lista = numerosDelPrompt(userPrompt);
-      terminadas.add(numero);
+      terminadas.add(etiqueta);
       return {
         parsed: {
           temas,
@@ -116,6 +124,7 @@ beforeEach(() => {
   terminadas = new Set();
   tandaFalla = null;
   errorDeTanda = null;
+  cortadas = new Set();
   subcategoria = '';
   omitir = new Set();
   sintesis = {
@@ -136,31 +145,31 @@ beforeEach(() => {
 });
 
 describe('tandas y temas', { concurrency: false }, () => {
-  test('250 comentarios: la primera tanda sola define los temas; las otras dos, en paralelo, los reusan', async () => {
+  test(`${N} comentarios: la primera tanda sola define los temas; las otras dos, en paralelo, los reusan`, async () => {
     const { pasos, eventos } = pasosQueAnotan();
-    const r = await analyzeComments({ url: URL, post: POST, comments: comentarios(250), pasos });
+    const r = await analyzeComments({ url: URL, post: POST, comments: comentarios(N), pasos });
     const tandas = llamadas.filter((l) => l.schemaName === 'tanda_instagram');
     assert.deepEqual(tandas.map((l) => l.numero).sort(), [1, 2, 3]);
     assert.match(tandas.find((l) => l.numero === 1).userPrompt, /DEFINÍ LOS TEMAS/);
     for (const n of [2, 3]) {
       const l = tandas.find((x) => x.numero === n);
-      assert.ok(l.conTerminadas.includes(1), `la tanda ${n} arrancó después de la 1`);
+      assert.ok(l.conTerminadas.includes('1'), `la tanda ${n} arrancó después de la 1`);
       assert.match(l.userPrompt, /LISTA DE TEMAS[^\n]*\n1\. Plaza y obra\n2\. Churrero/);
     }
     for (const l of tandas) assert.equal(numerosDelPrompt(l.userPrompt)[0][0], 1, 'cada tanda arranca en 1');
     assert.equal(llamadas.filter((l) => l.schemaName === 'sintesis_instagram').length, 1);
-    assert.equal(r.numeros.analizados, 250);
+    assert.equal(r.numeros.analizados, N);
     assert.equal(r.numeros.tandas, 3);
     // El paso avanza con números reales y el avance para el porcentaje.
     const clas = eventos.filter(([, key]) => key === 'clasificar');
-    assert.deepEqual(clas[0].slice(0, 3), ['start', 'clasificar', '0 de 250']);
-    assert.ok(clas.some(([tipo, , d, extra]) => tipo === 'update' && d === '100 de 250' && extra && extra.avance === 0.4));
-    assert.match(clas[clas.length - 1][2], /^250 de 250 · 3 tandas · \d+ s$/);
+    assert.deepEqual(clas[0].slice(0, 3), ['start', 'clasificar', `0 de ${N}`]);
+    assert.ok(clas.some(([tipo, , d, extra]) => tipo === 'update' && d === `${B} de ${N}` && extra && extra.avance === 0.4));
+    assert.match(clas[clas.length - 1][2], new RegExp(`^${N} de ${N} · 3 tandas · \\d+ s$`));
     assert.equal(r.tokenUsage.totalTokens, 3 * 1500 + 3800);
   });
 
   test('dos tandas suman el mismo tema escrito distinto: queda uno solo, con los comentarios de las dos', async () => {
-    const r = await analyzeComments({ url: URL, post: POST, comments: comentarios(250) });
+    const r = await analyzeComments({ url: URL, post: POST, comments: comentarios(N) });
     assert.deepEqual(
       r.temas.lista.map((t) => t.nombre),
       ['Plaza y obra', 'Churrero', 'Seguridad en el parque']
@@ -168,8 +177,42 @@ describe('tandas y temas', { concurrency: false }, () => {
     assert.equal(claveTema('seguridad en el PARQUE '), claveTema('Seguridad  en el parque'));
     // vecinoK con K múltiplo de 5 en las tandas 2 y 3 va al tema nuevo (id 3).
     const delNuevo = r.comentarios.filter((c) => c.tema === 3).map((c) => c.usuario);
-    assert.ok(delNuevo.includes('vecino105') && delNuevo.includes('vecino205'));
+    assert.ok(delNuevo.includes(`vecino${B + 5}`) && delNuevo.includes(`vecino${2 * B + 5}`));
     assert.ok(!delNuevo.includes('vecino5'), 'en la tanda 1 ese tema no existía');
+  });
+
+  test('una tanda que se corta por larga va en dos mitades; la primera mitad de la primera define los temas', async () => {
+    cortadas = new Set(['1']);
+    const { pasos, eventos } = pasosQueAnotan();
+    const r = await analyzeComments({ url: URL, post: POST, comments: comentarios(N), pasos });
+    const tandas = llamadas.filter((l) => l.schemaName === 'tanda_instagram');
+    assert.deepEqual(tandas.map((l) => l.etiqueta).slice(0, 3), ['1', '1.1', '1.2'], 'las mitades, una después de la otra, antes que el resto');
+    assert.deepEqual(numerosDelPrompt(tandas[1].userPrompt).length, Math.ceil(B / 2));
+    assert.match(tandas[1].userPrompt, /DEFINÍ LOS TEMAS/);
+    assert.match(tandas[2].userPrompt, /LISTA DE TEMAS[^\n]*\n1\. Plaza y obra\n2\. Churrero/);
+    assert.ok(tandas.filter((l) => l.numero > 1).every((l) => l.conTerminadas.includes('1.2')), 'las demás, después de las dos mitades');
+    assert.equal(r.numeros.analizados, N);
+    assert.equal(r.numeros.fallidas, 0);
+    // Lo gastado en el intento cortado también cuenta.
+    assert.equal(r.tokenUsage.totalTokens, GASTO_CORTADA.totalTokens + 4 * 1500 + 3800);
+    assert.match(eventos.filter(([, key]) => key === 'clasificar').pop()[2], new RegExp(`^${N} de ${N} · 3 tandas`));
+  });
+
+  test('si una mitad también se corta, solo esos comentarios quedan sin clasificar', async () => {
+    cortadas = new Set(['2', '2.2']);
+    const r = await analyzeComments({ url: URL, post: POST, comments: comentarios(N) });
+    assert.equal(r.numeros.analizados, N - (B - Math.ceil(B / 2)));
+    assert.equal(r.numeros.fallidas, 1);
+    assert.equal(r.tokenUsage.totalTokens, 2 * GASTO_CORTADA.totalTokens + 3 * 1500 + 3800);
+    assert.equal(llamadas.filter((l) => l.etiqueta === '2.2.1').length, 0, 'se parte una sola vez');
+  });
+
+  test('una tanda que falla por otra cosa no se parte, y lo que gastó cuenta', async () => {
+    tandaFalla = 3;
+    errorDeTanda = Object.assign(new Error('JSON inválido'), { tokenUsage: { inputTokens: 100, outputTokens: 50, totalTokens: 150, costUsd: 0.001 } });
+    const r = await analyzeComments({ url: URL, post: POST, comments: comentarios(N) });
+    assert.equal(llamadas.filter((l) => l.schemaName === 'tanda_instagram').length, 3);
+    assert.equal(r.tokenUsage.totalTokens, 150 + 2 * 1500 + 3800);
   });
 
   test('cada comentario: tono, postura, tema, sobre el posteo y pedido; sin tipo de cuenta', async () => {
@@ -195,18 +238,18 @@ describe('tandas y temas', { concurrency: false }, () => {
   test('una tanda que falla deja sus comentarios sin clasificar; el contador suma solo lo clasificado', async () => {
     tandaFalla = 2;
     const { pasos, eventos } = pasosQueAnotan();
-    const r = await analyzeComments({ url: URL, post: POST, comments: comentarios(250), pasos });
-    assert.equal(r.numeros.analizados, 150);
+    const r = await analyzeComments({ url: URL, post: POST, comments: comentarios(N), pasos });
+    assert.equal(r.numeros.analizados, N - B);
     assert.equal(r.numeros.fallidas, 1);
-    assert.equal(r.comentarios.filter((c) => c.tono === null).length, 100);
+    assert.equal(r.comentarios.filter((c) => c.tono === null).length, B);
     const avances = eventos.filter(([tipo, key]) => tipo === 'update' && key === 'clasificar').map(([, , d]) => Number(d.split(' ')[0]));
-    assert.equal(Math.max(...avances), 150);
+    assert.equal(Math.max(...avances), N - B);
     assert.match(eventos.filter(([, key]) => key === 'clasificar').pop()[2], /una tanda falló/);
   });
 
   test('si la primera falla, las siguientes definen los temas y se unen por nombre', async () => {
     tandaFalla = 1;
-    const r = await analyzeComments({ url: URL, post: POST, comments: comentarios(250) });
+    const r = await analyzeComments({ url: URL, post: POST, comments: comentarios(N) });
     const tandas = llamadas.filter((l) => l.schemaName === 'tanda_instagram' && l.numero !== 1);
     for (const l of tandas) assert.match(l.userPrompt, /DEFINÍ LOS TEMAS/);
     assert.deepEqual(
@@ -230,11 +273,11 @@ describe('tandas y temas', { concurrency: false }, () => {
   });
 
   test('si falla la síntesis, tira con un mensaje y lo ya gastado en las tandas', async () => {
-    sintesis = new Error('se cayó la síntesis');
+    sintesis = Object.assign(new Error('se cayó la síntesis'), { tokenUsage: { inputTokens: 3000, outputTokens: 0, totalTokens: 3000, costUsd: 0.006 } });
     const { pasos, eventos } = pasosQueAnotan();
-    await assert.rejects(analyzeComments({ url: URL, post: POST, comments: comentarios(250), pasos }), (err) => {
+    await assert.rejects(analyzeComments({ url: URL, post: POST, comments: comentarios(N), pasos }), (err) => {
       assert.ok(err.userMessage);
-      assert.equal(err.tokenUsage.totalTokens, 3 * 1500);
+      assert.equal(err.tokenUsage.totalTokens, 3 * 1500 + 3000, 'las tandas y la síntesis fallida');
       return true;
     });
     assert.deepEqual(eventos.filter(([, key]) => key === 'informe').pop().slice(0, 2), ['fail', 'informe']);

@@ -30,8 +30,9 @@ y **F2** pantalla + inicio + edición de figuras. Tags `v4-fase-f1` y
   la primera tanda), `sobre_posteo` y `pedido`, además de los reclamos con
   ubicación. Sin tipo de cuenta: Instagram deja de escribir
   `data/account-types.json`.
-- La primera tanda va sola y define los temas; las demás (hasta 3 a la
-  vez) los reutilizan y pueden sumar nuevos, que se unen por nombre.
+- La primera tanda va sola y define los temas; las demás (hasta 5 a la
+  vez, en tandas de 50 desde la corrida real) los reutilizan y pueden
+  sumar nuevos, que se unen por nombre.
 - Síntesis: lectura estratégica, hecho dominante (o ninguno), pedidos
   agrupados con los ids de sus comentarios, "qué conviene mirar" y
   sugerencias de rol para verificados que no están en la tabla de figuras.

@@ -332,6 +332,26 @@ describe('el informe de 8 puntos y el CSV de comentarios', () => {
     assert.match(t, /_Social Listening · DGAYD · 21\/10\/2026_$/);
   });
 
+  test('sin hecho: "responde al posteo" solo si la mayoría habla del posteo; si no, cuánto se desvía y adónde', () => {
+    const sinHecho = (comentarios) => buildInforme(buildAnalysisView(filaV2({ resultado: { ...filaV2().resultado, hecho: null }, comentarios }), {}));
+    // Como viene: 10 de 18 hablan del posteo (56 %).
+    assert.match(sinHecho(comentariosV2()), /1\) \*Lo que pasó:\* sin un hecho dominante; la conversación responde al posteo\./);
+    // Dos más fuera del posteo: 8 de 18 (44 %) hablan del posteo; se desvía el 56 %, lo que falta para 100.
+    const desviados = comentariosV2().map((c) => (c.n === 9 || c.n === 10 ? { ...c, sobrePosteo: false, tema: 1 } : c));
+    const t = sinHecho(desviados);
+    assert.match(t, /1\) \*Lo que pasó:\* sin un hecho dominante, pero el 56 % se desvía del posteo, sobre todo a Vendedor de churros\./);
+    assert.match(t, /4\) \*Hablan del posteo:\* 44 %/);
+  });
+
+  test('un tema del modelo sin comentarios no sale (en un v1, sí: ahí es uno del equipo)', () => {
+    const conVacio = filaV2({ temas: { version: 2, lista: [...filaV2().temas.lista, { id: 6, nombre: 'Comentarios de spam o ruido' }] } });
+    const vv = buildAnalysisView(conVacio, {});
+    assert.equal(vv.temas.some((x) => x.nombre === 'Comentarios de spam o ruido'), false);
+    assert.doesNotMatch(buildInforme(vv), /spam o ruido/);
+    const v1 = buildAnalysisView({ ...filaV2(), resultado: { lecturaEstrategica: 'x' }, temas: [{ titulo: 'Del equipo', texto: 'Uno a mano.', comentarios: [] }] }, {});
+    assert.deepEqual(v1.temas.map((x) => x.nombre), ['Del equipo']);
+  });
+
   test('el CSV: un renglón por comentario, con la clasificación y la fecha de Argentina', () => {
     const csv = buildComentariosCsv(v).trim().split('\n');
     assert.equal(csv.length, 21);

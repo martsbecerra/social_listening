@@ -295,6 +295,10 @@ function buildAnalysisView(row, { figuras = new Map(), reclamos = [], anteriores
       const x = porTema.get(t.id);
       return { id: t.id, nombre: t.nombre, manual: t.manual, texto: t.texto, n: t.manual ? null : x.n, tonos: { positivo: x.positivo, neutral: x.neutral, negativo: x.negativo } };
     })
+    // Un tema del modelo sin ningún comentario no se muestra (en la corrida
+    // real armó "Comentarios de spam o ruido", y el ruido no lleva tema). Un
+    // v1 los conserva: ahí uno sin comentarios es el que agregó el equipo.
+    .filter((t) => temas.version !== 2 || t.manual || t.n > 0)
     .sort((a, b) => Number(a.manual) - Number(b.manual) || (b.n ?? 0) - (a.n ?? 0) || a.id - b.id);
   const estrella = temasVista.find((t) => !t.manual && t.n > 0) || null;
   for (const t of temasVista) t.estrella = Boolean(estrella && t.id === estrella.id);

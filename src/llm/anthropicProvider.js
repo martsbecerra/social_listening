@@ -3,7 +3,10 @@
 // --------------------------------------------------------------------------
 // Dos modos de uso, en espejo con openrouterProvider.js, con el mismo modelo:
 //   - requestStructuredAnalysis: Structured Outputs (análisis de post y
-//                                clasificador del monitoreo)
+//                                clasificador del monitoreo); una respuesta
+//                                cortada por el tope de salida no se
+//                                reintenta y todo error lleva lo ya gastado
+//                                (ver ./errors.js)
 //   - requestText:               texto plano (reclamos, importador)
 // ==========================================================================
 
@@ -12,6 +15,7 @@ const { jsonSchemaOutputFormat } = require('@anthropic-ai/sdk/helpers/json-schem
 const { ANALYSIS_JSON_SCHEMA } = require('../analysisSchema');
 const { addTokenUsage, fromAnthropicUsage } = require('./usage');
 const { getAnalysisModel } = require('./providerConfig');
+const { SALIDA_CORTADA, salidaCortadaError, conGasto } = require('./errors');
 
 const client = new Anthropic();
 const STRUCTURED_OUTPUT_MAX_ATTEMPTS = 2;
@@ -48,15 +52,18 @@ async function requestStructuredAnalysis({ system, userPrompt, schema, maxTokens
       if (message.parsed_output != null) {
         return { parsed: message.parsed_output, usage, attempts: attempt };
       }
+      // Cortada por el tope de salida: otro intento igual se corta igual.
+      if (message.stop_reason === 'max_tokens') throw salidaCortadaError(maxTokens);
       lastError = new Error('parsed_output es null');
     } catch (err) {
       lastError = err;
+      if (err && err.code === SALIDA_CORTADA) throw conGasto(err, usage);
       console.warn(
         `Anthropic structured output intento ${attempt}/${STRUCTURED_OUTPUT_MAX_ATTEMPTS} falló:`,
         err.message
       );
       if (attempt === STRUCTURED_OUTPUT_MAX_ATTEMPTS) {
-        throw mapAnthropicError(err);
+        throw conGasto(mapAnthropicError(err), usage);
       }
     }
   }
@@ -64,7 +71,7 @@ async function requestStructuredAnalysis({ system, userPrompt, schema, maxTokens
   const e = new Error(`Structured output falló: ${lastError?.message || 'desconocido'}`);
   e.userMessage =
     'El servicio de análisis no devolvió un resultado válido. Intentá de nuevo en unos minutos.';
-  throw e;
+  throw conGasto(e, usage);
 }
 
 /**
