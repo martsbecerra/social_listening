@@ -5494,9 +5494,8 @@ a.pl:focus-visible {
   background: var(--pos);
   animation: ping 1.8s infinite;
 }
-.pl .st.pause {
-  color: var(--warn-ink);
-}
+/* "en pausa": el ámbar va solo en el punto (--warn-ink sobre --surface2 no
+   llega a 4,5:1 en claro). */
 .pl .st.pause i {
   background: var(--c5);
 }
