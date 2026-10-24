@@ -466,8 +466,9 @@ por campo, con lecturas de `db.js` que solo cuentan
 (`countPostedSinceAllPlatforms`, `countTemasSinceAllPlatforms`,
 `getFirstDetectedAtAny`, `countReclamosEnMapa`): `publicacionesHoy` y
 `publicaciones30Dias` (todas las redes), `reclamosEnMapa` (los que tienen
-pin, con la regla del mapa: no de fuera de CABA y con x, y y dirección
-normalizada; los sin dirección, no encontrados o pendientes no cuentan),
+pin, con la regla del mapa, `hasMapLocation`: no de fuera de CABA, con x, y
+y dirección normalizada, y no en el (0,0) que deja una respuesta de USIG sin
+coordenadas; los sin dirección, no encontrados o pendientes no cuentan),
 `primerDia` y `diasEscuchando` (desde la primera DETECCIÓN, contando los dos
 extremos: la primera fecha de publicación puede ser de días antes),
 `runHours`, `corridasPorDia` y `temas` (los 8 de 7 días, con `n` y
@@ -476,7 +477,8 @@ Nunca un título, un texto, una cuenta, una URL, un término de búsqueda ni un
 correo: no reusa `armarEstadisticas`, `contarTemas` ni `buildLastRun`. No
 lee nada del pedido ni pone cookies; 60 s de caché en memoria
 (`Cache-Control: public, max-age=60`), también para un fallo: con una
-respuesta buena anterior sirve esa; sin ninguna, 503 genérico.
+respuesta buena anterior DEL MISMO DÍA de Argentina sirve esa (la de ayer
+diría "publicaciones hoy" de ayer); si no, 503 genérico.
 Test: `test/resumenPublico.test.js`. Un campo nuevo acá tiene que ser una
 cantidad o un nombre de tema, y su test lo tiene que fijar.
 
@@ -754,17 +756,22 @@ La D va sin SDD (decisión del dueño).
     entran en filas de `LG_ROW_MIN_PX` (56 px; en una franja baja quedan
     afuera los de menos publicaciones), con el vaivén y el desvío a la
     medida de la fila: no se enciman nombres (probado de 375 a 1920 px). Se
-    mide con `offset*` (sin las animaciones de entrada) y se rearma al
-    llegar la fuente. Con movimiento reducido, un cuadro quieto; con la
+    mide con `offset*` (sin las animaciones de entrada) y se rearma cuando
+    cambia de tamaño la visual o alguno de sus textos (un `ResizeObserver`
+    sobre el título, el subtítulo y los contadores: con la fuente en frío,
+    el subtítulo cambia DESPUÉS de `fonts.ready`). Con movimiento reducido, un cuadro quieto; con la
     pestaña oculta o la visual fuera de la pantalla, el
     `requestAnimationFrame` se frena. El ticker "tema · N publicaciones · 7
     días" va donde de verdad queda lugar, entre los textos y los contadores
     (`lgPlaceTicker`; con menos de 150 px de alto o 230 de ancho, `.no-room`
     y no va: entre 981 y unos 1200 px no entra), y repite la lista hasta
     llenar el alto; la pista es `flow-root` para que sus dos mitades midan
-    lo mismo. Los rótulos chicos de la visual (contadores, ticker, la marca)
-    van en `--fg`: debajo están las manchas, que aclaran el fondo (medido en
-    sus dos extremos, el mínimo queda en 4,62:1). Los contadores
+    lo mismo, y el ticker va sin transiciones (con movimiento reducido la
+    regla global les da 0,01 ms y se leería el top viejo). El subtítulo y
+    los rótulos chicos (contadores, ticker, la marca) van en `--fg`: debajo
+    están las manchas, que aclaran el fondo; en ventanas bajas la celeste
+    sube hasta el subtítulo (medido de 1000x620 a 1920x1080 con las manchas
+    en tres puntos de su recorrido, el mínimo queda en 5,11:1). Los contadores
     (publicaciones hoy de todas las redes, reclamos en el mapa, días
     escuchando, publicaciones · 30 días) usan `kpiCountUp` de `kpi.js`, y el subtítulo
     suma "La escucha corre cuatro veces por día: 8, 12, 16 y 20 h." Sin
@@ -777,8 +784,10 @@ La D va sin SDD (decisión del dueño).
     "Mandar otro link" (con `aria-disabled`, no `disabled`, que le sacaría
     el foco, y la cuenta regresiva de `retryAfterSeconds`) y "Cambiar el
     correo". El envío y el reenvío llevan su propia bandera (con un reenvío
-    en vuelo se puede volver y pedir para otra dirección) y el aviso de
-    "Te mandamos otro link" va fuera de los pasos. La espera es POR
+    en vuelo se puede volver y pedir para otra dirección; para la MISMA no:
+    un segundo link anularía el primero, el backend borra los no usados) y
+    el aviso de "Te mandamos otro link" va fuera de los pasos. Un reenvío que
+    vuelve cuando ya se está en otra dirección solo se anuncia. La espera es POR
     DIRECCIÓN: otra no queda trabada; lo mandado queda en `sessionStorage`
     (`sl.login.enviados`, esa pestaña) y, si se pide otra vez la misma
     dentro de la espera, va directo al paso 2 ("Ya te mandamos un link hace
@@ -832,7 +841,9 @@ La D va sin SDD (decisión del dueño).
     superior: "escuchando" con una corrida terminada hace menos de 5 h,
     "última dd/mm" si es más vieja, "en pausa" fuera del cron. Facebook y
     TikTok: "pronto", sin enlace. Una red en pausa (X, con su "Ver lo
-    guardado" a `x.html#tab-monitoring`) o que no se escucha lleva
+    guardado" a `x.html#tab-monitoring`, que dice "En pausa · sin corridas
+    automáticas" en vez de "Escuchando": `/api/monitoring/status` trae
+    `enCron` por red, de `CRON_PLATFORMS` en `server.js`) o que no se escucha lleva
     `.pl.off`: no baja la opacidad, hunde el fondo y el texto se sigue
     leyendo; "en pausa" lleva el ámbar solo en el punto (contraste).
   - Próxima corrida: la primera `nextRunAt` de las redes en el cron, con
@@ -842,8 +853,12 @@ La D va sin SDD (decisión del dueño).
     `runHours` con el estado real de su corrida (una corrida es la de su
     hora si arrancó en esa media hora; la del cron primero): terminada con
     "N nuevas", cortada (sin la tilde de terminada), en curso,
-    interrumpida (`.stop`), "siguiente" o, pasado un cuarto de hora sin
-    corrida, "no corrió"; las demás (a mano, fuera de hora) son puntitos;
+    interrumpida (`.stop`, "se cayó" debajo del punto), "siguiente" o,
+    pasado un cuarto de hora sin corrida, "no corrió". Los rótulos no se
+    enciman: con menos de 60 px entre dos horas (celular, dos columnas)
+    van más chicos (`.tight`) y cada uno con un ancho máximo hasta la hora
+    vecina (`homeFitTrackLabels`; lo que no entra se corta con "…"). Las
+    demás (a mano, fuera de hora) son puntitos;
     todas con `data-tip` y un resumen en el `aria-label`. "ahora" va en
     `--fg2` (el `--glow` de la maqueta no llegaba a 4,5:1 en oscuro). Última
     corrida: traídas, nuevas, relevantes y US$, con los tooltips del
@@ -859,12 +874,15 @@ La D va sin SDD (decisión del dueño).
     Monitoreo y, al llegar los posteos, el pop-up (recorre el feed si el
     posteo está en él; si no está en la tabla, no abre nada); al cerrar, el
     foco va a su tarjeta o, si no tiene, a la solapa. Sin `aria-label`: el
-    lector lee lo que se ve y, al final (`.sr`), adónde lleva. Se vuelven a
+    lector lee lo que se ve y, al final (`.sr`), adónde lleva (el alcance
+    sin referencia de `buildReachMeter` lleva la raya con `aria-hidden` y
+    "Alcance sin referencia" en `.sr`). Se vuelven a
     pedir cuando cambia la última corrida de Instagram (la marca avanza
     recién cuando llegaron: si el pedido falla, se reintenta con la recarga
     siguiente), y las nuevas entran con la animación.
   - `/api/inicio` se pide cada minuto con la pestaña a la vista y al volver
-    a ella; si la primera vez no responde, "sin respuesta del servidor". Horas de Argentina, UTC-3 fija. Las fechas "dd/mm" se arman a
+    a ella; si la primera vez no responde, "sin respuesta del servidor" en
+    las dos tarjetas. Horas de Argentina, UTC-3 fija. Las fechas "dd/mm" se arman a
     mano (`homeDayMonth`): con `Intl` es-AR, Chrome da "25/9".
 - **Favicon**: el ◎ sobre el degradé (`favicon.svg`); los PNG y el `.ico`
   salen de él con `sharp`.
