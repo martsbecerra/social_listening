@@ -37,7 +37,7 @@ const { normalizeBatchClassifications, normalizeTemasDeTanda, applyHeuristicsToC
 const { buildReclamosCsv } = require('./reportBuilder');
 const { countTones } = require('./sentimentAggregate');
 const { buildBatchPrompt, buildSynthesisPrompt } = require('./userPrompt');
-const { buildAnalysisView } = require('./analysisMetrics');
+const { buildAnalysisView, claveTema } = require('./analysisMetrics');
 const llm = require('./llm');
 const { getLlmProvider, getProviderLabel } = require('./llm/providerConfig');
 const { buildReclamosFromAnalysis } = require('./reclamosFromAnalysis');
@@ -84,17 +84,6 @@ function llmError(err, provider) {
   const e = new Error(`${label} falló: ${err && err.message}`);
   e.userMessage = `El servicio de análisis (${label}) falló. Intentá de nuevo en unos minutos.`;
   return e;
-}
-
-// Sin acentos ni mayúsculas ni espacios de más: "Seguridad en el parque" y
-// "seguridad en el Parque" son el mismo tema.
-function claveTema(nombre) {
-  return String(nombre || '')
-    .normalize('NFD')
-    .replace(/\p{M}/gu, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .toLowerCase();
 }
 
 /** La lista de temas del análisis: ids desde 1, unidos por nombre. */

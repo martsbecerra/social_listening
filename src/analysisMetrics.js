@@ -44,6 +44,17 @@ const num = (v) => (Number.isFinite(Number(v)) && v !== null && v !== '' ? Numbe
 const likesDe = (c) => (Number.isFinite(c.likes) && c.likes > 0 ? c.likes : 0);
 const usuarioClave = (u) => String(u || '').trim().replace(/^@+/, '').toLowerCase();
 
+// Sin acentos ni mayúsculas ni espacios de más: "Seguridad en el parque" y
+// "seguridad en el Parque" son el mismo tema (analyzeComments, analysisTemas).
+function claveTema(nombre) {
+  return String(nombre || '')
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
 function proporciones(cuentas, claves) {
   const base = claves.reduce((n, k) => n + (cuentas[k] || 0), 0);
   const out = {};
@@ -455,6 +466,7 @@ module.exports = {
   buildAnalysisView,
   columnasDeVista,
   temasDeFila,
+  claveTema,
   emojisDe,
   UMBRAL_HECHO,
   APOYO,

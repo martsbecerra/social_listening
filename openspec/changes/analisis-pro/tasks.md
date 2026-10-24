@@ -28,8 +28,8 @@ un servidor de prueba en otro puerto y una copia de la base.
 - [x] 3.1 `src/analysisMetrics.js` (REQ-PRO-04, REQ-PRO-05, REQ-PRO-07, REQ-PRO-08)
 - [x] 3.2 Pasos y porcentaje (REQ-PRO-13)
 - [x] 3.3 El trabajo v2 y las columnas
-- [ ] 3.4 Rutas: galería, forma completa, PATCH de temas, CSV, compatibilidad con la solapa de la fase E (REQ-PRO-10, REQ-PRO-12)
-- [ ] 3.5 `/api/figuras` (REQ-PRO-06)
+- [x] 3.4 Rutas: galería, forma completa, PATCH de temas, CSV, compatibilidad con la solapa de la fase E (REQ-PRO-10, REQ-PRO-12)
+- [x] 3.5 `/api/figuras` (REQ-PRO-06)
 
 ## Phase 4: cierre de la F1
 

@@ -25,7 +25,8 @@ const assert = require('node:assert/strict');
 const db = require('../src/db');
 const llm = require('../src/llm');
 const clasificarReclamo = require('../src/clasificarReclamo');
-const { analyzeComments, claveTema } = require('../src/analyzeComments');
+const { analyzeComments } = require('../src/analyzeComments');
+const { claveTema } = require('../src/analysisMetrics');
 
 const URL = 'https://www.instagram.com/p/TEST/';
 const POST = { ownerFullName: 'GCBA', ownerUsername: 'gcba', caption: 'Anuncio', likesCount: 900, commentsCount: 1480, videoPlayCount: null, postedAt: '2026-10-20T12:00:00.000Z' };
