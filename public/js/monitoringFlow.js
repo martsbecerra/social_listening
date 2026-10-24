@@ -16,11 +16,8 @@ const flowEl = document.getElementById('flow');
 const flowRateEl = document.getElementById('flowRate');
 const flowReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 const FLOW_RATE = new Intl.NumberFormat('es-AR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-const FLOW_TONES = {
-  positivo: ['bg-pos', 'Positivo'],
-  neutral: ['bg-neu', 'Neutral'],
-  negativo: ['bg-neg', 'Negativo'],
-};
+// El término resaltado, el título, la foto chiquita y los tonos de cada línea
+// (postFindTerm, postTitleLine, postThumb, POST_TONES) están en postView.js.
 // Entre una publicación nueva y la siguiente, al entrar.
 const FLOW_STEP_MS = 900;
 // Alto de una línea más el espacio entre líneas (.fl en styles.css): para
@@ -43,80 +40,6 @@ const FLOW_TICK_MS = 30 * 1000;
 let flowLastKey = null;
 let flowLastHeight = 0;
 
-// Dónde está el término dentro del texto, sin mirar mayúsculas ni acentos:
-// [inicio, fin) en el texto original, o null.
-function flowFindTerm(text, term) {
-  const needle = normalizeSearch(term).trim();
-  if (!needle || !text) return null;
-  let folded = '';
-  const origin = [];
-  for (let i = 0; i < text.length; i++) {
-    const piece = normalizeSearch(text[i]);
-    for (let k = 0; k < piece.length; k++) {
-      folded += piece[k];
-      origin.push(i);
-    }
-  }
-  const at = folded.indexOf(needle);
-  if (at < 0) return null;
-  return [origin[at], origin[at + needle.length - 1] + 1];
-}
-
-// Si el término cae lejos del principio, el título se recorta adelante
-// ("…de octubre GCBA"): si no, la elipsis del final lo tapaba y del
-// resaltado asomaba solo una astilla.
-const FLOW_TERM_LEAD = 16;
-const FLOW_TERM_KEEP = 10;
-
-// "@cuenta · título", con el término de la búsqueda que lo trajo en <mark>
-// (armado con nodos de texto, nunca como HTML).
-function flowTitleLine(post) {
-  const line = document.createElement('span');
-  line.className = 'l1';
-  const account = post.account && post.account !== 'N/D' ? `@${post.account}` : 'N/D';
-  const name = document.createElement('b');
-  name.textContent = account;
-  const title = post.title || '(sin clasificar)';
-  const reason = postReasonParts(post.matched_reason);
-  const hit = reason.text === 'búsqueda' ? flowFindTerm(title, reason.term) : null;
-  line.append(name, ' · ');
-  if (hit) {
-    let start = 0;
-    if (hit[0] > FLOW_TERM_LEAD) {
-      // Desde el principio de una palabra, unas letras antes del término.
-      const space = title.indexOf(' ', hit[0] - FLOW_TERM_KEEP);
-      start = space >= 0 && space < hit[0] ? space + 1 : hit[0] - FLOW_TERM_KEEP;
-    }
-    const mark = document.createElement('mark');
-    mark.textContent = title.slice(hit[0], hit[1]);
-    line.append(start ? `…${title.slice(start, hit[0])}` : title.slice(0, hit[0]), mark, title.slice(hit[1]));
-  } else {
-    line.append(title);
-  }
-  line.title = `${account} · ${title}`;
-  return line;
-}
-
-function flowThumb(post) {
-  const th = document.createElement('span');
-  th.className = 'th';
-  th.setAttribute('aria-hidden', 'true');
-  const account = post.account && post.account !== 'N/D' ? post.account : '';
-  th.textContent = account ? account[0].toUpperCase() : '?';
-  const url = feedImageUrl(post);
-  if (url) {
-    const img = document.createElement('img');
-    img.alt = '';
-    img.loading = 'lazy';
-    img.decoding = 'async';
-    img.draggable = false;
-    img.addEventListener('error', () => img.remove());
-    img.src = url;
-    th.appendChild(img);
-  }
-  return th;
-}
-
 // "hace 0 min" (detectada hace menos de medio minuto) también es "ahora".
 function flowWhenText(id, detectedAt) {
   const entered = flowLiveIds.get(String(id));
@@ -137,9 +60,9 @@ function flowLine(post, { live = false } = {}) {
 
   const body = document.createElement('span');
   body.className = 'body';
-  body.appendChild(flowTitleLine(post));
+  body.appendChild(postTitleLine(post));
 
-  const [toneClass, toneName] = FLOW_TONES[post.sentiment] || ['', 'Sin clasificar'];
+  const [toneClass, toneName] = POST_TONES[post.sentiment] || ['', 'Sin clasificar'];
   const tone = document.createElement('span');
   tone.className = 'lbl';
   tone.dataset.tip = toneName;
@@ -154,7 +77,7 @@ function flowLine(post, { live = false } = {}) {
   const { date, time } = formatFullDateTime(post.posted_at);
   when.title = `Publicada el ${time ? `${date} · ${time}` : date}`;
 
-  el.append(flowThumb(post), body, tone);
+  el.append(postThumb(post), body, tone);
   const tema = buildTemaTag(post.tema);
   el.appendChild(tema || document.createElement('span'));
   el.append(buildReachMeter(postReach(post)), when);

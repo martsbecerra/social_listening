@@ -213,6 +213,7 @@ async function loadConfig() {
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const config = await resp.json();
     monitoringConfig = config;
+    setPostViewTemas(config.temas);
     if (HAS_CLASSIC_SOURCES) {
       renderAccountLists(config.accounts);
       renderKeywordLists(config.keywords);
@@ -448,11 +449,10 @@ function buildSentimentSelect(raw) {
   return select;
 }
 
-// Formatea un número con separador de miles es-AR, o "—" si no hay dato
-// (mismo símbolo que usa design/monitoreo.html en fmt/abbr).
-function formatCount(value) {
-  return value === null || value === undefined ? '—' : Number(value).toLocaleString('es-AR');
-}
+// formatCount, accountColor, temaColor, buildTemaTag, postReasonParts,
+// formatBenchmarkNumber, formatBenchmarkRatio, benchmarkRatioBasis,
+// formatFullDateTime, postReach, buildReachMeter y normalizeSearch están en
+// postView.js (compartido con el inicio).
 
 // Seguidores en formato abreviado con coma decimal (48,2K / 1,2M) — la
 // referencia hace .replace('.', ',') a propósito, formato es-AR. Sin dato:
@@ -465,58 +465,6 @@ function formatFollowers(value) {
   return String(n);
 }
 
-// Color del avatar de una cuenta (la inicial va en blanco), de la paleta de
-// la maqueta v4 en su tono oscuro. Sale del nombre de la cuenta: cada una se
-// ve siempre igual en el feed, el pop-up, el flujo, las cuentas seguidas y
-// el filtro de Cuenta.
-const ACCOUNT_PALETTE = ['#199e70', '#d04a4a', '#2a78d6', '#c98500', '#6250d6', '#0b7fc4', '#d95926', '#5466b8'];
-
-function accountColor(account) {
-  let hash = 7;
-  for (const ch of String(account || '')) hash = (hash * 31 + ch.codePointAt(0)) >>> 0;
-  return ACCOUNT_PALETTE[hash % ACCOUNT_PALETTE.length];
-}
-
-// Color del punto de un tema (el flujo, el pop-up): el de su lugar en la
-// lista de temas de la config, con los doce colores de categoría del mapa
-// (--cat-1 … --cat-12, se repiten); sin tema, el gris de "otras".
-function temaColor(tema) {
-  const temas = (monitoringConfig && monitoringConfig.temas) || [];
-  const i = tema ? temas.indexOf(tema) : -1;
-  return i < 0 ? 'var(--cat-otras)' : `var(--cat-${(i % 12) + 1})`;
-}
-
-// El tema a la vista: punto de color y nombre (.tema en styles.css). null
-// si el posteo no tiene tema.
-function buildTemaTag(tema) {
-  if (!tema) return null;
-  const tag = document.createElement('span');
-  tag.className = 'tema';
-  const dot = document.createElement('i');
-  dot.style.background = temaColor(tema);
-  dot.setAttribute('aria-hidden', 'true');
-  const name = document.createElement('span');
-  name.textContent = tema;
-  tag.title = tema;
-  tag.append(dot, name);
-  return tag;
-}
-
-// Por qué se detectó un posteo, a partir de matched_reason (lo arma
-// src/monitor.js): "búsqueda" con su término, "palabra clave" con la
-// palabra, o "cuenta trackeada". Lo que viene después de " · " es el motivo
-// del clasificador y no entra acá. Una forma desconocida va tal cual, sin
-// término.
-function postReasonParts(reason) {
-  const base = String(reason || '').split(' · ')[0].trim();
-  let match = base.match(/^Búsqueda:\s*(.+?)(?:\s+\(|\s+—\s|$)/);
-  if (match) return { text: 'búsqueda', term: match[1] };
-  match = base.match(/^Coincidencia con palabra clave:\s*"?(.+?)"?$/);
-  if (match) return { text: 'palabra clave', term: match[1] };
-  if (base.startsWith('Cuenta trackeada')) return { text: 'cuenta trackeada', term: null };
-  return { text: base, term: null };
-}
-
 // -------------------------------------------------------------------------
 // Benchmark por cuenta (panel desplegable de la fila): compara likes y
 // comentarios del posteo contra la mediana histórica de ESA cuenta (nunca
@@ -525,41 +473,9 @@ function postReasonParts(reason) {
 // -------------------------------------------------------------------------
 let expandedRowId = null;
 
-function formatBenchmarkNumber(n) {
-  return n == null || !Number.isFinite(n) ? '—' : n.toLocaleString('es-AR');
-}
-
-// Formateador armado una sola vez: toLocaleString con opciones crea uno
-// nuevo en cada llamada, y el feed formatea cientos de tarjetas de un saque.
-const BENCHMARK_RATIO_OPTIONS = { minimumFractionDigits: 2, maximumFractionDigits: 2 };
-const BENCHMARK_RATIO_FORMAT = new Intl.NumberFormat('es-AR', BENCHMARK_RATIO_OPTIONS);
-
-// La razón del alcance, con dos decimales ("1,09"). Se CORTA, no se
-// redondea: los cortes de la regla (1,1 y 1,5, ver src/reachRule.js) tienen
-// hasta dos decimales, y un 1,096 redondeado diría "1,10" al lado de
-// "Alcance bajo". Cortando, el número que se ve nunca queda del otro lado
-// del corte que su etiqueta. El 1e-9 es por la cuenta en punto flotante
-// (1,15 * 100 da 114,99999999999999).
-function formatBenchmarkRatio(ratio) {
-  // Solo los números pasan por el formateador compartido. Con cualquier otra
-  // cosa hace lo mismo que antes de tenerlo: un null tira, no sale "0,00".
-  if (typeof ratio !== 'number') return ratio.toLocaleString('es-AR', BENCHMARK_RATIO_OPTIONS);
-  return BENCHMARK_RATIO_FORMAT.format(Math.floor(ratio * 100 + 1e-9) / 100);
-}
-
 // Nombre en pantalla de cada nivel del backend: su "normal" (entre el corte
 // de medio y el de alto) es el "medio" de la etiqueta de alcance.
 const BENCHMARK_LEVEL_NAMES = { alto: 'alto', normal: 'medio', bajo: 'bajo' };
-
-// Con qué se calculó la razón de una métrica, en palabras: "229 contra una
-// mediana de 21 en la cuenta, con colchón de 2.000". La razón no es valor /
-// mediana: el backend suma el colchón arriba y abajo y lo manda junto con
-// ella. Va donde se muestra la razón (detalle de la tabla, tarjetas y
-// pop-up), para que el número no parezca mal calculado.
-function benchmarkRatioBasis(metric) {
-  const basis = `${formatBenchmarkNumber(metric.value)} contra una mediana de ${formatBenchmarkNumber(metric.median)} en la cuenta`;
-  return metric.cushion > 0 ? `${basis}, con colchón de ${formatBenchmarkNumber(metric.cushion)}` : basis;
-}
 
 // "sin-referencia" (guión, como lo manda el backend) -> "sinref" (la clase
 // CSS de la referencia, .bn.sinref).
@@ -613,20 +529,6 @@ function buildBenchLine(label, metric) {
   const cushion = metric.cushion > 0 ? `, con colchón de ${formatBenchmarkNumber(metric.cushion)}` : '';
   span.appendChild(document.createTextNode(`${cushion})`));
   return span;
-}
-
-// Fecha + hora completas (24hs, no "a. m./p. m."). "N/D" si no hay fecha.
-// Mismo motivo que BENCHMARK_RATIO_FORMAT: formateadores armados una vez.
-const FULL_DATE_FORMAT = new Intl.DateTimeFormat('es-AR');
-const FULL_TIME_FORMAT = new Intl.DateTimeFormat('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false });
-
-function formatFullDateTime(iso) {
-  if (!iso) return { date: 'N/D', time: '' };
-  const d = new Date(iso);
-  // Una fecha inválida hace tirar a Intl.DateTimeFormat (toLocaleDateString
-  // devolvía el texto "Invalid Date"): se conserva ese resultado.
-  if (Number.isNaN(d.getTime())) return { date: 'Invalid Date', time: 'Invalid Date' };
-  return { date: FULL_DATE_FORMAT.format(d), time: FULL_TIME_FORMAT.format(d) };
 }
 
 // -------------------------------------------------------------------------
@@ -899,89 +801,6 @@ async function highlightGoToRow(id) {
   el.classList.add('flash');
 }
 
-// -------------------------------------------------------------------------
-// Alcance del posteo: UNA etiqueta (alto | medio | bajo) a partir de los dos
-// niveles que ya manda el backend en benchmark.likes y benchmark.comments
-// (classifyValue en src/accountStats.js, con la regla de src/reachRule.js:
-// razón con colchón, piso para el alto, y los cortes que diga el .env). Acá
-// no se recalcula nada ni se conoce ningún corte, solo se combinan. Likes y
-// comentarios pesan igual y vale el mejor de los dos: alto si alguno da
-// alto, bajo solo si los dos dan bajo, medio en el resto ("normal" del
-// backend se muestra como "medio"; "bajo" quiere decir que el posteo no se
-// despega de lo normal de su cuenta). Una métrica sin referencia (likes
-// ocultos, muestra chica) no cuenta y decide la otra; si ninguna tiene
-// referencia devuelve null y el posteo no lleva etiqueta de alcance.
-//   by / label: la métrica que decidió la etiqueta: la de mejor nivel y, a
-//               igual nivel, la de mayor razón (empate: comentarios, igual
-//               que highlightOf en el backend).
-//   ratio:      la razón de esa métrica, (valor + colchón) / (mediana de la
-//               cuenta + colchón). Es la que se muestra al lado de la
-//               etiqueta y, dentro de cada nivel, la que ordena "Mayor
-//               alcance".
-//   metric:     lo que mandó el backend para esa métrica (valor, mediana,
-//               colchón), para poder decir con qué se calculó la razón.
-// -------------------------------------------------------------------------
-const REACH_RANK = { bajo: 0, normal: 1, alto: 2 };
-const REACH_LEVELS = ['bajo', 'medio', 'alto'];
-const REACH_METRICS = [
-  { by: 'comments', label: 'comentarios' },
-  { by: 'likes', label: 'likes' },
-];
-
-function postReach(post) {
-  const benchmark = (post && post.benchmark) || {};
-  let best = null;
-  for (const { by, label } of REACH_METRICS) {
-    const metric = benchmark[by];
-    const rank = metric ? REACH_RANK[metric.level] : undefined;
-    // "sin-referencia" (o cualquier nivel desconocido) no entra en la cuenta.
-    if (typeof rank !== 'number' || !Number.isFinite(metric.ratio)) continue;
-    if (!best || rank > best.rank || (rank === best.rank && metric.ratio > best.ratio)) {
-      best = { rank, by, label, ratio: metric.ratio, metric };
-    }
-  }
-  if (!best) return null;
-  return { level: REACH_LEVELS[best.rank], by: best.by, label: best.label, ratio: best.ratio, metric: best.metric };
-}
-
-// El alcance a la vista: el .reach de design/social-listening-v4.html, cinco
-// barras y una palabra. En "alto" las cinco laten en el color de acento y al
-// lado va la razón ("1,56×"); en "medio" van tres en ámbar; en "bajo" quedan
-// grises. Sin referencia: "—". Al pasar el mouse dice con qué se calculó (la
-// razón lleva colchón). Lo usan la columna "Alcance" de la tabla, el pie de
-// la tarjeta del feed, el flujo y "Se despegaron". "reach" es lo que
-// devuelve postReach.
-const REACH_TITLES = { alto: 'Alto', medio: 'Medio', bajo: 'Bajo' };
-
-function buildReachMeter(reach) {
-  const cell = document.createElement('span');
-  if (!reach) {
-    cell.className = 'reach none';
-    cell.textContent = '—';
-    cell.dataset.tipTitle = 'Alcance sin referencia';
-    cell.dataset.tip = 'Ninguna de sus dos métricas tiene con qué compararse en su cuenta.';
-    return cell;
-  }
-  cell.className = `reach ${reach.level}`;
-  const bars = document.createElement('span');
-  bars.className = 'bars';
-  bars.setAttribute('aria-hidden', 'true');
-  for (let i = 0; i < 5; i++) bars.appendChild(document.createElement('i'));
-  // Para un lector de pantalla, el nivel en palabras.
-  const sr = document.createElement('span');
-  sr.className = 'sr';
-  if (reach.level === 'alto') {
-    sr.textContent = 'Alcance alto, razón ';
-    cell.append(bars, sr, `${formatBenchmarkRatio(reach.ratio)}×`);
-  } else {
-    sr.textContent = 'Alcance ';
-    cell.append(bars, sr, reach.level);
-  }
-  cell.dataset.tipTitle = `Alcance ${reach.level}`;
-  cell.dataset.tip = `Razón ${formatBenchmarkRatio(reach.ratio)} en ${reach.label}: ${benchmarkRatioBasis(reach.metric)}.`;
-  return cell;
-}
-
 // Para ordenar la columna "Alcance": primero el nivel, dentro de cada nivel
 // la razón; sin referencia, al final.
 function reachSortValue(post) {
@@ -1187,13 +1006,6 @@ function buildEmptyListLine({ filtered = true } = {}) {
 // cada columna — flechas asc/desc de Tabulator, no una fila "Ordenar"; el
 // feed, con el selector "Orden".
 // -------------------------------------------------------------------------
-function normalizeSearch(text) {
-  return String(text || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(new RegExp('[\\u0300-\\u036f]', 'g'), '');
-}
-
 // Cuenta seleccionada en el dropdown a medida (ver fAccBtnEl/fAccPanelEl más
 // abajo) — reemplaza a fAccEl.value de un <select> nativo.
 let fAccValue = '';
