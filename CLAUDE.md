@@ -523,14 +523,16 @@ La D va sin SDD (decisión del dueño). De la E, en
   `.pipe`, `.al`, `.fbar`, `.combo`, `.fstatus`, `.ups`/`.up`, `.reach`),
   las Estadísticas (`.cloud`, `.rows`, `.donut`, `.topic`, `.heat`,
   `.acc-row`, `.rk`; los badges de los temas llevan la tinta oscura donde
-  el blanco de la maqueta no pasaba 4,5:1), el inicio (`.hero`,
+  el blanco de la maqueta no pasaba 4,5:1), el Análisis de publicación
+  (todo bajo `.ana4`: `.step`, `.ana-notice`, `.posts`, `.post`,
+  `.ai`, `.stackbar`, `.theme`, `.tl`, `.cmt`), el inicio (`.hero`,
   `.plats`/`.pl`, `.nextcard` con `.nring` y `.tl24`, `.homefeed` con
-  `.fl.big`), el login (`.lg-vis` con `.ticker`/`.tk` y `.lg-stats`;
+  `.fl.big`, `.homeana` con `.recent`), el login (`.lg-vis` con `.ticker`/`.tk` y `.lg-stats`;
   `.lg-card` con `.lg-state`, `.lg-err`, `.lg-mail`, `.lg-foot`,
   `.lg-trust`) y,
   con los mismos tokens, lo que la maqueta no dibuja o que todavía no se
-  rehizo (progreso, Tabulator, feed, pop-up, modales, análisis, mapa, el
-  Monitoreo de X). La visual del login es SIEMPRE oscura: el bloque de los
+  rehizo (progreso, Tabulator, feed, pop-up, modales, mapa, el Monitoreo y
+  el análisis de X). La visual del login es SIEMPRE oscura: el bloque de los
   tokens oscuros vale también para ella (`:root[data-theme="dark"],
   .lg-vis`), más `--vis-1` / `--vis-2`, las manchas de color. Todo color sale de los tokens: los únicos sueltos son los de marca de cada
   red, los de las categorías del mapa y el negro de las fotos. Los tokens
@@ -821,10 +823,17 @@ La D va sin SDD (decisión del dueño). De la E, en
   `home`): la pantalla de la maqueta con datos reales, sin el selector
   Hoy / 7 días, sin reloj y sin "datos de ejemplo". "Análisis recientes"
   (fase E) es la tercera columna de `.home3` (1fr 1.25fr 1fr; entre 861 y
-  1100 px va abajo, a todo el ancho): los 4 últimos de
+  1200 px va abajo, a todo el ancho: más angosta, la "Próxima corrida"
+  cortaba sus rótulos): los 4 últimos de
   `GET /api/analisis?plataforma=instagram&limit=4` (`homeLoadAnalisis`, con
   el resto del inicio; redibuja solo si cambiaron), cada uno a
-  `instagram.html#analisis-<id>`, con estado vacío.
+  `instagram.html#analisis-<id>`, con estado vacío. Cada fila: la foto,
+  "@cuenta · fecha de la publicación" (con el año si no es este; sin ella,
+  "analizado <fecha>"), el texto recortado a 90 caracteres en el DOM, "N %
+  pos" y "N analizados" (no es el total de la publicación); un
+  `aria-label` corto (cuenta, fechas, % y "N de M comentarios
+  analizados") y el `data-tip` con la fecha y hora del análisis, que
+  distingue dos análisis de la misma publicación.
   - `GET /api/inicio` (`src/inicioRoutes.js`, con sesión) arma una entrada
     por red: `enCron` (las de `MONITOR_PLATFORMS`), `nextRunAt` (null
     fuera del cron), `hoy` (publicadas desde las 00:00 de Argentina),
@@ -1002,7 +1011,9 @@ pierde nada ni vuelve a gastar. El link se normaliza a
 `https://www.instagram.com/p/<code>/` (también los reels,
 `normalizeAnalysisUrl`); el mismo link en curso devuelve el mismo id. Todo
 queda en la tabla `analisis` (`db.startAnalisis`, `saveAnalisisPost`,
-`finishAnalisis`, `failAnalisis`…, todas por plataforma, sin default):
+`finishAnalisis`, `failAnalisis`…, todas por plataforma, sin default; las
+dos que no la reciben son por id o para todas: `markInterruptedAnalisis` y
+`sumApifyUsdForAnalisis`):
 `en curso` | `ok` | `sin comentarios` | `error` | `interrumpido`. Los "en
 curso" de un arranque anterior los pasa a "interrumpido" SOLO `server.js`
 al arrancar (`db.markInterruptedAnalisis`, con el `usd_apify` que ya
@@ -1059,8 +1070,9 @@ tocar un análisis vivo. SDD en
   antes.
 - **Progreso** (`src/analysisProgress.js`,
   `GET /api/analyze/progress?plataforma=&id=`): turno (solo si alguna
-  corrida esperó cupo), publicación, comentarios, tono ("100 de 287", tanda
-  por tanda), temas, reclamos e informe, cada uno `pendiente` | `en curso` |
+  corrida esperó cupo), publicación, comentarios, tono (los clasificados de
+  las tandas que van terminando, en el orden en que terminan: "87 de 287"
+  si termina primero la corta), temas, reclamos e informe, cada uno `pendiente` | `en curso` |
   `ok` | `omitido` | `error` con un detalle que escribe el trabajo. Queda
   en memoria 10 min después de terminar; después la ruta devuelve la fila
   (`pasos: null`).

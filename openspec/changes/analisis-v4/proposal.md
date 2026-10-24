@@ -73,7 +73,7 @@ resume todo lo clasificado. La pantalla es un script clásico (prefijo
 | `public/instagram.html`, `public/js/analysis.js` | Modified | La solapa de la maqueta |
 | `public/dashboard.html`, `public/js/dashboard.js` | Modified | "Análisis recientes" |
 | `public/js/monitoringFeedPopup.js`, `public/js/x-analysis.js` | Modified | La precarga; el Enter doble de X |
-| `public/css/styles.css` | Modified | Parte `04c-analisis` |
+| `public/css/styles.css` | Modified | Bloque "Análisis de publicación de Instagram (diseño v4, fase E)", todo bajo `.ana4` |
 | `test/*.test.js` | New | Tabla, tandas, síntesis, progreso, rutas, "Cuándo comentaron", el fixture |
 
 ## Risks

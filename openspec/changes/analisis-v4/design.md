@@ -105,7 +105,7 @@ informe con los temas editados.
 | `public/instagram.html`, `public/js/analysis.js` | Modify | La solapa |
 | `public/dashboard.html`, `public/js/dashboard.js` | Modify | "Análisis recientes" |
 | `public/js/monitoringFeedPopup.js`, `public/js/x-analysis.js` | Modify | Precarga; Enter doble |
-| `public/css/styles.css` | Modify | Parte `04c-analisis` |
+| `public/css/styles.css` | Modify | Bloque "Análisis de publicación de Instagram (diseño v4, fase E)", todo bajo `.ana4` |
 
 ## Testing Strategy
 

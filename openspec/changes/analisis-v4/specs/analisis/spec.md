@@ -36,9 +36,9 @@ Cada análisis MUST quedar en la tabla `analisis` con su plataforma, el link nor
 
 #### Scenario: Tres tandas
 
-- GIVEN 287 comentarios a clasificar
-- WHEN termina la primera tanda
-- THEN el paso del tono dice "100 de 287"
+- GIVEN 287 comentarios a clasificar (tandas de 100, 100 y 87, que corren a la vez)
+- WHEN termina la tanda de 87 antes que las otras
+- THEN el paso del tono dice "87 de 287": suma los clasificados de las tandas ya terminadas, en el orden en que terminan
 
 ---
 

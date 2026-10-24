@@ -520,6 +520,22 @@ function homeTickAgo() {
 // ---------- análisis recientes ----------
 
 const HOME_ANA_DATE = new Intl.DateTimeFormat('es-AR', { timeZone: HOME_TZ, day: 'numeric', month: 'short' });
+const HOME_ANA_YEAR = new Intl.DateTimeFormat('es-AR', { timeZone: HOME_TZ, year: 'numeric' });
+const HOME_ANA_FULL = new Intl.DateTimeFormat('es-AR', { timeZone: HOME_TZ, day: '2-digit', month: '2-digit', year: 'numeric' });
+const HOME_ANA_TIME = new Intl.DateTimeFormat('es-AR', { timeZone: HOME_TZ, hour: '2-digit', minute: '2-digit', hour12: false });
+const HOME_ANA_CAPTION = 90; // el texto, recortado en el DOM (si no, el enlace se lee entero)
+
+function homeAnaDate(iso) {
+  const d = iso ? new Date(iso) : null;
+  return d && !Number.isNaN(d.getTime()) ? d : null;
+}
+
+// "27 sept" (con el año si no es este): la fecha de la publicación.
+function homeAnaShort(d) {
+  const corta = HOME_ANA_DATE.format(d).replace('.', '');
+  const anio = HOME_ANA_YEAR.format(d);
+  return anio === HOME_ANA_YEAR.format(new Date()) ? corta : `${corta} ${anio}`;
+}
 
 function homeAnaLine(a) {
   const line = homeNode('a');
@@ -536,17 +552,38 @@ function homeAnaLine(a) {
     th.appendChild(img);
   }
   const tx = homeNode('span', 'tx');
-  const fechaIso = a.postedAt || a.finishedAt;
-  const fecha = fechaIso && !Number.isNaN(new Date(fechaIso).getTime()) ? HOME_ANA_DATE.format(new Date(fechaIso)).replace('.', '') : null;
-  tx.appendChild(homeNode('b', '', `${a.cuenta ? `@${a.cuenta}` : 'Publicación'}${fecha ? ` · ${fecha}` : ''}`));
+  // La fecha de la publicación; si no vino, la del análisis, dicha así.
+  const publicada = homeAnaDate(a.postedAt);
+  const analizada = homeAnaDate(a.finishedAt);
+  const fecha = publicada ? homeAnaShort(publicada) : analizada ? `analizado ${homeAnaShort(analizada)}` : null;
+  const cuenta = a.cuenta ? `@${a.cuenta}` : 'Publicación';
+  tx.appendChild(homeNode('b', '', `${cuenta}${fecha ? ` · ${fecha}` : ''}`));
   const caption = (a.caption || '').replace(/\s+/g, ' ').trim();
-  tx.appendChild(homeNode('small', '', caption || 'Sin texto.'));
+  let corto = caption;
+  if (caption.length > HOME_ANA_CAPTION) {
+    const corte = caption.lastIndexOf(' ', HOME_ANA_CAPTION);
+    corto = `${caption.slice(0, corte > 40 ? corte : HOME_ANA_CAPTION)}…`;
+  }
+  tx.appendChild(homeNode('small', '', corto || 'Sin texto.'));
   const t = a.tonos || {};
   const base = (t.positivos || 0) + (t.neutrales || 0) + (t.negativos || 0);
+  const pos = base > 0 ? Math.round(((t.positivos || 0) / base) * 100) : null;
   const num = homeNode('span', 'num');
-  if (base > 0) num.appendChild(homeNode('span', 'sent-pos', `${Math.round(((t.positivos || 0) / base) * 100)} % pos`));
-  num.appendChild(homeNode('span', '', `${homeCount(a.analizados)} com.`));
-  num.title = `${homeCount(a.analizados)} comentarios analizados`;
+  if (pos !== null) num.appendChild(homeNode('span', 'sent-pos', `${pos} % pos`));
+  // Los analizados, dicho así: no es el total de comentarios de la publicación.
+  num.appendChild(homeNode('span', '', `${homeCount(a.analizados)} analizados`));
+  // Un nombre corto para el lector de pantalla (el texto entero no).
+  const total = Number.isFinite(a.comentariosTotal) && a.comentariosTotal > a.analizados ? ` de ${homeCount(a.comentariosTotal)}` : '';
+  const partes = [
+    `Análisis de ${cuenta}`,
+    publicada ? `publicación del ${HOME_ANA_FULL.format(publicada)}` : null,
+    analizada ? `analizado el ${HOME_ANA_FULL.format(analizada)}` : null,
+    pos !== null ? `${pos} % positivo` : null,
+    `${homeCount(a.analizados)}${total} comentarios analizados`,
+  ];
+  line.setAttribute('aria-label', partes.filter(Boolean).join(', '));
+  // Dos análisis de la misma publicación se distinguen por cuándo se hicieron.
+  if (analizada) line.dataset.tip = `Analizado el ${HOME_ANA_FULL.format(analizada)} a las ${HOME_ANA_TIME.format(analizada)}`;
   line.append(th, tx, num);
   return line;
 }

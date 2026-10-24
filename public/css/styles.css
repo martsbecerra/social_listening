@@ -6530,10 +6530,31 @@ a.fl {
 .recent .num .sent-pos {
   display: block;
 }
+/* En celular los números van debajo del texto, en un renglón: al costado
+   le quitaban el lugar a la cuenta y la fecha. */
+@media (max-width: 560px) {
+  .recent a {
+    grid-template-columns: 36px minmax(0, 1fr);
+  }
+  .recent .num {
+    grid-column: 2;
+    display: flex;
+    gap: 10px;
+    text-align: left;
+  }
+  .recent .num .sent-pos {
+    display: inline;
+  }
+}
 @media (max-width: 1100px) {
   .plats {
     grid-template-columns: 1fr 1fr;
   }
+}
+/* Con tres columnas, por debajo de ~1200 px la "Próxima corrida" queda tan
+   angosta que se cortan los rótulos de la línea de 24 h: los análisis van
+   abajo, a todo el ancho. */
+@media (max-width: 1200px) {
   .home3 {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
   }

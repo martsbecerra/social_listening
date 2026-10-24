@@ -58,7 +58,7 @@ social_listening_app/
 │   ├── prompt.js             # La metodología de análisis (los system prompts de tanda y síntesis).
 │   ├── temasConversacion.js  # Temas emergentes del reporte (IG y X).
 │   ├── reclamosQuery.js      # Query del mapa: plataforma obligatoria + filtros.
-│   ├── db.js                 # SQLite: posteos detectados + reclamos del mapa.
+│   ├── db.js                 # SQLite: posteos detectados, reclamos del mapa y análisis de publicación.
 │   ├── reclamosAddress.js    # Obsoleto (heurística del seed viejo); sin uso.
 │   ├── tematica.js           # Normaliza etiquetas libres del CSV de reclamos (legacy).
 │   ├── categoriasConfig.js   # Carga y valida config/categorias-reclamos.json.
@@ -1192,7 +1192,8 @@ nada ni vuelve a gastar, y el resultado queda en la tabla `analisis` y en
   curso, lo sigue. Enter con un análisis en curso no dispara otro.
 - **Pasos reales**: esperar turno en Apify (solo si había otras corridas
   ocupando los lugares), traer la publicación, traer los comentarios,
-  clasificar el tono ("100 de 287", tanda por tanda), detectar los temas y
+  clasificar el tono (los clasificados de las tandas que van terminando:
+  "87 de 287", "187 de 287"…), detectar los temas y
   armar la lectura, ubicar los reclamos y armar el informe. Cada detalle lo
   escribe el trabajo; nada es una frase fija ni un porcentaje simulado.
 - **Cuántos comentarios**: `COMMENTS_LIMIT` (los que se piden a Apify) y
