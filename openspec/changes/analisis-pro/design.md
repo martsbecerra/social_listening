@@ -1,0 +1,103 @@
+# Design: analisis-pro (F1)
+
+## Technical Approach
+
+El trabajo de la fase E (`src/analysisJob.js`) no cambia de forma: trae la
+publicación y los comentarios, llama a `analyzeComments` y deja la fila.
+Lo que cambia es qué pide al modelo y qué se guarda.
+
+1. **Clasificar** (`analyzeComments`): la muestra en tandas de 100. La
+   tanda 1 va sola: clasifica y define la lista de temas de la
+   publicación. Las tandas 2..n van de a 3 en paralelo con esa lista;
+   cada una puede devolver temas nuevos, que se unen a la lista global por
+   nombre normalizado (sin acentos ni mayúsculas). Por comentario: tono
+   (positivo / neutral / negativo / ruido), postura (favor / neutra /
+   critica), tema (el número de la lista; 0 = ninguno), sobre_posteo,
+   pedido y reclamosGeo (como hoy). Lo que el modelo no devuelve queda sin
+   clasificar.
+2. **Verificados**: los que comentaron con `owner.is_verified`, más todo
+   el que comentó y está en `figuras_publicas` (se cruzan todos los
+   usuarios).
+3. **Reclamos**: como hoy (subcategoría y `upsertReclamo` con
+   `conservarGestion`).
+4. **Informe** (síntesis): recibe los números ya contados (tono, postura,
+   temas con cantidades y tonos, el tema principal de los que no hablan
+   del posteo), los verificados y una muestra; devuelve la lectura, el
+   hecho dominante (o ninguno), los pedidos agrupados con los números de
+   sus comentarios, qué mirar y sugerencias de rol y alineación para
+   verificados que no están en la tabla. Las sugerencias se guardan como
+   `origen = sugerida`.
+
+Al leer (`GET /api/analisis/:id`), `src/analysisMetrics.js` arma la forma
+completa desde la fila: los comentarios guardados (con sus campos v2), el
+`resultado` (lo que dijo el modelo), los temas (con renombres), las
+figuras al día, los reclamos del posteo al día y los análisis anteriores
+de la cuenta. Así un análisis v1 muestra todo lo que se puede contar con
+sus comentarios (tono, temas con su conteo, verificados, etiquetas,
+emojis, los que más pegaron, el tiempo, la comparación) y los bloques que
+necesitan campos v2 dicen que no están disponibles.
+
+## Architecture Decisions
+
+- **Métricas al leer, no guardadas** (decisión del dueño, 24/10/2026). El
+  `resultado` v2 guarda solo lo que dijo el modelo; las cuatro columnas
+  nuevas (`pct_neg`, `tiene_hecho`, `n_verificados`, `tema_estrella`) se
+  escriben al terminar (y `tema_estrella` al renombrar) para listar y
+  ordenar sin abrir el JSON. La migración las completa en los v1.
+- **El modelo no cuenta.** Ningún número de la pantalla sale del modelo.
+  La síntesis recibe los números del servidor y solo puede citar esos.
+- **Sin tipo de cuenta en Instagram** (decisión del dueño). Etiquetaba de
+  "opositor" a cualquier comentarista y alimentaba el porcentaje
+  ponderado del informe institucional; la postura del comentario lo
+  reemplaza y el informe de 8 puntos usa cantidades simples. Instagram
+  deja de leer y escribir `data/account-types.json` (X no lo usa).
+- **Ponderado por likes**: peso = likes + 1, así un comentario sin likes
+  cuenta.
+- **Base de las proporciones**: los clasificados sin el ruido (bots, spam,
+  repetidos), que va aparte, como en la fase E. Lo sin clasificar (una
+  tanda caída) tampoco entra.
+- **Hecho dominante**: solo si la síntesis lo marca sobre el tema principal
+  de los comentarios que no hablan del posteo Y ese tema junta al menos el
+  20 % de los analizados (decisión del dueño). Si no, la tarjeta calma.
+- **Temas**: `temas` v2 = `{ version: 2, lista: [{ id, nombre, manual?,
+  texto?, unidoA? }] }`. Renombrar cambia el nombre; si coincide con otro,
+  se unen (`unidoA`, sin reescribir los comentarios). "+ tema" agrega uno a
+  mano, sin conteo, que entra en el informe.
+- **Figuras públicas**: se cruzan todos los que comentaron; el modelo
+  sugiere solo para verificados; la alineación (oficialismo / oposición)
+  solo vale para legislador/a, funcionario/a, partido, junta comunal,
+  periodista y medio (lo valida el servidor). Una sugerencia nunca pisa
+  una fila `origen = equipo`.
+- **Reclamos del análisis**: los de `reclamos` con el `post_url` del
+  análisis (no hace falta columna nueva), con la regla del mapa para el
+  pin.
+- **Compatibilidad hasta la F2**: `GET /api/analisis/:id` sigue mandando
+  los campos que usa la solapa de la fase E (`temas` con títulos y números
+  de comentarios, `reporteAntes` = el informe nuevo, `csv`,
+  `comentarios`); el PATCH viejo de temas se traduce a renombres y temas a
+  mano.
+
+## Data Flow
+
+    POST /api/analyze ─→ analysisJob.run
+       ├─ Apify: publicación + comentarios (como en E)
+       └─ analyzeComments
+            ├─ tanda 1 (define temas) ─→ tandas 2..n (de a 3, reusan y suman)
+            ├─ verificados (figuras_publicas)
+            ├─ reclamos (subcategoría, upsert)
+            └─ síntesis (números del servidor) ─→ sugerencias → figuras
+       ─→ db.finishAnalisis (resultado v2, temas v2, comentarios v2, columnas)
+
+    GET /api/analisis/:id ─→ analysisMetrics.buildAnalysisView(fila,
+       figuras, reclamos del posteo, anteriores de la cuenta) ─→ forma completa
+
+## Testing Strategy
+
+| Capa | Qué | Cómo |
+|------|-----|------|
+| Métricas | Cada bloque, v1 y v2, bordes | `test/analisisMetricas.test.js`, puro |
+| Modelo | Tanda 1 sola, temas reusados y unidos, validación, síntesis, umbral | `test/analisisModelo.test.js`, LLM stubeado |
+| Trabajo y rutas | v2 de punta a punta, galería, `:id`, compatibilidad, PATCH | `test/analisisTrabajo.test.js` |
+| Figuras | Tabla, rutas, validación, sugerencias | `test/figuras.test.js` |
+| Base | Migración y relleno de los v1 | `test/analisisBase.test.js` |
+| Real | La forma del actor y la respuesta del modelo | `test/analisisFixtureReal.test.js` con los fixtures anonimizados |
