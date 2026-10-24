@@ -1136,10 +1136,27 @@ tocar un análisis vivo. SDD en
   ese link ya se analizó. El campo sigue siendo `#url`.
 - Tests: `test/analisisBase.test.js` (tabla, recientes, interrumpidos,
   `analisis_id`, `conservarGestion`), `test/analisisApify.test.js`
-  (normalización contra el fixture, topes, las dos corridas),
+  (normalización, topes, las dos corridas, el limitador lleno),
   `test/analisisModelo.test.js` (tandas, una caída, índices omitidos, temas,
-  tonos, informe) y `test/analisisTrabajo.test.js` (línea de tiempo,
-  progreso, el trabajo y las rutas con el gate de login). La pantalla se
+  tonos, informe, registro de cuentas), `test/analisisTrabajo.test.js`
+  (línea de tiempo, progreso, el trabajo y las rutas con el gate de login) y
+  `test/analisisFixtureReal.test.js` (REQ-ANA-18: la forma real del actor y
+  el análisis entero contra `test/fixtures/apify/analisis-publicacion.json`
+  y `analisis-comentarios.json`, de la corrida autorizada del 24/10/2026,
+  anonimizados: sin usuarios, textos, ids ni links reales; fechas corridas,
+  desfasajes reales).
+- **Lo que trae de verdad el actor** (esa corrida, un reel con 138
+  comentarios según Instagram): 64 comentarios, solo los de primer nivel
+  (`repliesCount` y `replies` en null: el total de Instagram suma las
+  respuestas, por eso "analizados 64 de 138"). Cada comentario: `id`,
+  `text`, `ownerUsername`, `ownerProfilePicUrl`, `timestamp` (ISO con
+  milisegundos y Z), `likesCount` (0 es 0), `commentUrl`, `owner`
+  (`username`, `profile_pic_url`, `is_verified` —la verificada está ahí,
+  no en el primer nivel—, `id`, `fbid_v2`; `full_name`, `is_private` y
+  los demás en null) y lo que agrega `addParentData`: `postUrl` y
+  `metaData.id` (el código de la publicación). Sin campo de menciones: las
+  @ están en el texto. La publicación trae además `latestComments` (13, con
+  la misma forma), `musicInfo`, `alt`, `isPinned`, `videoDuration`. La pantalla se
   prueba con el servidor de prueba aparte (análisis sembrados y
   `/api/analyze` simulado con el progreso real).
 

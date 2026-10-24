@@ -32,7 +32,7 @@ prueba en otro puerto y una copia de la base.
 - [x] 3.3 El trabajo en el servidor, el mismo link en curso (REQ-ANA-02)
 - [x] 3.4 Las rutas y la foto (REQ-ANA-02, REQ-ANA-08, REQ-ANA-09)
 - [x] 3.5 Interrumpidos al arrancar (REQ-ANA-14)
-- [ ] 3.6 El análisis real autorizado y el fixture anonimizado (REQ-ANA-18)
+- [x] 3.6 El análisis real autorizado y el fixture anonimizado (REQ-ANA-18)
 
 ## Phase 4: pantalla
 
@@ -46,6 +46,6 @@ prueba en otro puerto y una copia de la base.
 ## Phase 5: cierre
 
 - [x] 5.1 CLAUDE.md, README y `.env.example`
-- [ ] 5.2 Suite con `IG_ACTOR=apidojo` y `apify`
-- [ ] 5.3 Capturas a 1366 y 375, en oscuro y con movimiento reducido
-- [ ] 5.4 Diferencias con la maqueta, PR sin mergear y revisor independiente
+- [x] 5.2 Suite con `IG_ACTOR=apidojo` y `apify`
+- [x] 5.3 Capturas a 1366 y 375, en oscuro y con movimiento reducido
+- [x] 5.4 Diferencias con la maqueta, PR sin mergear y revisor independiente
