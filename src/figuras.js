@@ -64,6 +64,10 @@ function textoOpcional(value, max, campo) {
   return t;
 }
 
+// Object.hasOwn: "constructor" o "__proto__" no son un rol ni una alineación.
+const esRol = (k) => typeof k === 'string' && Object.hasOwn(ROLES, k);
+const esAlineacion = (k) => typeof k === 'string' && Object.hasOwn(ALINEACIONES, k);
+
 /**
  * Valida y normaliza una figura que carga el equipo. Tira con userMessage
  * si algo está mal: usuario inválido, rol que no existe, alineación que no
@@ -78,10 +82,10 @@ function validarFigura(input, { actual = null } = {}) {
   const username = actual ? actual.username : normalizeUsername(src.username);
   if (!username) throw errorDeDatos('Falta el usuario de Instagram (letras, números, punto o guion bajo).');
   const rol = tiene('rol') ? String(src.rol || '') : actual ? actual.rol : '';
-  if (!ROLES[rol]) throw errorDeDatos('Elegí un rol de la lista.');
+  if (!esRol(rol)) throw errorDeDatos('Elegí un rol de la lista.');
   let alineacion = tiene('alineacion') ? src.alineacion : actual ? actual.alineacion : null;
   alineacion = alineacion === undefined || alineacion === null || alineacion === '' ? null : String(alineacion);
-  if (alineacion !== null && !ALINEACIONES[alineacion]) throw errorDeDatos('La alineación es oficialismo, oposición o ninguna.');
+  if (alineacion !== null && !esAlineacion(alineacion)) throw errorDeDatos('La alineación es oficialismo, oposición o ninguna.');
   if (alineacion !== null && !ROLES_CON_ALINEACION.has(rol)) {
     throw errorDeDatos(`La alineación solo va para roles políticos o de prensa, no para "${ROLES[rol]}".`);
   }
@@ -104,15 +108,15 @@ function sanitizarSugerencia(raw) {
   if (!raw || typeof raw !== 'object') return null;
   const username = normalizeUsername(raw.username);
   const rol = typeof raw.rol === 'string' ? raw.rol : '';
-  if (!username || !ROLES[rol]) return null;
-  const al = typeof raw.alineacion === 'string' && ALINEACIONES[raw.alineacion] ? raw.alineacion : null;
+  if (!username || !esRol(rol)) return null;
+  const al = esAlineacion(raw.alineacion) ? raw.alineacion : null;
   return { username, rol, alineacion: ROLES_CON_ALINEACION.has(rol) ? al : null };
 }
 
 /** "Periodista · oposición", "Junta comunal", "" sin rol. */
 function rolTexto(figura) {
-  if (!figura || !ROLES[figura.rol]) return '';
-  return ROLES[figura.rol] + (figura.alineacion && ALINEACIONES[figura.alineacion] ? ` · ${ALINEACIONES[figura.alineacion]}` : '');
+  if (!figura || !esRol(figura.rol)) return '';
+  return ROLES[figura.rol] + (esAlineacion(figura.alineacion) ? ` · ${ALINEACIONES[figura.alineacion]}` : '');
 }
 
 module.exports = {

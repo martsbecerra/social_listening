@@ -58,7 +58,7 @@ function register(app) {
 
   app.patch('/api/figuras/:username', (req, res) => {
     try {
-      const figura = db.updateFigura(req.params.username, req.body || {});
+      const figura = db.updateFigura(req.params.username, req.body || {}, { por: req.auth ? req.auth.email : null });
       if (!figura) return res.status(404).json({ error: 'Esa figura no está en la lista.' });
       return res.json({ figura: paraNavegador(figura) });
     } catch (err) {

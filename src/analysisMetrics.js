@@ -97,13 +97,12 @@ function temasDeFila(temas) {
   const v1 = Array.isArray(temas) ? temas : [];
   const lista = v1
     .filter((t) => t && typeof t.titulo === 'string' && t.titulo.trim())
-    .map((t, i) => ({
-      id: i + 1,
-      nombre: t.titulo.trim(),
-      manual: false,
-      texto: typeof t.texto === 'string' && t.texto.trim() ? t.texto.trim() : null,
-      comentariosV1: [...new Set((Array.isArray(t.comentarios) ? t.comentarios : []).filter(Number.isInteger))],
-    }));
+    .map((t, i) => {
+      const comentariosV1 = [...new Set((Array.isArray(t.comentarios) ? t.comentarios : []).filter(Number.isInteger))];
+      const texto = typeof t.texto === 'string' && t.texto.trim() ? t.texto.trim() : null;
+      // Sin comentarios y con texto: uno que agregó el equipo en la E (sale con su texto, sin conteo).
+      return { id: i + 1, nombre: t.titulo.trim(), manual: comentariosV1.length === 0 && Boolean(texto), texto, comentariosV1 };
+    });
   return { lista, canonico: (id) => (lista.some((t) => t.id === Number(id)) ? Number(id) : null), version: 1 };
 }
 
@@ -282,18 +281,42 @@ function buildAnalysisView(row, { figuras = new Map(), reclamos = [], anteriores
     };
   }
 
-  // ---- temas con su tono
-  const porTema = new Map(temas.lista.map((t) => [t.id, { positivo: 0, neutral: 0, negativo: 0, n: 0 }]));
-  for (const c of base) {
-    const t = c.temaId !== null ? porTema.get(c.temaId) : null;
-    if (!t) continue;
-    t.n += 1;
-    t[c.tono] += 1;
+  // ---- temas con su tono (y, en un v2, cuántos no hablan del posteo)
+  const porTema = new Map(temas.lista.map((t) => [t.id, { positivo: 0, neutral: 0, negativo: 0, n: 0, fuera: v2 ? 0 : null }]));
+  if (temas.version === 1) {
+    // Fase E: un comentario podía estar en varios temas y cada tema se
+    // contaba por su lista (también el ruido, que no suma tono). Igual acá.
+    const porNumero = new Map(clasificados.map((c) => [c.n, c]));
+    for (const t of temas.lista) {
+      const x = porTema.get(t.id);
+      for (const n of t.comentariosV1) {
+        const c = porNumero.get(n);
+        if (!c) continue;
+        x.n += 1;
+        if (TONOS.includes(c.tono)) x[c.tono] += 1;
+      }
+    }
+  } else {
+    for (const c of base) {
+      const t = c.temaId !== null ? porTema.get(c.temaId) : null;
+      if (!t) continue;
+      t.n += 1;
+      t[c.tono] += 1;
+      if (t.fuera !== null && c.sobrePosteo === false) t.fuera += 1;
+    }
   }
   const temasVista = temas.lista
     .map((t) => {
       const x = porTema.get(t.id);
-      return { id: t.id, nombre: t.nombre, manual: t.manual, texto: t.texto, n: t.manual ? null : x.n, tonos: { positivo: x.positivo, neutral: x.neutral, negativo: x.negativo } };
+      return {
+        id: t.id,
+        nombre: t.nombre,
+        manual: t.manual,
+        texto: t.texto,
+        n: t.manual ? null : x.n,
+        fuera: t.manual ? null : x.fuera,
+        tonos: { positivo: x.positivo, neutral: x.neutral, negativo: x.negativo },
+      };
     })
     // Un tema del modelo sin ningún comentario no se muestra (en la corrida
     // real armó "Comentarios de spam o ruido", y el ruido no lleva tema). Un
@@ -330,7 +353,8 @@ function buildAnalysisView(row, { figuras = new Map(), reclamos = [], anteriores
   const fueraDelPosteo = sobrePosteo && sobrePosteo.desvios.length ? sobrePosteo.desvios[0].temaId : null;
   const propuesto = v2 && resultado.hecho && typeof resultado.hecho === 'object' ? resultado.hecho : null;
   if (propuesto && fueraDelPosteo !== null && temas.canonico(propuesto.temaId) === fueraDelPosteo) {
-    const delTema = base.filter((c) => c.temaId === fueraDelPosteo);
+    // Los del tema que NO hablan del posteo: el informe dice "un hecho ajeno al posteo".
+    const delTema = base.filter((c) => c.temaId === fueraDelPosteo && c.sobrePosteo === false);
     const share = analizados > 0 ? delTema.length / analizados : 0;
     if (share >= UMBRAL_HECHO) {
       const likesTotal = comentarios.reduce((n, c) => n + likesDe(c), 0);

@@ -65,7 +65,9 @@ function aplicarCambio(temas, cambio) {
       throw errorDeDatos('Los temas del modelo no llevan texto: el informe los nombra con su cantidad de comentarios.');
     }
     const otro = vigentes(lista).find((t) => t.id !== tema.id && claveTema(t.nombre) === claveTema(nombre));
-    if (otro && (otro.manual || tema.manual)) throw errorDeDatos('Ya hay un tema agregado a mano con ese nombre.');
+    // Solo dos temas del modelo se unen (sus comentarios cuentan en uno).
+    if (otro && otro.manual) throw errorDeDatos('Ya hay un tema agregado a mano con ese nombre.');
+    if (otro && tema.manual) throw errorDeDatos('Ya hay un tema del modelo con ese nombre: uno agregado a mano no se une a otro.');
     if (otro) tema.unidoA = otro.id; // se unen: cuenta en el que ya existía
     else tema.nombre = nombre;
     if (tema.manual && cambio.texto !== undefined) tema.texto = textoValido(cambio.texto);

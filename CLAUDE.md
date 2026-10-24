@@ -1053,18 +1053,26 @@ públicas). La F va en dos PR: F1 (modelo y servidor, tag `v4-fase-f1`) y F2
   se cortó en 12.000, dos veces. Una respuesta cortada (`SALIDA_CORTADA`,
   `src/llm/errors.js`: `finish_reason` `length` en OpenRouter,
   `stop_reason` `max_tokens` en Anthropic) no se reintenta igual: la tanda
-  se parte en dos mitades, una después de la otra, una sola vez. Todo
+  se parte en dos mitades, una después de la otra, una sola vez. El
+  proveedor de Anthropic usa `messages.create` y parsea el JSON a mano:
+  `messages.parse` tira con un JSON a medias antes de devolver el mensaje y
+  se perdían el uso y el `stop_reason`. Todo
   error de `llm.requestStructuredAnalysis` lleva lo ya gastado
   (`err.tokenUsage`, con su costo) y el análisis lo suma: un intento
-  fallido también se cobra. Por comentario: tono,
+  fallido también se cobra. Esto vale para todo lo que usa
+  `requestStructuredAnalysis` (también el clasificador del monitoreo y el
+  análisis de X): una respuesta cortada ya no se pide dos veces. Por comentario: tono,
   postura hacia la gestión (`favor` | `neutra` | `critica`), tema (el
   número de la lista; 0 ninguno, también el ruido: el modelo no arma un
   tema para eso), si habla del posteo, si pide algo en serio (no una
   pregunta irónica) y los
   reclamos con ubicación. La PRIMERA tanda va sola y define los temas
-  ("DEFINÍ LOS TEMAS"); las demás (hasta 5 a la vez) reciben esa lista
-  ("LISTA DE TEMAS") y pueden sumar hasta 12 nuevos cada una, que se unen
-  por nombre (`claveTema`: sin acentos, mayúsculas ni espacios de más; tope
+  ("DEFINÍ LOS TEMAS"); si cae o no devuelve ninguno, la siguiente también
+  va sola (`MAX_TANDAS_SOLAS` 2: si no, las que corren en paralelo armaban
+  cada una su propia lista). Las demás (hasta 5 a la vez) reciben esa lista
+  ("LISTA DE TEMAS") y pueden sumar temas nuevos (el prompt pide como mucho
+  3 por tanda; el schema acepta 12, lo que necesita la que define), que se
+  unen por nombre (`claveTema`: sin acentos, mayúsculas ni espacios de más; tope
   `MAX_TEMAS_ANALISIS` 15 por publicación; los que llegan después quedan
   sin tema). Después una síntesis (`SINTESIS_SYSTEM_PROMPT`,
   `SINTESIS_JSON_SCHEMA`) que recibe los NÚMEROS ya contados por
@@ -1072,18 +1080,22 @@ públicas). La F va en dos PR: F1 (modelo y servidor, tag `v4-fase-f1`) y F2
   tema principal fuera del posteo y los verificados; hasta 160) y devuelve
   solo texto: la lectura, el hecho dominante (`hay`, el número de tema,
   título y descripción), los pedidos agrupados con los números de sus
-  comentarios (`normalizeSynthesis`: solo comentarios clasificados, cada
-  uno en un solo grupo), qué mirar y sugerencias de rol para los
-  VERIFICADOS SIN FICHA. **El modelo no da números**: todo lo que se cuenta
+  comentarios (`normalizeSynthesis`: solo comentarios marcados PEDIDO,
+  sin el ruido, cada uno en un solo grupo), qué mirar y sugerencias de rol
+  para los VERIFICADOS SIN FICHA. En TEMAS, cada tema lleva sus propios
+  comentarios fuera del posteo (`fuera` de la vista; los desvíos de la
+  pantalla son solo 4). **El modelo no da números**: todo lo que se cuenta
   sale del servidor. Sin tipo de cuenta en Instagram: la postura lo
-  reemplaza; `accountRegistry.js` y `config/account-types.json` ya no
-  existen y el tono no se pondera por tipo (X conserva lo suyo). Una tanda
+  reemplaza; `accountRegistry.js` ya no existe, Instagram no lee ni
+  escribe `data/account-types.json` (queda `data/account-types.example.json`,
+  sin uso) y el tono no se pondera por tipo (X conserva lo suyo). Una tanda
   que falla deja sus comentarios en null y el análisis sigue (el contador
   del paso suma solo lo clasificado); si fallan todas, error con el
   `userMessage` del proveedor (sin crédito, clave inválida: reintentar no lo
   arregla), y si falla la síntesis, con el suyo. El error lleva lo ya
   gastado (`err.tokenUsage`): la fila guarda `usd_modelo` y `tokens`
-  también al fallar. La subcategoría de los reclamos (`llm.requestText`)
+  también al fallar (y si algo tira después de que el modelo terminó,
+  `analysisJob` usa lo que el modelo ya informó). La subcategoría de los reclamos (`llm.requestText`)
   sale con su costo estimado, como el resto. **"Analizados" son los
   clasificados de verdad**: la pantalla dice "analizados N de M" con M el
   total que informa Instagram, nunca un número fijo. La fila guarda
@@ -1100,23 +1112,30 @@ públicas). La F va en dos PR: F1 (modelo y servidor, tag `v4-fase-f1`) y F2
   y postura (sobre los clasificados sin el ruido; lo sin clasificar
   tampoco entra), el ponderado por likes (cada comentario pesa likes + 1),
   el tono neto, "hablan del posteo" y a qué se desvían, los temas (con sus
-  renombres y uniones; uno del modelo sin ningún comentario no sale, en un
-  v1 sí), el hecho dominante, quién habló (verificados y
+  renombres y uniones; uno del modelo sin ningún comentario no sale; en
+  un v1 cada tema cuenta su propia lista, como en la E, y uno sin
+  comentarios con texto es uno del equipo: sale con su texto), el hecho dominante, quién habló (verificados y
   figuras públicas), los pedidos, etiquetas (@ mencionadas), emojis (sin
   tono de piel ni U+FE0F; una secuencia ZWJ cuenta por su primer emoji;
   listas fijas `APOYO` y `BRONCA`), los de más likes, el tiempo, la
-  comparación con los análisis anteriores de la misma cuenta (promedio de
-  % negativo, comentarios, verificados y "sobre el posteo"; la pantalla lo
-  dice "+74 %", nunca "1,7×"), los reclamos del posteo y el costo. **Hecho
-  dominante**: solo si el modelo lo marcó sobre el tema principal de los
-  que no hablan del posteo Y ese tema junta al menos `UMBRAL_HECHO` (20 %)
-  de los analizados; si no, `hecho` null y la tarjeta calma. Un análisis
+  comparación con los análisis anteriores de la misma cuenta (de cada
+  publicación anterior, solo su último análisis: `db.listAnterioresDeCuenta`;
+  promedio de % negativo, comentarios, verificados y "sobre el posteo"; la
+  pantalla lo dice "+74 %", nunca "1,7×"), los reclamos del posteo y el
+  costo. **Hecho dominante**: solo si el modelo lo marcó sobre el tema
+  principal de los que no hablan del posteo Y los comentarios de ese tema
+  que no hablan del posteo son al menos `UMBRAL_HECHO` (20 %) de los
+  analizados (el informe dice "un hecho ajeno al posteo"); si no, `hecho`
+  null y la tarjeta calma. Un análisis
   v1 (fase E) muestra lo que se puede contar con sus comentarios y los
   bloques que piden los campos nuevos vienen en `disponible` como false.
   Cambiar una regla vale para todos los análisis sin recalcular nada; las
   columnas de la galería (`pct_neg`, `tiene_hecho`, `n_verificados`,
-  `tema_estrella`, `columnasDeVista`) se escriben al terminar y al editar
-  los temas, y los v1 se completaron una vez al cargar `db.js`.
+  `tema_estrella`, `columnasDeVista`) se escriben al terminar y, las
+  cuatro, al editar los temas (v1 y v2: unir temas puede cambiar la
+  estrella y el hecho), y los v1 se completaron una vez al cargar `db.js`
+  con `buildAnalysisView` y `columnasDeVista`, la misma cuenta que la
+  vista.
 - **Informe y CSV** (`src/reportBuilder.js`): `buildInforme(vista)` es el
   de 8 puntos (lo que pasó, tono, postura, hablan del posteo, temas, quién
   habló, pedidos, lectura), más "Comentarios destacados" y el pie
@@ -1131,7 +1150,12 @@ públicas). La F va en dos PR: F1 (modelo y servidor, tag `v4-fase-f1`) y F2
   que no puede contar. `buildComentariosCsv(vista)` y `buildReclamosCsv`:
   `GET /api/analisis/:id/comentarios.csv` y `/reclamos.csv` (404 sin
   reclamos), con BOM para Excel, `nosniff` y
-  `comentarios-<cuenta>-<AAAA-MM-DD>.csv`.
+  `comentarios-<cuenta>-<AAAA-MM-DD>.csv`. Contra la inyección de
+  fórmulas, un campo que empieza con = + - @ tabulación o retorno (salvo un
+  número) lleva un apóstrofo adelante (`escapeCsvField`); el CSV de
+  reclamos de un análisis anterior ya quedó guardado como estaba. Un
+  análisis donde todo lo clasificado es ruido dice "sin comentarios con
+  opinión para medir" en los puntos 1 a 4.
 - **Figuras públicas** (`src/figuras.js`, puro; tabla `figuras_publicas`,
   la única nueva): usuario (minúsculas, sin @), nombre, rol (`ROLES`, sin
   género en el texto: "Legislador/a"), alineación (oficialismo | oposición,
@@ -1144,8 +1168,12 @@ públicas). La F va en dos PR: F1 (modelo y servidor, tag `v4-fase-f1`) y F2
   sea figura pública. `/api/figuras` (`src/figurasRoutes.js`): GET (la
   lista, los roles y las alineaciones), POST (201; 409 repetida; 400 con el
   motivo), PATCH `/:username` (cambia lo que venga y confirma una
-  sugerida: queda `equipo`), DELETE (204); quién la cargó (`creado_por`,
-  un correo) no sale. La pantalla para editarlas va en la F2.
+  sugerida: queda `equipo`, con quien la confirmó como `creado_por`),
+  DELETE (204); quién la cargó (`creado_por`, un correo) no sale. Roles y
+  alineaciones se validan con `Object.hasOwn` ("constructor" no es un
+  rol). Una sugerencia borrada vuelve si el modelo la sugiere en otro
+  análisis (no hay "rechazada"; queda para la F2). La pantalla para
+  editarlas va en la F2.
 - **Temas** (`src/analysisTemas.js`, puro): el equipo puede renombrar uno
   (si el nombre es el de otro del modelo, se unen: `unidoA`, sus
   comentarios cuentan en el otro sin reescribirlos), agregar uno a mano
@@ -1153,10 +1181,12 @@ públicas). La F va en dos PR: F1 (modelo y servidor, tag `v4-fase-f1`) y F2
   agregado a mano; uno del modelo no se quita ni lleva texto (400 con el
   motivo). `PATCH /api/analisis/:id/temas` con `{ accion: 'renombrar' |
   'agregar' | 'quitar', id, nombre, texto }` devuelve el análisis entero
-  (vista e informe rehechos) y actualiza `tema_estrella`; la lista entera
-  que manda la pantalla de la E se traduce al cambio
-  (`traducirListaVieja`: uno más, uno menos o un título distinto); un v1
-  sigue con su lista de hasta 8, como siempre.
+  (vista e informe rehechos) y actualiza las columnas de la galería; la
+  lista entera que manda la pantalla de la E se traduce al cambio
+  (`traducirListaVieja`: uno más, uno menos o un título distinto, contra
+  el estado de ese momento: dos pestañas con listas viejas pueden pisarse
+  hasta la F2); un v1 sigue con su lista de hasta 8, como siempre. Un tema
+  del modelo sin comentarios no se ve pero sigue ocupando su nombre.
 - **Reclamos**: `db.upsertReclamo(r, { conservarGestion: true })` en
   Instagram y X: re-analizar conserva el estado y, si la dirección detectada
   no cambió, el geocodificado; con la misma categoría, una subcategoría

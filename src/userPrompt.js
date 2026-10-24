@@ -78,10 +78,10 @@ function buildSynthesisPrompt({ url, post, vista, muestra, verificadosSinFicha }
     p ? `Postura hacia la gestión: ${p.favor} a favor (${pct(p.proporcion.favor)}), ${p.neutra} neutra (${pct(p.proporcion.neutra)}), ${p.critica} crítica (${pct(p.proporcion.critica)})` : null,
     s ? `Hablan del posteo: ${s.si} (${pct(s.proporcion)}); lo usan para otra cosa: ${s.no}` : null,
   ].filter(Boolean);
-  const fueraDe = new Map(((s && s.desvios) || []).map((d) => [d.temaId, d.n]));
+  // Los fuera del posteo de CADA tema (los desvíos de la vista son solo los 4 primeros).
   const temas = vista.temas
     .filter((x) => !x.manual)
-    .map((x) => `${x.id}. ${x.nombre}: ${x.n} comentarios · ${x.tonos.positivo} pos / ${x.tonos.neutral} neu / ${x.tonos.negativo} neg · ${fueraDe.get(x.id) || 0} fuera del posteo`);
+    .map((x) => `${x.id}. ${x.nombre}: ${x.n} comentarios · ${x.tonos.positivo} pos / ${x.tonos.neutral} neu / ${x.tonos.negativo} neg · ${x.fuera ?? 0} fuera del posteo`);
   const principal = s && s.desvios.length ? s.desvios[0] : null;
   const lineaPrincipal = principal
     ? `${principal.temaId}. ${principal.tema} (${principal.n} comentarios que no hablan del posteo; ${pct(vista.analizados ? principal.n / vista.analizados : 0)} de los analizados)`

@@ -200,6 +200,7 @@ async function run(id, url) {
   const pasos = progress.pasosDe(id);
   const hooks = turnoTracker(pasos);
   let traidos = null;
+  let gastoModeloListo = null; // lo del modelo, si algo tira después de que terminó
   try {
     // ---- 1) publicación y comentarios, en paralelo
     const hPost = hooks('publicacion');
@@ -249,6 +250,7 @@ async function run(id, url) {
     // ---- 3) el modelo
     const desdeModelo = Date.now();
     const result = await analyzer.analyzeComments({ url, post, comments, pasos });
+    gastoModeloListo = result.tokenUsage || null;
     log(id, 'modelo listo', { ms: Date.now() - desdeModelo, ...result.numeros, tokens: result.tokenUsage ? result.tokenUsage.totalTokens : null });
 
     // ---- 4) la fila (el paso "informe" lo arrancó la síntesis)
@@ -315,7 +317,7 @@ async function run(id, url) {
     const mensaje = (err && err.userMessage) || MENSAJE_ERROR;
     console.error(`[analisis] #${id} error:`, err && err.message);
     try {
-      const gastoModelo = (err && err.tokenUsage) || null;
+      const gastoModelo = (err && err.tokenUsage) || gastoModeloListo;
       db.failAnalisis(id, PLATAFORMA, {
         estado: 'error',
         error: mensaje,

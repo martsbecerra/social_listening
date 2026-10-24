@@ -58,6 +58,7 @@ let terminadas;
 let tandaFalla;
 let errorDeTanda;
 let cortadas;
+let sinTemas;
 let omitir;
 let sintesis;
 let subcategoria;
@@ -77,10 +78,12 @@ function stubModelo() {
       // La primera define dos temas; las demás suman "Seguridad en el parque"
       // con su número (escrito distinto: tiene que quedar uno solo).
       const temas = define
-        ? [
-            { numero: 1, nombre: 'Plaza y obra' },
-            { numero: 2, nombre: 'Churrero' },
-          ]
+        ? sinTemas.has(numero)
+          ? []
+          : [
+              { numero: 1, nombre: 'Plaza y obra' },
+              { numero: 2, nombre: 'Churrero' },
+            ]
         : [{ numero: cuantos + 1, nombre: numero === 2 ? 'Seguridad en el parque' : 'seguridad en el PARQUE ' }];
       const nuevo = define ? null : cuantos + 1;
       const lista = numerosDelPrompt(userPrompt);
@@ -125,6 +128,7 @@ beforeEach(() => {
   tandaFalla = null;
   errorDeTanda = null;
   cortadas = new Set();
+  sinTemas = new Set();
   subcategoria = '';
   omitir = new Set();
   sintesis = {
@@ -247,15 +251,37 @@ describe('tandas y temas', { concurrency: false }, () => {
     assert.match(eventos.filter(([, key]) => key === 'clasificar').pop()[2], /una tanda falló/);
   });
 
-  test('si la primera falla, las siguientes definen los temas y se unen por nombre', async () => {
+  test('si la primera falla, la segunda también va sola y define los temas; las demás los reusan', async () => {
     tandaFalla = 1;
     const r = await analyzeComments({ url: URL, post: POST, comments: comentarios(N) });
-    const tandas = llamadas.filter((l) => l.schemaName === 'tanda_instagram' && l.numero !== 1);
-    for (const l of tandas) assert.match(l.userPrompt, /DEFINÍ LOS TEMAS/);
+    const tandas = llamadas.filter((l) => l.schemaName === 'tanda_instagram');
+    const de = (n) => tandas.find((l) => l.numero === n);
+    assert.match(de(2).userPrompt, /DEFINÍ LOS TEMAS/);
+    assert.ok(de(3).conTerminadas.includes('2'), 'la 3 arrancó después de la 2');
+    assert.match(de(3).userPrompt, /LISTA DE TEMAS[^\n]*\n1\. Plaza y obra\n2\. Churrero/);
+    // La 3 suma el suyo (el stub lo escribe así en las tandas que no son la 2).
     assert.deepEqual(
       r.temas.lista.map((t) => t.nombre),
-      ['Plaza y obra', 'Churrero']
+      ['Plaza y obra', 'Churrero', 'seguridad en el PARQUE']
     );
+  });
+
+  test('si la primera no devuelve temas, la segunda va sola y los define (una sola lista)', async () => {
+    sinTemas = new Set([1]);
+    const r = await analyzeComments({ url: URL, post: POST, comments: comentarios(N) });
+    const tandas = llamadas.filter((l) => l.schemaName === 'tanda_instagram');
+    assert.equal(tandas.filter((l) => /DEFINÍ LOS TEMAS/.test(l.userPrompt)).length, 2, 'la 1 (que no devolvió) y la 2');
+    assert.ok(tandas.find((l) => l.numero === 3).conTerminadas.includes('2'));
+    assert.equal(r.temas.lista.length, 3);
+    // Los de la tanda 1 quedaron clasificados, sin tema.
+    assert.ok(r.comentarios.filter((c) => c.usuario === 'vecino1' || c.usuario === 'vecino2').every((c) => c.tono !== null && c.tema === null));
+  });
+
+  test('con las dos primeras caídas, las demás van en paralelo (no se espera para siempre)', async () => {
+    tandaFalla = [1, 2];
+    await analyzeComments({ url: URL, post: POST, comments: comentarios(B * 4) });
+    const tandas = llamadas.filter((l) => l.schemaName === 'tanda_instagram');
+    assert.ok(!tandas.find((l) => l.numero === 3).conTerminadas.includes('4') && !tandas.find((l) => l.numero === 4).conTerminadas.includes('3'));
   });
 
   test('lo que el modelo no devolvió no cuenta como analizado', async () => {

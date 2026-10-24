@@ -3,7 +3,7 @@
 // --------------------------------------------------------------------------
 // System prompts del análisis de publicación de Instagram, en varias
 // llamadas (src/analyzeComments.js):
-//   - TANDA_SYSTEM_PROMPT: clasifica una tanda de hasta 100 comentarios
+//   - TANDA_SYSTEM_PROMPT: clasifica una tanda de hasta 50 comentarios
 //     (tono, postura hacia la gestión, tema, si habla del posteo, si pide
 //     algo, reclamos con ubicación). La primera tanda define los temas de la
 //     publicación; las demás los reutilizan y pueden sumar nuevos.

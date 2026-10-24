@@ -262,15 +262,16 @@ function register(app) {
       if (!temas) {
         return res.status(400).json({ error: `Los temas tienen que ser una lista de hasta ${MAX_TEMAS}, cada uno con su título.` });
       }
-      db.updateAnalisisTemas(id, plataforma, temas);
+      // Las columnas de la galería, con la misma cuenta que la vista (la estrella cambia con los temas).
+      db.updateAnalisisTemas(id, plataforma, temas, { columnas: columnasDeVista(buildAnalysisView({ ...analisis, temas })) });
       return res.json({ temas });
     }
     try {
       const cambio = Array.isArray(body.temas) ? traducirListaVieja(temasCompat(vistaDe(analisis)), body.temas) : body;
       if (cambio) {
         const temas = aplicarCambio(analisis.temas, cambio);
-        const vista = buildAnalysisView({ ...analisis, temas });
-        db.updateAnalisisTemas(id, plataforma, temas, { temaEstrella: columnasDeVista(vista).temaEstrella });
+        // Unir temas puede cambiar la estrella y el hecho dominante: todas las columnas de la galería.
+        db.updateAnalisisTemas(id, plataforma, temas, { columnas: columnasDeVista(buildAnalysisView({ ...analisis, temas })) });
       }
       return res.json(completoParaNavegador(db.getAnalisis(id, plataforma)));
     } catch (err) {

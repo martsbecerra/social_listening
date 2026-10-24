@@ -57,6 +57,10 @@ const db = require('./db');
 const BATCH_SIZE = 50;
 const BATCH_CONCURRENCY = 5;
 const BATCH_MAX_TOKENS = 16000;
+// Cuántas tandas pueden ir solas, una tras otra, buscando la que defina los
+// temas (la primera y, si cae, la siguiente): más alargaría mucho un
+// análisis con el proveedor caído.
+const MAX_TANDAS_SOLAS = 2;
 const SYNTHESIS_MAX_TOKENS = 6000;
 // Tope de temas de una publicación: los que lleguen después quedan sin tema.
 const MAX_TEMAS_ANALISIS = 15;
@@ -216,13 +220,13 @@ async function analizar({ url, post, comments, pasos = NO_PASOS }, gasto) {
   // Un lote que no se pudo clasificar: sus comentarios quedan en null.
   const sinClasificar = (lote, numero, err) => {
     sumUsage(err && err.tokenUsage);
-    fallidas += 1;
     ultimoError = err;
     console.warn(`[analisis] la tanda ${numero} de ${tandas.length} falló (${lote.length} comentarios sin clasificar): ${err && err.message}`);
     return new Array(lote.length).fill(null);
   };
   const correrTanda = async (t) => {
     const tanda = tandas[t];
+    let fallo = false; // de esta tanda: una partida con alguna mitad caída cuenta una vez
     try {
       porTanda[t] = await clasificarLote(tanda, t + 1);
     } catch (err) {
@@ -238,21 +242,31 @@ async function analizar({ url, post, comments, pasos = NO_PASOS }, gasto) {
           try {
             partes.push(await clasificarLote(parte, numero));
           } catch (errParte) {
+            fallo = true;
             partes.push(sinClasificar(parte, numero, errParte));
           }
         }
         porTanda[t] = partes.flat();
       } else {
+        fallo = true;
         porTanda[t] = sinClasificar(tanda, t + 1, err);
       }
     }
+    if (fallo) fallidas += 1;
     // Solo lo clasificado: una tanda caída no avanza el contador.
     hechos += porTanda[t].filter(Boolean).length;
     pasos.update('clasificar', `${INT.format(hechos)} de ${INT.format(total)}`, { avance: total ? hechos / total : 1 });
   };
-  if (tandas.length) await correrTanda(0);
+  // La primera va sola y define los temas. Si cae o no devuelve ninguno, la
+  // que sigue también va sola (hasta MAX_TANDAS_SOLAS en total): si no, las
+  // que corren en paralelo armaban cada una su propia lista.
+  let solas = 0;
+  while (solas < tandas.length && (solas === 0 || (temas.lista.length === 0 && solas < MAX_TANDAS_SOLAS))) {
+    await correrTanda(solas);
+    solas += 1;
+  }
   await runPool(
-    tandas.slice(1).map((_, k) => () => correrTanda(k + 1)),
+    tandas.slice(solas).map((_, k) => () => correrTanda(solas + k)),
     BATCH_CONCURRENCY
   );
   let classifications = applyHeuristicsToClassified(sample, porTanda.flat());
@@ -333,7 +347,8 @@ async function analizar({ url, post, comments, pasos = NO_PASOS }, gasto) {
     sumUsage(result.usage);
     sintesis = normalizeSynthesis(result.parsed, {
       temasValidos: new Set(temasV2.lista.map((t) => t.id)),
-      comentariosValidos: new Set(comentarios.filter((c) => c.tono !== null).map((c) => c.n)),
+      // Un pedido agrupa solo comentarios que la tanda marcó PEDIDO (no un elogio de la muestra por likes).
+      comentariosValidos: new Set(comentarios.filter((c) => c.tono !== null && c.tono !== 'ruido' && c.pedido === true).map((c) => c.n)),
       verificadosSinFicha: new Set(verificadosSinFicha),
     });
   } catch (err) {

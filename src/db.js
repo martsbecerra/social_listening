@@ -22,6 +22,7 @@ const { DatabaseSync } = require('node:sqlite');
 const { normalizeClasificacion } = require('./categoriasConfig');
 const { platformForUrl } = require('./platforms/urlPlatform');
 const figurasModelo = require('./figuras');
+const analysisMetrics = require('./analysisMetrics'); // sin dependencias: no vuelve a db.js
 
 const DATA_DIR = path.join(__dirname, '..', 'data');
 // MONITORING_DB_PATH: solo para tests (tempfile). En runtime normal sigue
@@ -1198,6 +1199,9 @@ const markAnalisisImageStmt = db.prepare(`
   WHERE id = @id AND plataforma = @plataforma
 `);
 const getAnalisisStmt = db.prepare('SELECT * FROM analisis WHERE id = ? AND plataforma = ?');
+// Los reclamos de un análisis se buscan por su publicación (la galería los
+// cuenta por cada análisis): sin este índice recorría todos los de la red.
+db.exec('CREATE INDEX IF NOT EXISTS idx_reclamos_post ON reclamos(plataforma, post_url)');
 // Las columnas livianas: lo que necesitan la tira de recientes, el inicio y
 // el aviso de "ya analizado" (sin comentarios ni informe).
 const ANALISIS_LIVIANO = `id, plataforma, url, post_code, post_id, estado, started_at, finished_at, cuenta, cuenta_nombre, caption,
@@ -1212,18 +1216,29 @@ const findAnalisisByUrlStmt = db.prepare(`
 `);
 const updateAnalisisTemasStmt = db.prepare("UPDATE analisis SET temas = ? WHERE id = ? AND plataforma = ? AND estado = 'ok'");
 const updateTemaEstrellaStmt = db.prepare("UPDATE analisis SET tema_estrella = ? WHERE id = ? AND plataforma = ? AND estado = 'ok'");
-// La galería: todos los terminados bien de la plataforma (se filtran y
-// ordenan en listAnalisisGaleria; son cientos, no miles).
+const updateColumnasGaleriaStmt = db.prepare(`
+  UPDATE analisis SET pct_neg = @pctNeg, tiene_hecho = @tieneHecho, n_verificados = @nVerificados, tema_estrella = @temaEstrella
+  WHERE id = @id AND plataforma = @plataforma AND estado = 'ok'
+`);
+// La galería: los terminados bien de la plataforma (se filtran y ordenan en
+// listAnalisisGaleria; son cientos, no miles: con más de 2000, la búsqueda y
+// los filtros miran los 2000 más recientes). total y desde, de todos.
 const listAnalisisGaleriaStmt = db.prepare(`
   SELECT ${ANALISIS_LIVIANO} FROM analisis WHERE plataforma = ? AND estado = 'ok' ORDER BY finished_at DESC, id DESC LIMIT 2000
 `);
+const resumenGaleriaStmt = db.prepare("SELECT COUNT(*) AS total, MIN(finished_at) AS desde FROM analisis WHERE plataforma = ? AND estado = 'ok'");
 // Los análisis anteriores de una cuenta, para la comparación: sin el
-// actual ni otros de la misma publicación.
+// actual ni otros de la misma publicación, y de cada publicación anterior
+// solo el último (re-analizar una no la cuenta dos veces).
 const listAnterioresDeCuentaStmt = db.prepare(`
   SELECT id, started_at, finished_at, post_code, pct_neg, comentarios_total, n_verificados, comentarios, temas
-  FROM analisis
-  WHERE plataforma = @plataforma AND estado = 'ok' AND cuenta = @cuenta AND id <> @id AND started_at < @antesDe
-    AND (@postCode IS NULL OR post_code IS NULL OR post_code <> @postCode)
+  FROM (
+    SELECT *, ROW_NUMBER() OVER (PARTITION BY COALESCE(post_code, 'id:' || id) ORDER BY started_at DESC, id DESC) AS rn
+    FROM analisis
+    WHERE plataforma = @plataforma AND estado = 'ok' AND cuenta = @cuenta AND id <> @id AND started_at < @antesDe
+      AND (@postCode IS NULL OR post_code IS NULL OR post_code <> @postCode)
+  )
+  WHERE rn = 1
   ORDER BY started_at DESC, id DESC LIMIT @limit
 `);
 // Los reclamos de una publicación (los guarda el análisis con su post_url),
@@ -1244,9 +1259,10 @@ const insertFiguraStmt = db.prepare(`
   INSERT INTO figuras_publicas (username, nombre, rol, alineacion, origen, notas, creado_por, creado_en, actualizado_en)
   VALUES (@username, @nombre, @rol, @alineacion, @origen, @notas, @creadoPor, @ahora, @ahora)
 `);
+// creado_por: quien la cargó o, en una que vino del modelo, quien la confirmó.
 const updateFiguraStmt = db.prepare(`
   UPDATE figuras_publicas SET nombre = @nombre, rol = @rol, alineacion = @alineacion, origen = @origen, notas = @notas,
-    actualizado_en = @ahora
+    creado_por = COALESCE(creado_por, @creadoPor), actualizado_en = @ahora
   WHERE username = @username
 `);
 const updateFiguraSugeridaStmt = db.prepare(`
@@ -1265,25 +1281,25 @@ const sumApifyUsdForAnalisisStmt = db.prepare(
 );
 
 // Los análisis terminados antes de la fase F no tienen las columnas de la
-// galería: se completan una vez con lo que ya guardaron (los tonos, los
-// comentarios con su tilde de verificada, los temas con sus comentarios).
-// Un v1 no tiene hecho dominante. n_verificados es la marca: un v2 la
-// escribe al terminar, así que esto nunca toca un análisis nuevo.
+// galería: se completan una vez con lo que ya guardaron, con la MISMA cuenta
+// que la vista (analysisMetrics.js), así la galería y el análisis abierto
+// dicen lo mismo. Un v1 no tiene hecho dominante. n_verificados es la
+// marca: un v2 la escribe al terminar, así que esto nunca toca uno nuevo.
 try {
   const sinColumnas = db
-    .prepare("SELECT id, positivos, neutrales, negativos, comentarios, temas FROM analisis WHERE estado = 'ok' AND n_verificados IS NULL")
+    .prepare("SELECT id, analizados, resultado, comentarios, temas FROM analisis WHERE estado = 'ok' AND n_verificados IS NULL")
     .all();
-  const rellenar = db.prepare('UPDATE analisis SET pct_neg = ?, tiene_hecho = 0, n_verificados = ?, tema_estrella = COALESCE(tema_estrella, ?) WHERE id = ?');
+  const rellenar = db.prepare('UPDATE analisis SET pct_neg = ?, tiene_hecho = ?, n_verificados = ?, tema_estrella = COALESCE(tema_estrella, ?) WHERE id = ?');
   for (const row of sinColumnas) {
-    const base = (Number(row.positivos) || 0) + (Number(row.neutrales) || 0) + (Number(row.negativos) || 0);
-    const pctNeg = base > 0 ? Math.round(((Number(row.negativos) || 0) / base) * 1000) / 10 : null;
-    const comentarios = parseJsonColumn(row.comentarios);
-    const verificados = new Set((Array.isArray(comentarios) ? comentarios : []).filter((c) => c && c.verificada).map((c) => String(c.usuario || '').toLowerCase()));
-    const temas = parseJsonColumn(row.temas);
-    const estrella = Array.isArray(temas)
-      ? [...temas].filter((t) => t && t.titulo).sort((a, b) => (b.comentarios || []).length - (a.comentarios || []).length)[0]
-      : null;
-    rellenar.run(pctNeg, verificados.size, estrella ? estrella.titulo : null, row.id);
+    const col = analysisMetrics.columnasDeVista(
+      analysisMetrics.buildAnalysisView({
+        analizados: row.analizados,
+        resultado: parseJsonColumn(row.resultado),
+        comentarios: parseJsonColumn(row.comentarios),
+        temas: parseJsonColumn(row.temas),
+      })
+    );
+    rellenar.run(col.pctNeg, col.tieneHecho ? 1 : 0, col.nVerificados, col.temaEstrella, row.id);
   }
 } catch (err) {
   console.warn(`[db] no se pudieron completar las columnas de los análisis anteriores: ${err && err.message}`);
@@ -2588,14 +2604,25 @@ function findAnalisisByUrl({ plataforma, url }) {
 }
 
 /**
- * Los temas editados de un análisis terminado. Con `temaEstrella` (v2:
- * renombrar puede cambiar el nombre del primero), también esa columna.
+ * Los temas editados de un análisis terminado. Con `columnas`
+ * (analysisMetrics.columnasDeVista de la vista con los temas nuevos: unir
+ * temas puede cambiar la estrella y el hecho dominante), también las de la
+ * galería; con `temaEstrella` solo, esa.
  * @returns {boolean} si había uno.
  */
-function updateAnalisisTemas(id, plataforma, temas, { temaEstrella } = {}) {
+function updateAnalisisTemas(id, plataforma, temas, { temaEstrella, columnas } = {}) {
   requirePlataforma(plataforma, 'updateAnalisisTemas');
   const ok = updateAnalisisTemasStmt.run(JSON.stringify(temas || []), Number(id), plataforma).changes > 0;
-  if (ok && temaEstrella !== undefined) updateTemaEstrellaStmt.run(temaEstrella, Number(id), plataforma);
+  if (ok && columnas) {
+    updateColumnasGaleriaStmt.run({
+      pctNeg: columnas.pctNeg ?? null,
+      tieneHecho: columnas.tieneHecho ? 1 : 0,
+      nVerificados: columnas.nVerificados ?? null,
+      temaEstrella: columnas.temaEstrella ?? null,
+      id: Number(id),
+      plataforma,
+    });
+  } else if (ok && temaEstrella !== undefined) updateTemaEstrellaStmt.run(temaEstrella, Number(id), plataforma);
   return ok;
 }
 
@@ -2629,18 +2656,27 @@ const GALERIA_FILTRO = {
  */
 function listAnalisisGaleria({ plataforma, q = '', f = 'all', ord = 'recent', limit = 100 } = {}) {
   requirePlataforma(plataforma, 'listAnalisisGaleria');
-  const todos = listAnalisisGaleriaStmt.all(plataforma).map(analisisLiviano);
   const buscado = plegar(q).trim();
-  const filtro = GALERIA_FILTRO[f] || GALERIA_FILTRO.all;
-  const orden = GALERIA_ORDEN[ord] || GALERIA_ORDEN.recent;
+  // Object.hasOwn: "constructor" o "toString" en el pedido no son un filtro.
+  const filtro = Object.hasOwn(GALERIA_FILTRO, f) ? GALERIA_FILTRO[f] : GALERIA_FILTRO.all;
+  const orden = Object.hasOwn(GALERIA_ORDEN, ord) ? GALERIA_ORDEN[ord] : GALERIA_ORDEN.recent;
   const n = Math.max(1, Math.min(200, Math.floor(Number(limit) || 100)));
-  const items = todos
+  const resumen = resumenGaleriaStmt.get(plataforma);
+  const total = Number(resumen.total) || 0;
+  const desde = resumen.desde || null;
+  // Sin búsqueda, filtro ni orden (el inicio pide 4 por minuto): directo con LIMIT.
+  if (!buscado && filtro === GALERIA_FILTRO.all && orden === GALERIA_ORDEN.recent) {
+    return { items: listAnalisisStmt.all(plataforma, n).map(analisisLiviano), total, desde };
+  }
+  const items = listAnalisisGaleriaStmt
+    .all(plataforma)
+    .map(analisisLiviano)
     .filter((a) => filtro(a) && (!buscado || plegar(`${a.cuenta || ''} ${a.caption} ${a.temaEstrella || ''}`).includes(buscado)))
     .map((a, i) => ({ a, i }))
     .sort((x, y) => orden(x.a, y.a) || x.i - y.i)
     .slice(0, n)
     .map((x) => x.a);
-  return { items, total: todos.length, desde: todos.length ? todos[todos.length - 1].finishedAt : null };
+  return { items, total, desde };
 }
 
 /**
@@ -2732,17 +2768,22 @@ function createFigura(input, { creadoPor = null, ahora = new Date().toISOString(
     e.code = 'FIGURA_EXISTE';
     throw e;
   }
-  if (actual) updateFiguraStmt.run({ ...datos, origen: 'equipo', ahora });
+  if (actual) updateFiguraStmt.run({ ...datos, origen: 'equipo', creadoPor, ahora });
   else insertFiguraStmt.run({ ...datos, origen: 'equipo', creadoPor, ahora });
   return getFigura(datos.username);
 }
 
-/** Cambia una figura (los campos que no vienen quedan); siempre queda como del equipo (confirmar una sugerencia es esto). @returns {object|null} */
-function updateFigura(username, patch, { ahora = new Date().toISOString() } = {}) {
+/**
+ * Cambia una figura (los campos que no vienen quedan); siempre queda como
+ * del equipo (confirmar una sugerencia es esto). `por`: el correo de quien
+ * la cambió, que queda como creado_por si no tenía (una sugerida no tiene).
+ * @returns {object|null}
+ */
+function updateFigura(username, patch, { por = null, ahora = new Date().toISOString() } = {}) {
   const actual = getFigura(username);
   if (!actual) return null;
   const datos = figurasModelo.validarFigura(patch, { actual });
-  updateFiguraStmt.run({ ...datos, origen: 'equipo', ahora });
+  updateFiguraStmt.run({ ...datos, origen: 'equipo', creadoPor: por, ahora });
   return getFigura(datos.username);
 }
 

@@ -74,8 +74,9 @@ Ver `design.md`.
 | `src/prompt.js`, `src/analysisSchema.js`, `src/userPrompt.js` | Modified | Tanda y síntesis v2 (lo que usa X no cambia) |
 | `src/validateAnalysis.js`, `src/classificationHeuristics.js` | Modified | Validación v2, sin tipo de cuenta |
 | `src/analyzeComments.js` | Modified | Primera tanda sola, temas, verificados, síntesis v2 |
-| `src/analysisMetrics.js` | New | Las métricas, al leer |
-| `src/commentTimeline.js` | Modified | Primer comentario, 50 %, últimas 24 h |
+| `src/analysisMetrics.js` | New | Las métricas, al leer (también el tiempo: primer comentario, 50 %, últimas 24 h) |
+| `src/analysisTemas.js` | New | Renombrar, unir, agregar y quitar temas |
+| `src/llm/errors.js`, `src/llm/*Provider.js`, `src/llm/index.js` | New/Modified | La respuesta cortada (SALIDA_CORTADA) y lo gastado en los errores |
 | `src/reportBuilder.js` | Modified | Informe de 8 puntos y CSV de comentarios |
 | `src/figuras.js`, `src/figurasRoutes.js` | New | Figuras públicas |
 | `src/analysisProgress.js`, `src/analysisJob.js`, `src/analysisRoutes.js`, `server.js` | Modified | Pasos, el trabajo, las rutas |
@@ -85,8 +86,8 @@ Ver `design.md`.
 
 | Riesgo | Probabilidad | Mitigación |
 |--------|-------------|------------|
-| La salida por tanda crece y choca con el tope | Media | Campos cortos, tope de salida a 12.000; una tanda caída queda sin clasificar |
-| Temas duplicados entre tandas en paralelo | Media | Unión por nombre normalizado y tope de temas |
+| La salida por tanda crece y choca con el tope | Pasó (corrida real) | Tandas de 50 con 16.000 de tope; la respuesta cortada se parte en dos; una tanda caída queda sin clasificar |
+| Temas duplicados entre tandas en paralelo | Media | Unión por nombre normalizado y tope de temas; si la primera cae, la segunda también va sola |
 | La lectura cita números inventados | Media | La síntesis recibe los números calculados y la orden de citar solo esos |
 | La pantalla de la fase E con datos v2 | Media | `GET /api/analisis/:id` conserva los campos viejos hasta la F2 |
 | El modelo etiqueta a vecinos | Baja | Sugerencias solo para verificados; alineación solo para roles públicos (lo valida el servidor) |

@@ -210,28 +210,31 @@ describe('OpenRouter: respuesta cortada por el tope de salida y lo gastado en lo
 });
 
 describe('Anthropic: respuesta cortada por el tope de salida y lo gastado en los errores', { concurrency: false }, () => {
-  // El cliente del proveedor es interno: se reemplaza parse en el prototipo de Messages, que comparten todos.
+  // El cliente del proveedor es interno: se reemplaza create (la llamada a
+  // la API) en el prototipo de Messages, que comparten todos; lo demás es el
+  // código real.
   const Anthropic = require('@anthropic-ai/sdk');
   const anthropic = require('../src/llm/anthropicProvider');
   const proto = Object.getPrototypeOf(new Anthropic({ apiKey: 'clave-de-test' }).messages);
-  const originales = { parse: proto.parse, warn: console.warn, error: console.error };
+  const originales = { create: proto.create, warn: console.warn, error: console.error };
   let respuestas;
   let llamadas;
   beforeEach(() => {
     llamadas = 0;
     console.warn = () => {};
     console.error = () => {};
-    proto.parse = async () => respuestas[Math.min(llamadas++, respuestas.length - 1)];
+    proto.create = async () => respuestas[Math.min(llamadas++, respuestas.length - 1)];
   });
   afterEach(() => {
-    proto.parse = originales.parse;
+    proto.create = originales.create;
     console.warn = originales.warn;
     console.error = originales.error;
   });
   const pedirA = () => anthropic.requestStructuredAnalysis({ system: 's', userPrompt: 'u', schema: SCHEMA, maxTokens: 16000 });
+  const texto = (t) => [{ type: 'text', text: t }];
 
-  test('stop_reason max_tokens: no se reintenta, tira SALIDA_CORTADA con lo gastado', async () => {
-    respuestas = [{ stop_reason: 'max_tokens', parsed_output: null, usage: { input_tokens: 5000, output_tokens: 16000 } }];
+  test('cortada con un JSON a medias (lo que de verdad llega): no se reintenta, tira SALIDA_CORTADA con lo gastado', async () => {
+    respuestas = [{ stop_reason: 'max_tokens', content: texto('{"ok": tr'), usage: { input_tokens: 5000, output_tokens: 16000 } }];
     await assert.rejects(pedirA(), (err) => {
       assert.equal(err.code, 'SALIDA_CORTADA');
       assert.equal(err.tokenUsage.outputTokens, 16000);
@@ -240,13 +243,20 @@ describe('Anthropic: respuesta cortada por el tope de salida y lo gastado en los
     assert.equal(llamadas, 1);
   });
 
-  test('sin resultado dos veces (no cortada): dos intentos, y el error lleva lo de los dos', async () => {
-    respuestas = [{ stop_reason: 'end_turn', parsed_output: null, usage: { input_tokens: 10, output_tokens: 5 } }];
+  test('JSON inválido dos veces (no cortada): dos intentos, y el error lleva lo de los dos', async () => {
+    respuestas = [{ stop_reason: 'end_turn', content: texto('no es JSON'), usage: { input_tokens: 10, output_tokens: 5 } }];
     await assert.rejects(pedirA(), (err) => {
       assert.equal(err.tokenUsage.totalTokens, 30);
       return true;
     });
     assert.equal(llamadas, 2);
+  });
+
+  test('una respuesta buena: el JSON del bloque de texto y su uso', async () => {
+    respuestas = [{ stop_reason: 'end_turn', content: texto('{"ok": true}'), usage: { input_tokens: 10, output_tokens: 5 } }];
+    const { parsed, usage } = await pedirA();
+    assert.deepEqual(parsed, { ok: true });
+    assert.equal(usage.totalTokens, 15);
   });
 });
 

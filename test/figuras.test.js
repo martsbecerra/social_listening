@@ -38,6 +38,13 @@ describe('la validación', () => {
     assert.throws(() => figuras.validarFigura({ username: 'x1', rol: 'creador', alineacion: 'oficialismo' }), (e) => /solo va para roles políticos/.test(e.userMessage));
     assert.throws(() => figuras.validarFigura({ username: 'x1', rol: 'medio', alineacion: 'peronismo' }), (e) => /oficialismo, oposición o ninguna/.test(e.userMessage));
     assert.equal(figuras.validarFigura({ username: 'x1', rol: 'organizacion', alineacion: '' }).alineacion, null);
+    // Las claves del prototipo no son un rol ni una alineación.
+    for (const rol of ['constructor', 'toString', '__proto__']) {
+      assert.throws(() => figuras.validarFigura({ username: 'x1', rol }), (e) => /rol de la lista/.test(e.userMessage), rol);
+    }
+    assert.throws(() => figuras.validarFigura({ username: 'x1', rol: 'medio', alineacion: 'constructor' }), (e) => /oficialismo, oposición o ninguna/.test(e.userMessage));
+    assert.equal(figuras.sanitizarSugerencia({ username: 'x1', rol: 'constructor' }), null);
+    assert.equal(figuras.rolTexto({ rol: 'toString' }), '');
   });
 
   test('una sugerencia del modelo: sin rol válido se descarta; la alineación de un rol que no la lleva se borra', () => {
@@ -74,13 +81,16 @@ describe('la tabla', { concurrency: false }, () => {
   });
 
   test('confirmar una sugerencia (PATCH) la pasa al equipo; dar de alta una sugerida también', () => {
-    const conf = db.updateFigura('per1', { alineacion: null });
+    const conf = db.updateFigura('per1', { alineacion: null }, { por: 'confirma@test.local' });
     assert.equal(conf.origen, 'equipo');
     assert.equal(conf.rol, 'medio', 'lo que no viene queda');
+    assert.equal(conf.creadoPor, 'confirma@test.local', 'una sugerida no tenía quién: queda quien la confirmó');
+    assert.equal(db.updateFigura('leg1', { notas: 'x' }, { por: 'otro@test.local' }).creadoPor, 'equipo@test.local', 'quien la cargó no cambia');
     db.upsertFiguraSugerida({ username: 'org1', rol: 'organizacion' });
-    const alta = db.createFigura({ username: 'org1', nombre: 'Vecinos de Caballito', rol: 'organizacion' });
+    const alta = db.createFigura({ username: 'org1', nombre: 'Vecinos de Caballito', rol: 'organizacion' }, { creadoPor: 'alta@test.local' });
     assert.equal(alta.origen, 'equipo');
     assert.equal(alta.nombre, 'Vecinos de Caballito');
+    assert.equal(alta.creadoPor, 'alta@test.local');
     assert.equal(db.updateFigura('nadie', { rol: 'medio' }), null);
     assert.throws(() => db.updateFigura('org1', { alineacion: 'oposicion' }), (e) => /solo va para roles políticos/.test(e.userMessage));
   });

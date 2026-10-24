@@ -15,7 +15,9 @@ const SENTIMENTS = ['positivo', 'negativo', 'neutral', 'ruido'];
 const ACCOUNT_TYPES = ['oficial', 'periodista', 'opositor', 'vecino', 'ruido'];
 // Fase F: qué dice el comentario de la gestión (no cómo suena).
 const POSTURAS = ['favor', 'neutra', 'critica'];
-// Cuántos temas nuevos puede sumar una tanda y el tope de la lista.
+// Cuántos temas puede devolver una tanda: la que los define arma de 4 a 10;
+// las demás, según el prompt, como mucho 3 nuevos (el tope de la
+// publicación es MAX_TEMAS_ANALISIS, en analyzeComments.js).
 const MAX_TEMAS_POR_TANDA = 12;
 
 // Qué tipo de ubicación detectó el modelo. De acá sale la `precision` con la
@@ -120,7 +122,7 @@ const ANALYSIS_JSON_SCHEMA = {
 };
 
 // El análisis de publicación de Instagram va en varias llamadas
-// (src/analyzeComments.js): una por tanda de hasta 100 comentarios, que
+// (src/analyzeComments.js): una por tanda de hasta 50 comentarios, que
 // clasifica, y una de síntesis. ANALYSIS_JSON_SCHEMA (arriba) queda como el
 // schema por defecto de los proveedores; el análisis pasa estos dos. Desde la
 // fase F (openspec/changes/analisis-pro): sin tipo de cuenta; por comentario

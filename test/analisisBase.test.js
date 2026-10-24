@@ -286,6 +286,34 @@ describe('fase F: galería, anteriores de la cuenta, reclamos de un posteo', { c
     assert.deepEqual(db.listAnterioresDeCuenta({ plataforma: 'instagram', cuenta: null, id: 1, antesDe: 'z' }), []);
   });
 
+  test('de una publicación anterior analizada varias veces, la comparación toma solo su último análisis', () => {
+    const otraVez = nuevo({ code: 'GAL2', cuenta: 'jorgemacri', caption: 'Nueva estación Sáenz', finishedAt: '2026-10-22T18:00:00.000Z', pctNeg: 70 });
+    const actualId = nuevo({ code: 'GAL9', cuenta: 'jorgemacri', caption: 'Otra', finishedAt: '2026-10-25T10:00:00.000Z', pctNeg: 10 });
+    const actual = db.getAnalisis(actualId, 'instagram');
+    const previos = db.listAnterioresDeCuenta({ plataforma: 'instagram', cuenta: 'jorgemacri', id: actualId, antesDe: actual.startedAt, postCode: 'GAL9' });
+    const idsPrevios = previos.map((p) => p.id);
+    assert.equal(previos.length, 2, 'GAL1 y GAL2, una vez cada una');
+    assert.ok(idsPrevios.includes(otraVez) && !idsPrevios.includes(ids.g2), 'de GAL2, el último');
+    assert.ok(!idsPrevios.includes(ids.g1), 'de GAL1, el último (el repetido del test anterior)');
+  });
+
+  test('la galería sin búsqueda ni filtro va directo con LIMIT (lo mismo que el camino largo); claves raras no rompen', () => {
+    const rapido = db.listAnalisisGaleria({ plataforma: 'instagram', limit: 2 });
+    const largo = db.listAnalisisGaleria({ plataforma: 'instagram', f: 'all', ord: 'c', limit: 200 });
+    const porFin = [...largo.items].sort((a, b) => (b.finishedAt || '').localeCompare(a.finishedAt || '') || b.id - a.id);
+    assert.deepEqual(
+      rapido.items.map((a) => a.id),
+      porFin.slice(0, 2).map((a) => a.id)
+    );
+    assert.equal(rapido.total, largo.total);
+    assert.equal(rapido.desde, largo.desde);
+    const raro = db.listAnalisisGaleria({ plataforma: 'instagram', f: 'constructor', ord: 'toString', limit: 2 });
+    assert.deepEqual(
+      raro.items.map((a) => a.id),
+      rapido.items.map((a) => a.id)
+    );
+  });
+
   test('renombrar el tema estrella actualiza su columna', () => {
     const temas = { version: 2, lista: [{ id: 1, nombre: 'Veredas y baldosas' }] };
     assert.equal(db.updateAnalisisTemas(ids.g3, 'instagram', temas, { temaEstrella: 'Veredas y baldosas' }), true);

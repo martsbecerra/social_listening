@@ -13,9 +13,15 @@ const { rolTexto } = require('./figuras');
 const CSV_HEADER =
   '"Nombre de usuario","Direccion detectada","Direccion normalizada","Tematica detectada"';
 
-/** Escapado CSV estándar: comillas dobles duplicadas dentro del campo. */
+/**
+ * Escapado CSV estándar (comillas dobles duplicadas) y, contra la inyección
+ * de fórmulas en Excel, un apóstrofo adelante de lo que empieza con = + - @
+ * tabulación o retorno (salvo un número: "-3" queda): el texto de un
+ * comentario es de cualquiera.
+ */
 function escapeCsvField(value) {
-  const s = value == null ? '' : String(value);
+  let s = value == null ? '' : String(value);
+  if (/^[=+\-@\t\r]/.test(s) && !/^-?\d+([.,]\d+)?$/.test(s)) s = `'${s}`;
   return `"${s.replace(/"/g, '""')}"`;
 }
 
@@ -102,7 +108,11 @@ function buildInforme(vista) {
   let hechoTexto;
   const sp = vista.sobrePosteo;
   const fuera = sp && Number.isFinite(sp.proporcion) && sp.base > 0 ? 1 - sp.proporcion : null;
+  // Todo lo clasificado es ruido (un sorteo, por ejemplo): no hay qué medir.
+  const sinBase = t.base === 0;
+  const SIN_BASE = `sin comentarios con opinión para medir (${formatCountWithDots(t.ruido)} de ruido aparte).`;
   if (!vista.disponible.hecho) hechoTexto = NO_DISPONIBLE;
+  else if (sinBase) hechoTexto = SIN_BASE;
   else if (vista.hecho) hechoTexto = `el ${pct(vista.hecho.proporcion)} de los comentarios habla de un mismo hecho ajeno al posteo: ${vista.hecho.titulo}.`;
   else if (fuera !== null && fuera >= 0.5) {
     const adonde = sp.desvios.length ? `, sobre todo a ${sp.desvios[0].tema}` : '';
@@ -113,17 +123,19 @@ function buildInforme(vista) {
 
   // 2) tono
   const neto = `${t.neto > 0 ? '+' : ''}${t.neto}`;
-  lineas.push(`2) *Tono:* ${pct(t.proporcion.positivo)} positivo · ${pct(t.proporcion.neutral)} neutro · ${pct(t.proporcion.negativo)} negativo (tono neto ${neto})`);
+  lineas.push(
+    `2) *Tono:* ${sinBase ? SIN_BASE : `${pct(t.proporcion.positivo)} positivo · ${pct(t.proporcion.neutral)} neutro · ${pct(t.proporcion.negativo)} negativo (tono neto ${neto})`}`
+  );
 
   // 3) postura
   const p = vista.postura;
-  lineas.push(`3) *Postura hacia la gestión:* ${p ? `${pct(p.proporcion.favor)} a favor · ${pct(p.proporcion.neutra)} neutra · ${pct(p.proporcion.critica)} crítica` : NO_DISPONIBLE}`);
+  const posturaTexto = !p ? NO_DISPONIBLE : sinBase ? SIN_BASE : `${pct(p.proporcion.favor)} a favor · ${pct(p.proporcion.neutra)} neutra · ${pct(p.proporcion.critica)} crítica`;
+  lineas.push(`3) *Postura hacia la gestión:* ${posturaTexto}`);
 
   // 4) hablan del posteo
   const s = vista.sobrePosteo;
-  lineas.push(
-    `4) *Hablan del posteo:* ${s ? `${pct(s.proporcion)}${s.desvios.length ? ` · se desvían a: ${s.desvios.map((d) => d.tema).join(', ')}` : ''}` : NO_DISPONIBLE}`
-  );
+  const sobreTexto = !s ? NO_DISPONIBLE : sinBase ? SIN_BASE : `${pct(s.proporcion)}${s.desvios.length ? ` · se desvían a: ${s.desvios.map((d) => d.tema).join(', ')}` : ''}`;
+  lineas.push(`4) *Hablan del posteo:* ${sobreTexto}`);
 
   // 5) temas
   const temas = vista.temas.map((x) => (x.manual ? `${x.nombre}${x.texto ? `: ${x.texto}` : ''}` : `${x.nombre} (${formatCountWithDots(x.n)})`));
@@ -160,7 +172,8 @@ const POSTURA_TEXTO = { favor: 'a favor', neutra: 'neutra', critica: 'crítica' 
 
 /**
  * El CSV de comentarios: uno por renglón, con su clasificación y la fecha
- * en hora de Argentina. La pantalla le agrega el BOM para Excel.
+ * en hora de Argentina. La ruta le agrega el BOM para Excel (enviarCsv,
+ * src/analysisRoutes.js).
  */
 function buildComentariosCsv(vista) {
   const header = [

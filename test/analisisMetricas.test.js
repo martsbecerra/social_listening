@@ -360,3 +360,76 @@ describe('el informe de 8 puntos y el CSV de comentarios', () => {
     assert.match(csv[20], /"sin clasificar"/);
   });
 });
+
+// Lo que encontró el revisor independiente de la F1.
+describe('correcciones de la revisión', () => {
+  test('el hecho dominante cuenta solo los comentarios del tema que NO hablan del posteo', () => {
+    const extra = { n: 21, usuario: 'vecino21', verificada: false, likes: 900, tono: 'negativo', postura: 'critica', tema: 1, sobrePosteo: true, pedido: false, texto: 'Del churrero, pero del posteo', fecha: en(1) };
+    const v = buildAnalysisView(filaV2({ comentarios: [...comentariosV2(), extra], analizados: 20 }), {});
+    assert.equal(v.hecho.n, 8, 'el del posteo no suma');
+    assert.ok(Math.abs(v.hecho.proporcion - 8 / 20) < 1e-9);
+    assert.ok(!v.hecho.ejemplos.some((c) => c.n === 21), 'ni queda de ejemplo, aunque tenga más likes');
+  });
+
+  test('cada tema lleva sus propios fuera del posteo, y la síntesis los recibe aunque haya más de 4 que se desvían', () => {
+    const { buildSynthesisPrompt } = require('../src/userPrompt');
+    const v = buildAnalysisView(filaV2(), {});
+    assert.deepEqual(
+      v.temas.filter((t) => !t.manual).map((t) => [t.nombre, t.fuera]),
+      [
+        ['Vendedor de churros', 8],
+        ['Parque y obra', 0],
+        ['Árboles y lago', 0],
+      ]
+    );
+    // Seis temas, uno fuera del posteo en cada uno: los desvíos de la pantalla son 4, el prompt los dice todos.
+    const comentarios = Array.from({ length: 6 }, (_, i) => ({ n: i + 1, usuario: `v${i}`, likes: 1, tono: 'negativo', postura: 'critica', tema: i + 1, sobrePosteo: false, pedido: false, texto: 't', fecha: en(1) }));
+    const fila = { ...filaV2(), comentarios, analizados: 6, temas: { version: 2, lista: comentarios.map((c) => ({ id: c.tema, nombre: `Tema ${c.tema}` })) } };
+    const vista = buildAnalysisView(fila, {});
+    assert.equal(vista.sobrePosteo.desvios.length, 4);
+    const prompt = buildSynthesisPrompt({ url: fila.url, post: { ownerUsername: 'x', commentsCount: 6 }, vista, muestra: [], verificadosSinFicha: [] });
+    for (let t = 1; t <= 6; t++) assert.match(prompt, new RegExp(`^${t}\\. Tema ${t}: 1 comentarios .* · 1 fuera del posteo$`, 'm'));
+  });
+
+  test('un v1: cada tema cuenta su propia lista (como en la E) y uno sin comentarios con texto es del equipo', () => {
+    const fila = {
+      ...filaV2(),
+      resultado: { lecturaEstrategica: 'De antes.' },
+      temas: [
+        { titulo: 'A', texto: 'x', comentarios: [1, 2] },
+        { titulo: 'B', texto: 'y', comentarios: [1, 2, 3] },
+        { titulo: 'Del equipo', texto: 'Uno a mano.', comentarios: [] },
+      ],
+    };
+    const v = buildAnalysisView(fila, {});
+    assert.deepEqual(
+      v.temas.map((t) => [t.nombre, t.n, t.manual, t.estrella]),
+      [
+        ['B', 3, false, true],
+        ['A', 2, false, false],
+        ['Del equipo', null, true, false],
+      ]
+    );
+    assert.equal(columnasDeVista(v).temaEstrella, 'B');
+    assert.match(buildInforme(v), /5\) \*Temas:\* B \(3\), A \(2\), Del equipo: Uno a mano\./);
+  });
+
+  test('todo ruido: los puntos 1 a 4 dicen que no hay qué medir, no 0 %', () => {
+    const ruido = [{ n: 1, usuario: 'bot', likes: 0, tono: 'ruido', postura: 'neutra', tema: null, sobrePosteo: false, pedido: false, texto: 'Sorteo', fecha: en(1) }];
+    const t = buildInforme(buildAnalysisView(filaV2({ comentarios: ruido, analizados: 1, resultado: { ...filaV2().resultado, hecho: null } }), {}));
+    for (const punto of ['1) *Lo que pasó:*', '2) *Tono:*', '3) *Postura hacia la gestión:*', '4) *Hablan del posteo:*']) {
+      assert.ok(t.includes(`${punto} sin comentarios con opinión para medir (1 de ruido aparte).`), punto);
+    }
+    assert.doesNotMatch(t, /responde al posteo/);
+  });
+
+  test('los CSV no dejan pasar una fórmula de Excel: apóstrofo adelante, los números quedan', () => {
+    const { buildReclamosCsv } = require('../src/reportBuilder');
+    const comentarios = [{ n: 1, usuario: 'v1', likes: 3, tono: 'negativo', postura: 'critica', tema: 1, sobrePosteo: false, pedido: false, texto: '=HYPERLINK("http://x","clic")', fecha: en(1) }];
+    const csv = buildComentariosCsv(buildAnalysisView(filaV2({ comentarios, analizados: 1 }), {}));
+    assert.match(csv, /"'=HYPERLINK\(""http:\/\/x"",""clic""\)"/);
+    assert.match(csv, /"1","v1","no","3"/);
+    const rec = buildReclamosCsv([{ username: 'v2' }], [{ reclamosGeo: [{ direccionDetectada: '+54 Salta 250', direccionNormalizada: '@SALTA 250', tematica: '-bache' }] }]);
+    assert.match(rec, /"v2","'\+54 Salta 250","'@SALTA 250","'-bache"/);
+  });
+});

@@ -161,10 +161,10 @@ describe('el análisis entero, como en la corrida', { concurrency: false }, () =
     const a = db.getAnalisis(id, 'instagram');
     assert.equal(a.estado, 'ok');
     assert.deepEqual([a.url, a.cuenta, a.postType, a.comentariosTotal, a.traidos, a.analizados], [URL_POST, 'usuario_12', 'carrusel', 385, 150, 50]);
-    // La respuesta real va a la tanda 3 (posiciones 101 a 150), que define los temas.
+    // Sin temas todavía, la 2 también va sola; la respuesta real va a la 3 (posiciones 101 a 150), que los define.
     assert.deepEqual(
       llamadas.map((l) => l.etiqueta),
-      ['1', '1.1', '1.2', '2', '3', '2.1', '2.2', 'sintesis'].filter((x) => llamadas.some((l) => l.etiqueta === x))
+      ['1', '1.1', '1.2', '2', '2.1', '2.2', '3', 'sintesis']
     );
     assert.equal(llamadas.find((l) => l.etiqueta === '3').define, true);
     assert.equal(a.comentarios.filter((c) => c.tono !== null).map((c) => c.n).join(','), Array.from({ length: 50 }, (_, i) => 101 + i).join(','));

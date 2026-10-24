@@ -3,9 +3,10 @@
 // La migración de la fase F (src/db.js) sobre una base de la fase E: la
 // tabla `analisis` sin las columnas de la galería y con análisis ya
 // terminados. Al cargar db.js aparecen pct_neg, tiene_hecho, n_verificados
-// y tema_estrella, completadas con lo que esos análisis guardaron (tonos,
-// comentarios con su tilde de verificada, temas con sus comentarios), y la
-// tabla figuras_publicas. Base temporal armada a mano antes del require.
+// y tema_estrella, completadas con lo que esos análisis guardaron (los
+// comentarios con su tono y su tilde de verificada, los temas con sus
+// comentarios) y con la misma cuenta que la vista, y la tabla
+// figuras_publicas. Base temporal armada a mano antes del require.
 
 const fs = require('fs');
 const os = require('os');
@@ -66,8 +67,10 @@ test('las columnas nuevas aparecen y se completan en los análisis viejos termin
   for (const col of ['pct_neg', 'tiene_hecho', 'n_verificados', 'tema_estrella']) assert.ok(columnas.includes(col), col);
   const filas = base.prepare('SELECT url, pct_neg, tiene_hecho, n_verificados, tema_estrella FROM analisis ORDER BY id').all();
   base.close();
-  // 20 negativos de 100 con tono; dos verificados distintos (el mismo con otra mayúscula cuenta una vez).
-  assert.deepEqual({ ...filas[0] }, { url: 'https://www.instagram.com/p/VIEJO1/', pct_neg: 20, tiene_hecho: 0, n_verificados: 2, tema_estrella: 'Seguridad' });
+  // Con la misma cuenta que la vista (analysisMetrics): 2 negativos de los 4 comentarios con tono (los
+  // tonos sueltos de la fila no mandan); dos verificados distintos (el mismo con otra mayúscula cuenta una
+  // vez); la estrella, el tema con más comentarios de su propia lista (Seguridad: 3; Tránsito: 1).
+  assert.deepEqual({ ...filas[0] }, { url: 'https://www.instagram.com/p/VIEJO1/', pct_neg: 50, tiene_hecho: 0, n_verificados: 2, tema_estrella: 'Seguridad' });
   assert.deepEqual({ ...filas[1] }, { url: 'https://www.instagram.com/p/VIEJO2/', pct_neg: null, tiene_hecho: 0, n_verificados: 0, tema_estrella: null });
   assert.equal(filas[2].n_verificados, null, 'uno que no terminó bien no se toca');
 });
@@ -76,7 +79,7 @@ test('la galería lee las columnas completadas y la tabla de figuras existe', ()
   const { items, total } = db.listAnalisisGaleria({ plataforma: 'instagram' });
   assert.equal(total, 2);
   const viejo = items.find((a) => a.postCode === 'VIEJO1');
-  assert.equal(viejo.pctNeg, 20);
+  assert.equal(viejo.pctNeg, 50);
   assert.equal(viejo.nVerificados, 2);
   assert.equal(viejo.temaEstrella, 'Seguridad');
   assert.equal(viejo.tieneHecho, false);

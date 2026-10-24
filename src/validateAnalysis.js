@@ -110,10 +110,12 @@ function applyHeuristicsToClassified(sample, classifications) {
 
 /**
  * La síntesis: la lectura, el hecho dominante (o null), los pedidos con
- * números de comentarios que existen, qué mirar y las sugerencias de figuras
+ * números de comentarios válidos, qué mirar y las sugerencias de figuras
  * solo para los verificados sin ficha.
  * @param {unknown} parsed
  * @param {{ temasValidos: Set<number>, comentariosValidos: Set<number>, verificadosSinFicha: Set<string> }} validos
+ *   comentariosValidos: los que un pedido puede agrupar (analyzeComments
+ *   pasa los clasificados marcados PEDIDO, sin el ruido).
  */
 function normalizeSynthesis(parsed, { temasValidos, comentariosValidos, verificadosSinFicha }) {
   if (!parsed || typeof parsed !== 'object') {

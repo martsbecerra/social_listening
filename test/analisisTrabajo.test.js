@@ -110,7 +110,8 @@ function stubs() {
             postura: Number(m[2].replace('vecino', '')) % 4 === 0 ? 'critica' : 'favor',
             tema: Number(m[2].replace('vecino', '')) % 2 === 0 ? 1 : 2,
             sobre_posteo: Number(m[2].replace('vecino', '')) % 2 !== 0,
-            pedido: false,
+            // Los que agrupa la síntesis de abajo (un pedido solo junta marcados PEDIDO).
+            pedido: m[1] === '2' || m[1] === '3',
             reclamosGeo: m[2] === 'vecino2' ? [{ direccionDetectada: 'Salta 250', direccionNormalizada: 'Salta 250', tematica: 'bache', categoria: 'Infraestructura', tipoUbicacion: 'calle_altura' }] : [],
           })),
         },
@@ -550,8 +551,11 @@ describe('las rutas', { concurrency: false }, () => {
       'se unieron'
     );
     assert.equal(db.getAnalisis(id, 'instagram').temas.lista[0].unidoA, 2);
+    // Las cuatro columnas de la galería, con la vista después de unir.
+    const enGaleria = db.listAnalisisGaleria({ plataforma: 'instagram', limit: 200 }).items.find((x) => x.id === id);
+    assert.deepEqual([enGaleria.temaEstrella, enGaleria.tieneHecho], ['Plaza Italia', Boolean(a.vista.hecho)]);
     a = await (await patch({ accion: 'agregar', nombre: 'Seguridad', texto: 'Piden más patrullaje.' })).json();
-    assert.deepEqual(a.vista.temas[1], { id: 3, nombre: 'Seguridad', manual: true, texto: 'Piden más patrullaje.', n: null, tonos: { positivo: 0, neutral: 0, negativo: 0 }, estrella: false });
+    assert.deepEqual(a.vista.temas[1], { id: 3, nombre: 'Seguridad', manual: true, texto: 'Piden más patrullaje.', n: null, fuera: null, tonos: { positivo: 0, neutral: 0, negativo: 0 }, estrella: false });
     assert.match(a.informe, /5\) \*Temas:\* Plaza Italia \(25\), Seguridad: Piden más patrullaje\./);
     r = await patch({ accion: 'quitar', id: 2 });
     assert.equal(r.status, 400);
@@ -601,6 +605,8 @@ describe('las rutas', { concurrency: false }, () => {
       { titulo: 'Baches', texto: 'Calles rotas', comentarios: [1, 3] },
       { titulo: 'Nuevo', texto: '', comentarios: [] },
     ]);
+    // La galería se entera (antes quedaba con la estrella vieja).
+    assert.equal(db.listAnalisisGaleria({ plataforma: 'instagram', limit: 200 }).items.find((x) => x.id === id).temaEstrella, 'Baches');
     const muchos = await pedir(`/api/analisis/${id}/temas?plataforma=instagram`, { method: 'PATCH', body: { temas: Array.from({ length: 9 }, () => ({ titulo: 't' })) } });
     assert.equal(muchos.status, 400);
     const a = await (await pedir(`/api/analisis/${id}?plataforma=instagram`)).json();
@@ -617,7 +623,7 @@ describe('las rutas', { concurrency: false }, () => {
     const conHecho = await (await pedir('/api/analisis?plataforma=instagram&f=ev&limit=100')).json();
     assert.ok(conHecho.recientes.length > 0 && conHecho.recientes.every((a) => a.tieneHecho));
     const buscado = await (await pedir(`/api/analisis?plataforma=instagram&q=${encodeURIComponent('PLAZA ITALIA')}`)).json();
-    assert.ok(buscado.recientes.every((a) => a.temaEstrella === 'Plaza Italia'));
+    assert.ok(buscado.recientes.length > 0 && buscado.recientes.every((a) => a.temaEstrella === 'Plaza Italia'));
   });
 
   test('los CSV: comentarios siempre, reclamos solo si hubo', async () => {

@@ -29,6 +29,17 @@ function requestOptions(timeoutMs) {
   return Number.isFinite(timeoutMs) && timeoutMs > 0 ? { timeout: timeoutMs } : undefined;
 }
 
+/** El JSON del primer bloque de texto de la respuesta, o null (vacío o inválido). */
+function parseTextContent(message) {
+  const bloque = (Array.isArray(message && message.content) ? message.content : []).find((b) => b && b.type === 'text');
+  if (!bloque || typeof bloque.text !== 'string' || !bloque.text.trim()) return null;
+  try {
+    return JSON.parse(bloque.text);
+  } catch {
+    return null;
+  }
+}
+
 async function requestStructuredAnalysis({ system, userPrompt, schema, maxTokens = 8000, timeoutMs }) {
   const model = getAnalysisModel('anthropic');
 
@@ -46,15 +57,19 @@ async function requestStructuredAnalysis({ system, userPrompt, schema, maxTokens
   let usage = null;
   for (let attempt = 1; attempt <= STRUCTURED_OUTPUT_MAX_ATTEMPTS; attempt++) {
     try {
-      const message = await client.messages.parse(requestParams, requestOptions(timeoutMs));
+      // create y el JSON a mano, no messages.parse: parse tira con un JSON a
+      // medias antes de devolver el mensaje, y se perdían el uso y el
+      // stop_reason (una respuesta cortada se reintentaba igual).
+      const message = await client.messages.create(requestParams, requestOptions(timeoutMs));
       const callUsage = fromAnthropicUsage(message.usage);
       if (callUsage) usage = usage ? addTokenUsage(usage, callUsage) : callUsage;
-      if (message.parsed_output != null) {
-        return { parsed: message.parsed_output, usage, attempts: attempt };
+      const parsed = parseTextContent(message);
+      if (parsed != null) {
+        return { parsed, usage, attempts: attempt };
       }
       // Cortada por el tope de salida: otro intento igual se corta igual.
       if (message.stop_reason === 'max_tokens') throw salidaCortadaError(maxTokens);
-      lastError = new Error('parsed_output es null');
+      lastError = new Error('contenido vacío o JSON inválido');
     } catch (err) {
       lastError = err;
       if (err && err.code === SALIDA_CORTADA) throw conGasto(err, usage);
