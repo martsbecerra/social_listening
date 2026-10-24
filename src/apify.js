@@ -192,6 +192,7 @@ async function runActorSync(input, { actorId = APIFY_ACTOR, plataforma } = {}) {
     const record = ({ items, error, run }) =>
       recordApifyCall({
         runId: context && context.runId != null ? context.runId : null,
+        analisisId: context && context.analisisId != null ? context.analisisId : null,
         phase,
         plataforma,
         actor: actorId,

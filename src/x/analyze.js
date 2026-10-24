@@ -82,7 +82,9 @@ async function analyzeXThread({ url, post, items, influencerMap }) {
     }
   }
   for (const reclamo of reclamos) {
-    db.upsertReclamo(reclamo);
+    // Re-analizar el mismo hilo no le borra la gestión a sus reclamos
+    // (estado, geocodificado): ver db.upsertReclamo.
+    db.upsertReclamo(reclamo, { conservarGestion: true });
   }
 
   const reportResult = buildWhatsAppReport({

@@ -709,6 +709,11 @@ const apifyCallsColumns = db.prepare('PRAGMA table_info(apify_calls)').all().map
 for (const [col, type] of [['actor', 'TEXT'], ['query_type', 'TEXT'], ['usd_real', 'REAL'], ['apify_run_id', 'TEXT']]) {
   if (!apifyCallsColumns.includes(col)) db.exec(`ALTER TABLE apify_calls ADD COLUMN ${col} ${type}`);
 }
+// El análisis de publicación al que pertenece la llamada (tabla analisis):
+// así el gasto de Apify de cada análisis es la suma de sus filas. null en
+// todo lo demás (monitoreo, validación, scripts).
+if (!apifyCallsColumns.includes('analisis_id')) db.exec('ALTER TABLE apify_calls ADD COLUMN analisis_id INTEGER');
+db.exec('CREATE INDEX IF NOT EXISTS idx_apify_calls_analisis_id ON apify_calls(analisis_id)');
 // Una fila por ciclo (cron o "Actualizar ahora"); los totales se completan
 // al terminar sumando las filas de apify_calls con ese run_id.
 db.exec(`
@@ -733,8 +738,8 @@ if (!monitoringRunsColumns.includes('new_candidates')) {
   db.exec('ALTER TABLE monitoring_runs ADD COLUMN new_candidates INTEGER');
 }
 const insertApifyCallStmt = db.prepare(`
-  INSERT INTO apify_calls (at, run_id, phase, plataforma, actor, query_type, target, results_type, items, ok, error, duration_ms, usd, usd_real, apify_run_id)
-  VALUES (@at, @runId, @phase, @plataforma, @actor, @queryType, @target, @resultsType, @items, @ok, @error, @durationMs, @usd, @usdReal, @apifyRunId)
+  INSERT INTO apify_calls (at, run_id, phase, plataforma, actor, query_type, target, results_type, items, ok, error, duration_ms, usd, usd_real, apify_run_id, analisis_id)
+  VALUES (@at, @runId, @phase, @plataforma, @actor, @queryType, @target, @resultsType, @items, @ok, @error, @durationMs, @usd, @usdReal, @apifyRunId, @analisisId)
 `);
 // Las sumas van por fase Y por actor: el actor oficial se valúa por
 // resultados (tres tarifas), apidojo por consulta. usdBest = lo que cobró
@@ -999,6 +1004,42 @@ const upsertReclamoStmt = db.prepare(`
     geo_status = excluded.geo_status,
     estado = excluded.estado
 `);
+// La misma fila, para un análisis que vuelve a pasar por una publicación ya
+// analizada (upsertReclamo con conservarGestion): el reclamo ya existe y
+// alguien pudo haberle cambiado el estado ("En tratamiento", "Resuelto") y
+// el geocodificado ya corrió. Se conservan el estado, la primera detección
+// y, si la dirección detectada no cambió, todo el geocodificado; el resto
+// (texto, categoría, subcategoría) es lo que dijo el análisis nuevo.
+const GEO_SI_MISMA_DIRECCION = ['direccion_normalizada', 'calle', 'altura', 'cruce', 'x', 'y', 'comuna', 'barrio', 'precision', 'geo_status']
+  .map((col) => `${col} = CASE WHEN reclamos.direccion_detectada IS excluded.direccion_detectada THEN reclamos.${col} ELSE excluded.${col} END`)
+  .join(',\n    ');
+const upsertReclamoConservandoStmt = db.prepare(`
+  INSERT INTO reclamos (
+    id, comentario_id, plataforma, post_url, comment_url, autor, fecha,
+    detected_at, texto_original, categoria, subcategoria, precision_fecha, import_origen, direccion_detectada,
+    direccion_normalizada, calle, altura, cruce, x, y, comuna, barrio,
+    precision, geo_status, estado
+  ) VALUES (
+    @id, @comentarioId, @plataforma, @postUrl, @commentUrl, @autor, @fecha,
+    @detectedAt, @textoOriginal, @categoria, @subcategoria, @precisionFecha, @importOrigen, @direccionDetectada,
+    @direccionNormalizada, @calle, @altura, @cruce, @x, @y, @comuna, @barrio,
+    @precision, @geoStatus, @estado
+  )
+  ON CONFLICT(id) DO UPDATE SET
+    comentario_id = excluded.comentario_id,
+    plataforma = excluded.plataforma,
+    post_url = excluded.post_url,
+    comment_url = excluded.comment_url,
+    autor = excluded.autor,
+    fecha = excluded.fecha,
+    texto_original = excluded.texto_original,
+    categoria = excluded.categoria,
+    subcategoria = excluded.subcategoria,
+    precision_fecha = excluded.precision_fecha,
+    import_origen = excluded.import_origen,
+    ${GEO_SI_MISMA_DIRECCION},
+    direccion_detectada = excluded.direccion_detectada
+`);
 const listPendingGeoReclamosStmt = db.prepare(`SELECT * FROM reclamos WHERE geo_status = 'pendiente'`);
 const updateEstadoStmt = db.prepare('UPDATE reclamos SET estado = ? WHERE id = ?');
 const updateReclamoGeoStmt = db.prepare(`
@@ -1035,6 +1076,116 @@ const setGeocodeCacheStmt = db.prepare(`
     comuna = excluded.comuna,
     barrio = excluded.barrio
 `);
+
+// Los análisis de publicación (src/analysisJob.js, openspec/changes/
+// analisis-v4): uno por pedido de "Analizar", con su estado mientras corre
+// y todo lo que mostró al terminar, para volver a verlo sin gastar. Sin
+// CHECK: el estado y los tonos son listas que pueden cambiar. Los campos
+// JSON (resultado, temas, comentarios, cuando) los arma y los lee solo este
+// módulo. El link va normalizado a /p/<code>/ (el mismo posteo con
+// ?igsh= o /reel/ es el mismo).
+db.exec(`
+  CREATE TABLE IF NOT EXISTS analisis (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    plataforma TEXT NOT NULL,
+    url TEXT NOT NULL,
+    post_code TEXT,
+    post_id TEXT,
+    estado TEXT NOT NULL,
+    error TEXT,
+    started_at TEXT NOT NULL,
+    finished_at TEXT,
+    analizado_por TEXT,
+    cuenta TEXT,
+    cuenta_nombre TEXT,
+    caption TEXT,
+    posted_at TEXT,
+    post_type TEXT,
+    likes INTEGER,
+    comentarios_total INTEGER,
+    vistas INTEGER,
+    traidos INTEGER,
+    unicos INTEGER,
+    enviados INTEGER,
+    analizados INTEGER,
+    positivos INTEGER,
+    neutrales INTEGER,
+    negativos INTEGER,
+    ruido INTEGER,
+    positivo_pct INTEGER,
+    negativo_pct INTEGER,
+    nivel TEXT,
+    resultado TEXT,
+    temas TEXT,
+    comentarios TEXT,
+    cuando TEXT,
+    reporte_antes TEXT,
+    reporte_despues TEXT,
+    csv TEXT,
+    reclamos INTEGER,
+    usd_apify REAL,
+    usd_modelo REAL,
+    tokens INTEGER,
+    image_source_url TEXT,
+    image_status TEXT,
+    image_saved_at TEXT,
+    image_width INTEGER,
+    image_height INTEGER
+  )
+`);
+db.exec('CREATE INDEX IF NOT EXISTS idx_analisis_lista ON analisis(plataforma, estado, finished_at)');
+db.exec('CREATE INDEX IF NOT EXISTS idx_analisis_url ON analisis(plataforma, url)');
+
+const insertAnalisisStmt = db.prepare(`
+  INSERT INTO analisis (plataforma, url, post_code, estado, started_at, analizado_por)
+  VALUES (@plataforma, @url, @postCode, 'en curso', @startedAt, @analizadoPor)
+`);
+const updateAnalisisPostStmt = db.prepare(`
+  UPDATE analisis SET post_id = @postId, cuenta = @cuenta, cuenta_nombre = @cuentaNombre, caption = @caption,
+    posted_at = @postedAt, post_type = @postType, likes = @likes, comentarios_total = @comentariosTotal, vistas = @vistas
+  WHERE id = @id AND plataforma = @plataforma
+`);
+const finishAnalisisStmt = db.prepare(`
+  UPDATE analisis SET estado = 'ok', error = NULL, finished_at = @finishedAt,
+    traidos = @traidos, unicos = @unicos, enviados = @enviados, analizados = @analizados,
+    positivos = @positivos, neutrales = @neutrales, negativos = @negativos, ruido = @ruido,
+    positivo_pct = @positivoPct, negativo_pct = @negativoPct, nivel = @nivel,
+    resultado = @resultado, temas = @temas, comentarios = @comentarios, cuando = @cuando,
+    reporte_antes = @reporteAntes, reporte_despues = @reporteDespues, csv = @csv, reclamos = @reclamos,
+    usd_apify = @usdApify, usd_modelo = @usdModelo, tokens = @tokens
+  WHERE id = @id AND plataforma = @plataforma
+`);
+const failAnalisisStmt = db.prepare(`
+  UPDATE analisis SET estado = @estado, error = @error, finished_at = @finishedAt, traidos = COALESCE(@traidos, traidos),
+    usd_apify = @usdApify, usd_modelo = @usdModelo, tokens = @tokens
+  WHERE id = @id AND plataforma = @plataforma
+`);
+const markAnalisisImageStmt = db.prepare(`
+  UPDATE analisis SET image_source_url = @sourceUrl, image_status = @status,
+    image_saved_at = COALESCE(@savedAt, image_saved_at), image_width = COALESCE(@width, image_width),
+    image_height = COALESCE(@height, image_height)
+  WHERE id = @id AND plataforma = @plataforma
+`);
+const getAnalisisStmt = db.prepare('SELECT * FROM analisis WHERE id = ? AND plataforma = ?');
+// Las columnas livianas: lo que necesitan la tira de recientes, el inicio y
+// el aviso de "ya analizado" (sin comentarios ni informe).
+const ANALISIS_LIVIANO = `id, plataforma, url, post_code, post_id, estado, started_at, finished_at, cuenta, cuenta_nombre, caption,
+  posted_at, likes, comentarios_total, traidos, analizados, positivos, neutrales, negativos, ruido, image_saved_at`;
+const listAnalisisStmt = db.prepare(`
+  SELECT ${ANALISIS_LIVIANO} FROM analisis WHERE plataforma = ? AND estado = 'ok' ORDER BY finished_at DESC, id DESC LIMIT ?
+`);
+const findAnalisisByUrlStmt = db.prepare(`
+  SELECT ${ANALISIS_LIVIANO} FROM analisis WHERE plataforma = ? AND url = ? AND estado = 'ok' ORDER BY finished_at DESC, id DESC LIMIT 1
+`);
+const updateAnalisisTemasStmt = db.prepare("UPDATE analisis SET temas = ? WHERE id = ? AND plataforma = ? AND estado = 'ok'");
+const markInterruptedAnalisisStmt = db.prepare(`
+  UPDATE analisis SET estado = 'interrumpido', finished_at = ?,
+    error = 'El servidor se reinició con el análisis en curso.'
+  WHERE estado = 'en curso'
+`);
+const sumApifyUsdForAnalisisStmt = db.prepare(
+  'SELECT COALESCE(SUM(COALESCE(usd_real, usd)), 0) AS usd, COUNT(*) AS calls FROM apify_calls WHERE analisis_id = ?'
+);
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS magic_links (
@@ -1252,7 +1403,17 @@ function mapReclamoRow(row) {
  * `id` y `comentarioId` los arma el llamador (ver src/reclamosFromAnalysis.js
  * y scripts/import-reclamos.js) para poder deduplicar entre corridas.
  */
-function upsertReclamo(reclamo) {
+/**
+ * Guarda un reclamo; si ya existe (mismo id), lo actualiza.
+ * @param {object} reclamo
+ * @param {{ conservarGestion?: boolean }} [options] conservarGestion: lo usan
+ *   los análisis de publicación (Instagram y X) al re-analizar: el reclamo
+ *   existente conserva su estado, su primera detección y, si la dirección
+ *   detectada no cambió, su geocodificado (upsertReclamoConservandoStmt).
+ *   Sin la opción (el importador, el sembrado de prueba) pisa todo, como
+ *   siempre.
+ */
+function upsertReclamo(reclamo, { conservarGestion = false } = {}) {
   // Última barrera: nada entra a la tabla sin pasar por la lista cerrada de
   // config/categorias-reclamos.json. Ya no hay CHECK en el esquema que ataje
   // una categoría inventada, así que la validación tiene que estar acá sí o sí.
@@ -1262,7 +1423,7 @@ function upsertReclamo(reclamo) {
     contexto: reclamo.id,
   });
 
-  upsertReclamoStmt.run({
+  (conservarGestion ? upsertReclamoConservandoStmt : upsertReclamoStmt).run({
     id: reclamo.id,
     comentarioId: reclamo.comentarioId || null,
     plataforma: reclamo.plataforma,
@@ -1603,6 +1764,7 @@ function insertApifyCall(row) {
     usd: Number(row.usd) || 0,
     usdReal: row.usdReal == null || !Number.isFinite(Number(row.usdReal)) ? null : Number(row.usdReal),
     apifyRunId: row.apifyRunId ?? null,
+    analisisId: row.analisisId ?? null,
   });
   return Number(result.lastInsertRowid);
 }
@@ -2136,7 +2298,217 @@ function deleteUnusedMagicLinks(email) {
   deleteUnusedMagicLinksStmt.run(email);
 }
 
+// --------------------------------------------------------------------
+// Análisis de publicación (tabla analisis). Todas por plataforma, sin
+// default. Los campos JSON se leen con parseJsonColumn: un valor roto
+// queda null, nunca tira.
+// --------------------------------------------------------------------
+
+function parseJsonColumn(value) {
+  if (value === null || value === undefined || value === '') return null;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
+const numberOrNull = (value) => (value === null || value === undefined || !Number.isFinite(Number(value)) ? null : Number(value));
+
+function analisisLiviano(row) {
+  if (!row) return null;
+  return {
+    id: Number(row.id),
+    plataforma: row.plataforma,
+    url: row.url,
+    postCode: row.post_code || null,
+    postId: row.post_id || null,
+    estado: row.estado,
+    startedAt: row.started_at,
+    finishedAt: row.finished_at || null,
+    cuenta: row.cuenta || null,
+    cuentaNombre: row.cuenta_nombre || null,
+    caption: row.caption || '',
+    postedAt: row.posted_at || null,
+    likes: numberOrNull(row.likes),
+    comentariosTotal: numberOrNull(row.comentarios_total),
+    traidos: numberOrNull(row.traidos),
+    analizados: numberOrNull(row.analizados),
+    tonos: {
+      positivos: numberOrNull(row.positivos),
+      neutrales: numberOrNull(row.neutrales),
+      negativos: numberOrNull(row.negativos),
+      ruido: numberOrNull(row.ruido),
+    },
+    imageSavedAt: row.image_saved_at || null,
+  };
+}
+
+function analisisCompleto(row) {
+  if (!row) return null;
+  return {
+    ...analisisLiviano(row),
+    error: row.error || null,
+    postType: row.post_type || null,
+    vistas: numberOrNull(row.vistas),
+    unicos: numberOrNull(row.unicos),
+    enviados: numberOrNull(row.enviados),
+    positivoPct: numberOrNull(row.positivo_pct),
+    negativoPct: numberOrNull(row.negativo_pct),
+    nivel: row.nivel || null,
+    resultado: parseJsonColumn(row.resultado),
+    temas: parseJsonColumn(row.temas) || [],
+    comentarios: parseJsonColumn(row.comentarios) || [],
+    cuando: parseJsonColumn(row.cuando),
+    reporteAntes: row.reporte_antes || '',
+    reporteDespues: row.reporte_despues || '',
+    csv: row.csv || '',
+    reclamos: numberOrNull(row.reclamos),
+    usdApify: numberOrNull(row.usd_apify),
+    usdModelo: numberOrNull(row.usd_modelo),
+    tokens: numberOrNull(row.tokens),
+    image: {
+      sourceUrl: row.image_source_url || null,
+      status: row.image_status || null,
+      savedAt: row.image_saved_at || null,
+      width: numberOrNull(row.image_width),
+      height: numberOrNull(row.image_height),
+    },
+  };
+}
+
+/** Abre la fila de un análisis en "en curso". @returns {number} el id. */
+function startAnalisis({ plataforma, url, postCode = null, analizadoPor = null, startedAt = new Date().toISOString() }) {
+  requirePlataforma(plataforma, 'startAnalisis');
+  return Number(insertAnalisisStmt.run({ plataforma, url, postCode, startedAt, analizadoPor }).lastInsertRowid);
+}
+
+/** Los datos de la publicación, apenas llegan (también quedan si después falla). */
+function saveAnalisisPost(id, plataforma, post) {
+  requirePlataforma(plataforma, 'saveAnalisisPost');
+  updateAnalisisPostStmt.run({
+    id,
+    plataforma,
+    postId: post.id ?? null,
+    cuenta: post.ownerUsername ?? null,
+    cuentaNombre: post.ownerFullName ?? null,
+    caption: post.caption ?? null,
+    postedAt: post.postedAt ?? null,
+    postType: post.postType ?? null,
+    likes: numberOrNull(post.likesCount),
+    comentariosTotal: numberOrNull(post.commentsCount),
+    vistas: numberOrNull(post.videoPlayCount),
+  });
+}
+
+/** Cierra un análisis que terminó bien, con todo lo que muestra la pantalla. */
+function finishAnalisis(id, plataforma, data) {
+  requirePlataforma(plataforma, 'finishAnalisis');
+  const json = (value) => (value === undefined || value === null ? null : JSON.stringify(value));
+  finishAnalisisStmt.run({
+    id,
+    plataforma,
+    finishedAt: data.finishedAt || new Date().toISOString(),
+    traidos: numberOrNull(data.traidos),
+    unicos: numberOrNull(data.unicos),
+    enviados: numberOrNull(data.enviados),
+    analizados: numberOrNull(data.analizados),
+    positivos: numberOrNull(data.tonos && data.tonos.positivos),
+    neutrales: numberOrNull(data.tonos && data.tonos.neutrales),
+    negativos: numberOrNull(data.tonos && data.tonos.negativos),
+    ruido: numberOrNull(data.tonos && data.tonos.ruido),
+    positivoPct: numberOrNull(data.positivoPct),
+    negativoPct: numberOrNull(data.negativoPct),
+    nivel: data.nivel ?? null,
+    resultado: json(data.resultado),
+    temas: json(data.temas || []),
+    comentarios: json(data.comentarios || []),
+    cuando: json(data.cuando),
+    reporteAntes: data.reporteAntes ?? null,
+    reporteDespues: data.reporteDespues ?? null,
+    csv: data.csv ?? null,
+    reclamos: numberOrNull(data.reclamos),
+    usdApify: numberOrNull(data.usdApify),
+    usdModelo: numberOrNull(data.usdModelo),
+    tokens: numberOrNull(data.tokens),
+  });
+}
+
+/** Cierra un análisis que no terminó bien: 'sin comentarios' o 'error', con el mensaje para la persona. */
+function failAnalisis(id, plataforma, { estado = 'error', error = null, traidos = null, usdApify = null, usdModelo = null, tokens = null } = {}) {
+  requirePlataforma(plataforma, 'failAnalisis');
+  failAnalisisStmt.run({
+    id,
+    plataforma,
+    estado,
+    error,
+    finishedAt: new Date().toISOString(),
+    traidos: numberOrNull(traidos),
+    usdApify: numberOrNull(usdApify),
+    usdModelo: numberOrNull(usdModelo),
+    tokens: numberOrNull(tokens),
+  });
+}
+
+/** Lo que pasó con la foto (postImages.savePostImage o la del Monitoreo). */
+function markAnalisisImage(id, plataforma, { sourceUrl = null, status = null, savedAt = null, width = null, height = null } = {}) {
+  requirePlataforma(plataforma, 'markAnalisisImage');
+  markAnalisisImageStmt.run({ id, plataforma, sourceUrl, status, savedAt, width: numberOrNull(width), height: numberOrNull(height) });
+}
+
+/** @returns {object|null} el análisis entero, o null si no es de esa plataforma. */
+function getAnalisis(id, plataforma) {
+  requirePlataforma(plataforma, 'getAnalisis');
+  return analisisCompleto(getAnalisisStmt.get(Number(id), plataforma));
+}
+
+/** Los terminados bien, el más reciente primero (livianos). */
+function listAnalisis({ plataforma, limit = 12 } = {}) {
+  requirePlataforma(plataforma, 'listAnalisis');
+  const n = Math.max(1, Math.min(100, Math.floor(Number(limit) || 12)));
+  return listAnalisisStmt.all(plataforma, n).map(analisisLiviano);
+}
+
+/** El último análisis terminado bien de ese link (ya normalizado), o null. */
+function findAnalisisByUrl({ plataforma, url }) {
+  requirePlataforma(plataforma, 'findAnalisisByUrl');
+  return analisisLiviano(findAnalisisByUrlStmt.get(plataforma, url));
+}
+
+/** Los temas editados de un análisis terminado. @returns {boolean} si había uno. */
+function updateAnalisisTemas(id, plataforma, temas) {
+  requirePlataforma(plataforma, 'updateAnalisisTemas');
+  return updateAnalisisTemasStmt.run(JSON.stringify(temas || []), Number(id), plataforma).changes > 0;
+}
+
+/**
+ * Los análisis que quedaron "en curso" de un arranque anterior pasan a
+ * "interrumpido". Lo llama SOLO server.js al arrancar: un script que abre
+ * la base mientras la app corre no tiene que tocar un análisis vivo.
+ * @returns {number} cuántos
+ */
+function markInterruptedAnalisis(now = new Date().toISOString()) {
+  return Number(markInterruptedAnalisisStmt.run(now).changes) || 0;
+}
+
+/** Lo que costó en Apify un análisis (sus filas de apify_calls). */
+function sumApifyUsdForAnalisis(id) {
+  const row = sumApifyUsdForAnalisisStmt.get(Number(id));
+  return { usd: Number(row.usd) || 0, calls: Number(row.calls) || 0 };
+}
+
 module.exports = {
+  startAnalisis,
+  saveAnalisisPost,
+  finishAnalisis,
+  failAnalisis,
+  markAnalisisImage,
+  getAnalisis,
+  listAnalisis,
+  findAnalisisByUrl,
+  updateAnalisisTemas,
+  markInterruptedAnalisis,
+  sumApifyUsdForAnalisis,
   findExistingPostId,
   isKnownPost,
   saveDetectedPost,

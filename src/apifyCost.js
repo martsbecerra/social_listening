@@ -220,6 +220,7 @@ function recordApifyCall(call) {
       usd: call.ok ? usdForCall({ actor, queryType, items }) : 0,
       usdReal: call.usdReal ?? null,
       apifyRunId: call.apifyRunId ?? null,
+      analisisId: call.analisisId ?? null,
     });
   } catch (err) {
     console.error('[costo] No se pudo registrar la llamada a Apify:', err.message);
