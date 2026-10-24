@@ -8,7 +8,7 @@
 // ==========================================================================
 
 // 300 por defecto (decisión del dueño, octubre 2026): el análisis de
-// Instagram los clasifica en tandas de 100 (src/analyzeComments.js), así que
+// Instagram los clasifica en tandas de 50 (src/analyzeComments.js), así que
 // no chocan con el tope de salida del modelo. X tiene su propio tope y su
 // propia variable (src/x/sample.js).
 const DEFAULT_MAX_COMMENTS_TO_SEND = 300;

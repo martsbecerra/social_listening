@@ -1,0 +1,72 @@
+{
+  "nota": "Corrida real del 24/10/2026 (anonimizada): la síntesis, con los 50 comentarios clasificados (números 101 a 150 del análisis) y dos verificados sin ficha.",
+  "ms": 12014,
+  "usage": {
+    "inputTokens": 6593,
+    "outputTokens": 853,
+    "totalTokens": 7446,
+    "costUsd": 0.021716
+  },
+  "parsed": {
+    "lectura": "Lectura de prueba.",
+    "hecho_dominante": {
+      "hay": false,
+      "tema": 0,
+      "titulo": "",
+      "descripcion": ""
+    },
+    "pedidos": [
+      {
+        "texto": "Pedido de prueba 1",
+        "ids": [
+          134
+        ]
+      },
+      {
+        "texto": "Pedido de prueba 2",
+        "ids": [
+          126
+        ]
+      },
+      {
+        "texto": "Pedido de prueba 3",
+        "ids": [
+          133
+        ]
+      },
+      {
+        "texto": "Pedido de prueba 4",
+        "ids": [
+          102
+        ]
+      },
+      {
+        "texto": "Pedido de prueba 5",
+        "ids": [
+          111
+        ]
+      },
+      {
+        "texto": "Pedido de prueba 6",
+        "ids": [
+          114
+        ]
+      },
+      {
+        "texto": "Pedido de prueba 7",
+        "ids": [
+          138
+        ]
+      },
+      {
+        "texto": "Pedido de prueba 8",
+        "ids": [
+          149,
+          150
+        ]
+      }
+    ],
+    "que_mirar": "Qué mirar de prueba.",
+    "figuras_sugeridas": []
+  }
+}

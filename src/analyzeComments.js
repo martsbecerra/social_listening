@@ -364,4 +364,4 @@ async function analizar({ url, post, comments, pasos = NO_PASOS }, gasto) {
   };
 }
 
-module.exports = { analyzeComments, comentariosParaGuardar, claveTema, BATCH_SIZE, BATCH_CONCURRENCY, MAX_TEMAS_ANALISIS };
+module.exports = { analyzeComments, comentariosParaGuardar, claveTema, BATCH_SIZE, BATCH_CONCURRENCY, BATCH_MAX_TOKENS, MAX_TEMAS_ANALISIS };

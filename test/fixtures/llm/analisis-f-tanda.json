@@ -1,0 +1,595 @@
+{
+  "nota": "Corrida real del 24/10/2026 (anonimizada). La tanda de 50 comentarios que respondió: en esa corrida, con tandas de 100, era la 2 de 2 (posiciones 101 a 150 de la muestra) y definió los temas porque la 1 se había cortado. Con tandas de 50 es la 3.",
+  "muestra": {
+    "desde": 101,
+    "hasta": 150
+  },
+  "definioTemas": true,
+  "usuarios": [
+    "usuario_36",
+    "usuario_37",
+    "usuario_38",
+    "usuario_39",
+    "usuario_42",
+    "usuario_43",
+    "usuario_44",
+    "usuario_45",
+    "usuario_46",
+    "usuario_47",
+    "usuario_48",
+    "usuario_49",
+    "usuario_50",
+    "usuario_51",
+    "usuario_52",
+    "usuario_53",
+    "usuario_54",
+    "usuario_55",
+    "usuario_56",
+    "usuario_57",
+    "usuario_58",
+    "usuario_58",
+    "usuario_59",
+    "usuario_61",
+    "usuario_63",
+    "usuario_69",
+    "usuario_24",
+    "usuario_70",
+    "usuario_71",
+    "usuario_71",
+    "usuario_71",
+    "usuario_71",
+    "usuario_71",
+    "usuario_72",
+    "usuario_73",
+    "usuario_74",
+    "usuario_76",
+    "usuario_78",
+    "usuario_79",
+    "usuario_82",
+    "usuario_88",
+    "usuario_89",
+    "usuario_97",
+    "usuario_115",
+    "usuario_120",
+    "usuario_126",
+    "usuario_131",
+    "usuario_139",
+    "usuario_145",
+    "usuario_145"
+  ],
+  "ms": 91238,
+  "usage": {
+    "inputTokens": 8628,
+    "outputTokens": 10653,
+    "totalTokens": 19281,
+    "costUsd": 0.123786
+  },
+  "parsed": {
+    "temas": [
+      {
+        "numero": 1,
+        "nombre": "Tema de prueba 1"
+      },
+      {
+        "numero": 2,
+        "nombre": "Tema de prueba 2"
+      },
+      {
+        "numero": 3,
+        "nombre": "Tema de prueba 3"
+      },
+      {
+        "numero": 4,
+        "nombre": "Tema de prueba 4"
+      },
+      {
+        "numero": 5,
+        "nombre": "Tema de prueba 5"
+      },
+      {
+        "numero": 6,
+        "nombre": "Tema de prueba 6"
+      },
+      {
+        "numero": 7,
+        "nombre": "Tema de prueba 7"
+      },
+      {
+        "numero": 8,
+        "nombre": "Tema de prueba 8"
+      },
+      {
+        "numero": 9,
+        "nombre": "Tema de prueba 9"
+      },
+      {
+        "numero": 10,
+        "nombre": "Tema de prueba 10"
+      }
+    ],
+    "classifications": [
+      {
+        "index": 1,
+        "sentiment": "negativo",
+        "postura": "critica",
+        "tema": 9,
+        "sobre_posteo": false,
+        "pedido": false,
+        "reclamosGeo": []
+      },
+      {
+        "index": 2,
+        "sentiment": "positivo",
+        "postura": "favor",
+        "tema": 2,
+        "sobre_posteo": false,
+        "pedido": true,
+        "reclamosGeo": []
+      },
+      {
+        "index": 3,
+        "sentiment": "negativo",
+        "postura": "critica",
+        "tema": 3,
+        "sobre_posteo": false,
+        "pedido": false,
+        "reclamosGeo": []
+      },
+      {
+        "index": 4,
+        "sentiment": "positivo",
+        "postura": "favor",
+        "tema": 2,
+        "sobre_posteo": true,
+        "pedido": false,
+        "reclamosGeo": []
+      },
+      {
+        "index": 5,
+        "sentiment": "negativo",
+        "postura": "critica",
+        "tema": 3,
+        "sobre_posteo": false,
+        "pedido": false,
+        "reclamosGeo": []
+      },
+      {
+        "index": 6,
+        "sentiment": "negativo",
+        "postura": "critica",
+        "tema": 3,
+        "sobre_posteo": false,
+        "pedido": false,
+        "reclamosGeo": []
+      },
+      {
+        "index": 7,
+        "sentiment": "neutral",
+        "postura": "neutra",
+        "tema": 0,
+        "sobre_posteo": false,
+        "pedido": false,
+        "reclamosGeo": []
+      },
+      {
+        "index": 8,
+        "sentiment": "positivo",
+        "postura": "favor",
+        "tema": 2,
+        "sobre_posteo": true,
+        "pedido": false,
+        "reclamosGeo": []
+      },
+      {
+        "index": 9,
+        "sentiment": "positivo",
+        "postura": "favor",
+        "tema": 2,
+        "sobre_posteo": true,
+        "pedido": false,
+        "reclamosGeo": []
+      },
+      {
+        "index": 10,
+        "sentiment": "negativo",
+        "postura": "critica",
+        "tema": 3,
+        "sobre_posteo": true,
+        "pedido": false,
+        "reclamosGeo": []
+      },
+      {
+        "index": 11,
+        "sentiment": "negativo",
+        "postura": "critica",
+        "tema": 1,
+        "sobre_posteo": true,
+        "pedido": true,
+        "reclamosGeo": []
+      },
+      {
+        "index": 12,
+        "sentiment": "negativo",
+        "postura": "critica",
+        "tema": 3,
+        "sobre_posteo": false,
+        "pedido": false,
+        "reclamosGeo": []
+      },
+      {
+        "index": 13,
+        "sentiment": "negativo",
+        "postura": "critica",
+        "tema": 3,
+        "sobre_posteo": true,
+        "pedido": false,
+        "reclamosGeo": []
+      },
+      {
+        "index": 14,
+        "sentiment": "neutral",
+        "postura": "neutra",
+        "tema": 0,
+        "sobre_posteo": true,
+        "pedido": true,
+        "reclamosGeo": []
+      },
+      {
+        "index": 15,
+        "sentiment": "positivo",
+        "postura": "favor",
+        "tema": 2,
+        "sobre_posteo": false,
+        "pedido": false,
+        "reclamosGeo": []
+      },
+      {
+        "index": 16,
+        "sentiment": "negativo",
+        "postura": "critica",
+        "tema": 3,
+        "sobre_posteo": false,
+        "pedido": false,
+        "reclamosGeo": []
+      },
+      {
+        "index": 17,
+        "sentiment": "positivo",
+        "postura": "favor",
+        "tema": 1,
+        "sobre_posteo": true,
+        "pedido": false,
+        "reclamosGeo": []
+      },
+      {
+        "index": 18,
+        "sentiment": "positivo",
+        "postura": "favor",
+        "tema": 2,
+        "sobre_posteo": true,
+        "pedido": false,
+        "reclamosGeo": []
+      },
+      {
+        "index": 19,
+        "sentiment": "negativo",
+        "postura": "critica",
+        "tema": 3,
+        "sobre_posteo": false,
+        "pedido": false,
+        "reclamosGeo": []
+      },
+      {
+        "index": 20,
+        "sentiment": "negativo",
+        "postura": "critica",
+        "tema": 3,
+        "sobre_posteo": true,
+        "pedido": false,
+        "reclamosGeo": []
+      },
+      {
+        "index": 21,
+        "sentiment": "negativo",
+        "postura": "critica",
+        "tema": 1,
+        "sobre_posteo": true,
+        "pedido": false,
+        "reclamosGeo": []
+      },
+      {
+        "index": 22,
+        "sentiment": "negativo",
+        "postura": "critica",
+        "tema": 1,
+        "sobre_posteo": true,
+        "pedido": false,
+        "reclamosGeo": []
+      },
+      {
+        "index": 23,
+        "sentiment": "negativo",
+        "postura": "critica",
+        "tema": 7,
+        "sobre_posteo": false,
+        "pedido": false,
+        "reclamosGeo": []
+      },
+      {
+        "index": 24,
+        "sentiment": "positivo",
+        "postura": "favor",
+        "tema": 1,
+        "sobre_posteo": true,
+        "pedido": false,
+        "reclamosGeo": []
+      },
+      {
+        "index": 25,
+        "sentiment": "negativo",
+        "postura": "critica",
+        "tema": 1,
+        "sobre_posteo": true,
+        "pedido": false,
+        "reclamosGeo": []
+      },
+      {
+        "index": 26,
+        "sentiment": "negativo",
+        "postura": "critica",
+        "tema": 4,
+        "sobre_posteo": false,
+        "pedido": true,
+        "reclamosGeo": [
+          {
+            "direccionDetectada": "Calle de prueba 1 100",
+            "direccionNormalizada": "CALLE DE PRUEBA 1 100",
+            "tematica": "tematica de prueba 1",
+            "categoria": "Tránsito",
+            "tipoUbicacion": "lugar_nombrado"
+          }
+        ]
+      },
+      {
+        "index": 27,
+        "sentiment": "negativo",
+        "postura": "critica",
+        "tema": 5,
+        "sobre_posteo": false,
+        "pedido": false,
+        "reclamosGeo": []
+      },
+      {
+        "index": 28,
+        "sentiment": "positivo",
+        "postura": "favor",
+        "tema": 1,
+        "sobre_posteo": true,
+        "pedido": false,
+        "reclamosGeo": []
+      },
+      {
+        "index": 29,
+        "sentiment": "neutral",
+        "postura": "neutra",
+        "tema": 10,
+        "sobre_posteo": false,
+        "pedido": false,
+        "reclamosGeo": []
+      },
+      {
+        "index": 30,
+        "sentiment": "neutral",
+        "postura": "neutra",
+        "tema": 10,
+        "sobre_posteo": false,
+        "pedido": false,
+        "reclamosGeo": []
+      },
+      {
+        "index": 31,
+        "sentiment": "neutral",
+        "postura": "neutra",
+        "tema": 10,
+        "sobre_posteo": false,
+        "pedido": false,
+        "reclamosGeo": []
+      },
+      {
+        "index": 32,
+        "sentiment": "neutral",
+        "postura": "neutra",
+        "tema": 10,
+        "sobre_posteo": false,
+        "pedido": false,
+        "reclamosGeo": []
+      },
+      {
+        "index": 33,
+        "sentiment": "positivo",
+        "postura": "favor",
+        "tema": 10,
+        "sobre_posteo": false,
+        "pedido": true,
+        "reclamosGeo": [
+          {
+            "direccionDetectada": "Calle de prueba 2 100",
+            "direccionNormalizada": "CALLE DE PRUEBA 2 100",
+            "tematica": "tematica de prueba 2",
+            "categoria": "Cultura",
+            "tipoUbicacion": "lugar_nombrado"
+          },
+          {
+            "direccionDetectada": "Calle de prueba 3 100",
+            "direccionNormalizada": "CALLE DE PRUEBA 3 100",
+            "tematica": "tematica de prueba 3",
+            "categoria": "Cultura",
+            "tipoUbicacion": "lugar_nombrado"
+          }
+        ]
+      },
+      {
+        "index": 34,
+        "sentiment": "negativo",
+        "postura": "critica",
+        "tema": 3,
+        "sobre_posteo": false,
+        "pedido": true,
+        "reclamosGeo": []
+      },
+      {
+        "index": 35,
+        "sentiment": "negativo",
+        "postura": "critica",
+        "tema": 3,
+        "sobre_posteo": false,
+        "pedido": false,
+        "reclamosGeo": []
+      },
+      {
+        "index": 36,
+        "sentiment": "ruido",
+        "postura": "neutra",
+        "tema": 0,
+        "sobre_posteo": false,
+        "pedido": false,
+        "reclamosGeo": []
+      },
+      {
+        "index": 37,
+        "sentiment": "neutral",
+        "postura": "neutra",
+        "tema": 1,
+        "sobre_posteo": true,
+        "pedido": false,
+        "reclamosGeo": []
+      },
+      {
+        "index": 38,
+        "sentiment": "positivo",
+        "postura": "favor",
+        "tema": 2,
+        "sobre_posteo": false,
+        "pedido": true,
+        "reclamosGeo": []
+      },
+      {
+        "index": 39,
+        "sentiment": "positivo",
+        "postura": "favor",
+        "tema": 2,
+        "sobre_posteo": true,
+        "pedido": false,
+        "reclamosGeo": []
+      },
+      {
+        "index": 40,
+        "sentiment": "negativo",
+        "postura": "neutra",
+        "tema": 7,
+        "sobre_posteo": true,
+        "pedido": false,
+        "reclamosGeo": []
+      },
+      {
+        "index": 41,
+        "sentiment": "neutral",
+        "postura": "neutra",
+        "tema": 0,
+        "sobre_posteo": false,
+        "pedido": false,
+        "reclamosGeo": []
+      },
+      {
+        "index": 42,
+        "sentiment": "negativo",
+        "postura": "critica",
+        "tema": 3,
+        "sobre_posteo": false,
+        "pedido": false,
+        "reclamosGeo": []
+      },
+      {
+        "index": 43,
+        "sentiment": "negativo",
+        "postura": "critica",
+        "tema": 3,
+        "sobre_posteo": false,
+        "pedido": false,
+        "reclamosGeo": []
+      },
+      {
+        "index": 44,
+        "sentiment": "negativo",
+        "postura": "critica",
+        "tema": 3,
+        "sobre_posteo": false,
+        "pedido": false,
+        "reclamosGeo": []
+      },
+      {
+        "index": 45,
+        "sentiment": "positivo",
+        "postura": "favor",
+        "tema": 2,
+        "sobre_posteo": false,
+        "pedido": false,
+        "reclamosGeo": []
+      },
+      {
+        "index": 46,
+        "sentiment": "neutral",
+        "postura": "neutra",
+        "tema": 0,
+        "sobre_posteo": false,
+        "pedido": false,
+        "reclamosGeo": []
+      },
+      {
+        "index": 47,
+        "sentiment": "negativo",
+        "postura": "critica",
+        "tema": 3,
+        "sobre_posteo": true,
+        "pedido": false,
+        "reclamosGeo": []
+      },
+      {
+        "index": 48,
+        "sentiment": "negativo",
+        "postura": "neutra",
+        "tema": 7,
+        "sobre_posteo": true,
+        "pedido": true,
+        "reclamosGeo": []
+      },
+      {
+        "index": 49,
+        "sentiment": "negativo",
+        "postura": "critica",
+        "tema": 6,
+        "sobre_posteo": false,
+        "pedido": true,
+        "reclamosGeo": []
+      },
+      {
+        "index": 50,
+        "sentiment": "negativo",
+        "postura": "critica",
+        "tema": 6,
+        "sobre_posteo": false,
+        "pedido": true,
+        "reclamosGeo": []
+      }
+    ]
+  },
+  "laQueSeCorto": [
+    {
+      "comentarios": 100,
+      "maxTokens": 12000,
+      "intentos": 2,
+      "ms": 195574,
+      "error": "Structured output falló: contenido vacío o JSON inválido"
+    }
+  ]
+}

@@ -1245,15 +1245,26 @@ públicas). La F va en dos PR: F1 (modelo y servidor, tag `v4-fase-f1`) y F2
   mano), `test/analisisTemas.test.js`, `test/analisisApify.test.js`
   (normalización, topes, las dos corridas, el limitador lleno),
   `test/analisisModelo.test.js` (la primera tanda sola, los temas nuevos
-  unidos, una caída, índices omitidos, la síntesis y sus límites, las
-  sugerencias), `test/analisisTrabajo.test.js` (línea de tiempo, progreso,
+  unidos, una caída, la cortada partida en dos, lo gastado en las
+  fallidas, índices omitidos, la síntesis y sus límites, las
+  sugerencias), `test/llmReintento.test.js` (también la respuesta cortada y
+  lo gastado en los errores, en OpenRouter y en Anthropic),
+  `test/analisisTrabajo.test.js` (línea de tiempo, progreso,
   el trabajo y las rutas con el gate de login: galería, vista, informe,
-  temas v2 y viejos, CSV, figuras) y
+  temas v2 y viejos, CSV, figuras),
   `test/analisisFixtureReal.test.js` (REQ-ANA-18: la forma real del actor y
   el análisis entero contra `test/fixtures/apify/analisis-publicacion.json`
   y `analisis-comentarios.json`, de la corrida autorizada del 24/10/2026,
   anonimizados: sin usuarios, textos, ids ni links reales; fechas corridas,
-  desfasajes reales).
+  desfasajes reales) y `test/analisisFixtureRealF.test.js` (REQ-PRO-14: la
+  corrida de la fase F del mismo día, un carrusel con 385 comentarios y
+  155 ítems, 150 con texto; `test/fixtures/apify/analisis-f-*.json` y lo que
+  respondió el modelo en `test/fixtures/llm/analisis-f-tanda.json` y
+  `analisis-f-sintesis.json`, con sus tokens reales; el análisis entero da
+  los números del informe real. El anonimizador conserva lo que miran las
+  heurísticas de `classificationHeuristics.js` (solo emojis, solo
+  menciones, menos de 3 caracteres, palabras de sorteo) sin el texto
+  real).
 - **Lo que trae de verdad el actor** (esa corrida, un reel con 138
   comentarios según Instagram): 64 comentarios, solo los de primer nivel
   (`repliesCount` y `replies` en null: el total de Instagram suma las
