@@ -3,9 +3,11 @@
 // GET /api/public/resumen (src/publicResumen.js): los números del login, sin
 // sesión. Lo que importa: que pase el gate SIN sesión, que traiga solo
 // cantidades y nombres de tema de la config (ningún título, texto, cuenta,
-// término de búsqueda, URL ni dato de un reclamo), que guarde la respuesta
-// 60 s y que un error no muestre detalles. Base temporal; app de prueba con
-// el gate real. Nunca toca data/monitoring.db.
+// término de búsqueda, URL ni dato de un reclamo), que "reclamos en el
+// mapa" sean los que tienen pin, que los días se cuenten desde la primera
+// detección, que guarde la respuesta 60 s (también un error) y que un error
+// no muestre detalles. Base temporal; app de prueba con el gate real. Nunca
+// toca data/monitoring.db.
 
 const fs = require('fs');
 const os = require('os');
@@ -18,6 +20,7 @@ process.env.APP_BASE_URL = 'http://localhost';
 
 const { describe, test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
+const { DatabaseSync } = require('node:sqlite');
 const express = require('express');
 
 const db = require('../src/db');
@@ -38,7 +41,10 @@ let ahora = Date.parse(enArgentina('2026-10-23', 12));
 const SECRETOS = ['TITULO-SECRETO', 'TEXTO-SECRETO', 'cuenta_secreta', 'termino-secreto', 'RECLAMO-SECRETO', 'autor_secreto', 'C-SECRETA'];
 
 let siguiente = 5000;
-function guardar({ plataforma = 'instagram', postedAt, tema = null, ignorado = false }) {
+// Cuándo se detectó cada posteo (saveDetectedPost pone "ahora"): una hora
+// después de publicado, salvo el que se diga.
+const detecciones = new Map();
+function guardar({ plataforma = 'instagram', postedAt, detectedAt = null, tema = null, ignorado = false }) {
   const id = String(siguiente++);
   const url = plataforma === 'x' ? `https://x.com/cuenta_secreta/status/${id}` : `https://www.instagram.com/p/C-SECRETA${id}/`;
   assert.equal(
@@ -59,7 +65,15 @@ function guardar({ plataforma = 'instagram', postedAt, tema = null, ignorado = f
     true
   );
   if (ignorado) assert.equal(db.ignorePost(id, plataforma), true);
+  detecciones.set(id, detectedAt || new Date(Date.parse(postedAt) + 3600e3).toISOString());
   return id;
+}
+
+function fijarDetecciones() {
+  const raw = new DatabaseSync(process.env.MONITORING_DB_PATH);
+  const update = raw.prepare('UPDATE detected_posts SET detected_at = ? WHERE id = ?');
+  for (const [id, detectedAt] of detecciones) update.run(detectedAt, id);
+  raw.close();
 }
 
 let server;
@@ -72,8 +86,10 @@ before(async () => {
   guardar({ postedAt: enArgentina('2026-10-23', 11), tema: 'Seguridad', ignorado: true }); // ignorado: no cuenta
   guardar({ postedAt: enArgentina('2026-10-22', 23, 59), tema: 'Seguridad' }); // ayer: no es de hoy
   guardar({ postedAt: enArgentina('2026-10-03', 12), tema: 'Salud' }); // en los 30 días, fuera de los 7
-  guardar({ postedAt: enArgentina('2026-09-13', 12), tema: 'Un tema que no existe' }); // el primero, fuera de los 30
-  const reclamo = (id, geoStatus) =>
+  // El primero publicado (13/9), pero detectado el 20/9: la escucha empezó ahí.
+  guardar({ postedAt: enArgentina('2026-09-13', 12), detectedAt: enArgentina('2026-09-20', 12), tema: 'Un tema que no existe' });
+  fijarDetecciones();
+  const reclamo = (id, geoStatus, { x = 1, y = 1, direccionNormalizada = 'SALTA 1' } = {}) =>
     db.upsertReclamo({
       id,
       comentarioId: id,
@@ -86,11 +102,16 @@ before(async () => {
       direccionDetectada: 'Salta 1',
       geoStatus,
       estado: 'Pendiente',
-      x: 1,
-      y: 1,
+      x,
+      y,
+      direccionNormalizada,
     });
   reclamo('r-1', 'ok');
   reclamo('r-2', 'fuera_caba'); // fuera de la Ciudad: no está en el mapa
+  // Sin pin (la regla del mapa: x, y y dirección normalizada): no cuentan.
+  reclamo('r-3', 'sin_direccion', { x: null, y: null, direccionNormalizada: null });
+  reclamo('r-4', 'pendiente', { x: null, y: null, direccionNormalizada: null });
+  reclamo('r-5', 'no_encontrada', { x: null, y: null });
 
   const app = express();
   app.use(createAuthGate());
@@ -127,9 +148,9 @@ describe('GET /api/public/resumen', { concurrency: false }, () => {
     ]);
     assert.equal(r.publicacionesHoy, 3); // dos de Instagram y una de X, sin el ignorado
     assert.equal(r.publicaciones30Dias, 5); // más la de ayer y la del 3/10
-    assert.equal(r.reclamosEnMapa, 1);
-    assert.equal(r.primerDia, '2026-09-13');
-    assert.equal(r.diasEscuchando, 41); // del 13/9 al 23/10, los dos incluidos
+    assert.equal(r.reclamosEnMapa, 1); // el único con pin
+    assert.equal(r.primerDia, '2026-09-20'); // la primera detección, no la primera publicación
+    assert.equal(r.diasEscuchando, 34); // del 20/9 al 23/10, los dos incluidos
     assert.equal(r.corridasPorDia, 4);
     assert.deepEqual(r.runHours, [8, 12, 16, 20]);
     // Los 7 días: Seguridad (hoy y ayer), Transporte (X) y el sin tema.
@@ -149,6 +170,7 @@ describe('GET /api/public/resumen', { concurrency: false }, () => {
   test('guarda la respuesta 60 s', async () => {
     const antes = await (await fetch(`${base}/api/public/resumen`)).json();
     guardar({ postedAt: enArgentina('2026-10-23', 11, 30), tema: 'Seguridad' });
+    fijarDetecciones();
     ahora += 30 * 1000;
     const enCache = await (await fetch(`${base}/api/public/resumen`)).json();
     assert.equal(enCache.publicacionesHoy, antes.publicacionesHoy);
@@ -174,6 +196,46 @@ describe('GET /api/public/resumen', { concurrency: false }, () => {
       const body = await r.text();
       assert.deepEqual(JSON.parse(body), { error: 'No se pudo armar el resumen.' });
       assert.ok(!body.includes('ruta'));
+    } finally {
+      otro.closeAllConnections();
+      await new Promise((resolve) => otro.close(resolve));
+    }
+  });
+
+  test('un error también se guarda 60 s, y si había una respuesta buena se sigue sirviendo', async () => {
+    let reloj = Date.parse(enArgentina('2026-10-23', 12));
+    let llamadas = 0;
+    let falla = true;
+    const app = express();
+    publicResumen.register(app, {
+      runInfo: () => {
+        llamadas += 1;
+        if (falla) throw new Error('la base no responde');
+        return { runHours: [8], corridasPorDia: 1 };
+      },
+      now: () => reloj,
+    });
+    const otro = await new Promise((resolve) => {
+      const s = app.listen(0, '127.0.0.1', () => resolve(s));
+    });
+    const pedir = () => fetch(`http://127.0.0.1:${otro.address().port}/api/public/resumen`);
+    try {
+      assert.equal((await pedir()).status, 503);
+      assert.equal((await pedir()).status, 503);
+      assert.equal(llamadas, 1, 'el fallo no vuelve a tocar la base en el mismo minuto');
+      reloj += 61 * 1000;
+      falla = false;
+      const buena = await pedir();
+      assert.equal(buena.status, 200);
+      const cuerpo = await buena.json();
+      assert.equal(llamadas, 2);
+      reloj += 61 * 1000;
+      falla = true;
+      const vieja = await pedir();
+      assert.equal(vieja.status, 200, 'con una respuesta anterior, se sirve esa');
+      assert.equal((await vieja.json()).generadoEn, cuerpo.generadoEn);
+      await pedir();
+      assert.equal(llamadas, 3);
     } finally {
       otro.closeAllConnections();
       await new Promise((resolve) => otro.close(resolve));

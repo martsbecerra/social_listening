@@ -850,13 +850,24 @@ const countPostedSinceAllStmt = db.prepare('SELECT COUNT(*) AS n FROM detected_p
 const countTemasSinceAllStmt = db.prepare(
   'SELECT tema, COUNT(*) AS n FROM detected_posts WHERE ignored = 0 AND posted_at >= ? GROUP BY tema'
 );
-const getFirstPostedAtAnyStmt = db.prepare(
-  'SELECT MIN(posted_at) AS first FROM detected_posts WHERE ignored = 0 AND posted_at IS NOT NULL'
+// Desde cuándo escucha la app: la primera DETECCIÓN (no la primera fecha de
+// publicación, que puede ser de días antes: la ventana de detección mira
+// hacia atrás). Cuenta también los ignorados: la app ya estaba escuchando.
+const getFirstDetectedAtAnyStmt = db.prepare(
+  'SELECT MIN(detected_at) AS first FROM detected_posts WHERE detected_at IS NOT NULL'
 );
+// Los reclamos que dibuja el mapa, con su misma regla (listReclamosFiltered
+// deja afuera los de fuera de CABA; claimsMap.js, hasMapLocation, pide x, y
+// y dirección normalizada): los sin dirección, no encontrados, inválidos o
+// pendientes no tienen pin.
+const countReclamosEnMapaStmt = db.prepare(`
+  SELECT COUNT(*) AS n FROM reclamos
+  WHERE geo_status IS NOT 'fuera_caba' AND x IS NOT NULL AND y IS NOT NULL AND COALESCE(direccion_normalizada, '') <> ''
+`);
 // Las corridas de una plataforma que arrancaron en un rango, terminadas o no:
 // la línea de 24 h del inicio (src/inicioRoutes.js).
 const listRunsBetweenStmt = db.prepare(`
-  SELECT started_at, finished_at, "trigger", new_candidates, new_posts, quota_exceeded FROM monitoring_runs
+  SELECT id, started_at, finished_at, "trigger", plataforma, new_candidates, new_posts, quota_exceeded FROM monitoring_runs
   WHERE started_at >= ? AND started_at < ?
     AND (plataforma = 'todas' OR (',' || plataforma || ',') LIKE ('%,' || ? || ',%'))
   ORDER BY started_at
@@ -1783,25 +1794,33 @@ function countTemasSinceAllPlatforms(desdeIso) {
   return countTemasSinceAllStmt.all(desdeIso).map((row) => ({ tema: row.tema, n: Number(row.n) }));
 }
 
-/** @returns {string|null} posted_at (ISO) del primer posteo visible de cualquier red, o null si no hay ninguno. */
-function getFirstPostedAtAny() {
-  const row = getFirstPostedAtAnyStmt.get();
+/** @returns {string|null} detected_at (ISO) del primer posteo detectado de cualquier red, o null si no hay ninguno. */
+function getFirstDetectedAtAny() {
+  const row = getFirstDetectedAtAnyStmt.get();
   return row ? row.first : null;
+}
+
+/** @returns {number} los reclamos de todas las redes que tienen pin en el mapa. */
+function countReclamosEnMapa() {
+  return Number(countReclamosEnMapaStmt.get().n) || 0;
 }
 
 /**
  * Las corridas de la plataforma (o de "todas") que arrancaron entre desdeIso
  * (incluido) y hastaIso (excluido), en orden: terminadas (finishedAt) o no
- * (en curso, o cortadas sin cerrar).
- * @returns {{ startedAt: string, finishedAt: string|null, trigger: string, newCandidates: number|null,
- *   newPosts: number, quotaExceeded: boolean }[]}
+ * (en curso, o que quedaron sin cerrar porque el proceso se cayó). `plataforma`
+ * es la de la fila: "instagram", "todas" o una lista ("instagram,x").
+ * @returns {{ id: number, startedAt: string, finishedAt: string|null, trigger: string, plataforma: string,
+ *   newCandidates: number|null, newPosts: number, quotaExceeded: boolean }[]}
  */
 function listRunsBetween({ plataforma, desdeIso, hastaIso }) {
   requirePlataforma(plataforma, 'listRunsBetween');
   return listRunsBetweenStmt.all(desdeIso, hastaIso, plataforma).map((row) => ({
+    id: Number(row.id),
     startedAt: row.started_at,
     finishedAt: row.finished_at,
     trigger: row.trigger,
+    plataforma: row.plataforma,
     newCandidates: row.new_candidates === null || row.new_candidates === undefined ? null : Number(row.new_candidates),
     newPosts: Number(row.new_posts) || 0,
     quotaExceeded: Boolean(row.quota_exceeded),
@@ -2159,7 +2178,8 @@ module.exports = {
   getFirstPostedAt,
   countPostedSinceAllPlatforms,
   countTemasSinceAllPlatforms,
-  getFirstPostedAtAny,
+  getFirstDetectedAtAny,
+  countReclamosEnMapa,
   listRunsBetween,
   listFollowersForStats,
   sumApifyCallsSince,

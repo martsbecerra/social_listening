@@ -57,6 +57,7 @@ const {
   estimateRunsPerDay,
   getNextRunAt,
   getRunHours,
+  getCurrentRunId,
   cronPlatforms,
 } = require('./src/scheduler');
 const monitoringProgress = require('./src/monitoringProgress');
@@ -594,6 +595,7 @@ inicioRoutes.register(app, {
   cronPlatforms: () => INICIO_CRON_PLATFORMS,
   nextRunAt: () => getNextRunAt(getCronExpression()),
   runHours: () => getRunHours(),
+  runIdEnCurso: () => getCurrentRunId(),
 });
 
 // Los números del login, SIN sesión (el gate deja pasar solo esta ruta

@@ -246,6 +246,16 @@ function startHeartbeat() {
   }, HEARTBEAT_CHECK_MS);
 }
 
+// La fila de monitoring_runs del ciclo que está corriendo ahora (null sin
+// ciclo, o si no se pudo abrir). Una fila sin finished_at que no es esta no
+// está en curso: quedó sin cerrar porque el proceso se cayó en el medio
+// (el inicio la muestra "interrumpida", src/inicioRoutes.js).
+let currentRunId = null;
+
+function getCurrentRunId() {
+  return currentRunId;
+}
+
 /**
  * Abre la fila del ciclo en monitoring_runs, corre las fases y la cierra con
  * los totales de gasto en Apify (ver src/apifyCost.js), pase lo que pase.
@@ -260,6 +270,7 @@ async function runCycleUnlocked(plataformas, trigger = 'manual') {
   let runId = null;
   try {
     runId = db.startMonitoringRun({ trigger, plataforma: plataformaTexto });
+    currentRunId = runId;
   } catch (err) {
     console.error('[costo] No se pudo abrir el registro del ciclo:', err.message);
   }
@@ -281,6 +292,7 @@ async function runCycleUnlocked(plataformas, trigger = 'manual') {
     cycleError = err;
     throw err;
   } finally {
+    currentRunId = null;
     clearInterval(heartbeat);
     progress.endCycle();
     console.log(
@@ -403,6 +415,7 @@ module.exports = {
   estimateRunsPerDay,
   getNextRunAt,
   getRunHours,
+  getCurrentRunId,
   cronPlatforms,
   DEFAULT_CRON_PLATFORMS,
 };

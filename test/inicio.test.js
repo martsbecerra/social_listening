@@ -4,7 +4,10 @@
 // importa: que los números de cada red sean los de Estadísticas para los
 // últimos 7 días (y "hoy", el de los posteos publicados desde las 00:00 de
 // Argentina), que una red fuera del cron no tenga próxima corrida ni alcance
-// si no tiene benchmark, y que las corridas de hoy salgan con su estado real.
+// si no tiene benchmark, y que las corridas de hoy salgan con su estado real
+// (una fila sin cerrar está "en curso" solo si es la del ciclo que corre; si
+// no, quedó "interrumpida"), sin atribuirle a una red los números de un
+// ciclo de varias redes.
 // Base temporal; el registro de redes y el scheduler, de mentira.
 
 const fs = require('fs');
@@ -37,8 +40,10 @@ const deps = {
   cronPlatforms: () => ['instagram'],
   nextRunAt: () => PROXIMA,
   runHours: () => [8, 12, 16, 20],
+  runIdEnCurso: () => EN_CURSO,
   ahora: AHORA,
 };
+let EN_CURSO = null; // el id de la fila del ciclo que "corre"
 
 let siguiente = 9000;
 function guardar({ plataforma = 'instagram', postedAt, sentiment = null, likes = 10, comments = 2 }) {
@@ -66,7 +71,8 @@ before(() => {
   run.run(enArgentina('2026-10-23', 8), enArgentina('2026-10-23', 8, 7), 'cron', 'instagram', 2, 4, 0);
   run.run(enArgentina('2026-10-23', 12), enArgentina('2026-10-23', 12, 3), 'cron', 'todas', 0, 1, 1); // cortada por cuota
   run.run(enArgentina('2026-10-23', 13), null, 'manual', 'x', 0, null, 0); // de X
-  run.run(enArgentina('2026-10-23', 14, 50), null, 'manual', 'instagram', 0, null, 0); // en curso
+  run.run(enArgentina('2026-10-23', 10, 30), null, 'manual', 'instagram', 0, null, 0); // se cayó el proceso: sin cerrar
+  EN_CURSO = Number(run.run(enArgentina('2026-10-23', 14, 50), null, 'manual', 'instagram', 0, null, 0).lastInsertRowid); // en curso
   raw.close();
 });
 
@@ -104,9 +110,19 @@ describe('GET /api/inicio', { concurrency: false }, () => {
       ig.corridasHoy.map((c) => [c.startedAt, c.estado, c.nuevas, c.guardadas, c.trigger]),
       [
         [enArgentina('2026-10-23', 8), 'ok', 4, 2, 'cron'],
-        [enArgentina('2026-10-23', 12), 'cortada', 1, 0, 'cron'], // "todas" también es de Instagram
-        [enArgentina('2026-10-23', 14, 50), 'en curso', null, 0, 'manual'],
+        [enArgentina('2026-10-23', 10, 30), 'interrumpida', null, null, 'manual'], // sin cerrar y no es la que corre
+        // "todas" también es de Instagram, pero sus números son de todo el ciclo
+        [enArgentina('2026-10-23', 12), 'cortada', null, null, 'cron'],
+        [enArgentina('2026-10-23', 14, 50), 'en curso', null, null, 'manual'],
       ]
+    );
+  });
+
+  test('sin ningún ciclo corriendo, ninguna fila sin cerrar está "en curso"', () => {
+    const ig = inicioRoutes.armarInicio({ ...deps, runIdEnCurso: () => null }).redes.find((r) => r.id === 'instagram');
+    assert.deepEqual(
+      ig.corridasHoy.filter((c) => !c.finishedAt).map((c) => c.estado),
+      ['interrumpida', 'interrumpida']
     );
   });
 

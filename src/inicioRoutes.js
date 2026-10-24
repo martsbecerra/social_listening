@@ -15,7 +15,12 @@
 //   - lastRunAt / lastRun: la última corrida terminada (src/lastRun.js, el
 //     mismo resumen del Pipeline).
 //   - corridasHoy: las corridas que arrancaron hoy (hora de Argentina), con
-//     su estado real: terminada, cortada por cuota o en curso.
+//     su estado real: terminada (ok), cortada por cuota, en curso (la fila
+//     del ciclo que corre AHORA, runIdEnCurso del scheduler) o interrumpida
+//     (sin cerrar y sin ciclo: el proceso se cayó en el medio). Las nuevas y
+//     guardadas de una fila de varias redes ("todas", "instagram,x") son las
+//     de todo el ciclo: no se le atribuyen a una red y van en null, como las
+//     de una fila sin cerrar.
 // Lo que depende de la app (registro de redes, scheduler) llega por
 // parámetro, para probarla sin levantar server.js.
 // ==========================================================================
@@ -27,8 +32,8 @@ const { buildLastRun } = require('./lastRun');
 const INICIO_ROUTE = '/api/inicio';
 const DIAS = 7;
 
-function estadoDe(run) {
-  if (!run.finishedAt) return 'en curso';
+function estadoDe(run, runIdEnCurso) {
+  if (!run.finishedAt) return run.id === runIdEnCurso ? 'en curso' : 'interrumpida';
   return run.quotaExceeded ? 'cortada' : 'ok';
 }
 
@@ -39,14 +44,16 @@ function estadoDe(run) {
  * @param {() => string[]} deps.cronPlatforms las redes del ciclo automático
  * @param {() => Date} deps.nextRunAt la próxima corrida del cron
  * @param {() => number[]} deps.runHours
+ * @param {() => number|null} [deps.runIdEnCurso] la fila del ciclo que corre ahora (scheduler.getCurrentRunId)
  * @param {number} [deps.ahora] para los tests
  */
-function armarInicio({ listPlatformIds, getPlatform, cronPlatforms, nextRunAt, runHours, ahora = Date.now() }) {
+function armarInicio({ listPlatformIds, getPlatform, cronPlatforms, nextRunAt, runHours, runIdEnCurso = () => null, ahora = Date.now() }) {
   const hoy = stats.fechaArgentina(ahora);
   const desdeHoy = new Date(stats.inicioDelDia(hoy)).toISOString();
   const hastaHoy = new Date(stats.inicioDelDia(stats.sumarDias(hoy, 1))).toISOString();
   const enCron = new Set(cronPlatforms());
   const proxima = nextRunAt().toISOString();
+  const enCurso = runIdEnCurso();
   const redes = listPlatformIds().map((id) => {
     const capabilities = (getPlatform(id) || {}).capabilities || {};
     const conAlcance = Boolean(capabilities.benchmark);
@@ -66,14 +73,19 @@ function armarInicio({ listPlatformIds, getPlatform, cronPlatforms, nextRunAt, r
       },
       lastRunAt: db.getLastFinishedRunAt(id),
       lastRun: buildLastRun(id, { hasBenchmark: conAlcance }),
-      corridasHoy: db.listRunsBetween({ plataforma: id, desdeIso: desdeHoy, hastaIso: hastaHoy }).map((run) => ({
-        startedAt: run.startedAt,
-        finishedAt: run.finishedAt,
-        trigger: run.trigger,
-        nuevas: run.newCandidates,
-        guardadas: run.newPosts,
-        estado: estadoDe(run),
-      })),
+      corridasHoy: db.listRunsBetween({ plataforma: id, desdeIso: desdeHoy, hastaIso: hastaHoy }).map((run) => {
+        // Los números son de esta red solo si la fila es de esta red, y solo
+        // al cerrar: una fila abierta tiene new_posts en 0 por defecto.
+        const deEstaRed = run.plataforma === id && Boolean(run.finishedAt);
+        return {
+          startedAt: run.startedAt,
+          finishedAt: run.finishedAt,
+          trigger: run.trigger,
+          nuevas: deEstaRed ? run.newCandidates : null,
+          guardadas: deEstaRed ? run.newPosts : null,
+          estado: estadoDe(run, enCurso),
+        };
+      }),
     };
   });
   return { generadoEn: new Date(ahora).toISOString(), hoy, runHours: runHours(), redes };
