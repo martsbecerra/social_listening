@@ -42,19 +42,18 @@ function panelBuckets(posts, from, to, weight = () => 1, n = 12) {
   return out;
 }
 
-// Tono de una lista: proporción de positivos, neutrales y negativos entre
-// los clasificados (los sin clasificar no cuentan), y cuántos hay.
+// Tono de una lista: proporción de positivos, neutrales y negativos, y
+// cuántos hay. Un posteo sin clasificar cuenta como neutral: la regla de
+// Estadísticas y del inicio, así las tres pantallas dan lo mismo.
 function panelTone(posts) {
   let pos = 0;
-  let neu = 0;
   let neg = 0;
   for (const post of posts) {
     if (post.sentiment === 'positivo') pos++;
-    else if (post.sentiment === 'neutral') neu++;
     else if (post.sentiment === 'negativo') neg++;
   }
-  const n = pos + neu + neg;
-  return n ? { n, pos: pos / n, neu: neu / n, neg: neg / n } : { n: 0, pos: 0, neu: 0, neg: 0 };
+  const n = posts.length;
+  return n ? { n, pos: pos / n, neu: (n - pos - neg) / n, neg: neg / n } : { n: 0, pos: 0, neu: 0, neg: 0 };
 }
 
 const panelPct = (share) => `${Math.round(share * 100)} %`;
@@ -76,7 +75,7 @@ function panelRenderKpis(posts, previous, from, now) {
         const b = panelNode('b', tone.pos > tone.neg ? '' : 'neg', `${panelPct(tone.pos)} positivo`);
         return [b, ` · ${panelPct(tone.neg)} negativo`];
       })()
-    : ['sin publicaciones clasificadas'];
+    : ['sin publicaciones'];
 
   const altos = posts
     .map((post) => ({ post, top: highlightTop(post) }))
@@ -163,7 +162,7 @@ function panelIsActive(kind, value) {
   return sourceFilterKey(monitorSourceFilter) === sourceFilterKey({ kind: panelFilterKind(kind), term: value });
 }
 
-// La barrita de tono de un chip (sin clasificados, ninguna).
+// La barrita de tono de un chip (sin publicaciones, ninguna).
 function panelToneBar(tone) {
   const bar = panelNode('span', 'bar');
   bar.setAttribute('aria-hidden', 'true');

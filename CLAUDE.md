@@ -573,7 +573,10 @@ en el tag `v3-riel-radar`. SDD de la fase A en
     despegaron" y la lista. La ✕ o elegir Hoy / 7 / 30 lo saca.
   - **Panel** (`public/js/monitoringPanel.js`, prefijo `panel`): los
     cuatro KPI (publicaciones con sparkline y variación contra el período
-    anterior del mismo largo; tono neto sobre los clasificados, con anillo;
+    anterior del mismo largo; tono neto, con anillo, con la regla de
+    Estadísticas y del inicio: sin clasificar = neutral (decisión del dueño,
+    24/10/2026; antes iba sobre los clasificados; vale también para la
+    barrita de tono de los chips);
     "Se despegaron" con "la mayor: 15,37× en comentarios, de @cuenta";
     conversación), con las tarjetas de `public/js/kpi.js` (prefijo `kpi`,
     compartidas con Estadísticas: `kpiCard`, `kpiDelta`, el trazo, el
