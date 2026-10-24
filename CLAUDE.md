@@ -1034,7 +1034,9 @@ tocar un análisis vivo. SDD en
   manda todo el hilo en una sola llamada (subir el de Instagram no puede
   subir el de X). La línea de arranque muestra los tres. `normalizePost` suma id, código, `postedAt`, tipo e `imageUrl`
   (las funciones del monitoreo); likes -1 o ausentes → null, también en
-  los comentarios.
+  los comentarios. Sin la corrida de la publicación (vacía o un ítem de
+  error), cuenta, likes y texto quedan sin dato: los campos de primer nivel
+  de un comentario son del comentario, nunca del posteo.
 - **Modelo** (`src/analyzeComments.js`): la muestra (`commentSample.js`)
   va en tandas de `BATCH_SIZE` 100 por llamada (`TANDA_SYSTEM_PROMPT`,
   `TANDA_JSON_SCHEMA`, cada tanda numerada desde 1; hasta 3 a la vez) y

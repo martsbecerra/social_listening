@@ -457,8 +457,9 @@ function fetchAnalysisPost(postUrl, hooks = {}) {
 
 /**
  * La corrida de los COMENTARIOS de un análisis (modo "comments", hasta
- * COMMENTS_LIMIT). addParentData: cada comentario viene con datos del
- * posteo, de respaldo por si la corrida de la publicación vuelve vacía.
+ * COMMENTS_LIMIT), con addParentData (lo que el actor agregue del posteo
+ * a cada comentario no se usa como dato de la publicación: ver
+ * normalizePost).
  * @param {string} postUrl
  * @param {{ onQueued?: () => void, onAcquired?: () => void }} [hooks]
  * @returns {Promise<{ items: Array, limit: number }>} los ítems crudos y el tope pedido
@@ -525,14 +526,15 @@ function countOrNull(value) {
  * su copia, sin pedir nada más: src/postImages.js). El tipo y la foto salen
  * de las mismas funciones del monitoreo (instagramApify.derivePostType y
  * pickImageUrl), pedidas recién acá porque ese módulo requiere a este.
+ *
+ * Sin la corrida de la publicación, cuenta, likes y texto quedan sin dato:
+ * los campos de primer nivel de un ítem de comentario (ownerUsername,
+ * likesCount) son DEL COMENTARIO, nunca del posteo. Antes se tomaban como
+ * respaldo y el informe ponía al primer comentarista como autor.
+ * `commentItems` queda en la firma por quienes lo pasan; no se lee.
  */
 function normalizePost(postItems, commentItems, postUrl) {
   const raw = (Array.isArray(postItems) && postItems[0]) || {};
-
-  // Respaldo: si la corrida de "posts" vino vacía, intentamos con la info de
-  // posteo que viene adjunta a los comentarios (parent data).
-  const parent = (Array.isArray(commentItems) && commentItems[0]) || {};
-
   const pick = (...values) => values.find((v) => v !== undefined && v !== null && v !== '');
   const { derivePostType, pickImageUrl } = require('./platforms/instagramApify');
   const hasPost = Object.keys(raw).length > 0;
@@ -541,12 +543,12 @@ function normalizePost(postItems, commentItems, postUrl) {
     url: postUrl,
     id: hasPost && pick(raw.id, raw.pk) != null ? String(pick(raw.id, raw.pk)) : null,
     shortCode: hasPost ? pick(raw.shortCode, raw.code, null) : null,
-    ownerFullName: pick(raw.ownerFullName, parent.ownerFullName, 'N/D'),
-    ownerUsername: pick(raw.ownerUsername, parent.ownerUsername, 'N/D'),
-    caption: pick(raw.caption, parent.caption, ''),
-    likesCount: countOrNull(pick(raw.likesCount, parent.likesCount, null)),
-    commentsCount: countOrNull(pick(raw.commentsCount, parent.commentsCount, null)),
-    videoPlayCount: countOrNull(pick(raw.videoPlayCount, raw.videoViewCount, parent.videoPlayCount, null)),
+    ownerFullName: pick(raw.ownerFullName, 'N/D'),
+    ownerUsername: pick(raw.ownerUsername, 'N/D'),
+    caption: pick(raw.caption, ''),
+    likesCount: countOrNull(pick(raw.likesCount, null)),
+    commentsCount: countOrNull(pick(raw.commentsCount, null)),
+    videoPlayCount: countOrNull(pick(raw.videoPlayCount, raw.videoViewCount, null)),
     postedAt: hasPost ? pick(raw.timestamp, null) : null,
     postType: hasPost ? derivePostType(raw) : null,
     imageUrl: hasPost ? pickImageUrl(raw) : null,

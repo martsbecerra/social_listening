@@ -56,12 +56,20 @@ describe('la publicación de un análisis', () => {
     assert.equal(post.likesCount, null);
   });
 
-  test('sin la corrida de la publicación: sin id, fecha ni foto (no se inventan)', () => {
-    const post = apify.normalizePost([], [{ ownerUsername: 'respaldo', caption: 'del padre' }], 'u');
+  test('sin la corrida de la publicación: nada sale de los comentarios (su autor y sus likes son del comentario)', () => {
+    const post = apify.normalizePost([], [{ id: 'c1', ownerUsername: 'vecino1', text: 'hola', likesCount: 3 }], 'u');
     assert.equal(post.id, null);
     assert.equal(post.postedAt, null);
     assert.equal(post.imageUrl, null);
-    assert.equal(post.ownerUsername, 'respaldo');
+    assert.equal(post.ownerUsername, 'N/D');
+    assert.equal(post.likesCount, null);
+  });
+
+  test('con la publicación sin likes, quedan sin dato: no se toman los de un comentario', () => {
+    const { likesCount, ...sinLikes } = POST_FIXTURE[0];
+    const post = apify.normalizePost([sinLikes], [{ id: 'c1', ownerUsername: 'vecino1', text: 'hola', likesCount: 3 }], 'u');
+    assert.equal(post.likesCount, null);
+    assert.equal(post.ownerUsername, 'jorge2027macri');
   });
 });
 

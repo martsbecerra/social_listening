@@ -217,7 +217,7 @@ async function run(id, url) {
       apify.fetchAnalysisPost(url, hPost).then((items) => {
         const conDatos = (Array.isArray(items) ? items : []).filter((item) => item && !item.error);
         if (conDatos.length === 0) {
-          pasos.done('publicacion', 'Instagram no la devolvió · se usan los datos de los comentarios');
+          pasos.done('publicacion', 'Instagram no la devolvió · sin datos de la publicación');
         } else {
           const post = apify.normalizePost(conDatos, null, url);
           const likes = post.likesCount === null ? 'likes ocultos' : `${INT.format(post.likesCount)} likes`;

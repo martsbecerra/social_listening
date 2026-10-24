@@ -917,8 +917,9 @@ mantiene la conexión abierta.
 
 Una en modo `comments` (los comentarios) y otra en modo `posts` (caption, likes,
 comentarios totales, reproducciones, autor). Corren **en paralelo**, así que casi
-no suma tiempo. Además, en la corrida de comentarios activamos `addParentData`
-como respaldo por si la de `posts` no trajera datos. Las dos pasan por la cola
+no suma tiempo. Si la de `posts` no trae nada, la publicación queda sin cuenta,
+likes ni texto: los datos de primer nivel de un comentario son del comentario,
+nunca del posteo. Las dos pasan por la cola
 de runs simultáneos (abajo) y siguen corriendo a la vez mientras haya lugar.
 
 ### Runs simultáneos de Apify (cola global)
