@@ -65,6 +65,15 @@
      superior, que mide main.js (los filtros se pegan debajo). */
   --warn-ink: #9a6b00;
   --top: 59px;
+  /* Análisis de publicación (fase F2): tintas para TEXTO del naranja (el
+     hecho dominante, la postura crítica, la oposición), del verde (a favor,
+     el oficialismo) y del violeta (la lectura). Pasan 4,5:1 sobre
+     --surface, --surface2 y los fondos teñidos de la solapa (medido con
+     scratchpad/contraste-f2.js). Una barra con texto adentro va con la
+     tinta de relleno y --accent-ink encima (blanco en claro). */
+  --c2-text: #a84217;
+  --c4-text: #12784f;
+  --glow-text: #5547cc;
   color-scheme: light;
 }
 /* Oscuro: los mismos valores de la maqueta, pero solo con el botón (la
@@ -102,6 +111,9 @@
   --c5: #c98500;
   --shadow: 0 18px 40px -24px rgba(0, 0, 0, 0.8);
   --warn-ink: #e3b341;
+  --c2-text: #f08756;
+  --c4-text: #2fc48c;
+  --glow-text: #a99fff;
   color-scheme: dark;
 }
 /* Las manchas de color de la visual del login: el violeta y el celeste del
@@ -4087,18 +4099,146 @@ svg.line {
 }
 
 /* ==========================================================================
-   Análisis de publicación de Instagram (diseño v4, fase E): la solapa de la
-   maqueta. El link y los pasos reales; los recientes; a la izquierda la
-   publicación, el resumen y compartir; a la derecha el tono, los temas,
-   "Cuándo comentaron" y los comentarios. Lo dibuja public/js/analysis.js.
-   Todo bajo .ana4 (la sección de instagram.html): la solapa de X (x.html)
-   sigue con las clases de antes (.ana-wrap, #resultCard, .temas-editor…).
+   Análisis de publicación de Instagram (diseño v4, fases E y F2): la solapa
+   3 de la maqueta. Dos vistas (.an-view): Analizar (el link, los pasos con
+   su porcentaje, los recientes y el resultado bloque por bloque) y
+   Publicaciones analizadas (la galería). Lo dibujan public/js/analysis.js,
+   analysisBlocks.js y analysisFiguras.js. Todo bajo .ana4 (la sección de
+   instagram.html): la solapa de X (x.html) sigue con las clases de antes
+   (.ana-wrap, #resultCard, .temas-editor…). Los textos de color van con
+   las tintas (--c2-text, --c4-text, --glow-text, --*-text); las barras con
+   texto adentro, con la tinta de relleno y --accent-ink encima.
    ========================================================================== */
+.ana4 .head .tools {
+  align-self: flex-end;
+}
+.ana4 .an-cnt {
+  font: 500 10.5px/1 var(--mono);
+  padding: 3px 6px;
+  border-radius: 6px;
+  background: var(--surface2);
+  border: 1px solid var(--line2);
+  color: var(--fg2);
+  margin-left: 6px;
+}
+.ana4 .seg button.on .an-cnt {
+  border-color: color-mix(in oklab, var(--accent) 50%, var(--line2));
+}
+.ana4 .an-view {
+  display: none;
+}
+.ana4 .an-view.on {
+  display: block;
+  animation: fadeIn 0.35s ease both;
+}
+.ana4 .an-result.loading {
+  opacity: 0.55;
+  transition: opacity 0.2s;
+}
+.ana4 .lnkbtn {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--accent-text);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.ana4 .an-na {
+  font-size: 12.5px;
+  color: var(--fg2);
+  background: var(--surface2);
+  border: 1px dashed var(--line2);
+  border-radius: 10px;
+  padding: 10px 12px;
+  line-height: 1.45;
+}
+
+/* ---------- el link, los avisos y los pasos ---------- */
+.ana4 .urlbar {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
+}
+.ana4 .urlbar input {
+  border: 1px solid var(--line2);
+  background: var(--surface2);
+  color: var(--fg);
+  border-radius: 12px;
+  padding: 12px 14px;
+  font: inherit;
+  font-size: 14px;
+  min-width: 0;
+}
+.ana4 .urlbar input::placeholder {
+  color: var(--muted);
+}
+.ana4 .urlbar .btn.primary {
+  padding: 11px 18px;
+  border-radius: 12px;
+}
+.ana4 .an-notice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 13px;
+  color: var(--fg);
+  background: color-mix(in oklab, var(--c5) 14%, var(--surface2));
+  border: 1px solid color-mix(in oklab, var(--c5) 45%, var(--line));
+  animation: slideIn 0.4s both;
+}
+.ana4 .an-notice .sp {
+  flex: 1;
+}
+.ana4 .ana-error {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 13px;
+  color: var(--neg-text);
+  background: var(--surface2);
+  border: 1px solid color-mix(in oklab, var(--neg) 45%, var(--line));
+}
 .ana4 .ana-state {
   display: none;
 }
 .ana4 .ana-state.on {
   display: block;
+}
+.ana4 .an-prog {
+  margin-top: 14px;
+}
+.ana4 .an-prog .ph {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  font: 500 12px/1.3 var(--mono);
+  color: var(--fg2);
+  margin-bottom: 8px;
+}
+.ana4 .an-prog .pct {
+  color: var(--accent-text);
+}
+.ana4 .an-prog .bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--line);
+  overflow: hidden;
+}
+.ana4 .an-prog .bar i {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--accent), var(--glow));
+  box-shadow: 0 0 12px color-mix(in oklab, var(--accent) 60%, transparent);
+  transition: width 0.7s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 .ana4 .steps {
   display: flex;
@@ -4108,8 +4248,7 @@ svg.line {
 }
 .ana4 .step {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px 12px;
+  gap: 12px;
   align-items: center;
   font-size: 13px;
   color: var(--muted);
@@ -4138,17 +4277,16 @@ svg.line {
   color: var(--fg2);
 }
 .ana4 .step.ok i {
-  background: var(--pos);
-  border-color: var(--pos);
-  color: #fff;
+  background: var(--pos-text);
+  border-color: var(--pos-text);
+  color: var(--accent-ink);
 }
 .ana4 .step.err {
   color: var(--neg-text);
 }
 .ana4 .step.err i {
-  background: var(--neg);
   border-color: var(--neg);
-  color: #fff;
+  color: var(--neg-text);
 }
 .ana4 .step.skip i {
   border-style: dashed;
@@ -4156,34 +4294,7 @@ svg.line {
 .ana4 .step .n {
   margin-left: auto;
   font: 500 11.5px/1.3 var(--mono);
-}
-.ana4 .ana-notice {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin-top: 12px;
-  padding: 10px 12px;
-  border: 1px solid color-mix(in oklab, var(--accent) 40%, var(--line));
-  border-radius: 10px;
-  background: color-mix(in oklab, var(--accent) 8%, var(--surface2));
-  font-size: 13px;
-}
-.ana4 .ana-notice-acts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.ana4 .ana-error {
-  margin-top: 12px;
-  padding: 10px 12px;
-  border: 1px solid color-mix(in oklab, var(--neg) 35%, var(--line));
-  border-radius: 10px;
-  /* Fondo liso: la tinta roja sobre el fondo teñido no llegaba a 4,5:1. */
-  background: var(--surface2);
-  color: var(--neg-text);
-  font-size: 13px;
+  text-align: right;
 }
 
 /* ---------- recientes ---------- */
@@ -4205,6 +4316,10 @@ svg.line {
   overflow: hidden;
   background: var(--surface2);
   padding: 0;
+  transition: transform 0.2s;
+}
+.ana4 .posts button:hover {
+  transform: translateY(-2px);
 }
 .ana4 .posts button.on {
   border-color: var(--accent);
@@ -4225,11 +4340,27 @@ svg.line {
 }
 .ana4 .posts button small {
   position: absolute;
-  left: 6px;
+  left: 4px;
   bottom: 4px;
   font: 500 10px/1 var(--mono);
   color: #fff;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.75);
+  background: rgba(0, 0, 0, 0.6);
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+.ana4 .posts button em {
+  position: absolute;
+  right: 5px;
+  top: 5px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--c2);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85);
+}
+.ana4 .posts .more {
+  flex: 0 0 auto;
+  align-self: center;
 }
 .ana4 .posts .lbl {
   flex: 0 0 auto;
@@ -4241,303 +4372,875 @@ svg.line {
   margin-right: 4px;
 }
 
-/* ---------- las dos columnas ---------- */
-.ana4 .grid.ana {
-  grid-template-columns: 360px 1fr;
+/* ---------- la publicación y el hecho dominante ---------- */
+.ana4 .an-hero {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: stretch;
+}
+.ana4 .an-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   align-items: start;
-  transition: opacity 0.2s;
+  margin-top: 14px;
 }
-.ana4 .grid.ana.loading {
-  opacity: 0.55;
+.ana4 .an-2 {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: start;
+  margin-top: 14px;
 }
-.ana4 .ana-side {
-  min-width: 0;
+.ana4 .an-2a {
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+}
+.ana4 .an-2b {
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+}
+.ana4 .an-postcard {
   display: flex;
   flex-direction: column;
-  gap: 12px;
 }
-.ana4 .ana-main {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  min-width: 0;
+.ana4 .an-post {
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr);
+  gap: 16px;
 }
-
-/* ---------- la publicación ---------- */
-.ana4 .post {
-  border: 1px solid var(--line);
+.ana4 .an-post .img {
+  aspect-ratio: 1;
   border-radius: 12px;
-  overflow: hidden;
-  background: var(--surface2);
-}
-.ana4 .post .img {
-  height: 240px;
   background: #000;
   position: relative;
   overflow: hidden;
-  display: grid;
-  place-items: center;
 }
-.ana4 .post .img img {
-  position: absolute;
-  inset: 0;
+.ana4 .an-post .img img {
   width: 100%;
   height: 100%;
   object-fit: contain;
   display: block;
 }
-.ana4 .post .img.none {
+.ana4 .an-post .img.none {
+  display: grid;
+  place-items: center;
   background: linear-gradient(135deg, var(--a), color-mix(in oklab, var(--a) 40%, var(--glow)));
 }
-.ana4 .post .img.none span {
+.ana4 .an-post .img.none span {
   font: 500 12px/1 var(--mono);
   color: #fff;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+  background: rgba(0, 0, 0, 0.6);
+  padding: 5px 8px;
+  border-radius: 6px;
 }
-.ana4 .post .body {
-  padding: 12px;
+.ana4 .an-post .img .ty {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  font: 600 10px/1 var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.6);
+  padding: 4px 7px;
+  border-radius: 6px;
 }
-.ana4 .post .acc {
+.ana4 .an-post .body {
+  min-width: 0;
+}
+.ana4 .an-post .acc {
   display: flex;
   align-items: center;
   gap: 8px;
   font-weight: 600;
-  font-size: 13px;
+  font-size: 13.5px;
   min-width: 0;
 }
-.ana4 .post .acc .av {
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  flex: none;
-  color: #fff;
-  font: 600 12px/1 var(--display);
-}
-.ana4 .post .acc > span:not(.av) {
+.ana4 .an-post .acc > span:not(.av) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.ana4 .post .acc small {
+.ana4 .an-post .acc .av {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font: 600 11px/1 var(--mono);
+  flex: none;
+}
+.ana4 .an-post .acc small {
   color: var(--muted);
   font-weight: 400;
   margin-left: auto;
+  font-family: var(--mono);
+  font-size: 11.5px;
   white-space: nowrap;
 }
-.ana4 .post p {
+.ana4 .an-post p {
   margin: 8px 0;
   font-size: 13px;
   color: var(--fg2);
-  max-height: 9.6em;
-  overflow-y: auto;
-  white-space: pre-line;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
   overflow-wrap: anywhere;
 }
-.ana4 .post .mets {
+.ana4 .an-post .mets {
   display: flex;
+  gap: 14px;
+  font: 500 12px/1.3 var(--mono);
+  color: var(--muted);
   flex-wrap: wrap;
-  gap: 6px 14px;
-  font: 500 12px/1.2 var(--mono);
+}
+.ana4 .an-post .mets b {
+  color: var(--fg);
+  font-weight: 500;
+}
+.ana4 .an-post .lnk {
+  display: inline-block;
+  margin-top: 10px;
+  font-size: 12px;
+}
+.ana4 .an-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--line2);
+}
+.ana4 .an-kpis > div {
+  min-width: 0;
+}
+.ana4 .an-kpis .v {
+  font: 600 22px/1.05 var(--display);
+  margin: 4px 0 2px;
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+.ana4 .an-kpis .v.pos {
+  color: var(--pos-text);
+}
+.ana4 .an-kpis .v.neg {
+  color: var(--neg-text);
+}
+.ana4 .an-kpis .v.warn {
+  color: var(--c2-text);
+}
+.ana4 .an-kpis .v.na {
   color: var(--muted);
 }
-.ana4 .post .lnk {
-  display: inline-block;
-  margin-top: 8px;
-  font-size: 12px;
-  color: var(--accent-text);
+.ana4 .an-kpis .d {
+  font-size: 11.5px;
+  color: var(--muted);
+  line-height: 1.35;
 }
-
-/* ---------- resumen ---------- */
-.ana4 .ai {
-  border: 1px solid color-mix(in oklab, var(--glow) 55%, var(--line));
-  border-radius: 12px;
+.ana4 .an-kpis .mini {
+  display: flex;
+  height: 5px;
+  border-radius: 3px;
+  overflow: hidden;
+  gap: 1px;
+  margin-top: 6px;
+  background: var(--line);
+}
+.ana4 .an-kpis .mini i {
+  display: block;
+  height: 100%;
+  width: 0;
+  transition: width 1s 0.2s;
+}
+.ana4 .an-ai {
+  margin-top: 14px;
   padding: 12px;
-  background: linear-gradient(180deg, color-mix(in oklab, var(--glow) 10%, var(--surface2)), var(--surface2));
+  border: 1px solid color-mix(in oklab, var(--glow) 45%, var(--line));
+  border-radius: 12px;
+  background: linear-gradient(180deg, color-mix(in oklab, var(--glow) 9%, var(--surface2)), var(--surface2));
+  flex: 1;
 }
-.ana4 .ai .ct2 {
+.ana4 .an-ai .ct2 {
   display: flex;
   align-items: center;
   gap: 8px;
   font: 500 11px/1 var(--mono);
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  /* --fg2: el acento sobre el degradé de arriba no llegaba a 4,5:1; el ◆ sí
-     va en el acento (es un adorno, aria-hidden). */
-  color: var(--fg2);
+  color: var(--glow-text);
   margin-bottom: 6px;
 }
-.ana4 .ai p {
+.ana4 .an-ai p {
   margin: 0;
   font-size: 13px;
-  min-height: 4.4em;
+  line-height: 1.55;
+  min-height: 3em;
+  overflow-wrap: anywhere;
 }
-.ana4 .ai p.typing::after {
-  content: '▍';
-  color: var(--accent-text);
+.ana4 .an-ai p.typing::after {
+  content: "▍";
+  color: var(--glow-text);
   animation: blink 1s steps(2) infinite;
 }
-
-/* ---------- compartir ---------- */
-.ana4 .exports {
+.ana4 .an-event {
+  position: relative;
+  overflow: hidden;
   display: flex;
+  flex-direction: column;
+  border-color: color-mix(in oklab, var(--c2) 45%, var(--line));
+  background: linear-gradient(135deg, color-mix(in oklab, var(--c2) 11%, var(--surface)), color-mix(in oklab, var(--glow) 9%, var(--surface)) 75%);
+}
+.ana4 .an-event.calm {
+  border-color: color-mix(in oklab, var(--glow) 45%, var(--line));
+  background: linear-gradient(135deg, color-mix(in oklab, var(--glow) 9%, var(--surface)), color-mix(in oklab, var(--accent) 7%, var(--surface)) 75%);
+}
+.ana4 .an-event::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  pointer-events: none;
+  background: linear-gradient(120deg, transparent 35%, color-mix(in oklab, var(--c2) 75%, transparent) 50%, transparent 65%);
+  background-size: 300% 100%;
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: anShine 4s linear infinite;
+}
+.ana4 .an-event.calm::before {
+  background-image: linear-gradient(120deg, transparent 35%, color-mix(in oklab, var(--glow) 75%, transparent) 50%, transparent 65%);
+}
+@keyframes anShine {
+  from {
+    background-position: 300% 0;
+  }
+  to {
+    background-position: -300% 0;
+  }
+}
+.ana4 .an-event .ey {
+  display: flex;
+  align-items: center;
   gap: 8px;
+  font: 500 11px/1 var(--mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--c2-text);
+}
+.ana4 .an-event.calm .ey {
+  color: var(--glow-text);
+}
+.ana4 .an-event .ey i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: anPing 1.8s infinite;
+}
+@keyframes anPing {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in oklab, currentColor 60%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 10px transparent;
+  }
+}
+.ana4 .an-event .big {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 10px;
+}
+.ana4 .an-event .big b {
+  white-space: nowrap;
+  font: 700 58px/1 var(--display);
+  letter-spacing: -0.035em;
+  background: linear-gradient(135deg, var(--c2-text), var(--glow-text));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.ana4 .an-event.calm .big b {
+  background-image: linear-gradient(135deg, var(--glow-text), var(--accent-text));
+}
+.ana4 .an-event .big span {
+  font-size: 13px;
+  color: var(--fg2);
+  max-width: 30ch;
+  line-height: 1.4;
+}
+.ana4 .an-event h3 {
+  font-size: 17px;
+  margin: 12px 0 0;
+  line-height: 1.3;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.ana4 .an-event .desc {
+  font-size: 13px;
+  color: var(--fg2);
+  margin: 6px 0 0;
+  line-height: 1.5;
+}
+.ana4 .an-quotes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+}
+.ana4 .an-quotes > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+  font-size: 12.5px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: color-mix(in oklab, var(--surface) 72%, transparent);
+  border: 1px solid var(--line);
+  animation: slideIn 0.5s both;
+  overflow-wrap: anywhere;
+}
+.ana4 .an-quotes b {
+  font-weight: 600;
+  color: var(--fg);
+}
+.ana4 .an-quotes .l {
+  font: 500 11px/1.2 var(--mono);
+  color: var(--fg2);
+  white-space: nowrap;
+  text-align: right;
+}
+.ana4 .an-quotes .l em {
+  display: block;
+  font-style: normal;
+  font-size: 10px;
+  color: var(--c2-text);
+}
+.ana4 .an-event .foot {
+  display: flex;
+  gap: 14px;
+  margin-top: 12px;
+  font: 500 11.5px/1.3 var(--mono);
+  color: var(--fg2);
   flex-wrap: wrap;
 }
-.ana4 .ana-warn {
-  margin: 10px 0 0;
-  color: var(--warn-ink);
+.ana4 .an-event .foot b {
+  color: var(--fg);
+  font-weight: 500;
 }
-.ana4 .wa {
-  white-space: pre-wrap;
-  font: 12.5px/1.5 var(--mono);
-  background: var(--surface2);
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 12px;
-  max-height: 260px;
-  overflow: auto;
+.ana4 .an-evfoot {
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px dashed color-mix(in oklab, var(--c2) 40%, var(--line2));
+}
+.ana4 .an-event > .an-evfoot {
+  margin-top: 14px;
+}
+.ana4 .an-event.calm .an-evfoot {
+  border-color: color-mix(in oklab, var(--glow) 40%, var(--line2));
+}
+.ana4 .an-evfoot .eyebrow {
   color: var(--fg2);
-  margin: 10px 0 0;
+}
+.ana4 .an-evfoot p {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.ana4 .an-calm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+.ana4 .an-calm > div {
+  display: grid;
+  grid-template-columns: minmax(110px, 170px) minmax(0, 1fr) 40px;
+  gap: 10px;
+  align-items: center;
+  font-size: 12.5px;
+  animation: rise 0.45s both;
+}
+.ana4 .an-calm > div > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ana4 .an-calm .tr {
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--line);
+  display: flex;
+  gap: 1px;
+}
+.ana4 .an-calm .tr i {
+  display: block;
+  height: 100%;
+  width: var(--w);
+  animation: anGrow 1.1s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes anGrow {
+  from {
+    width: 0;
+  }
+}
+.ana4 .an-calm b {
+  font: 500 12px/1 var(--mono);
+  text-align: right;
 }
 
-/* ---------- tono ---------- */
-.ana4 .stackbar {
-  display: flex;
-  height: 16px;
-  border-radius: 8px;
-  overflow: hidden;
-  gap: 2px;
-  background: var(--line);
+/* ---------- tono, postura, desvío ---------- */
+.ana4 .an-donut {
+  display: grid;
+  grid-template-columns: 118px minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
 }
-.ana4 .stackbar i {
+.ana4 .an-donut .c {
+  position: relative;
+  width: 118px;
+  height: 118px;
+}
+.ana4 .an-donut svg {
+  width: 118px;
+  height: 118px;
+  transform: rotate(-90deg);
+}
+.ana4 .an-donut svg circle {
+  fill: none;
+  stroke-width: 12;
+  transition: stroke-dasharray 1.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.ana4 .an-donut .mid {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  pointer-events: none;
+}
+.ana4 .an-donut .mid b {
+  font: 600 24px/1 var(--display);
+  display: block;
+}
+.ana4 .an-donut .mid small {
+  display: block;
+  font: 500 10px/1.2 var(--mono);
+  color: var(--muted);
+  margin-top: 3px;
+  letter-spacing: 0.04em;
+}
+.ana4 .an-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.ana4 .an-row {
+  display: grid;
+  grid-template-columns: minmax(70px, auto) minmax(0, 1fr) 64px;
+  gap: 10px;
+  align-items: center;
+  font-size: 12.5px;
+}
+.ana4 .an-row .lb {
+  color: var(--fg2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ana4 .an-row .tr {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--line);
+  overflow: hidden;
+}
+.ana4 .an-row .tr i {
   display: block;
   height: 100%;
   width: 0;
-  transition: width 1.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+  border-radius: 4px;
+  transition: width 1.1s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
-.ana4 #anaToneNote {
-  margin: 10px 0 0;
+.ana4 .an-row .n {
+  font: 500 12px/1 var(--mono);
+  text-align: right;
+  color: var(--fg);
 }
-.ana4 #anaToneNote:empty {
-  display: none;
+.ana4 .an-row .n small {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+  margin-top: 3px;
+  white-space: nowrap;
+}
+.ana4 .bg-favor {
+  background: var(--c4);
+}
+.ana4 .bg-neutra {
+  background: var(--muted);
+}
+.ana4 .bg-critica {
+  background: var(--c2);
+}
+.ana4 .an-split {
+  display: flex;
+  height: 24px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--line);
+  font: 600 11px/24px var(--mono);
+  color: var(--accent-ink);
+  text-align: center;
+  gap: 2px;
+}
+.ana4 .an-split i {
+  display: block;
+  width: 0;
+  font-style: normal;
+  transition: width 1.1s cubic-bezier(0.2, 0.8, 0.2, 1);
+  overflow: hidden;
+  white-space: nowrap;
+}
+.ana4 .an-split i.on {
+  background: var(--accent-text);
+}
+.ana4 .an-split i.off {
+  background: var(--c2-text);
+}
+.ana4 .an-split i.on.pos {
+  background: var(--pos-text);
+}
+.ana4 #anaEmoSplit i.off {
+  background: var(--neg-text);
+}
+.ana4 .an-desv {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+.ana4 .an-desv .eyebrow {
+  width: 100%;
+  margin-bottom: 2px;
+}
+.ana4 .an-desv .chip,
+.ana4 .an-tlk .chip,
+.ana4 .an-tags .chip {
+  cursor: default;
+}
+.ana4 .an-desv .chip:hover,
+.ana4 .an-tlk .chip:hover,
+.ana4 .an-tags .chip:hover {
+  transform: none;
+  box-shadow: none;
+  border-color: var(--line2);
 }
 
 /* ---------- temas ---------- */
-.ana4 .themes {
+.ana4 .an-themes {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
+  flex-direction: column;
+  gap: 6px;
 }
-.ana4 .theme {
-  display: inline-flex;
+.ana4 .an-theme {
+  display: grid;
+  grid-template-columns: minmax(150px, 240px) minmax(0, 1fr) 44px 26px;
+  gap: 10px;
   align-items: center;
-  border-radius: 999px;
-  border: 1px solid var(--line2);
+  font-size: 13px;
+  padding: 5px 6px 5px 8px;
+  border-radius: 10px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition:
+    background 0.2s,
+    border-color 0.2s;
+  animation: rise 0.45s both;
+}
+.ana4 .an-theme:hover {
   background: var(--surface2);
-  font-weight: 500;
-  animation: pop 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.4) both;
-  max-width: 100%;
 }
-.ana4 .theme.first {
+.ana4 .an-theme.on {
   border-color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 8%, var(--surface2));
 }
-.ana4 .theme.on {
-  border-color: var(--accent);
-  background: color-mix(in oklab, var(--accent) 12%, var(--surface2));
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 16%, transparent);
-}
-.ana4 .theme-name {
-  border: 0;
-  background: transparent;
-  color: var(--fg);
-  font: inherit;
-  padding: 6px 4px 6px 11px;
-  cursor: pointer;
-  text-align: left;
-  min-width: 0;
-  border-radius: 999px 0 0 999px;
-}
-.ana4 .theme-name small {
-  font: 400 11px/1 var(--mono);
-  color: var(--muted);
-  margin-left: 6px;
-}
-/* El tema elegido tiene el fondo teñido: --muted ahí no llega a 4,5:1. */
-.ana4 .theme.on .theme-name small {
-  color: var(--fg2);
-}
-.ana4 .ai .ct2 .dot {
-  color: var(--accent);
-}
-.ana4 .theme-edit {
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-  font: 500 12px/1 var(--body);
-  padding: 6px 10px 6px 4px;
-  cursor: pointer;
-  border-radius: 0 999px 999px 0;
-}
-.ana4 .theme-edit:hover {
-  color: var(--accent-text);
-}
-.ana4 .theme.add {
-  border-style: dashed;
-  color: var(--accent-text);
-  cursor: pointer;
-  padding: 6px 11px;
-  font: 500 12.5px/1 var(--body);
-}
-.ana4 .theme.add:disabled {
-  opacity: 0.55;
+.ana4 .an-theme.manual {
   cursor: default;
+}
+.ana4 .an-theme .nm {
+  font: inherit;
+  font-weight: 500;
+  color: var(--fg);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  border: 0;
+  background: none;
+  padding: 2px 0;
+  text-align: left;
+  cursor: inherit;
+}
+.ana4 .an-theme .nm span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ana4 .an-theme .star {
+  font: 600 9.5px/1 var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 3px 6px;
+  border-radius: 999px;
+  background: var(--c2-text);
+  color: var(--accent-ink);
+  flex: none;
+  animation: pop 0.5s 0.4s both;
+}
+.ana4 .an-theme .tr {
+  height: 10px;
+  border-radius: 5px;
+  overflow: hidden;
+  background: var(--line);
+  display: flex;
+  gap: 1px;
+}
+.ana4 .an-theme .tr i {
+  display: block;
+  height: 100%;
+  width: 0;
+  transition: width 1.1s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.ana4 .an-theme .tr.manual {
+  background: none;
+  height: auto;
+  font-size: 11.5px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
+}
+.ana4 .an-theme .n {
+  font: 500 12px/1 var(--mono);
+  text-align: right;
+  color: var(--fg);
+}
+.ana4 .an-theme .ed {
+  font-size: 13px;
+  color: var(--muted);
+  border: 0;
+  background: none;
+  border-radius: 6px;
+  width: 26px;
+  height: 26px;
+  cursor: pointer;
+  opacity: 0.55;
+  transition: 0.2s;
+}
+.ana4 .an-theme:hover .ed,
+.ana4 .an-theme .ed:focus-visible {
+  opacity: 1;
+}
+.ana4 .an-theme .ed:hover {
+  color: var(--accent-text);
+  background: var(--surface);
+}
+.ana4 .an-theme.add {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--accent-text);
+  border: 1px dashed var(--line2);
+  background: none;
+  padding: 8px 10px;
+}
+.ana4 .an-theme.add:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+.ana4 .an-tlegend {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-size: 11.5px;
+  color: var(--muted);
+  margin-top: 10px;
+}
+.ana4 .an-tlegend i {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  margin-right: 5px;
+  vertical-align: -1px;
+}
+.ana4 .an-tlegend .r {
+  margin-left: auto;
 }
 .ana4 .tema-edit {
   display: grid;
   gap: 6px;
   margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px dashed var(--line2);
-}
-.ana4 .tema-edit .field {
-  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--line2);
+  border-radius: 12px;
+  background: var(--surface2);
 }
 .ana4 .tema-edit textarea.field {
   resize: vertical;
 }
 .ana4 .field-l {
   font-size: 12px;
-  color: var(--muted);
+  font-weight: 500;
+  color: var(--fg2);
 }
 .ana4 .tema-edit .note {
   margin: 0;
 }
 .ana4 .tema-edit-acts {
   display: flex;
+  gap: 8px;
   flex-wrap: wrap;
-  gap: 6px;
+}
+
+/* ---------- comparación con la cuenta ---------- */
+.ana4 .an-cmp {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.ana4 .an-cmp .r {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 70px;
+  gap: 10px;
+  align-items: center;
+  font-size: 12.5px;
+}
+.ana4 .an-cmp .lb {
+  color: var(--fg2);
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 5px;
+  flex-wrap: wrap;
+}
+.ana4 .an-cmp .lb b {
+  font-family: var(--mono);
+  font-weight: 500;
+  color: var(--fg);
+}
+.ana4 .an-cmp .lb small {
+  color: var(--muted);
+  font-family: var(--mono);
+}
+.ana4 .an-cmp .bars {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.ana4 .an-cmp .bars i {
+  display: block;
+  height: 6px;
+  border-radius: 3px;
+  width: 0;
+  transition: width 1.1s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.ana4 .an-cmp .bars i.avg {
+  background: var(--line2);
+}
+.ana4 .an-cmp .bars i.now {
+  background: var(--accent);
+}
+.ana4 .an-cmp .bars i.now.bad {
+  background: var(--neg);
+}
+.ana4 .an-cmp .bars i.now.warn {
+  background: var(--c2);
+}
+.ana4 .an-cmp .bars i.now.good {
+  background: var(--pos);
+}
+.ana4 .an-cmp .dl {
+  font: 600 13px/1 var(--mono);
+  text-align: right;
+}
+.ana4 .an-cmp .dl.bad {
+  color: var(--neg-text);
+}
+.ana4 .an-cmp .dl.good {
+  color: var(--pos-text);
+}
+.ana4 .an-cmp .dl.warn {
+  color: var(--c2-text);
+}
+.ana4 .an-cmp .dl small {
+  display: block;
+  font: 500 9.5px/1.2 var(--mono);
+  color: var(--muted);
+  margin-top: 3px;
+}
+.ana4 .an-hist {
+  margin-top: 14px;
+  border-top: 1px dashed var(--line2);
+  padding-top: 8px;
+  min-height: 92px;
+}
+.ana4 .an-hist:empty {
+  display: none;
+}
+.ana4 .an-hist svg {
+  display: block;
+}
+.ana4 .an-hist .h-line {
+  fill: none;
+  stroke: var(--neg);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: draw 1.4s 0.2s ease forwards;
+}
+.ana4 .an-hist .h-avg {
+  stroke: var(--line2);
+  stroke-dasharray: 3 4;
+}
+.ana4 .an-hist .h-dot {
+  fill: var(--surface);
+  stroke: var(--neg);
+  stroke-width: 1.5;
+}
+.ana4 .an-hist .h-dot.now {
+  fill: var(--neg);
+  stroke-width: 2.5;
+}
+.ana4 .an-hist .h-txt {
+  font: 600 10px var(--mono);
+  fill: var(--neg-text);
 }
 
 /* ---------- cuándo comentaron ---------- */
+.ana4 .an-tlcard {
+  display: flex;
+  flex-direction: column;
+}
 .ana4 .tl-wrap {
-  width: 100%;
-  min-height: 190px;
+  min-height: 0;
 }
 .ana4 .tl {
   display: block;
-  width: 100%;
-  height: 190px;
-  overflow: visible;
+  max-width: 100%;
 }
 .ana4 .tl-grid {
   stroke: var(--line);
   stroke-dasharray: 2 4;
 }
 .ana4 .tl-txt {
-  font: 9px var(--mono);
+  font: 400 9px var(--mono);
   fill: var(--muted);
 }
 .ana4 .tl-area {
@@ -4552,13 +5255,17 @@ svg.line {
   stroke-dashoffset: 1;
   animation: draw 1.6s ease forwards;
 }
-.ana4 .tl-peak {
-  animation: fadeIn 0.6s 1.4s both;
+.ana4 .tl-half line {
+  stroke: var(--glow);
+  stroke-dasharray: 3 3;
+}
+.ana4 .tl-half text {
+  font: 400 9.5px var(--mono);
+  fill: var(--glow-text);
 }
 .ana4 .tl-peak line {
   stroke: var(--neg);
   stroke-dasharray: 3 3;
-  opacity: 0.8;
 }
 .ana4 .tl-peak circle {
   fill: var(--neg);
@@ -4566,7 +5273,7 @@ svg.line {
   stroke-width: 2;
 }
 .ana4 .tl-peak-txt {
-  font: 10px var(--mono);
+  font: 400 10px var(--mono);
   fill: var(--fg);
 }
 .ana4 .tl-hit {
@@ -4575,13 +5282,522 @@ svg.line {
 .ana4 .tl-hit:hover {
   fill: color-mix(in oklab, var(--accent) 10%, transparent);
 }
-.ana4 #anaWhenNote {
-  margin: 6px 0 0;
+.ana4 .an-tlk {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+.ana4 .an-tlk .chip b {
+  font-family: var(--mono);
+  font-weight: 500;
+}
+.ana4 .an-tlk .chip i.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--pos);
+  animation: ping 1.8s infinite;
+}
+.ana4 #anaWhenNote:empty {
+  display: none;
+}
+
+/* ---------- pedidos ---------- */
+.ana4 .an-asks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ana4 .an-ask {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  font: inherit;
+  font-size: 13px;
+  color: var(--fg);
+  text-align: left;
+  padding: 9px 11px;
+  border-radius: 10px;
+  background: var(--surface2);
+  border: 1px solid var(--line);
+  cursor: pointer;
+  animation: rise 0.45s both;
+  width: 100%;
+  overflow-wrap: anywhere;
+}
+.ana4 .an-ask:hover {
+  border-color: var(--accent);
+}
+.ana4 .an-ask.on {
+  border-color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 8%, var(--surface2));
+}
+.ana4 .an-ask small {
+  display: block;
+  color: var(--fg2);
+  font-size: 11.5px;
+  margin-top: 2px;
+}
+.ana4 .an-ask .n {
+  font: 600 15px/1 var(--display);
+  color: var(--accent-text);
+  text-align: right;
+}
+.ana4 .an-ask .n small {
+  display: block;
+  font: 500 9.5px/1 var(--mono);
+  color: var(--muted);
+  margin-top: 3px;
+}
+.ana4 .an-ask.hot {
+  border-color: color-mix(in oklab, var(--c2) 55%, var(--line));
+  background: color-mix(in oklab, var(--c2) 8%, var(--surface2));
+}
+.ana4 .an-ask.hot .n {
+  color: var(--c2-text);
+}
+
+/* ---------- verificados y figuras ---------- */
+.ana4 .an-people {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ana4 .an-person {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface2);
+  animation: rise 0.5s both;
+  transition:
+    border-color 0.2s,
+    transform 0.2s;
+}
+.ana4 .an-person.on {
+  border-color: var(--accent);
+}
+.ana4 .an-person .av {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font: 600 12px/1 var(--mono);
+  position: relative;
+  background: var(--col);
+}
+.ana4 .an-person .vf {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #0b6fc4;
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-size: 9px;
+  font-weight: 700;
+  border: 2px solid var(--surface2);
+}
+.ana4 .an-person > div {
+  min-width: 0;
+}
+.ana4 .an-person .nm {
+  font-weight: 600;
+  font-size: 13px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.ana4 .an-person .who {
+  font: inherit;
+  font-weight: 600;
+  color: var(--fg);
+  border: 0;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.ana4 .an-person .who:hover {
+  color: var(--accent-text);
+}
+.ana4 .an-person .nm small {
+  color: var(--muted);
+  font-weight: 400;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.ana4 .an-rl {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  font: 500 10.5px/1.2 var(--mono);
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: var(--surface);
+  border: 1px solid var(--line2);
+  color: var(--fg2);
+}
+.ana4 .an-rl.oposicion {
+  border-color: color-mix(in oklab, var(--c2) 60%, var(--line2));
+  color: var(--c2-text);
+}
+.ana4 .an-rl.oficialismo {
+  border-color: color-mix(in oklab, var(--c4) 60%, var(--line2));
+  color: var(--c4-text);
+}
+.ana4 .an-rl.sug {
+  border-style: dashed;
+}
+.ana4 .an-person .tx {
+  font-size: 12.5px;
+  color: var(--fg2);
+  margin-top: 4px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.ana4 .an-person .st {
+  text-align: right;
+  font: 500 11.5px/1.3 var(--mono);
+  color: var(--muted);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  align-items: flex-end;
+  white-space: nowrap;
+}
+.ana4 .an-person .st i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  vertical-align: -1px;
+  margin-right: 4px;
+}
+.ana4 .an-person .acts {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.ana4 .an-person .an-fig-form,
+.ana4 .an-fig-row .an-fig-form {
+  grid-column: 1 / -1;
+}
+.ana4 .an-fig-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 10px;
+  margin-top: 4px;
+  padding: 12px;
+  border: 1px solid var(--line2);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.ana4 .an-fig-form label {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--fg2);
+  min-width: 0;
+}
+.ana4 .an-fig-form .wide {
+  grid-column: 1 / -1;
+}
+.ana4 .an-fig-form textarea.field {
+  resize: vertical;
+}
+.ana4 .an-fig-form .acts {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.ana4 .an-fig-form .msg {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--neg-text);
+}
+.ana4 .an-fig-form .msg:empty {
+  display: none;
+}
+.ana4 .an-people-note .lnkbtn {
+  margin-left: 4px;
+}
+.ana4 .an-top {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ana4 .an-topc {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 9px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--surface2);
+  font-size: 12.5px;
+  animation: rise 0.45s both;
+}
+.ana4 .an-topc .lk {
+  text-align: center;
+  padding-top: 2px;
+}
+.ana4 .an-topc .lk b {
+  font: 600 15px/1 var(--display);
+  color: var(--fg);
+  display: block;
+}
+.ana4 .an-topc .lk small {
+  display: block;
+  font: 500 9.5px/1 var(--mono);
+  color: var(--muted);
+  margin-top: 3px;
+}
+.ana4 .an-topc .w {
+  font-size: 11.5px;
+  color: var(--muted);
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.ana4 .an-topc .w b {
+  color: var(--fg);
+  font-weight: 600;
+}
+.ana4 .an-topc .ev {
+  color: var(--c2-text);
+}
+.ana4 .an-topc .tx {
+  margin-top: 2px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.ana4 .an-topc .bar {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--line);
+  margin-top: 7px;
+  overflow: hidden;
+}
+.ana4 .an-topc .bar i {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: 2px;
+  transition: width 1s 0.2s;
+}
+.ana4 .vf-s {
+  display: inline-grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #0b6fc4;
+  color: #fff;
+  font-size: 8px;
+  font-weight: 700;
+  vertical-align: -2px;
+}
+
+/* ---------- reclamos, etiquetas, emojis ---------- */
+.ana4 .an-col {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+.ana4 .an-map {
+  position: relative;
+  height: 250px;
+  border-radius: 12px;
+  overflow: hidden;
+  background:
+    radial-gradient(260px 180px at 50% 50%, color-mix(in oklab, var(--accent) 12%, transparent), transparent 70%),
+    var(--surface2);
+  border: 1px solid var(--line);
+}
+.ana4 .an-map svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.ana4 .an-map .caba {
+  fill: var(--surface);
+  stroke: var(--line2);
+  stroke-width: 1.2;
+  stroke-linejoin: round;
+}
+.ana4 .an-map .com {
+  fill: var(--line2);
+}
+.ana4 .an-map .dot {
+  animation: pop 0.5s both;
+  cursor: default;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.ana4 .an-map .dot circle.p {
+  stroke: var(--surface);
+  stroke-width: 2;
+}
+.ana4 .an-map .dot text {
+  font: 600 9px var(--mono);
+  fill: #fff;
+}
+.ana4 .an-map .halo {
+  animation: anHalo 2.4s ease-out infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+@keyframes anHalo {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(3.2);
+    opacity: 0;
+  }
+}
+.ana4 .an-map .vacio {
+  font: 500 11px var(--body);
+  fill: var(--muted);
+}
+.ana4 .an-recl {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+  font-size: 12.5px;
+}
+.ana4 .an-recl > div {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+.ana4 .an-recl > div > span {
+  overflow-wrap: anywhere;
+}
+.ana4 .an-recl i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.ana4 .an-recl i.sin {
+  border: 1.5px solid var(--muted);
+}
+.ana4 .an-recl small {
+  color: var(--muted);
+  font: 500 11px/1.2 var(--mono);
+}
+.ana4 .an-tags-t,
+.ana4 .an-emo-t {
+  margin: 14px 0 8px;
+}
+.ana4 .an-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.ana4 .an-tags .chip {
+  animation: pop 0.4s both;
+}
+.ana4 .an-tags .chip.h {
+  border-color: color-mix(in oklab, var(--glow) 50%, var(--line2));
+  color: var(--glow-text);
+}
+.ana4 .an-emo {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 10px 0 4px;
+}
+.ana4 .an-emo > div {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  animation: pop 0.55s cubic-bezier(0.2, 0.9, 0.3, 1.4) both;
+}
+.ana4 .an-emo b {
+  font-size: var(--sz);
+  line-height: 1;
+  font-weight: 400;
+  filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.18));
+  animation: anFloat 3.2s ease-in-out infinite;
+  animation-delay: var(--dl);
+}
+.ana4 .an-emo small {
+  font: 500 11px/1 var(--mono);
+  color: var(--muted);
+}
+@keyframes anFloat {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
 }
 
 /* ---------- comentarios ---------- */
-.ana4 .cmt-tema {
-  margin-bottom: 10px;
+.ana4 .an-cmtcard .ct {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.ana4 .an-cfilters {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.ana4 .an-cfilters .field {
+  padding: 7px 10px;
+  font-size: 12.5px;
+  min-width: 200px;
+}
+.ana4 .an-cmtn {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 8px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.ana4 .an-cmtn .chip {
+  padding: 4px 8px;
+  font-size: 11.5px;
+  color: var(--fg);
+}
+.ana4 .an-cmtn .chip .x {
+  border: 0;
+  background: none;
+  padding: 0 0 0 2px;
+  cursor: pointer;
 }
 .ana4 .cmts {
   display: flex;
@@ -4590,16 +5806,16 @@ svg.line {
 }
 .ana4 .cmt {
   display: grid;
-  grid-template-columns: 3px 1fr;
+  grid-template-columns: 3px minmax(0, 1fr);
   gap: 10px;
   font-size: 13px;
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 8px 10px 8px 0;
   background: var(--surface2);
-  animation: slideIn 0.5s both;
+  animation: slideIn 0.45s both;
 }
-.ana4 .cmt i {
+.ana4 .cmt i.sb {
   border-radius: 0 2px 2px 0;
 }
 .ana4 .cmt i.bg-none {
@@ -4609,41 +5825,475 @@ svg.line {
   font-size: 11.5px;
   color: var(--muted);
   display: flex;
-  gap: 4px 8px;
+  gap: 8px;
   flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 2px;
 }
 .ana4 .cmt .w b {
   color: var(--fg);
   font-weight: 600;
-  overflow-wrap: anywhere;
 }
 .ana4 .cmt .w .tm {
   margin-left: auto;
   font-family: var(--mono);
 }
+.ana4 .cmt .w .tg {
+  font: 500 10.5px/1.2 var(--mono);
+  padding: 3px 6px;
+  border-radius: 5px;
+  background: var(--surface);
+  border: 1px solid var(--line2);
+  color: var(--fg2);
+}
+.ana4 .cmt .w .ps {
+  font: 500 10.5px/1.2 var(--mono);
+  padding: 3px 6px;
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--fg2);
+}
+.ana4 .cmt .w .ps.critica {
+  background: color-mix(in oklab, var(--c2) 14%, var(--surface));
+  color: var(--c2-text);
+}
+.ana4 .cmt .w .ps.favor {
+  background: color-mix(in oklab, var(--c4) 14%, var(--surface));
+  color: var(--c4-text);
+}
+.ana4 .cmt .w .q {
+  color: var(--accent-text);
+}
 .ana4 .cmt p {
-  margin: 3px 0 0;
+  margin: 0;
   overflow-wrap: anywhere;
 }
 .ana4 .cmts-more {
   margin-top: 10px;
 }
 
+/* ---------- compartir ---------- */
+.ana4 .exports {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.ana4 .exports .an-cost {
+  margin-left: auto;
+}
+.ana4 .ana-warn {
+  margin: 10px 0 0;
+  color: var(--c2-text);
+}
+.ana4 .wa {
+  white-space: pre-wrap;
+  font: 12.5px/1.5 var(--mono);
+  background: var(--surface2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px;
+  max-height: 300px;
+  overflow: auto;
+  color: var(--fg2);
+  margin: 10px 0 0;
+  overflow-wrap: anywhere;
+}
+.ana4 .an-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 70px;
+  transform: translate(-50%, 16px);
+  opacity: 0;
+  background: var(--fg);
+  color: var(--bg);
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 13px;
+  z-index: 70;
+  transition: 0.3s;
+  pointer-events: none;
+  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+  max-width: calc(100vw - 32px);
+}
+.ana4 .an-toast.on {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+/* ---------- galería ---------- */
+.ana4 .an-gal-tools {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.ana4 .an-gal-tools .field {
+  padding: 8px 10px;
+  font-size: 13px;
+}
+.ana4 .an-gal-tools input.field {
+  min-width: 240px;
+}
+.ana4 .an-gal-tools .note {
+  margin-left: auto;
+}
+.ana4 .an-gal {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+.ana4 .an-gc {
+  padding: 0;
+  overflow: hidden;
+  cursor: pointer;
+  transition:
+    transform 0.25s,
+    box-shadow 0.25s,
+    border-color 0.25s;
+  animation: rise 0.5s both;
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+}
+.ana4 .an-gc:hover {
+  transform: translateY(-3px);
+  border-color: var(--accent);
+  box-shadow: 0 24px 44px -26px color-mix(in oklab, var(--accent) 55%, transparent);
+}
+.ana4 .an-gc .ph {
+  aspect-ratio: 4 / 3;
+  background: linear-gradient(135deg, var(--a), color-mix(in oklab, var(--a) 40%, var(--glow)));
+  position: relative;
+  overflow: hidden;
+}
+.ana4 .an-gc .ph img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.ana4 .an-gc .ph > span {
+  position: absolute;
+  z-index: 1;
+}
+.ana4 .an-gc .ev {
+  left: 10px;
+  top: 10px;
+  font: 600 10.5px/1 var(--mono);
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.ana4 .an-gc .ev i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--c2);
+  color: var(--c2);
+  animation: anPing 1.8s infinite;
+}
+.ana4 .an-gc .dt {
+  right: 10px;
+  top: 10px;
+  font: 500 10.5px/1 var(--mono);
+  color: #fff;
+  background: rgba(0, 0, 0, 0.65);
+  padding: 4px 7px;
+  border-radius: 6px;
+}
+.ana4 .an-gc .who {
+  left: 10px;
+  bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #fff;
+  font-weight: 600;
+  font-size: 12.5px;
+  background: rgba(0, 0, 0, 0.65);
+  padding: 3px 8px 3px 3px;
+  border-radius: 999px;
+  max-width: calc(100% - 20px);
+}
+.ana4 .an-gc .who b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ana4 .an-gc .who .av {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font: 600 9.5px/1 var(--mono);
+  flex: none;
+}
+.ana4 .an-gc .bd {
+  padding: 12px 14px 14px;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+.ana4 .an-gc h3 {
+  font-size: 13.5px;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: 2.7em;
+  font-weight: 600;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.ana4 .an-gc .stack {
+  margin-top: 10px;
+  height: 6px;
+  background: var(--line);
+}
+.ana4 .an-gc .stack i {
+  width: 0;
+  transition: width 1s 0.2s;
+}
+.ana4 .an-gc .star {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--fg2);
+  min-width: 0;
+}
+.ana4 .an-gc .star i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: linear-gradient(135deg, var(--c5), var(--c2));
+  flex: none;
+}
+.ana4 .an-gc .star span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ana4 .an-gc .ft {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 10px;
+  font: 500 11.5px/1.2 var(--mono);
+  color: var(--muted);
+  flex-wrap: wrap;
+}
+.ana4 .an-gc .ft b {
+  color: var(--fg);
+  font-weight: 500;
+}
+.ana4 .an-gc .ft .neg {
+  color: var(--neg-text);
+}
+.ana4 .an-gal .empty {
+  grid-column: 1 / -1;
+}
+
+/* ---------- la lista de figuras (diálogo) ---------- */
+.an-fig-dlg {
+  border: 1px solid var(--line2);
+  border-radius: 16px;
+  padding: 0;
+  width: min(760px, calc(100vw - 32px));
+  max-height: min(86vh, 860px);
+  background: var(--surface);
+  color: var(--fg);
+  box-shadow: var(--shadow);
+}
+.an-fig-dlg::backdrop {
+  background: rgba(10, 14, 28, 0.55);
+}
+.an-fig-dlg .an-fig-box {
+  padding: 18px 20px 20px;
+}
+.an-fig-dlg .an-fig-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.an-fig-dlg h2 {
+  margin: 0;
+  font-size: 17px;
+}
+.an-fig-dlg .an-fig-tools {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 10px 0;
+}
+.an-fig-dlg .an-fig-tools .field {
+  flex: 1;
+  min-width: 180px;
+}
+.an-fig-dlg #anaFigMsg:empty {
+  display: none;
+}
+.an-fig-dlg .an-fig-list h3 {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 16px 0 8px;
+}
+.an-fig-dlg .an-fig-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 10px;
+  align-items: center;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface2);
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+.an-fig-dlg .an-fig-row .nm {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.an-fig-dlg .an-fig-row .nm b {
+  overflow-wrap: anywhere;
+}
+.an-fig-dlg .an-fig-row .nm small {
+  font-family: var(--mono);
+  color: var(--muted);
+}
+.an-fig-dlg .an-fig-row .acts {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.an-fig-dlg .empty {
+  padding: 14px 10px;
+}
+
+@media (max-width: 1180px) {
+  .ana4 .an-gal {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .ana4 .an-theme {
+    grid-template-columns: minmax(110px, 150px) minmax(0, 1fr) 44px 26px;
+  }
+}
 @media (max-width: 980px) {
-  .ana4 .grid.ana {
-    grid-template-columns: 1fr;
+  .ana4 .an-hero,
+  .ana4 .an-3,
+  .ana4 .an-2,
+  .ana4 .an-2a,
+  .ana4 .an-2b {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ana4 .an-gal {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .ana4 .an-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 @media (max-width: 640px) {
-  .ana4 .two {
-    grid-template-columns: 1fr;
-  }
-  .ana4 .ct .tools,
-  .ana4 .ct .seg {
+  .ana4 .head .tools,
+  .ana4 .head .seg {
     max-width: 100%;
   }
-  .ana4 .ct .seg {
+  .ana4 .head .seg {
     overflow-x: auto;
+  }
+  .ana4 .an-person {
+    grid-template-columns: 40px minmax(0, 1fr);
+  }
+  .ana4 .an-person .st {
+    grid-column: 2;
+    flex-direction: row;
+    gap: 12px;
+    align-items: center;
+    white-space: normal;
+    flex-wrap: wrap;
+  }
+  .ana4 .an-cfilters .seg,
+  .ana4 .an-gal-tools .seg {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+  .ana4 .an-cfilters,
+  .ana4 .an-gal-tools {
+    width: 100%;
+  }
+  .ana4 .an-gal-tools .note {
+    margin-left: 0;
+  }
+  .ana4 .an-gal-tools input.field,
+  .ana4 .an-cfilters .field {
+    min-width: 0;
+    width: 100%;
+  }
+  .ana4 .an-post {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ana4 .an-post .img {
+    max-width: 220px;
+  }
+  .ana4 .an-gal {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ana4 .urlbar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ana4 .an-event .big b {
+    font-size: 40px;
+  }
+  .ana4 .an-donut {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: center;
+  }
+  .ana4 .an-donut .an-rows {
+    width: 100%;
+  }
+  .ana4 .an-theme {
+    grid-template-columns: minmax(0, 1fr) 44px 26px;
+  }
+  .ana4 .an-theme .tr {
+    display: none;
+  }
+  .ana4 .an-calm > div {
+    grid-template-columns: minmax(0, 1fr) 70px 34px;
+  }
+  .ana4 .an-fig-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ana4 .exports .an-cost {
+    margin-left: 0;
+    width: 100%;
+  }
+  .an-fig-dlg .an-fig-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .an-fig-dlg .an-fig-row .acts {
+    justify-content: flex-start;
   }
 }
 

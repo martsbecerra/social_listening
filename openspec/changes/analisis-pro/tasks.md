@@ -51,12 +51,12 @@ un servidor de prueba en otro puerto y una copia de la base.
 
 ## Phase 7: F2, pantalla
 
-- [ ] 7.1 La solapa de la maqueta en `instagram.html` y sus estilos bajo `.ana4` (REQ-PRO-15)
-- [ ] 7.2 Analizar, pasos con porcentaje, avisos, tira de recientes y vistas (REQ-PRO-15, REQ-PRO-18)
-- [ ] 7.3 Los bloques del resultado desde `vista`, con "No disponible en análisis anteriores" (REQ-PRO-15, REQ-PRO-16)
-- [ ] 7.4 Temas: filtro, ✎ y "+ tema" en v2 y v1 (REQ-PRO-12)
-- [ ] 7.5 Figuras: tarjeta y "Lista de figuras" (REQ-PRO-17)
-- [ ] 7.6 Comentarios y compartir (REQ-PRO-09, REQ-PRO-15)
+- [x] 7.1 La solapa de la maqueta en `instagram.html` y sus estilos bajo `.ana4` (REQ-PRO-15)
+- [x] 7.2 Analizar, pasos con porcentaje, avisos, tira de recientes y vistas (REQ-PRO-15, REQ-PRO-18)
+- [x] 7.3 Los bloques del resultado desde `vista`, con "No disponible en análisis anteriores" (REQ-PRO-15, REQ-PRO-16)
+- [x] 7.4 Temas: filtro, ✎ y "+ tema" en v2 y v1 (REQ-PRO-12)
+- [x] 7.5 Figuras: tarjeta y "Lista de figuras" (REQ-PRO-17)
+- [x] 7.6 Comentarios y compartir (REQ-PRO-09, REQ-PRO-15)
 - [ ] 7.7 Galería e inicio (REQ-PRO-18)
 
 ## Phase 8: cierre de la F2
