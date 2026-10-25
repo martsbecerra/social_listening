@@ -5618,6 +5618,125 @@ svg.line {
   border-radius: 2px;
   transition: width 1s 0.2s;
 }
+/* ---------- respuestas (fase G) ---------- */
+/* Los debates: la barra partida con el tono de las respuestas y, debajo,
+   los números y "ver el hilo". */
+.ana4 .an-topc .bar.split {
+  display: flex;
+  gap: 2px;
+  background: none;
+}
+.ana4 .an-topc .bar.split i {
+  flex: none;
+}
+.ana4 .an-topc .rs {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  margin-top: 6px;
+  font: 500 11px/1.3 var(--mono);
+  color: var(--muted);
+}
+.ana4 .an-topc .rs .nw {
+  white-space: nowrap;
+}
+/* "la cuenta" / "respondió la cuenta": borde del acento sobre la
+   superficie, la tinta del acento para el texto (como las alineaciones). */
+.ana4 .cta {
+  font: 500 10.5px/1.2 var(--mono);
+  padding: 3px 6px;
+  border-radius: 5px;
+  background: var(--surface);
+  border: 1px solid color-mix(in oklab, var(--accent) 60%, var(--line2));
+  color: var(--accent-text);
+}
+.ana4 .cmt .w .rp {
+  font: 500 11px/1.2 var(--mono);
+  color: var(--fg2);
+}
+.ana4 .cmt .w .lnkbtn {
+  font-size: 11.5px;
+}
+.ana4 .cmt.rep {
+  margin-left: 22px;
+}
+.ana4 .cmt i.bg-acct {
+  background: var(--accent);
+}
+.ana4 .an-acct {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ana4 .an-acct-h {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.ana4 .an-acct-h b {
+  font: 600 26px/1 var(--display);
+  color: var(--fg);
+}
+.ana4 .an-acct-h span {
+  font-size: 12.5px;
+  color: var(--fg2);
+}
+.ana4 .an-acct-g {
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface2);
+  font-size: 12.5px;
+  animation: rise 0.45s both;
+}
+.ana4 .an-acct-g .w {
+  font-size: 11.5px;
+  color: var(--muted);
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.ana4 .an-acct-g .w b {
+  color: var(--fg);
+  font-weight: 600;
+}
+.ana4 .an-acct-g .tx {
+  margin-top: 2px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  color: var(--fg2);
+}
+.ana4 .an-acct-g .tx.muted {
+  color: var(--muted);
+  font-style: italic;
+}
+.ana4 .an-acct-g .rp {
+  margin-top: 6px;
+  padding: 6px 8px;
+  border-left: 2px solid var(--accent);
+  border-radius: 0 8px 8px 0;
+  background: var(--surface);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.ana4 .an-acct-g .rp .ar {
+  color: var(--muted);
+  margin-right: 4px;
+}
+.ana4 .an-acct-g .rp b {
+  color: var(--accent-text);
+  font-weight: 600;
+  margin-right: 4px;
+}
+.ana4 .an-acct-g .lnkbtn {
+  margin-top: 6px;
+  font-size: 11.5px;
+}
+
 .ana4 .vf-s {
   display: inline-grid;
   place-items: center;

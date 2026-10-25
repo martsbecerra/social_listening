@@ -11,8 +11,12 @@
 // dominante o la tarjeta tranquila; tono, postura y "¿hablan del posteo?";
 // los temas (un clic filtra los comentarios, ✎ los edita, "+ tema");
 // la comparación con la cuenta; "Cuándo comentaron"; los pedidos; los que
-// más pegaron; los reclamos en el mapita; etiquetas y emojis; los
-// comentarios con búsqueda y filtros; compartir.
+// más pegaron (por likes o, desde la fase G, por respuestas: los debates);
+// "¿La cuenta respondió?"; los reclamos en el mapita; etiquetas y emojis;
+// los comentarios con búsqueda y filtros (cada respuesta con "↳ responde a
+// @usuario", y "ver el hilo" para leerla con su comentario); compartir. Lo
+// de las respuestas, en un análisis anterior a la G, también dice "No
+// disponible en análisis anteriores".
 //
 // Todo dato entra por textContent o atributos; el SVG, con createElementNS.
 // --------------------------------------------------------------------
@@ -96,6 +100,11 @@ const anaB = {
   asks: document.getElementById('anaAsks'),
   top: document.getElementById('anaTop'),
   topNote: document.getElementById('anaTopNote'),
+  topSeg: document.getElementById('anaTopSeg'),
+  topHint: document.getElementById('anaTopHint'),
+  acct: document.getElementById('anaAcct'),
+  acctHint: document.getElementById('anaAcctHint'),
+  acctNote: document.getElementById('anaAcctNote'),
   reclHint: document.getElementById('anaReclHint'),
   map: document.getElementById('anaMap'),
   recl: document.getElementById('anaRecl'),
@@ -125,7 +134,11 @@ const anaB = {
 
 let anaTypeTimer = null;
 let anaCmtFilter = 'top';
-let anaCmtSel = null; // { tipo: 'tema' | 'pedido' | 'persona', … }: lo que filtra los comentarios
+// { tipo: 'tema' | 'pedido' | 'persona' | 'hilo' | 'cuenta', … }: lo que
+// filtra los comentarios. 'hilo': un comentario y sus respuestas; 'cuenta':
+// lo que contestó la cuenta, con los comentarios a los que contestó.
+let anaCmtSel = null;
+let anaTopOrden = 'likes'; // "Los que más pegaron": 'likes' | 'resp' (los debates, fase G)
 let anaCmtQ = '';
 let anaCmtLimit = ANA_CMTS_PAGE;
 let anaTemaEditing = null; // id del tema en edición, o 'nuevo'
@@ -186,6 +199,7 @@ function anaRender(a) {
   anaCloseTemaForm({ restoreFocus: false });
   anaCmtFilter = 'top';
   anaCmtSel = null;
+  anaTopOrden = 'likes';
   anaCmtQ = '';
   anaB.cmtQ.value = '';
   anaCmtLimit = ANA_CMTS_PAGE;
@@ -205,6 +219,7 @@ function anaRender(a) {
   anaRenderWhen();
   anaRenderAsks(v);
   anaRenderPeople(v);
+  anaRenderAcct(v);
   anaRenderTop(v);
   anaRenderRecl(v);
   anaRenderTags(v);
@@ -231,6 +246,7 @@ function anaRefresh() {
   anaRenderThemes();
   anaRenderAsks(v);
   anaRenderPeople(v);
+  anaRenderAcct(v);
   anaRenderTop(v);
   anaRenderCmts();
   anaRenderShare();
@@ -693,8 +709,8 @@ function anaTemaPorId(id) {
   return anaVista().temas.find((t) => t.id === id) || null;
 }
 
-// Cambió lo que filtra los comentarios (un tema, un pedido o una persona):
-// se redibujan los tres lugares que lo marcan, el segmentado y la lista.
+// Cambió lo que filtra los comentarios (un tema, un pedido, una persona o un
+// hilo): se redibujan los lugares que lo marcan, el segmentado y la lista.
 function anaSelCambio({ enfocar = true } = {}) {
   const v = anaVista();
   if (anaCmtSel) anaCmtFilter = 'all';
@@ -702,6 +718,8 @@ function anaSelCambio({ enfocar = true } = {}) {
   anaRenderThemes();
   anaRenderAsks(v);
   anaRenderPeople(v);
+  anaRenderAcct(v);
+  anaRenderTop(v);
   anaRenderSeg();
   anaRenderCmts();
   if (enfocar && anaCmtSel) anaB.cmtsTitle.focus();
@@ -1179,7 +1197,179 @@ function anaRenderAsks(v) {
 
 // ---------------------------------------------------------------- los que más pegaron
 
+const ANA_TOP_HINT = {
+  likes: 'los comentarios con más likes · marcan el clima',
+  resp: 'los comentarios con más respuestas del público · los debates',
+};
+
+/** ¿El análisis trae respuestas? (fase G) */
+function anaConRespuestas(v) {
+  return Boolean(v && v.disponible && v.disponible.respuestas);
+}
+
+/** El selector "Más likes / Más respuestas"; en un análisis anterior, "Más respuestas" no está disponible. */
+function anaRenderTopSeg(v) {
+  const g = anaConRespuestas(v);
+  if (!g) anaTopOrden = 'likes';
+  anaB.topSeg.querySelectorAll('button').forEach((b) => {
+    const on = b.dataset.o === anaTopOrden;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', String(on));
+    if (b.dataset.o === 'resp') {
+      // aria-disabled, no disabled: sigue con el foco y su tooltip dice por qué.
+      b.setAttribute('aria-disabled', String(!g));
+      if (g) {
+        delete b.dataset.tip;
+        b.removeAttribute('aria-label');
+      } else {
+        b.dataset.tip = `${ANA_NA}: las respuestas se traen desde los análisis nuevos.`;
+        b.setAttribute('aria-label', `Más respuestas: ${ANA_NA.toLowerCase()}`);
+      }
+    }
+  });
+  anaB.topHint.textContent = ANA_TOP_HINT[anaTopOrden];
+}
+
+/** "ver el hilo": el comentario y sus respuestas en la lista; otro clic lo suelta. */
+function anaVerHilo(c) {
+  const elegido = anaCmtSel && anaCmtSel.tipo === 'hilo' && anaCmtSel.n === c.n;
+  anaCmtSel = elegido ? null : { tipo: 'hilo', n: c.n, usuario: c.usuario };
+  anaSelCambio();
+  if (anaCmtSel) anaB.cmtsTitle.closest('.card').scrollIntoView({ behavior: anaReducedMotion() ? 'auto' : 'smooth', block: 'start' });
+}
+
+/** El botón "ver el hilo" de un comentario, marcado si es el elegido. */
+function anaBotonHilo(c, texto) {
+  const on = Boolean(anaCmtSel && anaCmtSel.tipo === 'hilo' && anaCmtSel.n === c.n);
+  const b = anaEl('button', 'lnkbtn', on ? 'ocultar el hilo' : texto);
+  b.type = 'button';
+  b.setAttribute('aria-pressed', String(on));
+  b.addEventListener('click', () => anaVerHilo(c));
+  return b;
+}
+
+// Los debates: los del público con más respuestas del público, con la barra
+// del tono de esas respuestas (los números, en el texto de abajo).
+function anaRenderDebates(v) {
+  const lista = v.debates || [];
+  if (!lista.length) {
+    anaB.top.replaceChildren(anaEl('div', 'empty', 'Ningún comentario tuvo respuestas del público.'));
+  } else {
+    anaB.top.replaceChildren(
+      ...lista.map((c, i) => {
+        const tono = ANA_TONO[c.tono] || ANA_SIN_CLASIFICAR;
+        const row = anaEl('div', 'an-topc');
+        row.style.animationDelay = `${i * 70}ms`;
+        const lk = anaEl('div', 'lk');
+        lk.append(anaEl('b', '', formatCount(c.respuestasPublico)), anaEl('small', '', c.respuestasPublico === 1 ? 'respuesta' : 'respuestas'));
+        const body = anaEl('div');
+        const w = anaEl('div', 'w');
+        w.append(anaEl('b', '', `@${c.usuario}`));
+        if (c.verificada) w.append(anaVerificada());
+        w.append(anaEl('span', tono.text, tono.label), anaEl('span', '', c.likes === null ? '♥ —' : `♥ ${formatCount(c.likes)}`));
+        if (c.respondioLaCuenta) w.append(anaEl('span', 'cta', 'respondió la cuenta'));
+        if (c.delHecho) w.append(anaEl('span', 'ev', 'del hecho'));
+        const t = c.tonosRespuestas;
+        const total = t.positivo + t.neutral + t.negativo;
+        const bar = anaEl('div', 'bar split');
+        bar.setAttribute('aria-hidden', 'true');
+        for (const k of ['positivo', 'neutral', 'negativo']) {
+          if (!t[k]) continue;
+          const bi = anaEl('i', ANA_TONO[k].bar);
+          bi.dataset.w = `${(t[k] / total) * 100}%`;
+          bar.append(bi);
+        }
+        const rs = anaEl('div', 'rs');
+        // Los tres números van juntos: en un celular se corta antes, no entre ellos.
+        const cuenta = anaEl('span', '', 'sus respuestas: ');
+        cuenta.append(anaEl('span', 'nw', `${formatCount(t.positivo)} pos · ${formatCount(t.neutral)} neu · ${formatCount(t.negativo)} neg`));
+        rs.append(cuenta, anaBotonHilo(c, 'ver el hilo'));
+        body.append(w, anaEl('div', 'tx', c.texto), bar, rs);
+        row.append(lk, body);
+        return row;
+      })
+    );
+    anaGrow(anaB.top);
+  }
+  const r = v.respuestas;
+  anaB.topNote.textContent = r
+    ? `Llegaron ${anaPlural(r.traidas, 'respuesta', 'respuestas')} del público y ${formatCount(r.deLaCuenta)} de la cuenta${
+        r.declaradas !== null ? `; Instagram declara ${anaPlural(r.declaradas, 'respuesta', 'respuestas')} en estos comentarios y no siempre llegan todas` : ''
+      }.`
+    : '';
+}
+
+// ¿La cuenta respondió?: a cuántos comentarios, cuáles y qué les dijo. Sus
+// respuestas no van al modelo: no cuentan en el tono ni en los temas.
+const ANA_ACCT_MAX = 4;
+
+function anaRenderAcct(v) {
+  const lc = v.laCuentaRespondio;
+  if (!anaConRespuestas(v) || !lc) {
+    anaB.acct.replaceChildren(anaNa('las respuestas se traen desde los análisis nuevos'));
+    anaB.acctHint.textContent = '';
+    anaB.acctNote.replaceChildren();
+    return;
+  }
+  const cuenta = v.cuenta ? `@${v.cuenta}` : 'la cuenta';
+  anaB.acctHint.textContent = `${cuenta} · sus respuestas no cuentan en el tono`;
+  const head = anaEl('div', 'an-acct-h');
+  if (!lc.comentarios) {
+    head.append(anaEl('b', '', 'No'), anaEl('span', '', 'respondió ningún comentario de los traídos.'));
+    anaB.acct.replaceChildren(head);
+  } else {
+    head.append(
+      anaEl('b', 'num', formatCount(lc.comentarios)),
+      anaEl('span', '', `${lc.comentarios === 1 ? 'comentario respondido' : 'comentarios respondidos'}${lc.negativos ? ` · ${anaPlural(lc.negativos, 'era negativo', 'eran negativos')}` : ''}`)
+    );
+    const grupos = lc.lista.slice(0, ANA_ACCT_MAX).map((g, i) => {
+      const p = g.comentario;
+      const box = anaEl('div', 'an-acct-g');
+      box.style.animationDelay = `${i * 70}ms`;
+      const w = anaEl('div', 'w');
+      w.append(anaEl('b', '', p.usuario ? `@${p.usuario}` : 'Un comentario'));
+      if (p.verificada) w.append(anaVerificada());
+      if (p.tono) {
+        const t = ANA_TONO[p.tono] || ANA_SIN_CLASIFICAR;
+        w.append(anaEl('span', t.text, t.label));
+      }
+      if (p.likes !== null) w.append(anaEl('span', '', `♥ ${formatCount(p.likes)}`));
+      box.append(w, anaEl('div', p.texto ? 'tx' : 'tx muted', p.texto || 'no entró en el análisis'));
+      for (const r of g.respuestas) {
+        const rp = anaEl('div', 'rp');
+        rp.append(anaEl('span', 'ar', '↳'), anaEl('b', '', cuenta), anaEl('span', '', r.texto));
+        box.append(rp);
+      }
+      if (p.n !== null) box.append(anaBotonHilo({ n: p.n, usuario: p.usuario }, 'ver el hilo'));
+      return box;
+    });
+    anaB.acct.replaceChildren(head, ...grupos);
+  }
+  const partes = [];
+  if (lc.comentarios > ANA_ACCT_MAX) partes.push(`Y ${anaPlural(lc.comentarios - ANA_ACCT_MAX, 'comentario más', 'comentarios más')}. `);
+  if (lc.sueltos) partes.push(`Además comentó ${anaPlural(lc.sueltos, 'vez', 'veces')} suelto en su publicación. `);
+  const nodos = partes.map((t) => document.createTextNode(t));
+  if (lc.respuestas + lc.sueltos > 0) {
+    const on = Boolean(anaCmtSel && anaCmtSel.tipo === 'cuenta');
+    const b = anaEl('button', 'lnkbtn', on ? 'Ocultar lo de la cuenta' : 'Ver todo lo que escribió la cuenta');
+    b.type = 'button';
+    b.setAttribute('aria-pressed', String(on));
+    b.addEventListener('click', () => {
+      anaCmtSel = on ? null : { tipo: 'cuenta' };
+      anaSelCambio();
+      if (anaCmtSel) anaB.cmtsTitle.closest('.card').scrollIntoView({ behavior: anaReducedMotion() ? 'auto' : 'smooth', block: 'start' });
+    });
+    nodos.push(b);
+  }
+  anaB.acctNote.replaceChildren(...nodos);
+}
+
 function anaRenderTop(v) {
+  anaRenderTopSeg(v);
+  if (anaTopOrden === 'resp') {
+    anaRenderDebates(v);
+    return;
+  }
   const lista = v.top;
   const mx = Math.max(1, ...lista.map((c) => c.likes || 0));
   anaB.top.replaceChildren(
@@ -1216,6 +1406,13 @@ function anaRenderTop(v) {
     anaB.topNote.textContent = `Los ${lista.length} más likeados suman ${anaPlural(r.likes, 'like', 'likes')}; ${r.positivos === 1 ? '1 es positivo' : `${formatCount(r.positivos)} son positivos`}.`;
   }
 }
+
+anaB.topSeg.addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-o]');
+  if (!b || !anaShown || b.getAttribute('aria-disabled') === 'true' || b.dataset.o === anaTopOrden) return;
+  anaTopOrden = b.dataset.o;
+  anaRenderTop(anaVista());
+});
 
 // ---------------------------------------------------------------- reclamos
 
@@ -1403,21 +1600,31 @@ function anaRenderEmo(v) {
 
 // ---------------------------------------------------------------- comentarios
 
+// Los filtros que un análisis anterior no puede usar: Preguntas (fase F) y
+// Respuestas (fase G).
+const ANA_SEG_NA = {
+  q: { label: 'Preguntas', tip: 'los pedidos se marcan en los análisis nuevos' },
+  resp: { label: 'Respuestas', tip: 'las respuestas se traen desde los análisis nuevos' },
+};
+
 function anaRenderSeg() {
-  const v2 = anaEsV2();
+  const disponible = { q: anaEsV2(), resp: anaConRespuestas(anaVista()) };
+  if (disponible[anaCmtFilter] === false) anaCmtFilter = 'top';
   anaB.cmtSeg.querySelectorAll('button').forEach((b) => {
     const on = b.dataset.f === anaCmtFilter;
     b.classList.toggle('on', on);
     b.setAttribute('aria-pressed', String(on));
     // aria-disabled, no disabled: sigue con el foco y su tooltip dice por qué.
-    if (b.dataset.f === 'q') {
-      b.setAttribute('aria-disabled', String(!v2));
-      if (v2) {
+    const na = ANA_SEG_NA[b.dataset.f];
+    if (na) {
+      const ok = disponible[b.dataset.f];
+      b.setAttribute('aria-disabled', String(!ok));
+      if (ok) {
         delete b.dataset.tip;
         b.removeAttribute('aria-label');
       } else {
-        b.dataset.tip = `${ANA_NA}: los pedidos se marcan en los análisis nuevos.`;
-        b.setAttribute('aria-label', `Preguntas: ${ANA_NA.toLowerCase()}`);
+        b.dataset.tip = `${ANA_NA}: ${na.tip}.`;
+        b.setAttribute('aria-label', `${na.label}: ${ANA_NA.toLowerCase()}`);
       }
     }
   });
@@ -1429,7 +1636,7 @@ const anaPlegar = (s) =>
     .replace(/\p{M}/gu, '')
     .toLowerCase();
 
-/** Los comentarios con la selección (tema, pedido o persona), la búsqueda y el filtro. Sin "Destacados", la lista entera. */
+/** Los comentarios con la selección (tema, pedido, persona, hilo o la cuenta), la búsqueda y el filtro. Sin "Destacados", la lista entera. */
 function anaCmtsBase() {
   const v = anaVista();
   let list = v.comentarios;
@@ -1440,6 +1647,11 @@ function anaCmtsBase() {
     list = list.filter((c) => sel.ids.has(c.n));
   } else if (sel && sel.tipo === 'persona') {
     list = list.filter((c) => String(c.usuario).toLowerCase() === sel.usuario);
+  } else if (sel && sel.tipo === 'hilo') {
+    list = list.filter((c) => c.n === sel.n || c.respondeA === sel.n);
+  } else if (sel && sel.tipo === 'cuenta') {
+    const contestados = new Set(list.filter((c) => c.deLaCuenta && c.respondeA !== null).map((c) => c.respondeA));
+    list = list.filter((c) => c.deLaCuenta || contestados.has(c.n));
   }
   if (anaCmtQ) {
     const q = anaPlegar(anaCmtQ);
@@ -1448,31 +1660,49 @@ function anaCmtsBase() {
   return list;
 }
 
+/** Un hilo o lo de la cuenta se leen en orden de charla (cada respuesta va detrás de su comentario). */
+function anaEnHilo() {
+  return Boolean(anaCmtSel && (anaCmtSel.tipo === 'hilo' || anaCmtSel.tipo === 'cuenta'));
+}
+
 function anaFilteredCmts(base) {
   const porLikes = (p, q) => (q.likes ?? -1) - (p.likes ?? -1) || p.n - q.n;
   if (anaCmtFilter === 'top') return [...base].sort(porLikes).slice(0, ANA_TOP);
   let list = base;
   if (anaCmtFilter === 'q') list = list.filter((c) => c.pedido === true);
+  else if (anaCmtFilter === 'resp') list = list.filter((c) => c.esRespuesta);
   else if (anaCmtFilter === 'ver') list = list.filter((c) => c.verificada);
   else if (anaCmtFilter !== 'all') list = list.filter((c) => c.tono === anaCmtFilter);
-  return [...list].sort(porLikes);
+  // Los números ya siguen la charla: el análisis pone cada respuesta detrás de su comentario.
+  return [...list].sort(anaEnHilo() ? (p, q) => p.n - q.n : porLikes);
 }
 
+// Lo de la cuenta no tiene tono: va con la marca de la cuenta.
+const ANA_CUENTA = { bar: 'bg-acct', text: '', label: '' };
+
 function anaBuildCmt(c, i) {
-  const tono = ANA_TONO[c.tono] || ANA_SIN_CLASIFICAR;
+  const tono = c.deLaCuenta ? ANA_CUENTA : ANA_TONO[c.tono] || ANA_SIN_CLASIFICAR;
   const row = anaEl('div', 'cmt');
   if (i < 10) row.style.animationDelay = `${i * 60}ms`;
+  // En un hilo, la respuesta va corrida, debajo de su comentario.
+  if (c.esRespuesta && anaEnHilo()) row.classList.add('rep');
   const bar = anaEl('i', `sb ${tono.bar}`);
   bar.setAttribute('aria-hidden', 'true');
   const body = anaEl('div');
   const w = anaEl('div', 'w');
   w.append(anaEl('b', '', `@${c.usuario}`));
   if (c.verificada) w.append(anaVerificada());
-  w.append(anaEl('span', '', c.likes === null ? '♥ —' : `♥ ${formatCount(c.likes)}`), anaEl('span', tono.text, tono.label));
+  if (c.deLaCuenta) w.append(anaEl('span', 'cta', 'la cuenta'));
+  if (c.esRespuesta) w.append(anaEl('span', 'rp', c.respondeAUsuario ? `↳ responde a @${c.respondeAUsuario}` : '↳ respuesta'));
+  w.append(anaEl('span', '', c.likes === null ? '♥ —' : `♥ ${formatCount(c.likes)}`));
+  if (!c.deLaCuenta) w.append(anaEl('span', tono.text, tono.label));
   if (c.postura && ANA_POSTURA[c.postura]) w.append(anaEl('span', `ps ${c.postura}`, ANA_POSTURA[c.postura].label));
   const tema = c.tema || (c.temasV1 && c.temasV1.length ? c.temasV1.join(' · ') : null);
   if (tema) w.append(anaEl('span', 'tg', tema));
   if (c.pedido) w.append(anaEl('span', 'q', 'pregunta / pedido'));
+  if (c.respuestas > 0 && !(anaCmtSel && anaCmtSel.tipo === 'hilo' && anaCmtSel.n === c.n)) {
+    w.append(anaBotonHilo(c, anaPlural(c.respuestas, 'respuesta', 'respuestas')));
+  }
   const hh = anaHh(c.horas);
   if (hh) w.append(anaEl('span', 'tm', hh));
   body.append(w, anaEl('p', '', c.texto));
@@ -1489,7 +1719,16 @@ function anaRenderCmts() {
   partes.push(anaEl('span', '', `${anaCmtFilter === 'top' ? 'Los más likeados' : `${formatCount(list.length)} de ${formatCount(v.comentarios.length)}`}${anaCmtQ ? ` · «${anaCmtQ}»` : ''}`));
   const sel = anaCmtSel;
   if (sel) {
-    const texto = sel.tipo === 'tema' ? `Tema: ${sel.nombre}` : sel.tipo === 'pedido' ? `Pedido: ${sel.texto}` : `@${sel.usuario}`;
+    const texto =
+      sel.tipo === 'tema'
+        ? `Tema: ${sel.nombre}`
+        : sel.tipo === 'pedido'
+          ? `Pedido: ${sel.texto}`
+          : sel.tipo === 'hilo'
+            ? `Hilo de ${sel.usuario ? `@${sel.usuario}` : 'un comentario'}`
+            : sel.tipo === 'cuenta'
+              ? 'Lo que escribió la cuenta'
+              : `@${sel.usuario}`;
     const chip = anaEl('span', 'chip on', texto);
     const x = anaEl('button', 'x', '✕');
     x.type = 'button';
