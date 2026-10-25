@@ -784,7 +784,7 @@ describe('la confirmación (fase G)', { concurrency: false }, () => {
     assert.equal(a.estado, 'ok');
     assert.deepEqual(llamadasApify.map(([k, , n]) => [k, n ?? null]), [['post', null], ['comments', 625]], 'la publicación no se pidió dos veces');
     assert.equal(a.enviados, 1000, 'al modelo, hasta 1.000');
-    assert.match(pasosDe(id).confirmar, /^ok · 1\.000 de 5\.200 · ~US\$ \d+\.\d\d estimado$/);
+    assert.match(pasosDe(id).confirmar, /^ok · 1\.000 de 5\.200 · ~US\$ \d+,\d\d estimado$/);
   });
 
   test('"todo" con 2.500 comentarios: se piden los 2.500 y el paso dice "todos"', async () => {

@@ -56,6 +56,7 @@ const { runWithContext } = require('./usageContext');
 
 const PLATAFORMA = 'instagram';
 const INT = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 });
+const USD = new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const MENSAJE_SIN_COMENTARIOS = 'La publicación no tiene comentarios visibles o no se pudieron extraer. Probá con otra publicación.';
 const MENSAJE_ERROR = 'Ocurrió un error al procesar la publicación. Intentá de nuevo en unos minutos.';
 const MENSAJE_CANCELADO = 'Se canceló antes de traer los comentarios: solo se gastó la publicación.';
@@ -324,7 +325,7 @@ async function run(id, url) {
       const elegida = opciones.find((o) => o.alcance === alcance);
       items = elegida.items;
       maxComentarios = Math.min(maxComentarios, elegida.items);
-      pasos.done('confirmar', `${elegida.completo ? 'todos' : `${INT.format(elegida.items)} de ${INT.format(enInstagram)}`} · ~US$ ${elegida.total.toFixed(2)} estimado`);
+      pasos.done('confirmar', `${elegida.completo ? 'todos' : `${INT.format(elegida.items)} de ${INT.format(enInstagram)}`} · ~US$ ${USD.format(elegida.total)} estimado`);
       log(id, 'confirmado', { alcance, items });
     }
 

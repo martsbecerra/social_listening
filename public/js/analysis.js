@@ -57,6 +57,10 @@ const anaEls = {
   bar: document.getElementById('anaBar'),
   barWrap: document.getElementById('anaBarWrap'),
   steps: document.getElementById('anaSteps'),
+  confirm: document.getElementById('anaConfirm'),
+  confirmText: document.getElementById('anaConfirmText'),
+  confirmNote: document.getElementById('anaConfirmNote'),
+  confirmActs: document.getElementById('anaConfirmActs'),
   posts: document.getElementById('anaPosts'),
   empty: document.getElementById('anaEmpty'),
   result: document.getElementById('anaResult'),
@@ -82,6 +86,8 @@ let anaRunningUrl = null; // su link
 let anaFollowSwitch = true; // al terminar, ¿se lo muestra? (false si la persona eligió otra cosa)
 let anaPollFails = 0; // consultas del progreso seguidas sin respuesta
 let anaStepsSig = ''; // los pasos dibujados (para no redibujar lo mismo)
+let anaConfirmSig = ''; // la confirmación dibujada (fase G)
+let anaConfirmBusy = false; // entre el clic en una opción y la respuesta
 let anaBusy = false; // entre el clic y la respuesta de POST /api/analyze
 let anaPollTimer = null;
 let anaRunHideTimer = null;
@@ -270,6 +276,78 @@ function anaRenderProgress(view) {
   anaEls.barWrap.setAttribute('aria-valuenow', String(pct));
 }
 
+// Fase G: con más de 1.000 comentarios, el trabajo espera la elección antes
+// de traerlos. Los costos son los estimados del servidor
+// (src/analysisCost.js); acá no se cuenta nada. Solo ve los botones quien
+// lo arrancó (`puedeConfirmar`).
+const ANA_USD_EST = new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+function anaUsdEst(n) {
+  return `US$ ${ANA_USD_EST.format(Number(n) || 0)}`;
+}
+
+function anaRenderConfirm(conf) {
+  const sig = conf ? JSON.stringify(conf) : '';
+  if (sig === anaConfirmSig) return;
+  anaConfirmSig = sig;
+  anaShow(anaEls.confirm, Boolean(conf));
+  if (!conf) {
+    anaEls.confirmActs.replaceChildren();
+    return;
+  }
+  const todo = conf.opciones.find((o) => o.alcance === 'todo') || conf.opciones[0];
+  anaEls.confirmText.textContent = `Esta publicación tiene ${formatCount(conf.comentarios)} comentarios · costo estimado ${anaUsdEst(todo.total)}`;
+  if (!conf.puedeConfirmar) {
+    anaEls.confirmNote.textContent = 'Espera que confirme el costo quien arrancó el análisis.';
+    anaEls.confirmActs.replaceChildren();
+    return;
+  }
+  const vence = anaDateParts(conf.venceAt);
+  anaEls.confirmNote.textContent = [
+    'Todavía no se trajo ningún comentario.',
+    todo.completo ? null : `Se analizan como mucho ${formatCount(todo.items)}, entre comentarios y respuestas.`,
+    vence ? `Si no elegís, se cancela a las ${vence.hora}.` : null,
+  ]
+    .filter(Boolean)
+    .join(' ');
+  const botones = conf.opciones.map((o, i) => {
+    const texto = o.alcance === 'todo' && o.completo ? 'Analizar todo' : `Analizar ${formatCount(o.items)}`;
+    const b = anaEl('button', i === 0 ? 'btn primary' : 'btn', `${texto} (~${anaUsdEst(o.total)})`);
+    b.type = 'button';
+    b.dataset.alcance = o.alcance;
+    return b;
+  });
+  const cancelar = anaEl('button', 'btn ghost', 'Cancelar');
+  cancelar.type = 'button';
+  cancelar.dataset.alcance = 'cancelar';
+  anaEls.confirmActs.replaceChildren(...botones, cancelar);
+}
+
+anaEls.confirmActs.addEventListener('click', async (e) => {
+  const b = e.target.closest('button[data-alcance]');
+  if (!b || anaConfirmBusy || anaRunningId === null) return;
+  const id = anaRunningId;
+  anaConfirmBusy = true;
+  anaEls.confirmActs.querySelectorAll('button').forEach((x) => (x.disabled = true));
+  try {
+    await anaApi(`/api/analyze/${id}/confirmar`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ alcance: b.dataset.alcance }),
+    });
+    // Los botones se van: el foco pasa a la línea del paso en curso.
+    anaRenderConfirm(null);
+    anaEls.phase.tabIndex = -1;
+    anaEls.phase.focus();
+    if (id === anaRunningId) anaPoll();
+  } catch (err) {
+    anaSetError(err.message);
+    anaEls.confirmActs.querySelectorAll('button').forEach((x) => (x.disabled = false));
+  } finally {
+    anaConfirmBusy = false;
+  }
+});
+
 // El análisis terminó sin pasos en memoria (el servidor se reinició): lo
 // que seguía en curso no va a terminar.
 function anaFailRunningSteps() {
@@ -299,6 +377,7 @@ function anaFollow(id, { url = null, switchView = true } = {}) {
   anaHideNotice();
   anaStepsSig = '';
   anaEls.steps.replaceChildren();
+  anaRenderConfirm(null);
   anaRenderProgress({ estado: 'en curso', porcentaje: 0, pasos: [] });
   anaEls.run.classList.add('on');
   anaSetRunning(true);
@@ -309,6 +388,7 @@ function anaStopFollow() {
   clearTimeout(anaPollTimer);
   anaRunningId = null;
   anaRunningUrl = null;
+  anaRenderConfirm(null);
   anaSetRunning(false);
 }
 
@@ -361,6 +441,7 @@ async function anaPoll() {
     anaRenderSteps(view.pasos);
     anaRenderProgress(view);
   }
+  anaRenderConfirm(view.estado === 'en curso' ? view.confirmacion || null : null);
   if (view.estado === 'en curso') {
     anaPollTimer = setTimeout(anaPoll, ANA_POLL_MS);
     return;

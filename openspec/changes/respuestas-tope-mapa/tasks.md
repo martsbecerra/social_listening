@@ -20,7 +20,7 @@ UNA corrida real con respuestas al final, autorizadas por el dueño.
 
 - [x] 2.1 Topes de 3.000, el costo estimado y el factor de respuestas
 - [x] 2.2 Publicación primero, la espera, confirmar y cancelar
-- [ ] 2.3 Pantalla de la confirmación
+- [x] 2.3 Pantalla de la confirmación
 
 ## Phase 3: login y mapa
 

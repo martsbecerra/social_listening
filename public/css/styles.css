@@ -4204,6 +4204,36 @@ svg.line {
   background: var(--surface2);
   border: 1px solid color-mix(in oklab, var(--neg) 45%, var(--line));
 }
+/* Fase G: la confirmación del costo, con más de 1.000 comentarios (el
+   mismo tono que el aviso de "ya se analizó"). */
+.ana4 .an-confirm {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: color-mix(in oklab, var(--c5) 14%, var(--surface2));
+  border: 1px solid color-mix(in oklab, var(--c5) 45%, var(--line));
+  animation: slideIn 0.4s both;
+}
+.ana4 .an-confirm .ct-t {
+  margin: 0;
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--fg);
+}
+.ana4 .an-confirm .note {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  color: var(--fg2);
+}
+.ana4 .an-confirm .acts {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+.ana4 .an-confirm .acts:empty {
+  display: none;
+}
 .ana4 .ana-state {
   display: none;
 }
