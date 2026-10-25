@@ -220,6 +220,7 @@ function register(app) {
         recientes: galeria.items.map(paraNavegador),
         total: galeria.total,
         desde: galeria.desde,
+        coinciden: galeria.coinciden,
         enCurso:
           plataforma === 'instagram'
             ? analysisJob.listEnCurso().map((a) => ({ id: a.id, url: a.url, propio: (a.analizadoPor || null) === quien }))

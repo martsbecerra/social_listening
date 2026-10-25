@@ -6,6 +6,8 @@
 //   GET    /api/figuras             la lista (las del equipo y las sugeridas)
 //   POST   /api/figuras             { username, nombre, rol, alineacion, notas }
 //   PATCH  /api/figuras/:username   cambia lo que venga; confirma una sugerida
+//                                   (o restaura una descartada)
+//   POST   /api/figuras/:username/descartar   una sugerida queda descartada
 //   DELETE /api/figuras/:username
 //
 // Detrás del gate de login, como todo /api/. La validación (roles, la
@@ -26,7 +28,7 @@ function paraNavegador(figura) {
 }
 
 function responderError(res, err, contexto) {
-  if (err && err.code === 'FIGURA_EXISTE') return res.status(409).json({ error: err.userMessage });
+  if (err && (err.code === 'FIGURA_EXISTE' || err.code === 'FIGURA_NO_SUGERIDA')) return res.status(409).json({ error: err.userMessage });
   if (err && err.userMessage) return res.status(400).json({ error: err.userMessage });
   console.error(`Error en ${contexto}:`, err);
   return res.status(500).json({ error: 'No se pudo guardar la figura.' });
@@ -63,6 +65,16 @@ function register(app) {
       return res.json({ figura: paraNavegador(figura) });
     } catch (err) {
       return responderError(res, err, 'PATCH /api/figuras');
+    }
+  });
+
+  app.post('/api/figuras/:username/descartar', (req, res) => {
+    try {
+      const figura = db.descartarFigura(req.params.username);
+      if (!figura) return res.status(404).json({ error: 'Esa figura no está en la lista.' });
+      return res.json({ figura: paraNavegador(figura) });
+    } catch (err) {
+      return responderError(res, err, 'POST /api/figuras/:username/descartar');
     }
   });
 

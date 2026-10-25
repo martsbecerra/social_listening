@@ -117,3 +117,39 @@ Los pasos MUST ser: Esperar turno en Apify (si hace falta), Traer la publicació
 ### Requirement: REQ-PRO-14 — Fixture real
 
 La corrida real autorizada MUST validar el schema nuevo y guardar, anonimizadas, la respuesta de Apify y la del modelo como fixtures, con su test.
+
+---
+
+### Requirement: REQ-PRO-15 — La pantalla del análisis (F2)
+
+La solapa MUST dibujar, desde `vista` y sin contar nada en el navegador: la publicación con cuatro KPI (tono neto, postura crítica, verificados, hablan del posteo) y la lectura; el hecho dominante o, sin él, la tarjeta tranquila con los temas principales y "qué conviene mirar"; tono (dona, filas y ponderado por likes), postura y "¿hablan del posteo?" con sus desvíos; los temas con su tono (un clic filtra los comentarios, ✎ renombra, "+ tema" agrega); la comparación con los análisis anteriores de la cuenta y su serie de negativos; "Cuándo comentaron" con el primer comentario, el 50 %, el pico y las últimas 24 h; los pedidos; verificados y figuras públicas; los que más pegaron; los reclamos en un mapita de la Ciudad; etiquetas y emojis; los comentarios con búsqueda y filtros; y compartir (el informe, WhatsApp, el CSV de comentarios, el de reclamos y el costo). Todo dato MUST entrar por `textContent` o atributos, y todo texto MUST pasar 4,5:1.
+
+#### Scenario: Un análisis sin hecho dominante
+
+- GIVEN un análisis v2 en el que el modelo no marcó hecho
+- WHEN se abre
+- THEN la tarjeta dice "Sin un hecho dominante", con el tema que más junta y su porcentaje, y nunca "N veces lo habitual"
+
+---
+
+### Requirement: REQ-PRO-16 — Los análisis anteriores en la pantalla
+
+En un análisis v1, los bloques que necesitan campos v2 (postura, hablan del posteo, hecho dominante, pedidos, el filtro "Preguntas") MUST verse con "No disponible en análisis anteriores", sin ocultarse ni inventar un valor.
+
+---
+
+### Requirement: REQ-PRO-17 — Figuras editables y descartadas
+
+Desde la tarjeta de verificados MUST poder confirmarse o descartarse una sugerida, editarse una del equipo y agregarse a la lista un verificado sin ficha; "Lista de figuras" MUST permitir agregar, editar, quitar y restaurar cualquiera. Una sugerida descartada MUST quedar en la misma tabla con `origen = descartada`: no se muestra como figura, el modelo no la vuelve a recibir como verificado sin ficha y una sugerencia nueva para ella MUST NOT cambiarla. Agregarla o editarla la pasa al equipo.
+
+#### Scenario: El modelo vuelve a sugerir a una descartada
+
+- GIVEN `@medio.barrial` está con `origen = descartada`
+- WHEN otra síntesis lo sugiere como medio
+- THEN la fila no cambia y la pantalla no le pone rol
+
+---
+
+### Requirement: REQ-PRO-18 — Galería, recientes e inicio
+
+"Publicaciones analizadas" MUST mostrar la galería de `GET /api/analisis` con búsqueda, filtros y orden, y abrir cada análisis; `#analisis-<id>` MUST abrir ese análisis y `#analisis-galeria` la galería. La tira de recientes MUST marcar los que tienen hecho dominante. "Análisis recientes" del inicio MUST mostrar por análisis el % negativo, los analizados y si hubo hecho dominante.

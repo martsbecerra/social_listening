@@ -344,6 +344,16 @@ describe('verificados y síntesis', { concurrency: false }, () => {
     assert.equal(db.getFigura('vecino6').rol, 'periodista', 'la del equipo no cambia');
   });
 
+  test('una sugerida que el equipo descartó no vuelve a la síntesis ni cambia (F2)', async () => {
+    db.descartarFigura('vecino3');
+    const r = await analyzeComments({ url: URL, post: POST, comments: comentarios(30) });
+    const sintesis = llamadas.find((l) => l.schemaName === 'sintesis_instagram');
+    assert.match(sintesis.userPrompt, /=== VERIFICADOS SIN FICHA ===\r?\nninguno/);
+    assert.deepEqual(r.sintesis.figurasSugeridas, [], 'la sugerencia para vecino3 se descarta: no está entre los sin ficha');
+    assert.equal(db.getFigura('vecino3').origen, 'descartada');
+    assert.equal(db.getFigura('vecino3').rol, 'periodista');
+  });
+
   test('un hecho sobre un tema que no existe, o sin título, no vale', async () => {
     sintesis = { ...sintesis, hecho_dominante: { hay: true, tema: 99, titulo: 'x', descripcion: 'y' } };
     assert.equal((await analyzeComments({ url: URL, post: POST, comments: comentarios(10) })).sintesis.hecho, null);

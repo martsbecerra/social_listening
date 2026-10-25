@@ -312,6 +312,12 @@ describe('fase F: galería, anteriores de la cuenta, reclamos de un posteo', { c
       raro.items.map((a) => a.id),
       rapido.items.map((a) => a.id)
     );
+    // coinciden (F2): los que pasan el filtro antes del tope, para que la galería avise si corta.
+    assert.equal(rapido.coinciden, rapido.total);
+    assert.equal(largo.coinciden, largo.items.length);
+    const cortado = db.listAnalisisGaleria({ plataforma: 'instagram', ord: 'c', limit: 1 });
+    assert.equal(cortado.items.length, 1);
+    assert.equal(cortado.coinciden, largo.coinciden);
   });
 
   test('renombrar el tema estrella actualiza su columna', () => {

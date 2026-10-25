@@ -95,6 +95,22 @@ describe('la tabla', { concurrency: false }, () => {
     assert.throws(() => db.updateFigura('org1', { alineacion: 'oposicion' }), (e) => /solo va para roles políticos/.test(e.userMessage));
   });
 
+  test('descartar una sugerida (F2): queda en la tabla, el modelo no la toca; agregarla o editarla la pasa al equipo', () => {
+    db.upsertFiguraSugerida({ username: 'cre9', rol: 'creador' });
+    const d = db.descartarFigura('@CRE9');
+    assert.equal(d.origen, 'descartada');
+    assert.equal(db.upsertFiguraSugerida({ username: 'cre9', rol: 'medio' }), 'descartada por el equipo');
+    assert.equal(db.getFigura('cre9').rol, 'creador', 'la sugerencia nueva no la cambia');
+    assert.throws(() => db.descartarFigura('cre9'), (e) => e.code === 'FIGURA_NO_SUGERIDA' && /ya estaba descartada/.test(e.userMessage));
+    assert.throws(() => db.descartarFigura('leg1'), (e) => e.code === 'FIGURA_NO_SUGERIDA' && /es del equipo/.test(e.userMessage));
+    assert.equal(db.descartarFigura('nadie'), null);
+    assert.ok(db.listFiguras().some((f) => f.username === 'cre9' && f.origen === 'descartada'), 'la lista la trae, para restaurarla');
+    assert.equal(db.updateFigura('cre9', {}, { por: 'restaura@test.local' }).origen, 'equipo', 'restaurar es editarla');
+    db.upsertFiguraSugerida({ username: 'med9', rol: 'medio' });
+    db.descartarFigura('med9');
+    assert.equal(db.createFigura({ username: 'med9', nombre: 'Medio Nueve', rol: 'medio' }).origen, 'equipo', 'agregarla también');
+  });
+
   test('borrar', () => {
     assert.equal(db.deleteFigura('@ORG1'), true);
     assert.equal(db.deleteFigura('org1'), false);

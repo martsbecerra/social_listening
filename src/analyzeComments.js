@@ -295,6 +295,8 @@ async function analizar({ url, post, comments, pasos = NO_PASOS }, gasto) {
   // Con ficha = confirmada por el equipo; una sugerida el modelo la puede
   // volver a sugerir (se actualiza) y en pantalla va como "sugerido".
   const conFicha = new Set([...figuras.entries()].filter(([, x]) => x.origen === 'equipo').map(([u]) => u));
+  // Una que el equipo descartó no vuelve a la síntesis como verificado sin ficha.
+  const descartadas = new Set([...figuras.entries()].filter(([, x]) => x.origen === 'descartada').map(([u]) => u));
   pasos.done(
     'verificados',
     `${verificados.size === 1 ? '1 verificado' : `${INT.format(verificados.size)} verificados`} · ${conFicha.size === 1 ? '1 figura pública' : `${conFicha.size} figuras públicas`}`
@@ -334,7 +336,7 @@ async function analizar({ url, post, comments, pasos = NO_PASOS }, gasto) {
     { resultado: { version: 2 }, temas: temasV2, comentarios, analizados, postedAt: post.postedAt, comentariosTotal: post.commentsCount },
     { figuras }
   );
-  const verificadosSinFicha = [...verificados].filter((u) => !conFicha.has(u)).sort();
+  const verificadosSinFicha = [...verificados].filter((u) => !conFicha.has(u) && !descartadas.has(u)).sort();
   let sintesis;
   try {
     const result = await llm.requestStructuredAnalysis({

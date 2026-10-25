@@ -358,91 +358,115 @@
   </section>
 
   <!-- ===================== Solapa: Análisis de publicación ===================== -->
-  <!-- La solapa de design/social-listening-v4.html (public/js/analysis.js):
-       el link y "Analizar", los pasos reales del trabajo
-       (GET /api/analyze/progress), los análisis recientes y el análisis a la
-       vista, que sale de la tabla analisis (GET /api/analisis/:id): la
-       publicación, el resumen, compartir, el tono, los temas, "Cuándo
-       comentaron" y los comentarios. El análisis corre en el servidor:
-       cerrar la pestaña no pierde nada. X tiene su propia solapa (x.html). -->
+  <!-- La solapa 3 de design/social-listening-v4.html (fase F2). Dos vistas:
+       "Analizar" (el link, los pasos reales del trabajo con su porcentaje,
+       la tira de recientes y el análisis a la vista) y "Publicaciones
+       analizadas" (la galería). Todo lo que se ve sale de `vista`
+       (GET /api/analisis/:id, src/analysisMetrics.js): el navegador no
+       cuenta nada. Scripts: public/js/analysis.js (el flujo),
+       analysisBlocks.js (los bloques) y analysisFiguras.js (verificados y
+       la lista de figuras). El análisis corre en el servidor: cerrar la
+       pestaña no pierde nada. X tiene su propia solapa (x.html). -->
   <section id="tab-analysis" class="tab-panel hidden ana4" role="tabpanel" aria-label="Análisis de publicación">
     <div class="head rv">
       <div>
         <h1>Análisis de publicación</h1>
-        <p>Pegás el link de una publicación y la pestaña arma el cuadro completo: tono de los comentarios, temas, cuándo se comentó, qué dijo la gente y el informe para compartir.</p>
+        <p>Pegás el link de una publicación y la pestaña arma el cuadro completo: qué pasó en los comentarios, quién habló, qué piden, dónde reclaman y el informe listo para compartir.</p>
+      </div>
+      <div class="tools">
+        <div class="seg" id="anaView" role="group" aria-label="Qué mirar">
+          <button type="button" data-v="1" class="on" aria-pressed="true">Analizar</button>
+          <button type="button" data-v="2" aria-pressed="false">Publicaciones analizadas<span class="an-cnt num" id="anaCount">0</span></button>
+        </div>
       </div>
     </div>
 
-    <div class="card rv ana-run">
-      <label for="url" class="sr">Link de la publicación</label>
-      <div class="urlbar">
-        <input type="text" id="url" placeholder="https://www.instagram.com/p/…" autocomplete="off" spellcheck="false" />
-        <button id="analyzeBtn" class="btn primary" type="button">Analizar</button>
-      </div>
-      <!-- "Ya se analizó": la fecha y las dos salidas, antes de gastar. -->
-      <div id="anaNotice" class="ana-notice hidden" role="status">
-        <span id="anaNoticeText"></span>
-        <span class="ana-notice-acts">
+    <!-- ======== vista 1 · analizar + resultado ======== -->
+    <div class="an-view on" id="anaV1">
+      <div class="card rv ana-run">
+        <label for="url" class="sr">Link de la publicación</label>
+        <div class="urlbar">
+          <input type="text" id="url" placeholder="https://www.instagram.com/p/… o /reel/…" autocomplete="off" spellcheck="false" />
+          <button id="analyzeBtn" class="btn primary" type="button">Analizar</button>
+        </div>
+        <!-- "Ya se analizó": la fecha y las dos salidas, antes de gastar. -->
+        <div id="anaNotice" class="an-notice hidden" role="status">
+          <span id="anaNoticeText"></span>
+          <span class="sp"></span>
           <button type="button" class="btn sm" id="anaNoticeView">Ver ese análisis</button>
-          <button type="button" class="btn sm ghost" id="anaNoticeRun">Analizar de nuevo</button>
-        </span>
-      </div>
-      <div id="anaError" class="ana-error hidden" role="alert"></div>
-      <!-- Los pasos del trabajo, con su detalle real. -->
-      <div class="ana-state" id="anaRun" aria-live="polite">
-        <div class="steps" id="anaSteps"></div>
-      </div>
-    </div>
-
-    <div class="posts rv" id="anaPosts" aria-label="Análisis recientes"></div>
-    <div id="anaEmpty" class="card empty hidden">Todavía no hay análisis guardados. Pegá el link de una publicación arriba.</div>
-
-    <div class="grid ana rv hidden" id="anaResult">
-      <div class="ana-side">
-        <article class="post" id="anaPost">
-          <div class="img" id="anaImg"></div>
-          <div class="body">
-            <div class="acc"><span class="av" id="anaAv" aria-hidden="true"></span><span id="anaAcc"></span><small id="anaDate"></small></div>
-            <p id="anaCaption"></p>
-            <div class="mets"><span id="anaLikes"></span><span id="anaComs"></span><span id="anaAnalizados"></span></div>
-            <a class="lnk" id="anaLink" target="_blank" rel="noopener">Ver en Instagram ↗</a>
-          </div>
-        </article>
-        <div class="ai">
-          <div class="ct2"><span class="dot" aria-hidden="true">◆</span> Resumen generado</div>
-          <p id="aiText"></p>
+          <button type="button" class="btn sm primary" id="anaNoticeRun">Analizar de nuevo</button>
         </div>
-        <div class="card ana-share">
-          <div class="ct"><h2>Compartir</h2><span class="hint" id="waLen"></span></div>
-          <div class="exports">
-            <button type="button" class="btn sm" id="waBtn" aria-expanded="false" aria-controls="waText">Texto para WhatsApp</button>
-            <button type="button" class="btn sm" id="copyBtn">Copiar</button>
-            <button type="button" class="btn sm" id="waShareBtn">Enviar por WhatsApp</button>
-            <button type="button" class="btn sm" id="csvBtn">Descargar CSV</button>
+        <div id="anaError" class="ana-error hidden" role="alert"></div>
+        <!-- Los pasos del trabajo, con su detalle y el porcentaje real. -->
+        <div class="ana-state" id="anaRun">
+          <div class="an-prog">
+            <div class="ph"><span id="anaPhase">Analizando…</span><span class="pct num" id="anaPct">0 %</span></div>
+            <div class="bar" id="anaBarWrap" role="progressbar" aria-label="Avance del análisis" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="anaBar"></i></div>
           </div>
-          <p class="note ana-warn hidden" id="waWarn"></p>
-          <pre class="wa hidden" id="waText"></pre>
+          <div class="steps" id="anaSteps" aria-live="polite"></div>
         </div>
       </div>
 
-      <div class="ana-main">
-        <div class="grid two">
+      <div class="posts rv" id="anaPosts" aria-label="Análisis recientes"></div>
+      <div id="anaEmpty" class="card empty hidden">Todavía no hay análisis guardados. Pegá el link de una publicación arriba.</div>
+
+      <div id="anaResult" class="an-result hidden">
+        <div class="grid an-hero rv">
+          <div class="card an-postcard">
+            <article class="an-post" id="anaPost" tabindex="-1">
+              <div class="img" id="anaImg"></div>
+              <div class="body">
+                <div class="acc"><span class="av" id="anaAv" aria-hidden="true"></span><span id="anaAcc"></span><small id="anaDate"></small></div>
+                <p id="anaCaption"></p>
+                <div class="mets"><span id="anaLikes"></span><span id="anaComs"></span><span id="anaAnalizados"></span></div>
+                <a class="lnk" id="anaLink" target="_blank" rel="noopener">Ver en Instagram ↗</a>
+              </div>
+            </article>
+            <div class="an-kpis" id="anaKpis"></div>
+            <div class="an-ai">
+              <div class="ct2"><span aria-hidden="true">◆</span> Lectura estratégica</div>
+              <p id="aiText"></p>
+            </div>
+          </div>
+          <div class="card an-event" id="anaEvent"></div>
+        </div>
+
+        <div class="grid an-3 rv">
           <div class="card">
-            <div class="ct"><h2>Tono de los comentarios</h2><span class="hint" id="anaN"></span></div>
-            <div class="stackbar" id="anaStack" aria-hidden="true"><i class="bg-pos"></i><i class="bg-neu"></i><i class="bg-neg"></i></div>
-            <div class="sb-lbl" id="anaStackLbl"></div>
-            <p class="note" id="anaToneNote"></p>
+            <div class="ct"><h2>Tono</h2><span class="hint" id="anaN"></span></div>
+            <div class="an-donut">
+              <div class="c"><svg viewBox="0 0 118 118" id="anaDonut" aria-hidden="true"></svg><div class="mid" id="anaDonutMid"></div></div>
+              <div class="an-rows" id="anaTono"></div>
+            </div>
+            <p class="note" id="anaTonoNote"></p>
           </div>
           <div class="card">
-            <div class="ct"><h2>Temas detectados</h2><span class="hint">por el modelo · editables</span></div>
-            <div class="themes" id="anaThemes"></div>
-            <!-- Editar, quitar o agregar un tema: se guarda con el análisis
-                 y entra en el informe. -->
+            <div class="ct"><h2>Postura hacia la gestión</h2><span class="hint">no es lo mismo que el tono</span></div>
+            <div class="an-rows" id="anaPostura"></div>
+            <p class="note">“Qué lindo quedó, pero a Macri ni lo nombren” es <b>positivo</b> en tono y <b>crítico</b> en postura. Las dos lecturas juntas evitan festejar de más.</p>
+          </div>
+          <div class="card">
+            <div class="ct"><h2>¿Hablan del posteo?</h2><span class="hint">o lo usan para otra cosa</span></div>
+            <div id="anaSplitBox">
+              <div class="an-split" id="anaSplit" aria-hidden="true"><i class="on"></i><i class="off"></i></div>
+              <div class="sb-lbl" id="anaSplitLbl"></div>
+              <div class="an-desv" id="anaDesv"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid an-2 an-2a rv">
+          <div class="card">
+            <div class="ct"><h2>De qué hablan</h2><span class="hint" id="anaThemesHint">comentarios por tema · color = tono · un clic filtra abajo · ✎ edita</span></div>
+            <div class="an-themes" id="anaThemes"></div>
+            <!-- Renombrar, agregar o quitar un tema: se guarda con el análisis y entra en el informe. -->
             <form class="tema-edit hidden" id="anaTemaForm" novalidate>
-              <label class="field-l" for="anaTemaTitulo">Título</label>
+              <label class="field-l" for="anaTemaTitulo" id="anaTemaTituloL">Nombre</label>
               <input class="field" type="text" id="anaTemaTitulo" maxlength="120" autocomplete="off" />
-              <label class="field-l" for="anaTemaTexto">Texto para el informe</label>
-              <textarea class="field" id="anaTemaTexto" rows="3" maxlength="1000"></textarea>
+              <div id="anaTemaTextoBox">
+                <label class="field-l" for="anaTemaTexto">Texto para el informe</label>
+                <textarea class="field" id="anaTemaTexto" rows="3" maxlength="1000"></textarea>
+              </div>
               <p class="note" id="anaTemaMsg" role="status" aria-live="polite"></p>
               <div class="tema-edit-acts">
                 <button type="submit" class="btn sm primary" id="anaTemaSave">Guardar</button>
@@ -450,32 +474,148 @@
                 <button type="button" class="btn sm ghost" id="anaTemaCancel">Cancelar</button>
               </div>
             </form>
+            <div class="an-tlegend"><span><i class="bg-pos"></i>positivo</span><span><i class="bg-neu"></i>neutro</span><span><i class="bg-neg"></i>negativo</span><span class="r" id="anaThemesLegend"></span></div>
+          </div>
+          <div class="card">
+            <div class="ct"><h2>Esta publicación vs. las anteriores de <span id="anaCmpAcc">la cuenta</span></h2><span class="hint" id="anaCmpHint"></span></div>
+            <div class="an-cmp" id="anaCmp"></div>
+            <div class="an-hist" id="anaHist"></div>
+            <p class="note" id="anaHistLbl"></p>
           </div>
         </div>
-        <div class="card" id="anaWhenCard">
-          <div class="ct"><h2>Cuándo comentaron</h2><span class="hint" id="anaWhenHint"></span></div>
-          <div class="tl-wrap" id="anaWhen"></div>
-          <p class="note" id="anaWhenNote"></p>
+
+        <div class="grid an-2 an-2b rv">
+          <div class="card an-tlcard">
+            <div class="ct"><h2>Cuándo comentaron</h2><span class="hint" id="anaWhenHint"></span></div>
+            <div class="tl-wrap" id="anaWhen"></div>
+            <div class="an-tlk" id="anaTlk"></div>
+            <p class="note" id="anaWhenNote"></p>
+          </div>
+          <div class="card">
+            <div class="ct"><h2>Pedidos y preguntas</h2><span class="hint">agrupados por el modelo · un clic muestra los comentarios</span></div>
+            <div class="an-asks" id="anaAsks"></div>
+          </div>
         </div>
-        <div class="card">
+
+        <div class="grid an-2 rv">
+          <div class="card">
+            <div class="ct"><h2>Verificados y figuras públicas</h2><span class="hint" id="anaVerHint"></span></div>
+            <div class="an-people" id="anaPeople"></div>
+            <p class="note an-people-note">El rol y la alineación salen de la lista de figuras públicas que mantiene el equipo. A los vecinos comunes no se los etiqueta: se mide la postura del comentario. <button type="button" class="lnkbtn" id="anaFigOpen" aria-haspopup="dialog">Lista de figuras</button></p>
+          </div>
+          <div class="card">
+            <div class="ct"><h2>Los que más pegaron</h2><span class="hint">los comentarios con más likes · marcan el clima</span></div>
+            <div class="an-top" id="anaTop"></div>
+            <p class="note" id="anaTopNote"></p>
+          </div>
+        </div>
+
+        <div class="grid an-2 rv">
+          <div class="card">
+            <div class="ct"><h2>Reclamos ubicables</h2><span class="hint" id="anaReclHint"></span></div>
+            <div class="an-map" id="anaMapBox"><svg id="anaMap" viewBox="0 0 320 250" role="img" aria-label="Reclamos ubicados en la Ciudad"></svg></div>
+            <div class="an-recl" id="anaRecl"></div>
+          </div>
+          <div class="an-col">
+            <div class="card">
+              <div class="ct"><h2>A quién etiquetan</h2><span class="hint">cuentas y hashtags en los comentarios</span></div>
+              <div class="an-rows" id="anaTagRows"></div>
+              <div class="eyebrow an-tags-t" id="anaTagsTitle">Hashtags</div>
+              <div class="an-tags" id="anaTags"></div>
+              <p class="note" id="anaTagsNote"></p>
+            </div>
+            <div class="card">
+              <div class="ct"><h2>Emojis</h2><span class="hint">los más usados · tamaño = cantidad</span></div>
+              <div class="an-emo" id="anaEmo"></div>
+              <div class="eyebrow an-emo-t">Apoyo vs. bronca</div>
+              <div class="an-split" id="anaEmoSplit" aria-hidden="true"><i class="on pos"></i><i class="off"></i></div>
+              <p class="note" id="anaEmoNote"></p>
+            </div>
+          </div>
+        </div>
+
+        <div class="card rv an-cmtcard">
           <div class="ct">
             <h2 id="anaCmtsTitle" tabindex="-1">Comentarios</h2>
-            <div class="tools">
+            <div class="an-cfilters">
+              <label for="cmtQ" class="sr">Buscar en los comentarios</label>
+              <input class="field" type="search" id="cmtQ" placeholder="Buscar en los comentarios…" autocomplete="off" />
               <div class="seg" id="cmtSeg" role="group" aria-label="Qué comentarios mostrar">
                 <button type="button" data-f="top" class="on" aria-pressed="true">Destacados</button>
                 <button type="button" data-f="negativo" aria-pressed="false">Negativos</button>
-                <button type="button" data-f="neutral" aria-pressed="false">Neutrales</button>
                 <button type="button" data-f="positivo" aria-pressed="false">Positivos</button>
+                <button type="button" data-f="neutral" aria-pressed="false">Neutros</button>
+                <button type="button" data-f="q" aria-pressed="false">Preguntas</button>
+                <button type="button" data-f="ver" aria-pressed="false">Verificados</button>
                 <button type="button" data-f="all" aria-pressed="false">Todos</button>
               </div>
             </div>
           </div>
-          <div class="cmt-tema hidden" id="anaCmtTema"></div>
+          <div class="an-cmtn" id="anaCmtN" role="status" aria-live="polite"></div>
           <div class="cmts" id="anaCmts"></div>
           <button type="button" class="btn sm ghost cmts-more hidden" id="anaCmtsMore"></button>
         </div>
+
+        <div class="card rv">
+          <div class="ct"><h2>Compartir</h2><span class="hint" id="waLen">informe de 8 puntos · listo para pegar en WhatsApp o en un mail</span></div>
+          <div class="exports">
+            <button type="button" class="btn sm primary" id="copyBtn">Copiar informe</button>
+            <button type="button" class="btn sm" id="waBtn" aria-expanded="false" aria-controls="waText">Ver texto para WhatsApp</button>
+            <button type="button" class="btn sm" id="waShareBtn">Enviar por WhatsApp</button>
+            <a class="btn sm" id="csvBtn" download>Descargar CSV</a>
+            <a class="btn sm ghost hidden" id="reclCsvBtn" download>CSV de reclamos</a>
+            <span class="note an-cost" id="anaCost"></span>
+          </div>
+          <p class="note ana-warn hidden" id="waWarn"></p>
+          <pre class="wa hidden" id="waText"></pre>
+        </div>
       </div>
     </div>
+
+    <!-- ======== vista 2 · publicaciones analizadas ======== -->
+    <div class="an-view" id="anaV2">
+      <h2 class="sr" id="galTitle" tabindex="-1">Publicaciones analizadas</h2>
+      <div class="an-gal-tools rv">
+        <label for="galQ" class="sr">Buscar análisis</label>
+        <input class="field" type="search" id="galQ" placeholder="Buscar por cuenta, texto o tema…" autocomplete="off" />
+        <div class="seg" id="galSeg" role="group" aria-label="Filtrar">
+          <button type="button" data-f="all" class="on" aria-pressed="true">Todas</button>
+          <button type="button" data-f="ev" aria-pressed="false">Con un hecho dominante</button>
+          <button type="button" data-f="neg" aria-pressed="false">Más críticas</button>
+          <button type="button" data-f="ver" aria-pressed="false">Con verificados</button>
+        </div>
+        <label for="galOrd" class="sr">Ordenar</label>
+        <select class="field" id="galOrd">
+          <option value="recent">Más recientes</option>
+          <option value="c">Más comentadas</option>
+          <option value="neg">Más negativas</option>
+          <option value="ver">Más verificados</option>
+        </select>
+        <span class="note" id="galN" role="status"></span>
+      </div>
+      <div class="an-gal" id="anaGal"></div>
+    </div>
+
+    <div class="an-toast" id="anaToast" role="status" aria-live="polite"></div>
+
+    <!-- La lista de figuras públicas (public/js/analysisFiguras.js). -->
+    <dialog id="anaFigDlg" class="an-fig-dlg" aria-labelledby="anaFigTitle">
+      <div class="an-fig-box">
+        <div class="an-fig-head">
+          <h2 id="anaFigTitle">Figuras públicas</h2>
+          <button type="button" class="btn sm ghost" id="anaFigClose" aria-label="Cerrar la lista de figuras">✕</button>
+        </div>
+        <p class="note">Las mantiene el equipo: rol y, si es política o de prensa, alineación. El modelo solo sugiere para verificados que no están; una sugerida descartada no vuelve.</p>
+        <div class="an-fig-tools">
+          <label for="anaFigQ" class="sr">Buscar en la lista</label>
+          <input class="field" type="search" id="anaFigQ" placeholder="Buscar por usuario o nombre…" autocomplete="off" />
+          <button type="button" class="btn sm primary" id="anaFigAdd">+ Agregar figura</button>
+        </div>
+        <div id="anaFigFormBox"></div>
+        <p class="note" id="anaFigMsg" role="status" aria-live="polite"></p>
+        <div class="an-fig-list" id="anaFigList"></div>
+      </div>
+    </dialog>
   </section>
 
   <!-- ===================== Solapa: Estadísticas ===================== -->
@@ -638,6 +778,8 @@
   <script src="js/monitoringFeed.js"></script>
   <script src="js/monitoringFeedPopup.js"></script>
   <script src="js/analysis.js"></script>
+  <script src="js/analysisBlocks.js"></script>
+  <script src="js/analysisFiguras.js"></script>
   <script src="js/kpi.js"></script>
   <script src="js/monitoringPanel.js"></script>
   <script src="js/monitoringFlow.js"></script>

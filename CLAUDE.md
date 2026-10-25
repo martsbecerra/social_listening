@@ -492,12 +492,15 @@ Desde octubre 2026 el frontend se rehace sobre UNA maqueta,
 barrita "maqueta" de abajo a la derecha no va en la app). Cinco fases, una
 rama y un PR por fase: A `sistema-visual-v4` (el marco en todas las
 páginas), B `monitoreo-v4`, C `estadisticas`, D `inicio-y-login`, E
-`analisis-v4`. El estado anterior (riel, radar y las maquetas viejas) quedó
+`analisis-v4`, y la F (la maqueta nueva del análisis) en dos: F1
+`analisis-pro` (modelo y servidor) y F2 `analisis-pro-pantalla` (la
+pantalla, el inicio y las figuras). El estado anterior (riel, radar y las maquetas viejas) quedó
 en el tag `v3-riel-radar`. SDD de la fase A en
 `openspec/changes/sistema-visual-v4/`; de la B, en
 `openspec/changes/monitoreo-v4/`; de la C, en `openspec/changes/estadisticas/`.
 La D va sin SDD (decisión del dueño). De la E, en
-`openspec/changes/analisis-v4/` (ver "Análisis de publicación de Instagram").
+`openspec/changes/analisis-v4/`; de la F, en `openspec/changes/analisis-pro/`
+(ver "Análisis de publicación de Instagram").
 
 - **Sistema visual** (`public/css/styles.css`, en tres partes comentadas):
   1) los tokens y componentes de la maqueta tal cual (`--bg`, `--surface`,
@@ -517,15 +520,27 @@ La D va sin SDD (decisión del dueño). De la E, en
   centro del degradé de la nube): `#0a6fac`, `#14794f`, `#c63333`,
   `#5365b8`. En oscuro las bases ya pasaban (la más justa, `--neg`, 4,80
   sobre `--surface2`): la tinta es la misma base, en su token. Un color de
-  texto nuevo usa la tinta, nunca la base; 2) el marco;
+  texto nuevo usa la tinta, nunca la base. La F2 sumó tres más, también
+  en oscuro: `--c2-text` (el naranja: hecho dominante, postura crítica,
+  oposición), `--c4-text` (el verde: a favor, oficialismo) y
+  `--glow-text` (el violeta: la lectura); pasan 4,5:1 sobre las
+  superficies y los fondos teñidos de la solapa (medido con
+  `scratchpad/contraste-f2.js`). Una barra con texto adentro (las
+  partidas de "¿hablan del posteo?" y de los emojis, la estrella) va con
+  la tinta de relleno y `--accent-ink` encima, blanco en claro y oscuro
+  en oscuro; 2) el marco;
   3) los componentes de
   la app: el Monitoreo de la maqueta (`.mon`, `.srcbox`, `.flowcard`/`.fl`,
   `.pipe`, `.al`, `.fbar`, `.combo`, `.fstatus`, `.ups`/`.up`, `.reach`),
   las Estadísticas (`.cloud`, `.rows`, `.donut`, `.topic`, `.heat`,
   `.acc-row`, `.rk`; los badges de los temas llevan la tinta oscura donde
   el blanco de la maqueta no pasaba 4,5:1), el Análisis de publicación
-  (todo bajo `.ana4`: `.step`, `.ana-notice`, `.posts`, `.post`,
-  `.ai`, `.stackbar`, `.theme`, `.tl`, `.cmt`), el inicio (`.hero`,
+  (todo bajo `.ana4`, desde la F2 el de la maqueta: `.an-view`,
+  `.an-prog`, `.step`, `.posts`, `.an-hero` con `.an-post`, `.an-kpis`,
+  `.an-ai` y `.an-event`/`.an-calm`, `.an-donut`, `.an-row`, `.an-split`,
+  `.an-theme`, `.an-cmp`/`.an-hist`, `.tl`, `.an-ask`, `.an-person` con
+  `.an-fig-form`, `.an-topc`, `.an-map`, `.an-emo`, `.cmt`, `.an-gc`, la
+  placa `.an-na` y el diálogo `.an-fig-dlg`), el inicio (`.hero`,
   `.plats`/`.pl`, `.nextcard` con `.nring` y `.tl24`, `.homefeed` con
   `.fl.big`, `.homeana` con `.recent`), el login (`.lg-vis` con `.ticker`/`.tk` y `.lg-stats`;
   `.lg-card` con `.lg-state`, `.lg-err`, `.lg-mail`, `.lg-foot`,
@@ -830,10 +845,13 @@ La D va sin SDD (decisión del dueño). De la E, en
   `instagram.html#analisis-<id>`, con estado vacío. Cada fila: la foto,
   "@cuenta · fecha de la publicación" (con el año si no es este; sin ella,
   "analizado <fecha>"), el texto recortado a 90 caracteres en el DOM, "N %
-  pos" y "N analizados" (no es el total de la publicación); un
-  `aria-label` corto (cuenta, fechas, % y "N de M comentarios
-  analizados") y el `data-tip` con la fecha y hora del análisis, que
-  distingue dos análisis de la misma publicación.
+  neg." (desde la F2, como la maqueta: la columna `pctNeg` de la galería,
+  la misma cuenta que la pantalla; en la tinta roja desde el 40 %) y "N
+  analizados" (no es el total de la publicación), el punto naranja en la
+  foto si hubo un hecho dominante; un `aria-label` corto (cuenta, fechas,
+  % negativo, "N de M comentarios analizados" y el hecho) y el
+  `data-tip` con el tema principal o el hecho y la fecha y hora del
+  análisis, que distingue dos análisis de la misma publicación.
   - `GET /api/inicio` (`src/inicioRoutes.js`, con sesión) arma una entrada
     por red: `enCron` (las de `MONITOR_PLATFORMS`), `nextRunAt` (null
     fuera del cron), `hoy` (publicadas desde las 00:00 de Argentina),
@@ -1025,7 +1043,7 @@ tocar un análisis vivo. SDD en
 (F: el modelo nuevo, las métricas, el informe de 8 puntos y las figuras
 públicas). La F va en dos PR: F1 (modelo y servidor, tag `v4-fase-f1`) y F2
 (la pantalla de la maqueta nueva, el inicio y la edición de figuras, tag
-`v4-fase-f`); hasta la F2 la pantalla es la de la E, con los datos v2.
+`v4-fase-f`).
 
 - **Apify**: dos corridas del actor oficial en paralelo (la publicación y
   los comentarios con `addParentData`), por `runActorSync` con los avisos
@@ -1125,7 +1143,11 @@ públicas). La F va en dos PR: F1 (modelo y servidor, tag `v4-fase-f1`) y F2
   publicación anterior, solo su último análisis: `db.listAnterioresDeCuenta`;
   promedio de % negativo, comentarios, verificados y "sobre el posteo"; la
   pantalla lo dice "+74 %", nunca "1,7×"), los reclamos del posteo y el
-  costo. **Hecho dominante**: solo si el modelo lo marcó sobre el tema
+  costo. Desde la F2 también lo que antes contaba la pantalla: `personas`
+  (verificados, `conAlineacion` —verificados del equipo con oficialismo u
+  oposición— y `enLista`), `topResumen` (likes de los 6, cuántos del hecho,
+  cuántos positivos), `sinHecho.positivo` y `emojis.proporcionApoyo`.
+  **Hecho dominante**: solo si el modelo lo marcó sobre el tema
   principal de los que no hablan del posteo Y los comentarios de ese tema
   que no hablan del posteo son al menos `UMBRAL_HECHO` (20 %) de los
   analizados (el informe dice "un hecho ajeno al posteo"); si no, `hecho`
@@ -1167,20 +1189,26 @@ públicas). La F va en dos PR: F1 (modelo y servidor, tag `v4-fase-f1`) y F2
   la única nueva): usuario (minúsculas, sin @), nombre, rol (`ROLES`, sin
   género en el texto: "Legislador/a"), alineación (oficialismo | oposición,
   solo para `ROLES_CON_ALINEACION`: legislador, funcionario, partido, junta
-  comunal, periodista y medio) y `origen` (`equipo` | `sugerida`). Todos
+  comunal, periodista y medio) y `origen` (`equipo` | `sugerida` |
+  `descartada`). Todos
   los que comentaron se cruzan con la tabla (`db.getFigurasPorUsernames`);
   el modelo sugiere SOLO para verificados sin ficha del equipo, y la
   sugerencia queda como `sugerida` (`db.upsertFiguraSugerida`, que nunca
-  pisa una del equipo). El modelo no etiqueta la ideología de nadie que no
+  pisa una del equipo ni una descartada). El modelo no etiqueta la ideología de nadie que no
   sea figura pública. `/api/figuras` (`src/figurasRoutes.js`): GET (la
   lista, los roles y las alineaciones), POST (201; 409 repetida; 400 con el
   motivo), PATCH `/:username` (cambia lo que venga y confirma una
-  sugerida: queda `equipo`, con quien la confirmó como `creado_por`),
-  DELETE (204); quién la cargó (`creado_por`, un correo) no sale. Roles y
+  sugerida o restaura una descartada: queda `equipo`, con quien la
+  confirmó como `creado_por`), POST `/:username/descartar` (F2, solo una
+  sugerida; 409 si es del equipo o ya estaba), DELETE (204); quién la
+  cargó (`creado_por`, un correo) no sale. Roles y
   alineaciones se validan con `Object.hasOwn` ("constructor" no es un
-  rol). Una sugerencia borrada vuelve si el modelo la sugiere en otro
-  análisis (no hay "rechazada"; queda para la F2). La pantalla para
-  editarlas va en la F2.
+  rol). **Descartada** (decisión del dueño, F2): queda en la misma tabla
+  para que el modelo no la vuelva a sugerir; la vista la trata como sin
+  ficha (sin rol, `descartada: true`; si no es verificada, no aparece) y
+  la síntesis no la recibe entre los verificados sin ficha. Agregarla o
+  editarla la pasa al equipo; quitarla la borra (y entonces el modelo la
+  puede volver a sugerir).
 - **Temas** (`src/analysisTemas.js`, puro): el equipo puede renombrar uno
   (si el nombre es el de otro del modelo, se unen: `unidoA`, sus
   comentarios cuentan en el otro sin reescribirlos), agregar uno a mano
@@ -1189,11 +1217,13 @@ públicas). La F va en dos PR: F1 (modelo y servidor, tag `v4-fase-f1`) y F2
   motivo). `PATCH /api/analisis/:id/temas` con `{ accion: 'renombrar' |
   'agregar' | 'quitar', id, nombre, texto }` devuelve el análisis entero
   (vista e informe rehechos) y actualiza las columnas de la galería; la
-  lista entera que manda la pantalla de la E se traduce al cambio
+  pantalla de la F2 manda un cambio por vez; la lista entera de la de la E
+  (una pestaña abierta de antes) se sigue traduciendo al cambio
   (`traducirListaVieja`: uno más, uno menos o un título distinto, contra
-  el estado de ese momento: dos pestañas con listas viejas pueden pisarse
-  hasta la F2); un v1 sigue con su lista de hasta 8, como siempre. Un tema
-  del modelo sin comentarios no se ve pero sigue ocupando su nombre.
+  el estado de ese momento); un v1 sigue con su lista de hasta 8, como
+  siempre (la pantalla manda la lista y después vuelve a leer el
+  análisis). Un tema del modelo sin comentarios no se ve pero sigue
+  ocupando su nombre.
 - **Reclamos**: `db.upsertReclamo(r, { conservarGestion: true })` en
   Instagram y X: re-analizar conserva el estado y, si la dirección detectada
   no cambió, el geocodificado; con la misma categoría, una subcategoría
@@ -1216,7 +1246,9 @@ públicas). La F va en dos PR: F1 (modelo y servidor, tag `v4-fase-f1`) y F2
   solo con la fecha de la publicación y 10 o más con fecha; por hora hasta
   48 h, de a 6 h hasta 7 días, por día después; un comentario anterior a la
   publicación cuenta en el primer tramo; pico = el de más (el primero si
-  empatan). Si no, `cuando` es null y la pantalla no muestra el bloque.
+  empatan). Si no, `cuando` es null y la pantalla muestra el bloque con lo
+  que haya (el primer comentario, el 50 %, las últimas 24 h) y por qué no
+  hay curva.
 - **Foto**: la del Monitoreo si la publicación ya la tiene guardada; si no,
   `postImages.savePostImage` con el link de la corrida de la publicación
   (mismo archivo `data/media/instagram/<id>_*.jpg`; si el posteo está en
@@ -1228,52 +1260,102 @@ públicas). La F va en dos PR: F1 (modelo y servidor, tag `v4-fase-f1`) y F2
   y tema estrella; `f` `all` | `ev` (con hecho dominante) | `neg` (40 % o
   más negativo) | `ver` (con verificados); `ord` `recent` | `c`
   (comentarios) | `neg` | `ver`; hasta 200; devuelve `recientes`
-  terminados bien, `total`, `desde` y `enCurso`, cada uno con `propio`: lo
+  terminados bien, `total`, `desde`, `coinciden` (los que pasan la búsqueda
+  y el filtro antes del tope: la galería avisa si corta) y `enCurso`, cada uno con `propio`: lo
   arrancó el mismo correo, en cualquier sesión de esa persona, y sin login
   todos; el correo no sale), `?url=` (`ultimo` y `enCurso`: el aviso de "ya
   se analizó"), `GET /api/analisis/:id` (la fila más `vista` e `informe`;
-  en un v2, también `temas` y `reporteAntes` en la forma que lee la
-  pantalla de la E hasta la F2: título, el texto de los agregados a mano y
-  los números de sus comentarios; `reporteAntes` es el informe y
-  `reporteDespues` va vacío) y los dos CSV. Al navegador no va el link
-  original de la foto ni quién lo corrió (`paraNavegador`).
-- **Pantalla** (`public/js/analysis.js`, prefijo `ana`; solo
+  en un v2, también `temas` y `reporteAntes` en la forma que leía la
+  pantalla de la E, por una pestaña abierta de antes: título, el texto de
+  los agregados a mano y los números de sus comentarios; `reporteAntes` es
+  el informe y `reporteDespues` va vacío) y los dos CSV. Al navegador no
+  va el link original de la foto ni quién lo corrió (`paraNavegador`).
+- **Pantalla** (fase F2: la solapa 3 de la maqueta nueva; solo
   `instagram.html`, después de `postView.js`; CSS bajo `.ana4`, así X no
-  cambia): "Analizar" pregunta primero `?url=` (si hay uno terminado,
-  "ya se analizó el …" con "Ver ese análisis" / "Analizar de nuevo"; si hay
-  uno en curso, lo sigue), después POST, y consulta los pasos cada 1 s.
-  Enter con uno en curso no dispara otro (también en `x-analysis.js`). Al
-  cargar la página sigue solo uno en curso PROPIO (el de otra persona le
-  bloquearía "Analizar"). Al terminar el que se sigue, el campo se vacía y
-  se muestra solo si la persona no eligió otra cosa mientras tanto (otro
-  link en el campo, un reciente, un `#analisis-<id>`); si no, "Terminó el
-  análisis de @cuenta" con "Ver ese análisis", sin tocarle el campo. Los
-  pasos se actualizan en el lugar (la lista es una región viva: se anuncia
-  lo que cambió); el sondeo corta con un 401 (sesión cerrada) o a los ~3 min
-  sin respuesta, y sin conexión dice "No hay conexión con el servidor". La
-  vista sale entera de
-  la fila: la foto entera sobre negro, "analizados N de M", el resumen (la
-  lectura estratégica, escrita en ~1,5 s; quieta con movimiento reducido),
-  el tono, los temas (tamaño por conteo; clic filtra los comentarios con
-  una pastilla ✕; ✎ edita título y texto o quita; "+ tema"; en un v1, sin
-  texto el tema no entra en el informe; en un v2, el informe nombra todos y
-  solo los agregados a mano llevan texto), "Cuándo comentaron" (SVG al ancho real, una
-  franja por tramo con `data-tip`; tres marcas en el eje bajo 480 px; con
-  la solapa oculta no se dibuja y se arma al aparecer; el rótulo del pico
-  se mide y queda adentro), los
-  comentarios (Destacados = los 5 con más likes, Negativos, Neutrales,
-  Positivos, Todos de a 50) y compartir: en un v2, el informe de 8 puntos
-  (`anaReportText`; el PATCH de los temas lo trae rehecho); en un v1, el
-  de antes con los temas editados (`TemasConversacion.assemble`). Aviso
-  pasados los 4.000 caracteres
-  (WhatsApp lo corta ahí), Copiar, WhatsApp y el CSV (deshabilitado sin
-  reclamos; `reclamos-<cuenta>-<AAAA-MM-DD>.csv` con la fecha del análisis en
-  Argentina). La primera vez que se abre la solapa (`openAnalysis`, desde
-  `openTab`) muestra el más reciente, salvo que haya un link en el campo.
-  `#analisis-<id>` abre ese análisis; con uno a la vista, el hash es el
-  suyo. `anaPreload(url)` ("Analizar comentarios" del pop-up) deja el link
-  sin analizar, saca de la vista el análisis de otra publicación y avisa si
-  ese link ya se analizó. El campo sigue siendo `#url`.
+  cambia). Tres scripts clásicos con prefijo `ana`: `analysis.js` (el
+  flujo: analizar, los pasos, los avisos, la tira, las dos vistas, la
+  galería y el hash), `analysisBlocks.js` (`anaRender`: los bloques) y
+  `analysisFiguras.js` (verificados y la lista de figuras). Todo lo que se
+  ve sale de `vista`: el navegador no cuenta nada (ni un porcentaje). En
+  un v1, los bloques que necesitan los campos nuevos muestran la placa
+  "No disponible en análisis anteriores" (`.an-na`, decisión del dueño),
+  sin ocultarse ni inventar; el filtro "Preguntas" queda deshabilitado.
+  - **Analizar**: pregunta primero `?url=` (si hay uno terminado, "ya se
+    analizó el …" con "Ver ese análisis" / "Analizar de nuevo"; si hay
+    uno en curso, lo sigue), después POST, y consulta los pasos cada 1 s:
+    el detalle de cada paso y la barra con el `porcentaje` del servidor.
+    Enter con uno en curso no dispara otro (también en `x-analysis.js`).
+    Al cargar la página sigue solo uno en curso PROPIO. Al terminar el que
+    se sigue, el campo se vacía y se muestra solo si la persona no eligió
+    otra cosa mientras tanto; si no, "Terminó el análisis de @cuenta" con
+    "Ver ese análisis". Los pasos son una región viva (se anuncia lo que
+    cambió); el sondeo corta con un 401 o a los ~3 min sin respuesta. La
+    tira de recientes: los 10 últimos (el punto naranja = hecho
+    dominante) y "+N · ver todas", que lleva a la galería.
+  - **Vistas**: "Analizar" y "Publicaciones analizadas" (la galería:
+    `GET /api/analisis` con `q`, `f` y `ord`, hasta 100; cada tarjeta con
+    la foto, la cuenta, la fecha, el texto, la barra de tono, el tema
+    estrella, analizados de M, % negativo, verificados y reclamos).
+    `#analisis-<id>` abre ese análisis; `#analisis-galeria`, la galería;
+    con uno a la vista, el hash es el suyo (al volver a la solapa,
+    `openAnalysis` lo pone; uno que ya nombra un análisis o la galería es un
+    pedido —un link pegado, Atrás— y no lo pisa con lo anterior). Abrir una
+    tarjeta lleva el foco a la publicación (`#anaPost`, tabindex -1). La
+    primera vez que se abre la solapa muestra el más reciente, salvo que
+    haya un link en el campo o se haya elegido otra cosa.
+  - **Bloques**: la publicación (la foto entera sobre negro, "analizados N
+    de M") con cuatro KPI (tono neto, postura crítica, verificados,
+    hablan del posteo; `kpiCountUp`) y la lectura (escrita en ~1,5 s;
+    quieta con movimiento reducido); el hecho dominante (el porcentaje,
+    título, descripción, los 3 de más likes, cuánto de los likes junta,
+    cuándo empezó, cuántos verificados) o, sin él, la tarjeta tranquila
+    (el tema que más junta y los 4 primeros con su tono), con "Qué conviene
+    mirar"; tono (dona, filas, ponderado por likes, ruido y sin
+    clasificar aparte), postura y "¿hablan del posteo?" con sus desvíos;
+    los temas con su tono (un clic filtra los comentarios con una
+    pastilla ✕; ✎ en un v2 renombra —y une si el nombre coincide— y en
+    uno agregado a mano edita el texto o lo quita; en un v1, título y
+    texto o quitar, como en la E; "+ tema"); la comparación con la cuenta
+    (puntos para los porcentajes, % de cambio para las cantidades: nunca
+    "N veces") y la serie de % negativo; "Cuándo comentaron" (SVG al ancho
+    real, una franja por tramo con `data-tip`, la marca del 50 % y el
+    pico; con la solapa o la vista ocultas no se dibuja y se arma al
+    aparecer, por un `ResizeObserver`); los pedidos (un clic filtra sus
+    comentarios); verificados y figuras; los 6 que más pegaron; los
+    reclamos en el mapita (el contorno de la Ciudad y los centros de las
+    comunas de la maqueta; solo los `enMapa`, agrupados a menos de 16 px,
+    con el color de su categoría, `temaColor`; los sin ubicar van en la
+    lista, sin punto); etiquetas, hashtags y emojis (apoyo contra bronca);
+    los comentarios (buscar, Destacados = los 6 con más likes, Negativos,
+    Positivos, Neutros, Preguntas, Verificados, Todos de a 50; con tono,
+    postura, tema, pregunta/pedido y horas), y compartir: en un v2, el
+    informe de 8 puntos (`anaReportText`; el PATCH de los temas lo trae
+    rehecho); en un v1, el de antes con los temas editados
+    (`TemasConversacion.assemble`). Aviso pasados los 4.000 caracteres
+    (WhatsApp lo corta ahí), "Copiar informe" (con un aviso en `.an-toast`),
+    el texto, "Enviar por WhatsApp", "Descargar CSV" (el de comentarios,
+    `comentarios.csv`), "CSV de reclamos" (solo si hay) y el costo.
+  - **Figuras** (`analysisFiguras.js`): la tarjeta lista
+    `vista.quienHablo` (iniciales sobre el color de la cuenta, el ✓ de
+    verificada, el rol; sin seguidores): una sugerida se confirma, se
+    edita o se descarta; una del equipo se edita o se quita (con "¿Quitar?
+    Sí / No"); un verificado sin ficha (o descartado) se agrega. El
+    formulario (nombre, rol, alineación —deshabilitada para un rol que no
+    la lleva—, notas) es el mismo en la tarjeta y en "Lista de figuras"
+    (un `<dialog>`: buscar, agregar, y por grupo del equipo, sugeridas y
+    descartadas). Editar en la tarjeta vuelve a leer la lista antes de
+    abrir el formulario (la vista no trae las notas); un alta va siempre
+    por POST (una del equipo da 409, no se pisa); el formulario abierto se
+    arma una vez y se vuelve a poner en cada redibujo (no pierde lo escrito
+    ni roba el foco); una descartada se agrega sin precargar lo que sugirió
+    el modelo. El servidor valida y responde el motivo. Después de un
+    cambio se vuelve a leer el análisis: la vista, el informe y los KPI
+    cambian. Al cerrar el diálogo el foco vuelve a "Lista de figuras" (con
+    ✕, Escape o el evento `close`, el que llegue primero: el navegador del
+    panel de la app no manda `close`).
+  - `anaPreload(url)` ("Analizar comentarios" del pop-up) deja el link sin
+    analizar, saca de la vista el análisis de otra publicación y avisa si
+    ese link ya se analizó. El campo sigue siendo `#url`.
 - Tests: `test/analisisBase.test.js` (tabla, recientes, interrumpidos,
   `analisis_id`, `conservarGestion`, galería, anteriores de la cuenta,
   figuras), `test/analisisMigracionF.test.js` (una base de la fase E: las

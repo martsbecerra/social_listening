@@ -6,7 +6,9 @@
 // muestra el rol y la alineación de los que están. El modelo puede SUGERIR
 // rol y alineación, pero solo para verificados que no están en la lista; la
 // sugerencia queda con origen "sugerida" hasta que alguien la confirme y
-// nunca pisa una fila del equipo.
+// nunca pisa una fila del equipo. Una sugerida que el equipo descarta queda
+// con origen "descartada" (fase F2): no se muestra como figura y el modelo
+// no la vuelve a sugerir.
 //
 // La alineación política (oficialismo / oposición) solo vale para figuras
 // públicas con rol político o de prensa: a los vecinos comunes no se los
@@ -35,7 +37,7 @@ const ROLES_CON_ALINEACION = new Set(['legislador', 'funcionario', 'partido', 'j
 const ALINEACIONES = { oficialismo: 'oficialismo', oposicion: 'oposición' };
 const ALINEACION_KEYS = Object.keys(ALINEACIONES);
 
-const ORIGENES = ['equipo', 'sugerida'];
+const ORIGENES = ['equipo', 'sugerida', 'descartada'];
 
 const MAX_NOMBRE = 120;
 const MAX_NOTAS = 500;
