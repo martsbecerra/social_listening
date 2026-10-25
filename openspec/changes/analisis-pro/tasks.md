@@ -64,4 +64,4 @@ un servidor de prueba en otro puerto y una copia de la base.
 - [x] 8.1 Servidor de prueba con el análisis v2 de la repetición, el v1 real de la fase E y los sembrados; capturas a 1366 y 375 px en claro, oscuro y con movimiento reducido; contraste
 - [x] 8.2 CLAUDE.md, README y la lista de diferencias con la maqueta
 - [x] 8.3 Suite con `IG_ACTOR=apidojo` y `apify`
-- [ ] 8.4 Revisor independiente y PR sin mergear
+- [x] 8.4 Revisor independiente y PR sin mergear
