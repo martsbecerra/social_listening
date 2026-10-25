@@ -169,12 +169,14 @@ function duenoDe(post) {
  * no van al modelo (solo "¿La cuenta respondió?"). Cada respuesta lleva el
  * @usuario y el texto del comentario al que responde (`padre`), aunque ese
  * no haya entrado en la muestra; cada una va detrás de su comentario.
+ * @param {number} [max] el tope de la muestra del público (COMMENTS_ANALYSIS_LIMIT si no se pasa)
  * @returns {{ sample: Array, paraModelo: Array, unicos: number, propios: number }}
  */
-function armarMuestra(comments, post) {
+function armarMuestra(comments, post, max) {
   const dueno = duenoDe(post);
   const esDeLaCuenta = (c) => dueno !== null && String(c.username || '').toLowerCase() === dueno;
-  const { sample: publico, total: unicos } = prepareCommentSample(comments.filter((c) => !esDeLaCuenta(c)));
+  const delPublico = comments.filter((c) => !esDeLaCuenta(c));
+  const { sample: publico, total: unicos } = Number.isFinite(max) && max > 0 ? prepareCommentSample(delPublico, max) : prepareCommentSample(delPublico);
   const propios = dedupeComments(comments.filter(esDeLaCuenta)).map((c) => ({ ...c, deLaCuenta: true }));
   const porId = new Map(comments.filter((c) => !c.esRespuesta && c.apifyId != null).map((c) => [String(c.apifyId), c]));
   const conPadre = (c) => {
@@ -200,10 +202,12 @@ function muestraParaSintesis(vista) {
 }
 
 /**
- * @param {{ url: string, post: object, comments: Array, pasos?: { start: Function, update: Function, done: Function, skip: Function, fail: Function } }} params
+ * @param {{ url: string, post: object, comments: Array, pasos?: { start: Function, update: Function, done: Function, skip: Function, fail: Function }, maxComentarios?: number }} params
  *   pasos: los avisos del progreso (src/analysisProgress.js) para los pasos
  *   'clasificar', 'verificados', 'reclamos' e 'informe' (este lo arranca acá
- *   la síntesis y lo cierra el trabajo al guardar).
+ *   la síntesis y lo cierra el trabajo al guardar). maxComentarios: el tope
+ *   de lo que va al modelo (el de la opción elegida en la confirmación;
+ *   COMMENTS_ANALYSIS_LIMIT si no se pasa).
  * @returns {Promise<object>} sample, classifications (con temaId), temas,
  *   comentarios (como los guarda la fila), sintesis, tonos, numeros,
  *   reclamos, reclamosCsv y tokenUsage. Si tira, el error lleva
@@ -220,9 +224,9 @@ async function analyzeComments(params) {
 }
 
 /** El análisis en sí; `gasto.tokenUsage` va sumando cada llamada al modelo. */
-async function analizar({ url, post, comments, pasos = NO_PASOS }, gasto) {
+async function analizar({ url, post, comments, pasos = NO_PASOS, maxComentarios }, gasto) {
   const provider = getLlmProvider();
-  const { sample, paraModelo, unicos, propios } = armarMuestra(comments, post);
+  const { sample, paraModelo, unicos, propios } = armarMuestra(comments, post, maxComentarios);
   const sumUsage = (usage) => {
     if (usage) gasto.tokenUsage = gasto.tokenUsage ? addTokenUsage(gasto.tokenUsage, usage) : usage;
   };

@@ -24,7 +24,7 @@ delete process.env.COMMENTS_LIMIT;
 delete process.env.COMMENTS_ANALYSIS_LIMIT;
 delete process.env.POST_IMAGES;
 
-const { describe, test, before, after, beforeEach } = require('node:test');
+const { describe, test, before, after, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 const express = require('express');
 
@@ -89,10 +89,10 @@ function stubs() {
     if (errorPost) throw errorPost;
     return respuestaPost;
   };
-  apify.fetchAnalysisComments = async (url, hooks) => {
-    llamadasApify.push(['comments', url]);
+  apify.fetchAnalysisComments = async (url, hooks, opciones = {}) => {
+    llamadasApify.push(['comments', url, opciones.resultsLimit]);
     if (hooks.onAcquired) hooks.onAcquired();
-    return { items: respuestaComentarios, limit: 300 };
+    return { items: respuestaComentarios, limit: opciones.resultsLimit };
   };
   llm.requestStructuredAnalysis = async ({ schemaName, userPrompt }) => {
     if (schemaName === 'tanda_instagram') {
@@ -145,6 +145,16 @@ async function analizar(url = URL_ABC) {
   const started = analysisJob.start({ url, analizadoPor: 'prueba@test.local' });
   await analysisJob.waitFor(started.id);
   return started.id;
+}
+
+// Hasta que el trabajo quede esperando la confirmación (más de 1.000 comentarios).
+async function hastaQueEspere(id) {
+  for (let i = 0; i < 400; i++) {
+    const view = progress.getView(id, 'instagram');
+    if (view && view.confirmacion) return view;
+    await new Promise((r) => setTimeout(r, 5));
+  }
+  throw new Error(`el análisis #${id} no quedó esperando la confirmación`);
 }
 
 // Los logs del trabajo no ensucian la salida de la suite.
@@ -259,7 +269,9 @@ describe('el trabajo del análisis', { concurrency: false }, () => {
     const detalle = Object.fromEntries(view.pasos.map((p) => [p.key, `${p.estado} · ${p.detalle}`]));
     assert.equal(detalle.turno, undefined, 'sin espera, el paso del turno no aparece');
     assert.match(detalle.publicacion, /^ok · @gcba · 900 likes · \d+ s$/);
-    assert.match(detalle.comentarios, /^ok · 25 comentarios · \d+ s$/);
+    assert.match(detalle.comentarios, /^ok · 25 comentarios y 0 respuestas · \d+ s$/);
+    assert.equal(detalle.confirmar, undefined, 'con 480 comentarios no se pide confirmación');
+    assert.deepEqual(llamadasApify, [['post', URL_ABC], ['comments', URL_ABC, 480]], 'primero la publicación; después todo lo que informa Instagram');
     assert.match(detalle.clasificar, /^ok · 25 de 25 · 1 tanda · \d+ s$/);
     assert.equal(detalle.verificados, 'ok · 0 verificados · 0 figuras públicas');
     assert.equal(view.porcentaje, 100);
@@ -462,6 +474,27 @@ describe('las rutas', { concurrency: false }, () => {
     assert.ok(view.pasos.length >= 6);
     assert.equal((await pedir(`/api/analyze/progress?plataforma=x&id=${id}`)).status, 404);
     assert.equal((await pedir(`/api/analyze/progress?id=${id}`)).status, 400);
+  });
+
+  test('POST /api/analyze/:id/confirmar: la opción elegida sigue el análisis; mal pedido, 400; si ya no espera, 409', async () => {
+    respuestaPost = postItem({ commentsCount: 5200, shortCode: 'MUCHOS1' });
+    const ok = await pedir('/api/analyze', { method: 'POST', body: { url: 'https://www.instagram.com/p/MUCHOS1/' } });
+    const { id } = await ok.json();
+    await hastaQueEspere(id);
+    const view = await (await pedir(`/api/analyze/progress?plataforma=instagram&id=${id}`)).json();
+    assert.deepEqual(view.confirmacion.opciones.map((o) => o.alcance), ['todo', 'parcial']);
+    assert.equal(view.confirmacion.puedeConfirmar, true, 'lo arrancó la misma sesión');
+    assert.equal(view.pasos.find((p) => p.key === 'confirmar').estado, 'en curso');
+    const raro = await pedir(`/api/analyze/${id}/confirmar`, { method: 'POST', body: { alcance: 'mucho' } });
+    assert.equal(raro.status, 400);
+    const sinSesion = await pedir(`/api/analyze/${id}/confirmar`, { method: 'POST', body: { alcance: 'todo' }, conCookie: false });
+    assert.equal(sinSesion.status, 401);
+    const elegido = await pedir(`/api/analyze/${id}/confirmar`, { method: 'POST', body: { alcance: 'parcial' } });
+    assert.equal(elegido.status, 200);
+    await analysisJob.waitFor(id);
+    assert.equal(db.getAnalisis(id, 'instagram').estado, 'ok');
+    const tarde = await pedir(`/api/analyze/${id}/confirmar`, { method: 'POST', body: { alcance: 'todo' } });
+    assert.equal(tarde.status, 409);
   });
 
   test('en curso: "propio" solo para quien lo arrancó, y el correo no sale', async () => {
@@ -707,5 +740,92 @@ describe('las rutas', { concurrency: false }, () => {
     assert.equal((await pedir('/api/figuras/nadie/descartar', { method: 'POST' })).status, 404);
     const restaurada = await pedir('/api/figuras/cre.sugerido', { method: 'PATCH', body: {} });
     assert.equal((await restaurada.json()).figura.origen, 'equipo');
+  });
+});
+
+describe('la confirmación (fase G)', { concurrency: false }, () => {
+  afterEach(() => delete process.env.ANALISIS_CONFIRMAR_MS);
+  const arrancar = (code, extra = {}) => {
+    respuestaPost = postItem({ shortCode: code, ...extra });
+    return analysisJob.start({ url: `https://www.instagram.com/p/${code}/`, analizadoPor: 'prueba@test.local' }).id;
+  };
+  const pasosDe = (id) => Object.fromEntries(progress.getView(id, 'instagram').pasos.map((p) => [p.key, `${p.estado} · ${p.detalle}`]));
+
+  test('Instagram dice 0 comentarios: "sin comentarios" sin pedir la corrida de los comentarios', async () => {
+    const id = arrancar('CERO1', { commentsCount: 0 });
+    await analysisJob.waitFor(id);
+    const a = db.getAnalisis(id, 'instagram');
+    assert.equal(a.estado, 'sin comentarios');
+    assert.deepEqual(llamadasApify.map(([k]) => k), ['post'], 'solo la publicación');
+    assert.equal(pasosDe(id).comentarios, 'omitido · Instagram informa 0 comentarios');
+  });
+
+  test('con más de 1.000: la publicación una vez, la espera con las dos opciones y, con "parcial", 625 pedidos y hasta 1.000 al modelo', async () => {
+    respuestaComentarios = commentItems(1200);
+    const id = arrancar('MUCHOS2', { commentsCount: 5200 });
+    const view = await hastaQueEspere(id);
+    assert.equal(view.confirmacion.comentarios, 5200);
+    assert.deepEqual(
+      view.confirmacion.opciones.map((o) => [o.alcance, o.items, o.completo]),
+      [
+        ['todo', 3000, false],
+        ['parcial', 1000, false],
+      ]
+    );
+    assert.ok(view.confirmacion.opciones.every((o) => o.total > 0));
+    assert.ok(view.confirmacion.venceAt);
+    assert.match(pasosDe(id).confirmar, /^en curso · 5\.200 comentarios · elegí cuántos analizar$/);
+    assert.deepEqual(llamadasApify.map(([k]) => k), ['post'], 'antes de confirmar no se pidieron los comentarios');
+    assert.equal(db.getAnalisis(id, 'instagram').cuenta, 'gcba', 'la publicación ya quedó guardada');
+
+    assert.equal(analysisJob.confirmar(id, 'parcial', { quien: 'prueba@test.local' }), 'ok');
+    await analysisJob.waitFor(id);
+    const a = db.getAnalisis(id, 'instagram');
+    assert.equal(a.estado, 'ok');
+    assert.deepEqual(llamadasApify.map(([k, , n]) => [k, n ?? null]), [['post', null], ['comments', 625]], 'la publicación no se pidió dos veces');
+    assert.equal(a.enviados, 1000, 'al modelo, hasta 1.000');
+    assert.match(pasosDe(id).confirmar, /^ok · 1\.000 de 5\.200 · ~US\$ \d+\.\d\d estimado$/);
+  });
+
+  test('"todo" con 2.500 comentarios: se piden los 2.500 y el paso dice "todos"', async () => {
+    const id = arrancar('MUCHOS3', { commentsCount: 2500 });
+    await hastaQueEspere(id);
+    analysisJob.confirmar(id, 'todo', { quien: 'prueba@test.local' });
+    await analysisJob.waitFor(id);
+    assert.deepEqual(llamadasApify[1], ['comments', 'https://www.instagram.com/p/MUCHOS3/', 2500]);
+    assert.match(pasosDe(id).confirmar, /^ok · todos · ~US\$/);
+  });
+
+  test('cancelar: no se piden los comentarios y queda "cancelado"', async () => {
+    const id = arrancar('MUCHOS4', { commentsCount: 1500 });
+    await hastaQueEspere(id);
+    assert.equal(analysisJob.confirmar(id, 'cancelar', { quien: 'prueba@test.local' }), 'ok');
+    await analysisJob.waitFor(id);
+    const a = db.getAnalisis(id, 'instagram');
+    assert.equal(a.estado, 'cancelado');
+    assert.equal(a.error, analysisJob.MENSAJE_CANCELADO);
+    assert.deepEqual(llamadasApify.map(([k]) => k), ['post']);
+    assert.equal(progress.getView(id, 'instagram').confirmacion, null);
+  });
+
+  test('si nadie confirma, vence: "cancelado" con el aviso y sin gastar más', async () => {
+    process.env.ANALISIS_CONFIRMAR_MS = '40';
+    const id = arrancar('MUCHOS5', { commentsCount: 4000 });
+    await analysisJob.waitFor(id);
+    const a = db.getAnalisis(id, 'instagram');
+    assert.equal(a.estado, 'cancelado');
+    assert.equal(a.error, analysisJob.MENSAJE_VENCIDO);
+    assert.deepEqual(llamadasApify.map(([k]) => k), ['post']);
+    assert.equal(pasosDe(id).confirmar, 'omitido · venció la espera');
+  });
+
+  test('solo confirma quien lo arrancó; uno que no espera, o una opción que no se ofreció, no', async () => {
+    const id = arrancar('MUCHOS6', { commentsCount: 1800 });
+    await hastaQueEspere(id);
+    assert.equal(analysisJob.confirmar(id, 'todo', { quien: 'otra@test.local' }), 'ajeno');
+    assert.equal(analysisJob.confirmar(id, 'todo', { quien: null }), 'ajeno', 'sin sesión tampoco');
+    assert.equal(analysisJob.confirmar(999999, 'todo', { quien: 'prueba@test.local' }), 'no-espera');
+    assert.equal(analysisJob.confirmar(id, 'cancelar', { quien: 'prueba@test.local' }), 'ok');
+    await analysisJob.waitFor(id);
   });
 });

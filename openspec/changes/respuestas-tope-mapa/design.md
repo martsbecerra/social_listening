@@ -74,12 +74,18 @@
   Instagram N:
   - N = 0: "sin comentarios", sin la segunda corrida;
   - N ≤ `ANALISIS_CONFIRMAR_DESDE` (1.000) o sin el número: directo;
-  - N > 1.000: el paso "Esperando confirmación" (en memoria, con la
-    publicación ya guardada en la fila) muestra el costo estimado de cada
-    opción. `POST /api/analyze/:id/confirmar { alcance: 'todo' | '1000' }`
-    sigue con esa publicación; `{ alcance: 'cancelar' }` lo termina. A los
-    30 min sin respuesta, o con un reinicio, queda "sin confirmar" /
-    "interrumpido".
+  - N > 1.000: el paso "Confirmar el costo" (oculto salvo acá; en memoria,
+    con la publicación ya guardada en la fila) y, en la vista del progreso,
+    `confirmacion: { comentarios, opciones, venceAt }`, cada opción con
+    `alcance` ('todo': hasta el tope, `completo` si entran todos;
+    'parcial': `ANALISIS_CONFIRMAR_DESDE` ítems), `items` y su costo
+    estimado (`apify`, `modelo`, `total`). `POST /api/analyze/:id/confirmar
+    { alcance: 'todo' | 'parcial' }` sigue con esa publicación (el modelo
+    recibe hasta los ítems elegidos); `{ alcance: 'cancelar' }` lo
+    termina. Solo confirma quien lo arrancó (403); uno que ya no espera,
+    409. Cancelado, o a los 30 min sin respuesta, queda en estado
+    `cancelado` con su aviso, sin gastar más que la publicación; con un
+    reinicio, "interrumpido", como siempre.
 - Al actor se le pide, para un tope de T ítems: todo lo de la publicación si
   N ≤ T (`resultsLimit` = N, que no es menos que los de primer nivel), y si
   no, `resultsLimit` = T / `ANALISIS_FACTOR_RESPUESTAS` (1,6, de la sonda),

@@ -9,7 +9,11 @@
 // inventa un número ni una frase.
 //
 // "Esperar turno en Apify" solo aparece si alguna corrida tuvo que esperar
-// cupo (el limitador lo avisa al encolar). Terminado, el estado queda
+// cupo (el limitador lo avisa al encolar), y "Confirmar el costo" (fase G)
+// solo si la publicación tiene más de ANALISIS_CONFIRMAR_DESDE comentarios:
+// mientras espera, la vista lleva `confirmacion` (los comentarios según
+// Instagram y las opciones con su costo estimado, src/analysisCost.js), que
+// la pantalla muestra con sus botones. Terminado, el estado queda
 // MINUTOS_TERMINADO (10) minutos y después se borra: la ruta de progreso
 // cae a la fila de la base (src/analysisRoutes.js).
 //
@@ -22,7 +26,8 @@
 const PASOS = [
   { key: 'turno', label: 'Esperar turno en Apify', oculto: true },
   { key: 'publicacion', label: 'Traer la publicación' },
-  { key: 'comentarios', label: 'Traer los comentarios' },
+  { key: 'confirmar', label: 'Confirmar el costo', oculto: true },
+  { key: 'comentarios', label: 'Traer los comentarios y sus respuestas' },
   { key: 'clasificar', label: 'Clasificar tono, postura y temas' },
   { key: 'verificados', label: 'Detectar verificados y figuras públicas' },
   { key: 'reclamos', label: 'Ubicar reclamos' },
@@ -42,10 +47,21 @@ function create(id, { plataforma }) {
     error: null,
     startedAt: new Date().toISOString(),
     finishedAt: null,
+    confirmacion: null,
     pasos: PASOS.map((p) => ({ key: p.key, label: p.label, estado: 'pendiente', detalle: null, avance: null, oculto: Boolean(p.oculto) })),
   };
   estados.set(Number(id), estado);
   return estado;
+}
+
+/**
+ * Lo que la pantalla necesita para pedir la confirmación, o null cuando ya
+ * no espera: { comentarios, opciones: [{ alcance, items, completo, apify,
+ * modelo, total }], venceAt }.
+ */
+function setConfirmacion(id, datos) {
+  const actual = estados.get(Number(id));
+  if (actual) actual.confirmacion = datos || null;
 }
 
 function setPaso(id, key, estado, detalle, avance) {
@@ -105,6 +121,7 @@ function getView(id, plataforma) {
     finishedAt: actual.finishedAt,
     porcentaje: actual.estado === 'ok' ? 100 : visibles.length ? Math.round((hecho / visibles.length) * 100) : 0,
     pasos: visibles.map(({ key, label, estado, detalle }) => ({ key, label, estado, detalle })),
+    confirmacion: actual.confirmacion,
   };
 }
 
@@ -113,4 +130,4 @@ function _reset() {
   estados.clear();
 }
 
-module.exports = { create, pasosDe, finish, getView, PASOS, MINUTOS_TERMINADO, _reset };
+module.exports = { create, pasosDe, setConfirmacion, finish, getView, PASOS, MINUTOS_TERMINADO, _reset };
