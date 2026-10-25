@@ -7373,6 +7373,37 @@ html.feed-pop-lock body {
   background: color-mix(in oklab, var(--surface) 85%, transparent) !important;
   color: var(--muted);
 }
+/* Fase G: el selector Mapa / Satélite de los mosaicos de Google y el aviso
+   del respaldo en OpenStreetMap. */
+.map-capa {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+.map-capa .seg {
+  box-shadow: var(--shadow);
+}
+.map-capa .seg button {
+  padding: 6px 10px;
+  font: 500 12px/1.2 var(--body);
+}
+.map-capa .seg button[aria-disabled='true'] {
+  color: var(--muted);
+  cursor: default;
+}
+.map-capa .nota {
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--line2);
+  color: var(--fg2);
+  font-size: 11.5px;
+  box-shadow: var(--shadow);
+}
+.map-capa .nota[hidden] {
+  display: none;
+}
 .leaflet-control-attribution a {
   color: var(--accent-text);
 }

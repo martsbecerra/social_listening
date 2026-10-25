@@ -102,6 +102,123 @@ function cssVar(name) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
 
+// -------------------------------------------------------------------------
+// Mosaicos (fase G, decisión del dueño): los de Google, como el panel de El
+// Niño, con el selector Mapa / Satélite (recordado en sl.mapa.capa),
+// aceptando el riesgo de usarlos sin su API. Respaldo automático: si los de
+// Google no cargan (TILE_FALLAS_RESPALDO fallas antes de que llegue uno
+// bueno, o más fallas que buenos después), el mapa pasa solo a
+// OpenStreetMap, lo dice en el selector y lo deja apagado.
+// -------------------------------------------------------------------------
+
+const TILES_GOOGLE = {
+  mapa: 'https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
+  satelite: 'https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
+};
+const TILES_OSM = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+const TILE_FALLAS_RESPALDO = 4;
+const CAPA_KEY = 'sl.mapa.capa';
+
+let capaActual = null; // la tileLayer a la vista
+let capaElegida = 'mapa'; // 'mapa' | 'satelite'
+let enRespaldo = false; // Google no cargó: OpenStreetMap
+let capaControl = null; // el contenedor del selector
+
+function leerCapa() {
+  try {
+    return localStorage.getItem(CAPA_KEY) === 'satelite' ? 'satelite' : 'mapa';
+  } catch {
+    return 'mapa';
+  }
+}
+
+function guardarCapa(capa) {
+  try {
+    localStorage.setItem(CAPA_KEY, capa);
+  } catch {
+    /* sin almacenamiento: vale para esta visita */
+  }
+}
+
+function ponerCapa(capa) {
+  if (capaActual) claimsMap.removeLayer(capaActual);
+  if (enRespaldo) {
+    capaActual = L.tileLayer(TILES_OSM, { attribution: '&copy; OpenStreetMap', maxZoom: 19 });
+  } else {
+    capaActual = L.tileLayer(TILES_GOOGLE[capa], { subdomains: ['0', '1', '2', '3'], attribution: 'Mapa &copy; Google', maxZoom: 20 });
+    // El respaldo: se cuentan los mosaicos buenos y los que fallan de esta capa.
+    let buenos = 0;
+    let fallas = 0;
+    const esta = capaActual;
+    esta.on('tileload', () => {
+      buenos += 1;
+    });
+    esta.on('tileerror', () => {
+      fallas += 1;
+      if (capaActual !== esta || enRespaldo) return;
+      if ((buenos === 0 && fallas >= TILE_FALLAS_RESPALDO) || (fallas >= TILE_FALLAS_RESPALDO * 3 && fallas > buenos)) pasarARespaldo();
+    });
+  }
+  capaActual.addTo(claimsMap);
+  capaActual.bringToBack();
+  pintarSelectorCapa();
+}
+
+function pasarARespaldo() {
+  enRespaldo = true;
+  console.warn('[mapa] los mosaicos de Google no cargan: el mapa pasa a OpenStreetMap');
+  ponerCapa(capaElegida);
+}
+
+function pintarSelectorCapa() {
+  if (!capaControl) return;
+  capaControl.querySelectorAll('button[data-capa]').forEach((b) => {
+    const on = !enRespaldo && b.dataset.capa === capaElegida;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', String(on));
+    // aria-disabled, no disabled: sigue con el foco y dice por qué.
+    b.setAttribute('aria-disabled', String(enRespaldo));
+  });
+  const nota = capaControl.querySelector('.nota');
+  nota.textContent = enRespaldo ? 'Google no respondió: OpenStreetMap' : '';
+  nota.hidden = !enRespaldo;
+}
+
+function agregarSelectorCapa() {
+  const Selector = L.Control.extend({
+    options: { position: 'topright' },
+    onAdd() {
+      const box = L.DomUtil.create('div', 'leaflet-control map-capa');
+      const seg = L.DomUtil.create('div', 'seg', box);
+      seg.setAttribute('role', 'group');
+      seg.setAttribute('aria-label', 'Tipo de mapa');
+      for (const [capa, texto] of [
+        ['mapa', 'Mapa'],
+        ['satelite', 'Satélite'],
+      ]) {
+        const b = L.DomUtil.create('button', '', seg);
+        b.type = 'button';
+        b.dataset.capa = capa;
+        b.textContent = texto;
+      }
+      const nota = L.DomUtil.create('div', 'nota', box);
+      nota.hidden = true;
+      L.DomEvent.disableClickPropagation(box);
+      L.DomEvent.disableScrollPropagation(box);
+      seg.addEventListener('click', (e) => {
+        const b = e.target.closest('button[data-capa]');
+        if (!b || enRespaldo || b.dataset.capa === capaElegida) return;
+        capaElegida = b.dataset.capa;
+        guardarCapa(capaElegida);
+        ponerCapa(capaElegida);
+      });
+      capaControl = box;
+      return box;
+    },
+  });
+  new Selector().addTo(claimsMap);
+}
+
 function ensureClaimsMap() {
   if (claimsMap) return claimsMap;
   claimsMap = L.map('claims-map', {
@@ -110,10 +227,9 @@ function ensureClaimsMap() {
     maxBounds: AMBA_BOUNDS,
     maxBoundsViscosity: 1.0,
   }).setView(CABA_CENTER, CABA_ZOOM);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; OpenStreetMap',
-    maxZoom: 19,
-  }).addTo(claimsMap);
+  capaElegida = leerCapa();
+  agregarSelectorCapa();
+  ponerCapa(capaElegida);
   claimsLayer = L.layerGroup().addTo(claimsMap);
   wireGlobalPopupHandlers();
   return claimsMap;

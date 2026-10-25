@@ -25,7 +25,7 @@ UNA corrida real con respuestas al final, autorizadas por el dueño.
 ## Phase 3: login y mapa
 
 - [x] 3.1 "Abrir Gmail" según el dominio
-- [ ] 3.2 Mosaicos de Google con Mapa / Satélite y respaldo en OpenStreetMap
+- [x] 3.2 Mosaicos de Google con Mapa / Satélite y respaldo en OpenStreetMap
 - [ ] 3.3 El estado de los reclamos fuera de la pantalla
 
 ## Phase 4: cierre
