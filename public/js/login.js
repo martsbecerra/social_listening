@@ -40,6 +40,23 @@ const loginSentNote = document.getElementById('loginSentNote');
 const loginBack = document.getElementById('loginBack');
 const loginAgain = document.getElementById('loginAgain');
 const loginLive = document.getElementById('loginLive');
+const loginWebmail = document.getElementById('loginWebmail');
+
+// "Abrir Gmail" (fase G): el webmail del dominio del correo, en otra
+// pestaña, solo para los dominios conocidos; con otro, el paso 2 va sin
+// botón (un correo del trabajo puede tener cualquier webmail).
+const LOGIN_WEBMAIL = [
+  { nombre: 'Gmail', url: 'https://mail.google.com/', dominios: ['gmail.com', 'googlemail.com'] },
+  { nombre: 'Outlook', url: 'https://outlook.live.com/mail/', dominios: ['outlook.com', 'outlook.com.ar', 'hotmail.com', 'hotmail.com.ar', 'live.com', 'live.com.ar', 'msn.com'] },
+  { nombre: 'Yahoo Mail', url: 'https://mail.yahoo.com/', dominios: ['yahoo.com', 'yahoo.com.ar', 'ymail.com'] },
+  { nombre: 'iCloud Mail', url: 'https://www.icloud.com/mail/', dominios: ['icloud.com', 'me.com', 'mac.com'] },
+  { nombre: 'Proton Mail', url: 'https://mail.proton.me/', dominios: ['proton.me', 'protonmail.com', 'pm.me'] },
+];
+
+function loginWebmailDe(address) {
+  const dominio = String(address || '').split('@').pop().trim().toLowerCase();
+  return LOGIN_WEBMAIL.find((w) => w.dominios.includes(dominio)) || null;
+}
 
 // Lo mandado en esta página, por si sessionStorage no anda.
 const loginSentMemory = new Map();
@@ -158,6 +175,12 @@ function loginTickAgain() {
 function loginGoToStep2(address, { already = false } = {}) {
   loginAddress = address;
   loginMailTo.textContent = address;
+  const webmail = loginWebmailDe(address);
+  loginWebmail.hidden = !webmail;
+  if (webmail) {
+    loginWebmail.href = webmail.url;
+    loginWebmail.textContent = `Abrir ${webmail.nombre} ↗`;
+  }
   loginSentNote.textContent = already ? 'Ya te mandamos un link hace instantes a:' : 'Tocá el link que te mandamos a:';
   loginClearError(loginErr2);
   loginLive.textContent = '';

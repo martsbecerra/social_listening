@@ -8835,6 +8835,17 @@ body.login-page {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Fase G: "Abrir Gmail" (el webmail del dominio del correo), en su renglón. */
+.lg-webmail {
+  display: flex;
+  width: max-content;
+  max-width: 100%;
+  margin: -4px 0 16px;
+  text-decoration: none;
+}
+.lg-webmail[hidden] {
+  display: none;
+}
 .lg-mail i {
   flex: none;
   width: 7px;
