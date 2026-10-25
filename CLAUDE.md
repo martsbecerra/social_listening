@@ -1001,7 +1001,7 @@ vigente es `design/social-listening-v4.html`. SDD en
 prueba en el navegador con un servidor de prueba aparte (otro puerto, copia
 de la base, sin scheduler ni Apify).
 
-## Análisis de publicación de Instagram (fase E)
+## Análisis de publicación de Instagram (fases E y F)
 
 `POST /api/analyze` (`src/analysisRoutes.js`) valida el link
 (`checkAnalyzeUrl`) y responde 202 `{ id, yaEnCurso }` ANTES de gastar; el
@@ -1021,7 +1021,11 @@ curso" de un arranque anterior los pasa a "interrumpido" SOLO `server.js`
 al arrancar (`db.markInterruptedAnalisis`, con el `usd_apify` que ya
 gastaron), nunca la carga de `db.js`: un script que abre la base no puede
 tocar un análisis vivo. SDD en
-`openspec/changes/analisis-v4/`.
+`openspec/changes/analisis-v4/` (E) y `openspec/changes/analisis-pro/`
+(F: el modelo nuevo, las métricas, el informe de 8 puntos y las figuras
+públicas). La F va en dos PR: F1 (modelo y servidor, tag `v4-fase-f1`) y F2
+(la pantalla de la maqueta nueva, el inicio y la edición de figuras, tag
+`v4-fase-f`); hasta la F2 la pantalla es la de la E, con los datos v2.
 
 - **Apify**: dos corridas del actor oficial en paralelo (la publicación y
   los comentarios con `addParentData`), por `runActorSync` con los avisos
@@ -1039,34 +1043,157 @@ tocar un análisis vivo. SDD en
   los comentarios. Sin la corrida de la publicación (vacía o un ítem de
   error), cuenta, likes y texto quedan sin dato: los campos de primer nivel
   de un comentario son del comentario, nunca del posteo.
-- **Modelo** (`src/analyzeComments.js`): la muestra (`commentSample.js`)
-  va en tandas de `BATCH_SIZE` 100 por llamada (`TANDA_SYSTEM_PROMPT`,
-  `TANDA_JSON_SCHEMA`, cada tanda numerada desde 1; hasta 3 a la vez) y
-  después una síntesis (`SINTESIS_SYSTEM_PROMPT`, `SINTESIS_JSON_SCHEMA`)
-  con todo lo clasificado: posteo sobre, insights, postura, lectura
-  estratégica y hasta 8 temas con los números de sus comentarios
-  (`normalizeTemasConComentarios`: solo comentarios clasificados de la
-  muestra, sin repetidos). Una tanda que falla deja sus comentarios en null
-  y el análisis sigue (el contador del paso suma solo lo clasificado); si
-  fallan todas, error con el `userMessage` del proveedor (sin crédito,
-  clave inválida: reintentar no lo arregla), y si falla la síntesis, con el
-  suyo. El error lleva lo ya gastado (`err.tokenUsage`): la fila guarda
-  `usd_modelo` y `tokens` también al fallar. La subcategoría de los
-  reclamos (`llm.requestText`) sale con su costo estimado, como el resto.
-  El registro de cuentas se actualiza de a uno (`updateAccountRegistry`:
-  relee el archivo, suma lo suyo y lo guarda con un temporal y un rename),
-  así dos análisis a la vez no se pisan.
-  **"Analizados" son los clasificados de verdad**:
-  `normalizeBatchClassifications` ya no completa con neutral lo que el
-  modelo no devolvió; la pantalla dice "analizados N de M" con M el total
-  que informa Instagram, nunca un número fijo. Los tonos de la pantalla son
-  cantidades simples (`countTones`, el ruido aparte); el informe
-  (`reportBuilder.js`) conserva su porcentaje ponderado por tipo de cuenta
-  (la pantalla lo rotula así) y dice "Análisis realizado sobre N de M
-  comentarios", con "(priorizadas…)" solo si la app recortó la muestra. El
-  prompt, el schema y la validación de X no cambiaron. Los tests stubean
-  `llm.requestStructuredAnalysis` y `clasificarReclamo.asignarSubcategorias`
-  por el objeto del módulo.
+- **Modelo, v2 desde la fase F** (`src/analyzeComments.js`, `prompt.js`,
+  `userPrompt.js`, `analysisSchema.js`, `validateAnalysis.js`): la muestra
+  (`commentSample.js`) va en tandas de `BATCH_SIZE` 50 por llamada
+  (`TANDA_SYSTEM_PROMPT`, `TANDA_JSON_SCHEMA`), con `BATCH_MAX_TOKENS`
+  16.000 de tope de salida. Con un modelo que razona, el razonamiento
+  cuenta para ese tope: en la corrida real del 24/10/2026, 50 comentarios
+  gastaron 10.653 tokens de salida (el JSON, unos 2.000) y una tanda de 100
+  se cortó en 12.000, dos veces. Una respuesta cortada (`SALIDA_CORTADA`,
+  `src/llm/errors.js`: `finish_reason` `length` en OpenRouter,
+  `stop_reason` `max_tokens` en Anthropic) no se reintenta igual: la tanda
+  se parte en dos mitades, una después de la otra, una sola vez. El
+  proveedor de Anthropic usa `messages.create` y parsea el JSON a mano:
+  `messages.parse` tira con un JSON a medias antes de devolver el mensaje y
+  se perdían el uso y el `stop_reason`. Todo
+  error de `llm.requestStructuredAnalysis` lleva lo ya gastado
+  (`err.tokenUsage`, con su costo) y el análisis lo suma: un intento
+  fallido también se cobra. Esto vale para todo lo que usa
+  `requestStructuredAnalysis` (también el clasificador del monitoreo y el
+  análisis de X): una respuesta cortada ya no se pide dos veces. Por comentario: tono,
+  postura hacia la gestión (`favor` | `neutra` | `critica`), tema (el
+  número de la lista; 0 ninguno, también el ruido: el modelo no arma un
+  tema para eso), si habla del posteo, si pide algo en serio (no una
+  pregunta irónica) y los
+  reclamos con ubicación. La PRIMERA tanda va sola y define los temas
+  ("DEFINÍ LOS TEMAS"); si cae o no devuelve ninguno, la siguiente también
+  va sola (`MAX_TANDAS_SOLAS` 2: si no, las que corren en paralelo armaban
+  cada una su propia lista). Las demás (hasta 5 a la vez) reciben esa lista
+  ("LISTA DE TEMAS") y pueden sumar temas nuevos (el prompt pide como mucho
+  3 por tanda; el schema acepta 12, lo que necesita la que define), que se
+  unen por nombre (`claveTema`: sin acentos, mayúsculas ni espacios de más; tope
+  `MAX_TEMAS_ANALISIS` 15 por publicación; los que llegan después quedan
+  sin tema). Después una síntesis (`SINTESIS_SYSTEM_PROMPT`,
+  `SINTESIS_JSON_SCHEMA`) que recibe los NÚMEROS ya contados por
+  `analysisMetrics.js` y una muestra (pedidos, los de más likes, los del
+  tema principal fuera del posteo y los verificados; hasta 160) y devuelve
+  solo texto: la lectura, el hecho dominante (`hay`, el número de tema,
+  título y descripción), los pedidos agrupados con los números de sus
+  comentarios (`normalizeSynthesis`: solo comentarios marcados PEDIDO,
+  sin el ruido, cada uno en un solo grupo), qué mirar y sugerencias de rol
+  para los VERIFICADOS SIN FICHA. En TEMAS, cada tema lleva sus propios
+  comentarios fuera del posteo (`fuera` de la vista; los desvíos de la
+  pantalla son solo 4). **El modelo no da números**: todo lo que se cuenta
+  sale del servidor. Sin tipo de cuenta en Instagram: la postura lo
+  reemplaza; `accountRegistry.js` ya no existe, Instagram no lee ni
+  escribe `data/account-types.json` y el tono no se pondera por tipo (X
+  conserva lo suyo). Una tanda
+  que falla deja sus comentarios en null y el análisis sigue (el contador
+  del paso suma solo lo clasificado); si fallan todas, error con el
+  `userMessage` del proveedor (sin crédito, clave inválida: reintentar no lo
+  arregla), y si falla la síntesis, con el suyo. El error lleva lo ya
+  gastado (`err.tokenUsage`): la fila guarda `usd_modelo` y `tokens`
+  también al fallar (y si algo tira después de que el modelo terminó,
+  `analysisJob` usa lo que el modelo ya informó). La subcategoría de los reclamos (`llm.requestText`)
+  sale con su costo estimado, como el resto. **"Analizados" son los
+  clasificados de verdad**: la pantalla dice "analizados N de M" con M el
+  total que informa Instagram, nunca un número fijo. La fila guarda
+  `resultado` con `version: 2` (`lectura`, `hecho`, `pedidos`, `queMirar`,
+  `figurasSugeridas`; `lecturaEstrategica` repite la lectura para la
+  pantalla de la E), `temas` como `{ version: 2, lista: [{ id, nombre }] }`
+  y cada comentario con `tono`, `postura`, `tema` (el id), `sobrePosteo` y
+  `pedido`. El prompt, el schema y la validación de X no cambiaron. Los
+  tests stubean `llm.requestStructuredAnalysis` y
+  `clasificarReclamo.asignarSubcategorias` por el objeto del módulo.
+- **Métricas al leer** (`src/analysisMetrics.js`, sin dependencias):
+  `buildAnalysisView(fila, { figuras, reclamos, anteriores })` arma TODO lo
+  numérico desde la fila guardada, al leer (`GET /api/analisis/:id`): tono
+  y postura (sobre los clasificados sin el ruido; lo sin clasificar
+  tampoco entra), el ponderado por likes (cada comentario pesa likes + 1),
+  el tono neto, "hablan del posteo" y a qué se desvían, los temas (con sus
+  renombres y uniones; uno del modelo sin ningún comentario no sale; en
+  un v1 cada tema cuenta su propia lista, como en la E (también el ruido,
+  que no suma tono), la estrella tiene que tener algún comentario que no
+  sea ruido, uno sin comentarios es uno del equipo (sale con su texto si
+  tiene, sin conteo) y el CSV nombra todos los temas de cada comentario), el hecho dominante (los que más pegaron y los pedidos son "del
+  hecho" con la misma regla: del tema y fuera del posteo), quién habló (verificados y
+  figuras públicas), los pedidos, etiquetas (@ mencionadas), emojis (sin
+  tono de piel ni U+FE0F; una secuencia ZWJ cuenta por su primer emoji;
+  listas fijas `APOYO` y `BRONCA`), los de más likes, el tiempo, la
+  comparación con los análisis anteriores de la misma cuenta (de cada
+  publicación anterior, solo su último análisis: `db.listAnterioresDeCuenta`;
+  promedio de % negativo, comentarios, verificados y "sobre el posteo"; la
+  pantalla lo dice "+74 %", nunca "1,7×"), los reclamos del posteo y el
+  costo. **Hecho dominante**: solo si el modelo lo marcó sobre el tema
+  principal de los que no hablan del posteo Y los comentarios de ese tema
+  que no hablan del posteo son al menos `UMBRAL_HECHO` (20 %) de los
+  analizados (el informe dice "un hecho ajeno al posteo"); si no, `hecho`
+  null y la tarjeta calma. Un análisis
+  v1 (fase E) muestra lo que se puede contar con sus comentarios y los
+  bloques que piden los campos nuevos vienen en `disponible` como false.
+  Cambiar una regla vale para todos los análisis sin recalcular nada; las
+  columnas de la galería (`pct_neg`, `tiene_hecho`, `n_verificados`,
+  `tema_estrella`, `columnasDeVista`) se escriben al terminar y, las
+  cuatro, al editar los temas (v1 y v2: unir temas puede cambiar la
+  estrella y el hecho), y los v1 se completaron una vez al cargar `db.js`
+  con `buildAnalysisView` y `columnasDeVista`, la misma cuenta que la
+  vista, fila por fila (una rara queda con `n_verificados` 0 y un aviso, y
+  no frena a las demás). `listAnterioresDeCuenta` hace la ventana por
+  publicación solo sobre id y fecha y lee los comentarios de los elegidos
+  (con `SELECT *` tardaba casi un segundo con 300 análisis de una cuenta).
+- **Informe y CSV** (`src/reportBuilder.js`): `buildInforme(vista)` es el
+  de 8 puntos (lo que pasó, tono, postura, hablan del posteo, temas, quién
+  habló, pedidos, lectura), más "Comentarios destacados" y el pie
+  `_Social Listening · DGAYD · dd/mm/aaaa_`. Sin hecho, el punto 1 dice
+  "la conversación responde al posteo" solo si la mayoría habla del
+  posteo; si no, cuánto se desvía (lo que falta para 100 del punto 4) y
+  adónde. Reemplazó al institucional
+  solo en Instagram (X tiene el suyo, `src/x/reportBuilder.js`); Copiar y
+  WhatsApp usan el mismo texto. Un rol y una alineación salen en el informe
+  solo para una figura del equipo; una sugerida va como @usuario. Un v1
+  dice "no disponible en este análisis (es anterior a la fase F)." en lo
+  que no puede contar. `buildComentariosCsv(vista)` y `buildReclamosCsv`:
+  `GET /api/analisis/:id/comentarios.csv` y `/reclamos.csv` (404 sin
+  reclamos), con BOM para Excel, `nosniff` y
+  `comentarios-<cuenta>-<AAAA-MM-DD>.csv`. Contra la inyección de
+  fórmulas, un campo que empieza con = + - @ tabulación o retorno (salvo un
+  número) lleva un apóstrofo adelante (`escapeCsvField`); el CSV de
+  reclamos de un análisis anterior ya quedó guardado como estaba, y el de
+  X (`src/x/reportBuilder.js`) no cambió (X no se toca en esta fase). Un
+  análisis donde todo lo clasificado es ruido dice "sin comentarios con
+  opinión para medir" en los puntos 1 a 4.
+- **Figuras públicas** (`src/figuras.js`, puro; tabla `figuras_publicas`,
+  la única nueva): usuario (minúsculas, sin @), nombre, rol (`ROLES`, sin
+  género en el texto: "Legislador/a"), alineación (oficialismo | oposición,
+  solo para `ROLES_CON_ALINEACION`: legislador, funcionario, partido, junta
+  comunal, periodista y medio) y `origen` (`equipo` | `sugerida`). Todos
+  los que comentaron se cruzan con la tabla (`db.getFigurasPorUsernames`);
+  el modelo sugiere SOLO para verificados sin ficha del equipo, y la
+  sugerencia queda como `sugerida` (`db.upsertFiguraSugerida`, que nunca
+  pisa una del equipo). El modelo no etiqueta la ideología de nadie que no
+  sea figura pública. `/api/figuras` (`src/figurasRoutes.js`): GET (la
+  lista, los roles y las alineaciones), POST (201; 409 repetida; 400 con el
+  motivo), PATCH `/:username` (cambia lo que venga y confirma una
+  sugerida: queda `equipo`, con quien la confirmó como `creado_por`),
+  DELETE (204); quién la cargó (`creado_por`, un correo) no sale. Roles y
+  alineaciones se validan con `Object.hasOwn` ("constructor" no es un
+  rol). Una sugerencia borrada vuelve si el modelo la sugiere en otro
+  análisis (no hay "rechazada"; queda para la F2). La pantalla para
+  editarlas va en la F2.
+- **Temas** (`src/analysisTemas.js`, puro): el equipo puede renombrar uno
+  (si el nombre es el de otro del modelo, se unen: `unidoA`, sus
+  comentarios cuentan en el otro sin reescribirlos), agregar uno a mano
+  (sin conteo, con un texto que entra en el informe; hasta 8) y quitar uno
+  agregado a mano; uno del modelo no se quita ni lleva texto (400 con el
+  motivo). `PATCH /api/analisis/:id/temas` con `{ accion: 'renombrar' |
+  'agregar' | 'quitar', id, nombre, texto }` devuelve el análisis entero
+  (vista e informe rehechos) y actualiza las columnas de la galería; la
+  lista entera que manda la pantalla de la E se traduce al cambio
+  (`traducirListaVieja`: uno más, uno menos o un título distinto, contra
+  el estado de ese momento: dos pestañas con listas viejas pueden pisarse
+  hasta la F2); un v1 sigue con su lista de hasta 8, como siempre. Un tema
+  del modelo sin comentarios no se ve pero sigue ocupando su nombre.
 - **Reclamos**: `db.upsertReclamo(r, { conservarGestion: true })` en
   Instagram y X: re-analizar conserva el estado y, si la dirección detectada
   no cambió, el geocodificado; con la misma categoría, una subcategoría
@@ -1074,12 +1201,16 @@ tocar un análisis vivo. SDD en
   El importador sigue como antes.
 - **Progreso** (`src/analysisProgress.js`,
   `GET /api/analyze/progress?plataforma=&id=`): turno (solo si alguna
-  corrida esperó cupo), publicación, comentarios, tono (los clasificados de
-  las tandas que van terminando, en el orden en que terminan: "87 de 287"
-  si termina primero la corta), temas, reclamos e informe, cada uno `pendiente` | `en curso` |
-  `ok` | `omitido` | `error` con un detalle que escribe el trabajo. Queda
-  en memoria 10 min después de terminar; después la ruta devuelve la fila
-  (`pasos: null`).
+  corrida esperó cupo), publicación, comentarios, clasificar tono, postura
+  y temas (los clasificados de las tandas que van terminando, en el orden
+  en que terminan: "87 de 287" si termina primero la corta), verificados y
+  figuras públicas, reclamos e informe, cada uno `pendiente` | `en curso` |
+  `ok` | `omitido` | `error` con un detalle que escribe el trabajo y, el
+  que está en curso, su `avance` (0 a 1, solo si el trabajo lo sabe).
+  `porcentaje`: los pasos terminados, omitidos o en error valen uno y el en
+  curso su avance (sin avance, cero: no se inventa). Queda en memoria 10
+  min después de terminar; después la ruta devuelve la fila (`pasos:
+  null`).
 - **"Cuándo comentaron"** (`src/commentTimeline.js`, sin dependencias):
   sobre TODOS los comentarios traídos (la muestra está ordenada por likes),
   solo con la fecha de la publicación y 10 o más con fecha; por hora hasta
@@ -1092,14 +1223,20 @@ tocar un análisis vivo. SDD en
   `detected_posts` sin foto, se le anota). Ningún pedido nuevo a Apify. La
   fila guarda sus `image_*`; `GET /api/analisis/:id/image` arma el archivo
   con el `post_id` de la fila.
-- **Lecturas**: `GET /api/analisis?plataforma=&limit=` (`recientes`
-  terminados bien y `enCurso`, cada uno con `propio`: lo arrancó el
-  mismo correo, en cualquier sesión de esa persona, y sin login todos; el
-  correo no sale), `?url=` (`ultimo` y `enCurso`: el aviso de
-  "ya se analizó"), `GET /api/analisis/:id`, `PATCH /api/analisis/:id/temas`
-  (hasta 8, cada uno con título; los números de comentarios se limpian
-  contra la fila). Al navegador no va el link original de la foto ni quién
-  lo corrió (`paraNavegador`).
+- **Lecturas**: `GET /api/analisis?plataforma=&q=&f=&ord=&limit=` (la
+  galería, `db.listAnalisisGaleria`: `q` busca sin acentos en cuenta, texto
+  y tema estrella; `f` `all` | `ev` (con hecho dominante) | `neg` (40 % o
+  más negativo) | `ver` (con verificados); `ord` `recent` | `c`
+  (comentarios) | `neg` | `ver`; hasta 200; devuelve `recientes`
+  terminados bien, `total`, `desde` y `enCurso`, cada uno con `propio`: lo
+  arrancó el mismo correo, en cualquier sesión de esa persona, y sin login
+  todos; el correo no sale), `?url=` (`ultimo` y `enCurso`: el aviso de "ya
+  se analizó"), `GET /api/analisis/:id` (la fila más `vista` e `informe`;
+  en un v2, también `temas` y `reporteAntes` en la forma que lee la
+  pantalla de la E hasta la F2: título, el texto de los agregados a mano y
+  los números de sus comentarios; `reporteAntes` es el informe y
+  `reporteDespues` va vacío) y los dos CSV. Al navegador no va el link
+  original de la foto ni quién lo corrió (`paraNavegador`).
 - **Pantalla** (`public/js/analysis.js`, prefijo `ana`; solo
   `instagram.html`, después de `postView.js`; CSS bajo `.ana4`, así X no
   cambia): "Analizar" pregunta primero `?url=` (si hay uno terminado,
@@ -1118,14 +1255,17 @@ tocar un análisis vivo. SDD en
   la fila: la foto entera sobre negro, "analizados N de M", el resumen (la
   lectura estratégica, escrita en ~1,5 s; quieta con movimiento reducido),
   el tono, los temas (tamaño por conteo; clic filtra los comentarios con
-  una pastilla ✕; ✎ edita título y texto o quita; "+ tema"; sin texto el
-  tema no entra en el informe), "Cuándo comentaron" (SVG al ancho real, una
+  una pastilla ✕; ✎ edita título y texto o quita; "+ tema"; en un v1, sin
+  texto el tema no entra en el informe; en un v2, el informe nombra todos y
+  solo los agregados a mano llevan texto), "Cuándo comentaron" (SVG al ancho real, una
   franja por tramo con `data-tip`; tres marcas en el eje bajo 480 px; con
   la solapa oculta no se dibuja y se arma al aparecer; el rótulo del pico
   se mide y queda adentro), los
   comentarios (Destacados = los 5 con más likes, Negativos, Neutrales,
-  Positivos, Todos de a 50) y compartir: el informe con los temas editados
-  (`TemasConversacion.assemble`), aviso pasados los 4.000 caracteres
+  Positivos, Todos de a 50) y compartir: en un v2, el informe de 8 puntos
+  (`anaReportText`; el PATCH de los temas lo trae rehecho); en un v1, el
+  de antes con los temas editados (`TemasConversacion.assemble`). Aviso
+  pasados los 4.000 caracteres
   (WhatsApp lo corta ahí), Copiar, WhatsApp y el CSV (deshabilitado sin
   reclamos; `reclamos-<cuenta>-<AAAA-MM-DD>.csv` con la fecha del análisis en
   Argentina). La primera vez que se abre la solapa (`openAnalysis`, desde
@@ -1135,16 +1275,33 @@ tocar un análisis vivo. SDD en
   sin analizar, saca de la vista el análisis de otra publicación y avisa si
   ese link ya se analizó. El campo sigue siendo `#url`.
 - Tests: `test/analisisBase.test.js` (tabla, recientes, interrumpidos,
-  `analisis_id`, `conservarGestion`), `test/analisisApify.test.js`
+  `analisis_id`, `conservarGestion`, galería, anteriores de la cuenta,
+  figuras), `test/analisisMigracionF.test.js` (una base de la fase E: las
+  columnas nuevas y el completado de los v1), `test/figuras.test.js`,
+  `test/analisisMetricas.test.js` (la vista v2 y v1 contra cuentas hechas a
+  mano), `test/analisisTemas.test.js`, `test/analisisApify.test.js`
   (normalización, topes, las dos corridas, el limitador lleno),
-  `test/analisisModelo.test.js` (tandas, una caída, índices omitidos, temas,
-  tonos, informe, registro de cuentas), `test/analisisTrabajo.test.js`
-  (línea de tiempo, progreso, el trabajo y las rutas con el gate de login) y
+  `test/analisisModelo.test.js` (la primera tanda sola, los temas nuevos
+  unidos, una caída, la cortada partida en dos, lo gastado en las
+  fallidas, índices omitidos, la síntesis y sus límites, las
+  sugerencias), `test/llmReintento.test.js` (también la respuesta cortada y
+  lo gastado en los errores, en OpenRouter y en Anthropic),
+  `test/analisisTrabajo.test.js` (línea de tiempo, progreso,
+  el trabajo y las rutas con el gate de login: galería, vista, informe,
+  temas v2 y viejos, CSV, figuras),
   `test/analisisFixtureReal.test.js` (REQ-ANA-18: la forma real del actor y
   el análisis entero contra `test/fixtures/apify/analisis-publicacion.json`
   y `analisis-comentarios.json`, de la corrida autorizada del 24/10/2026,
   anonimizados: sin usuarios, textos, ids ni links reales; fechas corridas,
-  desfasajes reales).
+  desfasajes reales) y `test/analisisFixtureRealF.test.js` (REQ-PRO-14: la
+  corrida de la fase F del mismo día, un carrusel con 385 comentarios y
+  155 ítems, 150 con texto; `test/fixtures/apify/analisis-f-*.json` y lo que
+  respondió el modelo en `test/fixtures/llm/analisis-f-tanda.json` y
+  `analisis-f-sintesis.json`, con sus tokens reales; el análisis entero da
+  los números del informe real. El anonimizador conserva lo que miran las
+  heurísticas de `classificationHeuristics.js` (solo emojis, solo
+  menciones, menos de 3 caracteres, palabras de sorteo) sin el texto
+  real).
 - **Lo que trae de verdad el actor** (esa corrida, un reel con 138
   comentarios según Instagram): 64 comentarios, solo los de primer nivel
   (`repliesCount` y `replies` en null: el total de Instagram suma las

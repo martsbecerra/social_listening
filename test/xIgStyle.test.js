@@ -16,7 +16,6 @@ const {
   assembleReport,
   MAX_TEMAS,
 } = require('../src/temasConversacion');
-const { buildWhatsAppReport: buildIgReport } = require('../src/reportBuilder');
 const { buildWhatsAppReport: buildXReport } = require('../src/x/reportBuilder');
 const { validateAndNormalizeAnalysis } = require('../src/x/validate');
 const { buildReclamosFromAnalysis } = require('../src/x/reclamosFromAnalysis');
@@ -57,34 +56,8 @@ describe('x-ig-style temas / geo / mapa', { concurrency: false }, () => {
     assert.ok(full.indexOf('TEMAS DE LA CONVERSACIÓN') < full.indexOf('3️⃣'));
   });
 
-  test('reporte IG inserta temas entre 2 y 3 (REQ-TEMAS-02)', () => {
-    const result = buildIgReport({
-      url: 'https://www.instagram.com/p/AAA/',
-      post: { ownerFullName: 'GCBA', ownerUsername: 'gcba', likesCount: 1, commentsCount: 2, videoPlayCount: 3 },
-      sample: [],
-      isPartial: false,
-      sampleSize: 0,
-      totalComments: 0,
-      classifications: [],
-      qualitative: {
-        posteoSobre: 'un anuncio',
-        insightApoyo: ['a', 'b'],
-        insightCriticas: ['c', 'd'],
-        insightReclamos: ['e', 'f'],
-        insightMedios: ['g', 'h'],
-        posturaAudiencia: 'mixto',
-        lecturaEstrategica: 'seguir',
-        temasConversacion: [{ titulo: 'Coimas', texto: 'Menciones a sobornos.' }],
-      },
-    });
-    assert.match(result.report, /ANÁLISIS DE POSTEO EN INSTAGRAM/);
-    assert.ok(result.report.indexOf('2️⃣') < result.report.indexOf('TEMAS DE LA CONVERSACIÓN'));
-    assert.ok(result.report.indexOf('TEMAS DE LA CONVERSACIÓN') < result.report.indexOf('3️⃣'));
-    assert.equal(
-      assembleReport(result.reportParts.beforeTemas, result.temas, result.reportParts.afterTemas),
-      result.report
-    );
-  });
+  // El informe de Instagram ya no es el institucional: desde la fase F es el
+  // de 8 puntos (src/reportBuilder.js buildInforme, test/analisisMetricas.test.js).
 
   test('reporte X con temas y roundtrip (REQ-TEMAS-02)', () => {
     const result = buildXReport({

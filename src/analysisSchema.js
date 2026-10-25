@@ -7,11 +7,18 @@
 // ==========================================================================
 
 const { listCategorias } = require('./categoriasConfig');
-const { TEMAS_ARRAY_SCHEMA, MAX_TEMAS } = require('./temasConversacion');
+const { TEMAS_ARRAY_SCHEMA } = require('./temasConversacion');
+const { ROL_KEYS } = require('./figuras');
 
 // Valores permitidos; deben coincidir con validateAnalysis.js y el system prompt.
 const SENTIMENTS = ['positivo', 'negativo', 'neutral', 'ruido'];
 const ACCOUNT_TYPES = ['oficial', 'periodista', 'opositor', 'vecino', 'ruido'];
+// Fase F: qué dice el comentario de la gestión (no cómo suena).
+const POSTURAS = ['favor', 'neutra', 'critica'];
+// Cuántos temas puede devolver una tanda: la que los define arma de 4 a 10;
+// las demás, según el prompt, como mucho 3 nuevos (el tope de la
+// publicación es MAX_TEMAS_ANALISIS, en analyzeComments.js).
+const MAX_TEMAS_POR_TANDA = 12;
 
 // Qué tipo de ubicación detectó el modelo. De acá sale la `precision` con la
 // que se guarda el reclamo: un lugar con nombre propio ("Plaza Italia") se
@@ -114,66 +121,108 @@ const ANALYSIS_JSON_SCHEMA = {
   ],
 };
 
-// El análisis de publicación de Instagram va en dos llamadas
-// (src/analyzeComments.js): una por tanda de hasta 100 comentarios, que solo
+// El análisis de publicación de Instagram va en varias llamadas
+// (src/analyzeComments.js): una por tanda de hasta 50 comentarios, que
 // clasifica, y una de síntesis. ANALYSIS_JSON_SCHEMA (arriba) queda como el
-// schema por defecto de los proveedores; el análisis pasa estos dos.
+// schema por defecto de los proveedores; el análisis pasa estos dos. Desde la
+// fase F (openspec/changes/analisis-pro): sin tipo de cuenta; por comentario
+// tono, postura, tema, si habla del posteo y si pide algo.
 
-/** Una tanda: un ítem por comentario numerado de la tanda (index 1-based). */
+/** La clasificación de un comentario de una tanda (index 1-based de la lista de la tanda). */
+const CLASIFICACION_TANDA_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    index: { type: 'integer', minimum: 1 },
+    sentiment: { type: 'string', enum: SENTIMENTS },
+    postura: { type: 'string', enum: POSTURAS, description: 'Qué dice de la gestión, no cómo suena.' },
+    tema: { type: 'integer', minimum: 0, description: 'El número del tema de la lista; 0 si es ruido o no encaja en ninguno.' },
+    sobre_posteo: { type: 'boolean', description: 'true si habla de lo que publica la cuenta; false si usa el posteo para otra cosa.' },
+    pedido: { type: 'boolean', description: 'true si pide algo concreto o pregunta.' },
+    reclamosGeo: { type: 'array', items: RECLAMO_GEO_SCHEMA },
+  },
+  required: ['index', 'sentiment', 'postura', 'tema', 'sobre_posteo', 'pedido', 'reclamosGeo'],
+};
+
+/** Una tanda: los temas que define o suma y un ítem por comentario numerado. */
 const TANDA_JSON_SCHEMA = {
   type: 'object',
   additionalProperties: false,
   properties: {
+    temas: {
+      type: 'array',
+      maxItems: MAX_TEMAS_POR_TANDA,
+      description: 'Los temas que esta tanda define (la primera) o suma (las demás), con su número.',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          numero: { type: 'integer', minimum: 1 },
+          nombre: { type: 'string', maxLength: 60 },
+        },
+        required: ['numero', 'nombre'],
+      },
+    },
     classifications: {
       type: 'array',
       description: 'Un ítem por cada comentario numerado de esta tanda (index 1-based, el número de la lista).',
-      items: CLASSIFICATION_ITEM_SCHEMA,
+      items: CLASIFICACION_TANDA_SCHEMA,
     },
   },
-  required: ['classifications'],
+  required: ['temas', 'classifications'],
 };
 
-// Un tema con los números de sus comentarios (solo Instagram: el schema de
-// temas de X, TEMAS_ARRAY_SCHEMA, no cambia).
-const TEMA_CON_COMENTARIOS_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  properties: {
-    titulo: { type: 'string' },
-    texto: { type: 'string' },
-    comentarios: {
-      type: 'array',
-      description: 'Los números (de la lista numerada) de los comentarios que hablan de este tema.',
-      items: { type: 'integer', minimum: 1 },
-    },
-  },
-  required: ['titulo', 'texto', 'comentarios'],
-};
-
-/** La síntesis: los textos del informe y los temas, sobre lo ya clasificado. */
+/**
+ * La síntesis: la lectura, el hecho dominante (o ninguno), los pedidos
+ * agrupados con los números de sus comentarios, qué conviene mirar y las
+ * sugerencias de rol para verificados sin ficha. Sin números: los cuenta el
+ * servidor.
+ */
 const SINTESIS_JSON_SCHEMA = {
   type: 'object',
   additionalProperties: false,
   properties: {
-    posteoSobre: { type: 'string', description: 'Resumen ejecutivo del contenido del posteo.' },
-    insightApoyo: INSIGHT_PAIR_SCHEMA,
-    insightCriticas: INSIGHT_PAIR_SCHEMA,
-    insightReclamos: INSIGHT_PAIR_SCHEMA,
-    insightMedios: INSIGHT_PAIR_SCHEMA,
-    posturaAudiencia: { type: 'string' },
-    lecturaEstrategica: { type: 'string' },
-    temasConversacion: { type: 'array', items: TEMA_CON_COMENTARIOS_SCHEMA, maxItems: MAX_TEMAS },
+    lectura: { type: 'string', description: 'La lectura estratégica, de 3 a 5 oraciones.' },
+    hecho_dominante: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        hay: { type: 'boolean' },
+        tema: { type: 'integer', minimum: 0 },
+        titulo: { type: 'string' },
+        descripcion: { type: 'string' },
+      },
+      required: ['hay', 'tema', 'titulo', 'descripcion'],
+    },
+    pedidos: {
+      type: 'array',
+      maxItems: 8,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          texto: { type: 'string' },
+          ids: { type: 'array', items: { type: 'integer', minimum: 1 } },
+        },
+        required: ['texto', 'ids'],
+      },
+    },
+    que_mirar: { type: 'string', description: 'Una o dos oraciones: una sugerencia práctica para el equipo.' },
+    figuras_sugeridas: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          username: { type: 'string' },
+          rol: { type: 'string', enum: ROL_KEYS },
+          alineacion: { type: 'string', enum: ['oficialismo', 'oposicion', 'ninguna'] },
+        },
+        required: ['username', 'rol', 'alineacion'],
+      },
+    },
   },
-  required: [
-    'posteoSobre',
-    'insightApoyo',
-    'insightCriticas',
-    'insightReclamos',
-    'insightMedios',
-    'posturaAudiencia',
-    'lecturaEstrategica',
-    'temasConversacion',
-  ],
+  required: ['lectura', 'hecho_dominante', 'pedidos', 'que_mirar', 'figuras_sugeridas'],
 };
 
 module.exports = {
@@ -183,5 +232,7 @@ module.exports = {
 
   SENTIMENTS,
   ACCOUNT_TYPES,
+  POSTURAS,
   TIPOS_UBICACION,
+  MAX_TEMAS_POR_TANDA,
 };

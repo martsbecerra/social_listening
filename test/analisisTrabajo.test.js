@@ -16,7 +16,6 @@ const path = require('path');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sl-analisis-trabajo-'));
 const MEDIA = path.join(tmp, 'media');
 process.env.MONITORING_DB_PATH = path.join(tmp, 'monitoring.db'); // ANTES de cargar db.js
-process.env.ACCOUNT_REGISTRY_PATH = path.join(tmp, 'account-types.json');
 process.env.MONITORING_MEDIA_DIR = MEDIA;
 process.env.APIFY_API_TOKEN = 'token-de-test';
 process.env.SESSION_SECRET = 'secreto-de-test';
@@ -38,6 +37,7 @@ const postImages = require('../src/postImages');
 const progress = require('../src/analysisProgress');
 const analysisJob = require('../src/analysisJob');
 const analysisRoutes = require('../src/analysisRoutes');
+const figurasRoutes = require('../src/figurasRoutes');
 const { buildCommentTimeline } = require('../src/commentTimeline');
 const { createAuthGate } = require('../src/auth/gate');
 const { setSessionCookie } = require('../src/auth/session');
@@ -98,10 +98,20 @@ function stubs() {
       const lista = [...userPrompt.matchAll(/^(\d+)\. @(\S+)/gm)];
       return {
         parsed: {
+          temas: /DEFINÍ LOS TEMAS/.test(userPrompt)
+            ? [
+                { numero: 1, nombre: 'Baches' },
+                { numero: 2, nombre: 'Plaza' },
+              ]
+            : [],
           classifications: lista.map((m) => ({
             index: Number(m[1]),
             sentiment: Number(m[2].replace('vecino', '')) % 4 === 0 ? 'negativo' : 'positivo',
-            accountType: 'vecino',
+            postura: Number(m[2].replace('vecino', '')) % 4 === 0 ? 'critica' : 'favor',
+            tema: Number(m[2].replace('vecino', '')) % 2 === 0 ? 1 : 2,
+            sobre_posteo: Number(m[2].replace('vecino', '')) % 2 !== 0,
+            // Los que agrupa la síntesis de abajo (un pedido solo junta marcados PEDIDO).
+            pedido: m[1] === '2' || m[1] === '3',
             reclamosGeo: m[2] === 'vecino2' ? [{ direccionDetectada: 'Salta 250', direccionNormalizada: 'Salta 250', tematica: 'bache', categoria: 'Infraestructura', tipoUbicacion: 'calle_altura' }] : [],
           })),
         },
@@ -110,14 +120,11 @@ function stubs() {
     }
     return {
       parsed: {
-        posteoSobre: 'Un anuncio',
-        insightApoyo: ['a', 'b'],
-        insightCriticas: ['c', 'd'],
-        insightReclamos: ['e', 'f'],
-        insightMedios: ['g', 'h'],
-        posturaAudiencia: 'A favor.',
-        lecturaEstrategica: 'La lectura estratégica.',
-        temasConversacion: [{ titulo: 'Baches', texto: 'Piden arreglar calles.', comentarios: [2, 3, 3, 99] }],
+        lectura: 'La lectura estratégica.',
+        hecho_dominante: { hay: true, tema: 1, titulo: 'Un pozo enorme en Salta', descripcion: 'Lo mencionan muchos.' },
+        pedidos: [{ texto: 'Arreglar las calles', ids: [2, 3, 99] }],
+        que_mirar: 'Responder por los baches.',
+        figuras_sugeridas: [],
       },
       usage: { inputTokens: 300, outputTokens: 80, totalTokens: 380, costUsd: 0.02 },
     };
@@ -195,14 +202,43 @@ describe('el trabajo del análisis', { concurrency: false }, () => {
     assert.equal(a.comentariosTotal, 480);
     assert.deepEqual([a.traidos, a.unicos, a.enviados, a.analizados], [25, 25, 25, 25]);
     assert.deepEqual(a.tonos, { positivos: 19, neutrales: 0, negativos: 6, ruido: 0 });
-    assert.equal(a.resultado.lecturaEstrategica, 'La lectura estratégica.');
-    assert.equal(a.resultado.temasConversacion, undefined, 'los temas van en su columna');
-    assert.deepEqual(a.temas, [{ titulo: 'Baches', texto: 'Piden arreglar calles.', comentarios: [2, 3] }]);
+    assert.equal(a.resultado.version, 2);
+    assert.equal(a.resultado.lectura, 'La lectura estratégica.');
+    assert.equal(a.resultado.lecturaEstrategica, 'La lectura estratégica.', 'la que lee la solapa de la fase E');
+    assert.deepEqual(a.resultado.hecho, { temaId: 1, titulo: 'Un pozo enorme en Salta', descripcion: 'Lo mencionan muchos.' });
+    assert.deepEqual(a.resultado.pedidos, [{ texto: 'Arreglar las calles', ids: [2, 3] }]);
+    assert.equal(a.resultado.queMirar, 'Responder por los baches.');
+    assert.deepEqual(a.temas, {
+      version: 2,
+      lista: [
+        { id: 1, nombre: 'Baches' },
+        { id: 2, nombre: 'Plaza' },
+      ],
+    });
     assert.equal(a.comentarios.length, 25);
-    assert.deepEqual(a.comentarios[0], { n: 1, usuario: 'vecino1', verificada: false, likes: 500, fecha: respuestaComentarios[0].timestamp, texto: 'Comentario 1', tono: 'positivo', tipo: 'vecino' });
+    assert.deepEqual(a.comentarios[0], {
+      n: 1,
+      usuario: 'vecino1',
+      verificada: false,
+      likes: 500,
+      fecha: respuestaComentarios[0].timestamp,
+      texto: 'Comentario 1',
+      tono: 'positivo',
+      postura: 'favor',
+      tema: 2,
+      sobrePosteo: true,
+      pedido: false,
+    });
     assert.equal(a.cuando.unidadHoras, 1);
     assert.equal(a.cuando.conFecha, 25);
-    assert.match(a.reporteAntes, /Análisis realizado sobre 25 de 480 comentarios\./);
+    // El informe de 8 puntos, con la misma cuenta que la pantalla.
+    assert.match(a.reporteAntes, /^\*Análisis de publicación · @gcba · /);
+    assert.match(a.reporteAntes, /\(25 analizados\)/);
+    assert.match(a.reporteAntes, /1\) \*Lo que pasó:\* el 48 % de los comentarios habla de un mismo hecho ajeno al posteo: Un pozo enorme en Salta\./);
+    assert.equal(a.reporteDespues, '');
+    assert.equal(a.positivoPct, null, 'sin el ponderado por tipo de cuenta');
+    // Las columnas de la galería: 6 de 25 negativos; el hecho (12 de 25 en "Baches", fuera del posteo); "Plaza", 13.
+    assert.deepEqual([a.pctNeg, a.tieneHecho, a.nVerificados, a.temaEstrella], [24, true, 0, 'Plaza']);
     assert.equal(a.reclamos, 1);
     assert.equal(geocodificaciones, 1, 'los reclamos se geocodifican después');
     assert.equal(a.tokens, 150 + 380);
@@ -217,8 +253,9 @@ describe('el trabajo del análisis', { concurrency: false }, () => {
     assert.equal(detalle.turno, undefined, 'sin espera, el paso del turno no aparece');
     assert.match(detalle.publicacion, /^ok · @gcba · 900 likes · \d+ s$/);
     assert.match(detalle.comentarios, /^ok · 25 comentarios · \d+ s$/);
-    assert.match(detalle.tono, /^ok · 25 clasificados · \d+ s$/);
-    assert.match(detalle.temas, /^ok · 1 tema · \d+ s$/);
+    assert.match(detalle.clasificar, /^ok · 25 de 25 · 1 tanda · \d+ s$/);
+    assert.equal(detalle.verificados, 'ok · 0 verificados · 0 figuras públicas');
+    assert.equal(view.porcentaje, 100);
     assert.equal(detalle.reclamos, 'ok · 1 reclamo');
     assert.match(detalle.informe, /^ok · listo · [\d.]+ caracteres$/);
     assert.equal(progress.getView(id, 'x'), null, 'por plataforma');
@@ -279,16 +316,16 @@ describe('el trabajo del análisis', { concurrency: false }, () => {
     const view = progress.getView(id, 'instagram');
     assert.equal(view.error, 'Se agotó el crédito de Apify.');
     assert.equal(view.pasos.find((p) => p.key === 'publicacion').estado, 'error');
-    assert.equal(view.pasos.find((p) => p.key === 'tono').estado, 'pendiente');
+    assert.equal(view.pasos.find((p) => p.key === 'clasificar').estado, 'pendiente');
   });
 
-  test('si el modelo falla en todas las tandas: error, y el paso del tono en error', async () => {
+  test('si el modelo falla en todas las tandas: error, y el paso de clasificar en error', async () => {
     llm.requestStructuredAnalysis = async () => {
       throw new Error('caído');
     };
     const id = await analizar('https://www.instagram.com/p/SINLLM/');
     assert.equal(db.getAnalisis(id, 'instagram').estado, 'error');
-    assert.equal(progress.getView(id, 'instagram').pasos.find((p) => p.key === 'tono').estado, 'error');
+    assert.equal(progress.getView(id, 'instagram').pasos.find((p) => p.key === 'clasificar').estado, 'error');
   });
 
   test('si la síntesis falla después de clasificar, la fila guarda lo gastado en el modelo', async () => {
@@ -376,6 +413,7 @@ describe('las rutas', { concurrency: false }, () => {
     app.use(express.json());
     app.use(createAuthGate());
     analysisRoutes.register(app);
+    figurasRoutes.register(app);
     await new Promise((resolve) => {
       server = app.listen(0, '127.0.0.1', resolve);
     });
@@ -476,8 +514,88 @@ describe('las rutas', { concurrency: false }, () => {
     assert.equal((await pedir('/api/analisis/999999?plataforma=instagram')).status, 404);
   });
 
-  test('PATCH de los temas: se guardan limpios; una lista inválida, 400', async () => {
-    const id = await analizar('https://www.instagram.com/p/TEMAS/');
+  test('el análisis entero suma la vista, el informe y los temas como los lee la solapa de la fase E', async () => {
+    const id = await analizar('https://www.instagram.com/p/VISTA/');
+    const a = await (await pedir(`/api/analisis/${id}?plataforma=instagram`)).json();
+    assert.equal(a.vista.version, 2);
+    assert.deepEqual([a.vista.tono.positivos, a.vista.tono.negativos], [19, 6]);
+    assert.equal(a.vista.hecho.titulo, 'Un pozo enorme en Salta');
+    assert.equal(a.vista.comparacion.primero, false, 'gcba ya tiene análisis anteriores en esta base');
+    assert.match(a.vista.imagen.thumbUrl, /^\/api\/analisis\/\d+\/image\?/);
+    assert.equal(a.vista.reclamos.length, 1, 'el de vecino2, por el link del posteo');
+    assert.match(a.informe, /^\*Análisis de publicación · @gcba/);
+    assert.equal(a.reporteAntes, a.informe);
+    assert.equal(a.reporteDespues, '');
+    // La lista vieja: Plaza (13) primero, Baches (12); números de comentarios.
+    assert.deepEqual(
+      a.temas.map((t) => [t.titulo, t.texto, t.comentarios.length]),
+      [
+        ['Plaza', '', 13],
+        ['Baches', '', 12],
+      ]
+    );
+  });
+
+  test('PATCH v2: renombrar (y unir si coincide), agregar a mano, quitar solo los manuales; la estrella se actualiza', async () => {
+    const id = await analizar('https://www.instagram.com/p/TEMAS2/');
+    const patch = (body) => pedir(`/api/analisis/${id}/temas?plataforma=instagram`, { method: 'PATCH', body });
+    let r = await patch({ accion: 'renombrar', id: 2, nombre: '  Plaza Italia ' });
+    assert.equal(r.status, 200);
+    let a = await r.json();
+    assert.equal(a.vista.temas[0].nombre, 'Plaza Italia');
+    assert.equal(db.listAnalisisGaleria({ plataforma: 'instagram' }).items.find((x) => x.id === id).temaEstrella, 'Plaza Italia');
+    a = await (await patch({ accion: 'renombrar', id: 1, nombre: 'plaza italia' })).json();
+    assert.deepEqual(
+      a.vista.temas.map((t) => [t.nombre, t.n]),
+      [['Plaza Italia', 25]],
+      'se unieron'
+    );
+    assert.equal(db.getAnalisis(id, 'instagram').temas.lista[0].unidoA, 2);
+    // Las cuatro columnas de la galería, con la vista después de unir.
+    const enGaleria = db.listAnalisisGaleria({ plataforma: 'instagram', limit: 200 }).items.find((x) => x.id === id);
+    assert.deepEqual([enGaleria.temaEstrella, enGaleria.tieneHecho], ['Plaza Italia', Boolean(a.vista.hecho)]);
+    a = await (await patch({ accion: 'agregar', nombre: 'Seguridad', texto: 'Piden más patrullaje.' })).json();
+    assert.deepEqual(a.vista.temas[1], { id: 3, nombre: 'Seguridad', manual: true, texto: 'Piden más patrullaje.', n: null, fuera: null, tonos: { positivo: 0, neutral: 0, negativo: 0 }, estrella: false });
+    assert.match(a.informe, /5\) \*Temas:\* Plaza Italia \(25\), Seguridad: Piden más patrullaje\./);
+    r = await patch({ accion: 'quitar', id: 2 });
+    assert.equal(r.status, 400);
+    assert.match((await r.json()).error, /no se puede quitar/);
+    assert.equal((await patch({ accion: 'quitar', id: 3 })).status, 200);
+    assert.equal((await patch({ accion: 'agregar', nombre: ' ' })).status, 400);
+    assert.equal((await patch({ accion: 'borrar todo' })).status, 400);
+    assert.equal((await pedir(`/api/analisis/${id}/temas?plataforma=x`, { method: 'PATCH', body: {} })).status, 404);
+  });
+
+  test('PATCH viejo (la lista entera de la solapa de la fase E) sobre un v2: se traduce al cambio', async () => {
+    const id = await analizar('https://www.instagram.com/p/TEMAS3/');
+    const patch = (temas) => pedir(`/api/analisis/${id}/temas?plataforma=instagram`, { method: 'PATCH', body: { temas } });
+    let a = await (await patch([{ titulo: 'Plaza', texto: '' }, { titulo: 'Baches y pozos', texto: '' }])).json();
+    assert.deepEqual(
+      a.temas.map((t) => t.titulo),
+      ['Plaza', 'Baches y pozos']
+    );
+    a = await (await patch([{ titulo: 'Plaza', texto: '' }, { titulo: 'Baches y pozos', texto: '' }, { titulo: 'Nuevo', texto: 'Uno a mano.' }])).json();
+    assert.equal(a.vista.temas[2].manual, true);
+    assert.equal(a.temas[2].texto, 'Uno a mano.', 'el editor de la E muestra el texto del manual');
+    // Renombrar el manual desde la E (manda su texto tal cual): lo conserva.
+    a = await (await patch([{ titulo: 'Plaza', texto: '' }, { titulo: 'Baches y pozos', texto: '' }, { titulo: 'A mano', texto: 'Uno a mano.' }])).json();
+    assert.deepEqual([a.vista.temas[2].nombre, a.vista.temas[2].texto], ['A mano', 'Uno a mano.']);
+    let r = await patch([{ titulo: 'Plaza', texto: 'Le escribo texto' }, { titulo: 'Baches y pozos', texto: '' }, { titulo: 'A mano', texto: 'Uno a mano.' }]);
+    assert.equal(r.status, 400, 'un tema del modelo no lleva texto');
+    assert.match((await r.json()).error, /no llevan texto/);
+    r = await patch([{ titulo: 'Plaza', texto: '' }]);
+    assert.equal(r.status, 400, 'sacar uno del modelo no se puede');
+  });
+
+  test('PATCH sobre un análisis v1 (fase E): la lista entera, limpia, como siempre', async () => {
+    const id = db.startAnalisis({ plataforma: 'instagram', url: 'https://www.instagram.com/p/VIEJO/' });
+    db.finishAnalisis(id, 'instagram', {
+      analizados: 3,
+      tonos: { positivos: 2, neutrales: 1, negativos: 0, ruido: 0 },
+      resultado: { lecturaEstrategica: 'De antes.' },
+      temas: [{ titulo: 'Viejo', texto: 'x', comentarios: [1] }],
+      comentarios: [1, 2, 3].map((n) => ({ n, usuario: `u${n}`, verificada: false, likes: n, fecha: null, texto: 't', tono: 'positivo', tipo: 'vecino' })),
+    });
     const ok = await pedir(`/api/analisis/${id}/temas?plataforma=instagram`, {
       method: 'PATCH',
       body: { temas: [{ titulo: '  Baches  ', texto: 'Calles rotas', comentarios: [3, 1, 1, 400] }, { titulo: 'Nuevo', texto: '' }] },
@@ -487,11 +605,43 @@ describe('las rutas', { concurrency: false }, () => {
       { titulo: 'Baches', texto: 'Calles rotas', comentarios: [1, 3] },
       { titulo: 'Nuevo', texto: '', comentarios: [] },
     ]);
-    const sinTitulo = await pedir(`/api/analisis/${id}/temas?plataforma=instagram`, { method: 'PATCH', body: { temas: [{ titulo: ' ', texto: 'x' }] } });
-    assert.equal(sinTitulo.status, 400);
+    // La galería se entera (antes quedaba con la estrella vieja).
+    assert.equal(db.listAnalisisGaleria({ plataforma: 'instagram', limit: 200 }).items.find((x) => x.id === id).temaEstrella, 'Baches');
     const muchos = await pedir(`/api/analisis/${id}/temas?plataforma=instagram`, { method: 'PATCH', body: { temas: Array.from({ length: 9 }, () => ({ titulo: 't' })) } });
     assert.equal(muchos.status, 400);
-    assert.equal((await pedir(`/api/analisis/${id}/temas?plataforma=x`, { method: 'PATCH', body: { temas: [] } })).status, 404);
+    const a = await (await pedir(`/api/analisis/${id}?plataforma=instagram`)).json();
+    assert.equal(a.vista.version, 1);
+    assert.equal(a.vista.disponible.postura, false);
+    assert.match(a.informe, /3\) \*Postura hacia la gestión:\* no disponible/);
+    assert.equal(a.temas[0].titulo, 'Baches', 'un v1 conserva su lista');
+  });
+
+  test('la galería por la ruta: filtro, búsqueda, total y desde', async () => {
+    const todos = await (await pedir('/api/analisis?plataforma=instagram&limit=100')).json();
+    assert.ok(todos.total >= todos.recientes.length);
+    assert.ok(todos.desde);
+    const conHecho = await (await pedir('/api/analisis?plataforma=instagram&f=ev&limit=100')).json();
+    assert.ok(conHecho.recientes.length > 0 && conHecho.recientes.every((a) => a.tieneHecho));
+    const buscado = await (await pedir(`/api/analisis?plataforma=instagram&q=${encodeURIComponent('PLAZA ITALIA')}`)).json();
+    assert.ok(buscado.recientes.length > 0 && buscado.recientes.every((a) => a.temaEstrella === 'Plaza Italia'));
+  });
+
+  test('los CSV: comentarios siempre, reclamos solo si hubo', async () => {
+    const id = await analizar('https://www.instagram.com/p/CSV1/');
+    const r = await pedir(`/api/analisis/${id}/comentarios.csv?plataforma=instagram`);
+    assert.equal(r.status, 200);
+    assert.match(r.headers.get('content-type'), /^text\/csv/);
+    assert.match(r.headers.get('content-disposition'), /^attachment; filename="comentarios-gcba-\d{4}-\d{2}-\d{2}\.csv"$/);
+    const crudo = Buffer.from(await r.arrayBuffer()); // .text() se come el BOM
+    assert.deepEqual([...crudo.subarray(0, 3)], [0xef, 0xbb, 0xbf], 'con el BOM para Excel');
+    const texto = crudo.toString('utf8');
+    assert.equal(texto.trim().split('\n').length, 26);
+    const rec = await pedir(`/api/analisis/${id}/reclamos.csv?plataforma=instagram`);
+    assert.equal(rec.status, 200);
+    assert.match(await rec.text(), /"vecino2","Salta 250"/);
+    respuestaComentarios = commentItems(25).map((c) => (c.ownerUsername === 'vecino2' ? { ...c, ownerUsername: 'vecino2b' } : c));
+    const sinRec = await analizar('https://www.instagram.com/p/CSV2/');
+    assert.equal((await pedir(`/api/analisis/${sinRec}/reclamos.csv?plataforma=instagram`)).status, 404);
   });
 
   test('la foto: el archivo del posteo, armado con datos de la fila', async () => {
@@ -506,5 +656,34 @@ describe('las rutas', { concurrency: false }, () => {
     assert.equal((await pedir(`/api/analisis/${id}/image?plataforma=instagram&size=full`)).status, 404, 'sin el archivo, 404');
     assert.equal((await pedir(`/api/analisis/${id}/image?plataforma=instagram&size=../../x`)).status, 400);
     assert.equal((await pedir(`/api/analisis/${id}/image?plataforma=x&size=thumb`)).status, 404);
+  });
+
+  test('figuras públicas: alta, repetida, mal puesta, confirmar una sugerida, borrar; el correo no sale', async () => {
+    assert.equal((await pedir('/api/figuras', { conCookie: false })).status, 401);
+    const alta = await pedir('/api/figuras', { method: 'POST', body: { username: '@Leg.Uno', nombre: 'Legisladora Uno', rol: 'legislador', alineacion: 'oposicion' } });
+    assert.equal(alta.status, 201);
+    const { figura } = await alta.json();
+    assert.equal(figura.username, 'leg.uno');
+    assert.equal(figura.origen, 'equipo');
+    assert.equal('creadoPor' in figura, false);
+    assert.equal(db.getFigura('leg.uno').creadoPor, 'prueba@test.local', 'queda en la base');
+    assert.equal((await pedir('/api/figuras', { method: 'POST', body: { username: 'leg.uno', nombre: 'Otra', rol: 'medio' } })).status, 409);
+    const mal = await pedir('/api/figuras', { method: 'POST', body: { username: 'a b', nombre: 'x', rol: 'legislador' } });
+    assert.equal(mal.status, 400);
+    assert.ok((await mal.json()).error);
+    assert.equal((await pedir('/api/figuras', { method: 'POST', body: { username: 'otra', nombre: 'x', rol: 'astronauta' } })).status, 400);
+
+    db.upsertFiguraSugerida({ username: 'medio.sugerido', rol: 'medio', alineacion: 'oficialismo' });
+    const lista = await (await pedir('/api/figuras')).json();
+    assert.ok(lista.figuras.every((f) => !('creadoPor' in f)));
+    assert.equal(lista.figuras.find((f) => f.username === 'medio.sugerido').origen, 'sugerida');
+    assert.equal(lista.roles.legislador, 'Legislador/a');
+    assert.ok(lista.rolesConAlineacion.includes('periodista'));
+    const confirmada = await pedir('/api/figuras/medio.sugerido', { method: 'PATCH', body: { nombre: 'Medio Sugerido' } });
+    assert.equal(confirmada.status, 200);
+    assert.equal((await confirmada.json()).figura.origen, 'equipo');
+    assert.equal((await pedir('/api/figuras/nadie', { method: 'PATCH', body: { nombre: 'x' } })).status, 404);
+    assert.equal((await pedir('/api/figuras/leg.uno', { method: 'DELETE' })).status, 204);
+    assert.equal((await pedir('/api/figuras/leg.uno', { method: 'DELETE' })).status, 404);
   });
 });

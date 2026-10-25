@@ -37,6 +37,7 @@ const apifyCost = require('./src/apifyCost');
 const { resolveMaxCommentsLimit } = require('./src/commentSample');
 const { resolveXMaxItems } = require('./src/x/sample');
 const analysisRoutes = require('./src/analysisRoutes');
+const figurasRoutes = require('./src/figurasRoutes');
 const { checkAnalyzeUrl } = require('./src/platforms/urlPlatform');
 const { fetchXThread, getModel: getXaiModel, getFetchBackend } = require('./src/x/grokFetch');
 const { analyzeXThread } = require('./src/x/analyze');
@@ -252,9 +253,12 @@ app.post('/api/auth/logout', (req, res) => {
 // --------------------------------------------------------------------------
 // Análisis de publicación de Instagram: POST /api/analyze responde el id
 // (202) y el trabajo sigue en el servidor; el progreso, los recientes, el
-// análisis guardado, sus temas y su foto, en src/analysisRoutes.js.
+// análisis guardado (con sus métricas, el informe y los CSV), sus temas y su
+// foto, en src/analysisRoutes.js. La lista de figuras públicas, en
+// src/figurasRoutes.js.
 // --------------------------------------------------------------------------
 analysisRoutes.register(app);
+figurasRoutes.register(app);
 
 function logXTask(phase, detail = {}) {
   const payload = Object.keys(detail).length ? ` ${JSON.stringify(detail)}` : '';

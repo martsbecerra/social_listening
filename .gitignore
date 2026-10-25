@@ -4,8 +4,7 @@ node_modules/
 # Variables de entorno con secretos (¡nunca subir!)
 .env
 
-# Datos locales: SQLite del monitoreo, registro de account-types, etc.
-# (ver data/account-types.example.json si hace falta una plantilla)
+# Datos locales: SQLite del monitoreo, fotos, etc.
 data/
 
 # Logs
@@ -25,3 +24,7 @@ config/monitoring-x.json.migrado
 
 # Logs del arranque con reinicio automatico (scripts/iniciar-con-reinicio.bat)
 logs/
+
+# Comprimidos sueltos (data.rar y cualquier .rar): nunca se versionan
+data.rar
+*.rar

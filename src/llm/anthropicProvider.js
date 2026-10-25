@@ -3,7 +3,10 @@
 // --------------------------------------------------------------------------
 // Dos modos de uso, en espejo con openrouterProvider.js, con el mismo modelo:
 //   - requestStructuredAnalysis: Structured Outputs (análisis de post y
-//                                clasificador del monitoreo)
+//                                clasificador del monitoreo); una respuesta
+//                                cortada por el tope de salida no se
+//                                reintenta y todo error lleva lo ya gastado
+//                                (ver ./errors.js)
 //   - requestText:               texto plano (reclamos, importador)
 // ==========================================================================
 
@@ -12,6 +15,7 @@ const { jsonSchemaOutputFormat } = require('@anthropic-ai/sdk/helpers/json-schem
 const { ANALYSIS_JSON_SCHEMA } = require('../analysisSchema');
 const { addTokenUsage, fromAnthropicUsage } = require('./usage');
 const { getAnalysisModel } = require('./providerConfig');
+const { SALIDA_CORTADA, salidaCortadaError, conGasto } = require('./errors');
 
 const client = new Anthropic();
 const STRUCTURED_OUTPUT_MAX_ATTEMPTS = 2;
@@ -23,6 +27,17 @@ const STRUCTURED_OUTPUT_MAX_ATTEMPTS = 2;
  */
 function requestOptions(timeoutMs) {
   return Number.isFinite(timeoutMs) && timeoutMs > 0 ? { timeout: timeoutMs } : undefined;
+}
+
+/** El JSON del primer bloque de texto de la respuesta, o null (vacío o inválido). */
+function parseTextContent(message) {
+  const bloque = (Array.isArray(message && message.content) ? message.content : []).find((b) => b && b.type === 'text');
+  if (!bloque || typeof bloque.text !== 'string' || !bloque.text.trim()) return null;
+  try {
+    return JSON.parse(bloque.text);
+  } catch {
+    return null;
+  }
 }
 
 async function requestStructuredAnalysis({ system, userPrompt, schema, maxTokens = 8000, timeoutMs }) {
@@ -42,21 +57,28 @@ async function requestStructuredAnalysis({ system, userPrompt, schema, maxTokens
   let usage = null;
   for (let attempt = 1; attempt <= STRUCTURED_OUTPUT_MAX_ATTEMPTS; attempt++) {
     try {
-      const message = await client.messages.parse(requestParams, requestOptions(timeoutMs));
+      // create y el JSON a mano, no messages.parse: parse tira con un JSON a
+      // medias antes de devolver el mensaje, y se perdían el uso y el
+      // stop_reason (una respuesta cortada se reintentaba igual).
+      const message = await client.messages.create(requestParams, requestOptions(timeoutMs));
       const callUsage = fromAnthropicUsage(message.usage);
       if (callUsage) usage = usage ? addTokenUsage(usage, callUsage) : callUsage;
-      if (message.parsed_output != null) {
-        return { parsed: message.parsed_output, usage, attempts: attempt };
+      const parsed = parseTextContent(message);
+      if (parsed != null) {
+        return { parsed, usage, attempts: attempt };
       }
-      lastError = new Error('parsed_output es null');
+      // Cortada por el tope de salida: otro intento igual se corta igual.
+      if (message.stop_reason === 'max_tokens') throw salidaCortadaError(maxTokens);
+      lastError = new Error('contenido vacío o JSON inválido');
     } catch (err) {
       lastError = err;
+      if (err && err.code === SALIDA_CORTADA) throw conGasto(err, usage);
       console.warn(
         `Anthropic structured output intento ${attempt}/${STRUCTURED_OUTPUT_MAX_ATTEMPTS} falló:`,
         err.message
       );
       if (attempt === STRUCTURED_OUTPUT_MAX_ATTEMPTS) {
-        throw mapAnthropicError(err);
+        throw conGasto(mapAnthropicError(err), usage);
       }
     }
   }
@@ -64,7 +86,7 @@ async function requestStructuredAnalysis({ system, userPrompt, schema, maxTokens
   const e = new Error(`Structured output falló: ${lastError?.message || 'desconocido'}`);
   e.userMessage =
     'El servicio de análisis no devolvió un resultado válido. Intentá de nuevo en unos minutos.';
-  throw e;
+  throw conGasto(e, usage);
 }
 
 /**

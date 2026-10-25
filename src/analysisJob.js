@@ -13,9 +13,13 @@
 //      Monitoreo si ya la tiene, o una copia nueva del link que trajo la
 //      corrida (src/postImages.js, mismo archivo; ningún pedido nuevo a
 //      Apify).
-//   3) Clasifica en tandas y arma la síntesis (src/analyzeComments.js).
+//   3) Clasifica en tandas, cruza los verificados con las figuras públicas,
+//      guarda los reclamos y arma la síntesis (src/analyzeComments.js).
 //   4) "Cuándo comentaron" (src/commentTimeline.js), los comentarios con su
-//      tono, el informe y el gasto, todo en la fila.
+//      clasificación (v2: tono, postura, tema, sobre el posteo, pedido), lo
+//      que dijo el modelo, los temas, el informe de 8 puntos, las columnas de
+//      la galería y el gasto, todo en la fila. Las métricas se cuentan al
+//      leer (src/analysisMetrics.js); las columnas salen de la misma cuenta.
 // Cada paso queda en src/analysisProgress.js. Todo corre con el contexto
 // { phase: 'analisis', analisisId } (src/usageContext.js): cada llamada a
 // Apify queda en apify_calls con su analisis_id.
@@ -35,6 +39,9 @@ const postImages = require('./postImages');
 const geoWorker = require('./geoWorker');
 const progress = require('./analysisProgress');
 const { buildCommentTimeline } = require('./commentTimeline');
+const { buildAnalysisView, columnasDeVista } = require('./analysisMetrics');
+const { buildInforme } = require('./reportBuilder');
+const { computePerformanceLevel } = require('./sentimentAggregate');
 const { runWithContext } = require('./usageContext');
 
 const PLATAFORMA = 'instagram';
@@ -189,27 +196,11 @@ async function guardarFoto(id, post) {
   }
 }
 
-/** Los comentarios de la muestra como los guarda la fila: numerados desde 1 (los temas los nombran así). */
-function comentariosParaGuardar(sample, classifications) {
-  return sample.map((c, i) => {
-    const row = classifications[i];
-    return {
-      n: i + 1,
-      usuario: c.username,
-      verificada: Boolean(c.isVerified),
-      likes: c.likesCount ?? null,
-      fecha: c.timestamp || null,
-      texto: c.text,
-      tono: row ? row.sentiment : null,
-      tipo: row ? row.accountType : null,
-    };
-  });
-}
-
 async function run(id, url) {
   const pasos = progress.pasosDe(id);
   const hooks = turnoTracker(pasos);
   let traidos = null;
+  let gastoModeloListo = null; // lo del modelo, si algo tira después de que terminó
   try {
     // ---- 1) publicación y comentarios, en paralelo
     const hPost = hooks('publicacion');
@@ -259,32 +250,63 @@ async function run(id, url) {
     // ---- 3) el modelo
     const desdeModelo = Date.now();
     const result = await analyzer.analyzeComments({ url, post, comments, pasos });
+    gastoModeloListo = result.tokenUsage || null;
     log(id, 'modelo listo', { ms: Date.now() - desdeModelo, ...result.numeros, tokens: result.tokenUsage ? result.tokenUsage.totalTokens : null });
 
-    // ---- 4) la fila
-    pasos.start('informe');
+    // ---- 4) la fila (el paso "informe" lo arrancó la síntesis)
     const cuando = buildCommentTimeline({ postedAt: post.postedAt, comments });
     await foto;
-    const { temasConversacion, ...resultado } = result.qualitative;
+    const s = result.sintesis;
+    // lecturaEstrategica: la que lee la solapa de la fase E hasta la F2.
+    const resultado = { version: 2, lectura: s.lectura, lecturaEstrategica: s.lectura, hecho: s.hecho, pedidos: s.pedidos, queMirar: s.queMirar, figurasSugeridas: s.figurasSugeridas };
+    const finishedAt = new Date().toISOString();
+    const usdApify = db.sumApifyUsdForAnalisis(id).usd;
+    const usdModelo = result.tokenUsage ? result.tokenUsage.costUsd ?? null : null;
+    // La misma cuenta que la pantalla: las columnas y el informe salen de la vista.
+    const vista = buildAnalysisView(
+      {
+        id,
+        url,
+        cuenta: post.ownerUsername && post.ownerUsername !== 'N/D' ? post.ownerUsername : null,
+        postType: post.postType,
+        caption: post.caption,
+        postedAt: post.postedAt,
+        finishedAt,
+        likes: post.likesCount,
+        comentariosTotal: post.commentsCount,
+        traidos: result.numeros.traidos,
+        analizados: result.numeros.analizados,
+        resultado,
+        temas: result.temas,
+        comentarios: result.comentarios,
+        cuando,
+        usdApify,
+        usdModelo,
+      },
+      { figuras: db.getFigurasPorUsernames(result.comentarios.map((c) => c.usuario)) }
+    );
+    const informe = buildInforme(vista);
     db.finishAnalisis(id, PLATAFORMA, {
       ...result.numeros,
+      finishedAt,
       tonos: result.tonos,
-      positivoPct: result.metricas.positivoPct,
-      negativoPct: result.metricas.negativoPct,
-      nivel: result.metricas.nivel,
+      positivoPct: null,
+      negativoPct: null,
+      nivel: computePerformanceLevel(post),
       resultado,
-      temas: temasConversacion,
-      comentarios: comentariosParaGuardar(result.sample, result.classifications),
+      temas: result.temas,
+      comentarios: result.comentarios,
       cuando,
-      reporteAntes: result.reportParts ? result.reportParts.beforeTemas : result.report,
-      reporteDespues: result.reportParts ? result.reportParts.afterTemas : '',
-      csv: result.csv,
+      reporteAntes: informe,
+      reporteDespues: '',
+      csv: result.reclamosCsv,
       reclamos: result.reclamos,
-      usdApify: db.sumApifyUsdForAnalisis(id).usd,
-      usdModelo: result.tokenUsage ? result.tokenUsage.costUsd ?? null : null,
+      usdApify,
+      usdModelo,
       tokens: result.tokenUsage ? result.tokenUsage.totalTokens ?? null : null,
+      ...columnasDeVista(vista),
     });
-    pasos.done('informe', `listo · ${INT.format(result.report.length)} caracteres`);
+    pasos.done('informe', `listo · ${INT.format(informe.length)} caracteres`);
     progress.finish(id, { estado: 'ok' });
     log(id, 'listo', { reclamos: result.reclamos });
 
@@ -295,7 +317,7 @@ async function run(id, url) {
     const mensaje = (err && err.userMessage) || MENSAJE_ERROR;
     console.error(`[analisis] #${id} error:`, err && err.message);
     try {
-      const gastoModelo = (err && err.tokenUsage) || null;
+      const gastoModelo = (err && err.tokenUsage) || gastoModeloListo;
       db.failAnalisis(id, PLATAFORMA, {
         estado: 'error',
         error: mensaje,

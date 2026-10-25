@@ -21,6 +21,8 @@ const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
 const { normalizeClasificacion } = require('./categoriasConfig');
 const { platformForUrl } = require('./platforms/urlPlatform');
+const figurasModelo = require('./figuras');
+const analysisMetrics = require('./analysisMetrics'); // sin dependencias: no vuelve a db.js
 
 const DATA_DIR = path.join(__dirname, '..', 'data');
 // MONITORING_DB_PATH: solo para tests (tempfile). En runtime normal sigue
@@ -1138,6 +1140,32 @@ db.exec(`
 `);
 db.exec('CREATE INDEX IF NOT EXISTS idx_analisis_lista ON analisis(plataforma, estado, finished_at)');
 db.exec('CREATE INDEX IF NOT EXISTS idx_analisis_url ON analisis(plataforma, url)');
+// Fase F: lo que lista y ordena la galería sin abrir el JSON (se escriben
+// al terminar; tema_estrella también al renombrar un tema).
+const analisisColumns = db.prepare('PRAGMA table_info(analisis)').all().map((c) => c.name);
+for (const [col, type] of [['pct_neg', 'REAL'], ['tiene_hecho', 'INTEGER'], ['n_verificados', 'INTEGER'], ['tema_estrella', 'TEXT']]) {
+  if (!analisisColumns.includes(col)) db.exec(`ALTER TABLE analisis ADD COLUMN ${col} ${type}`);
+}
+db.exec('CREATE INDEX IF NOT EXISTS idx_analisis_cuenta ON analisis(plataforma, cuenta, started_at)');
+
+// Figuras públicas (fase F, src/figuras.js): el rol y la alineación de quien
+// comenta. La mantiene el equipo; el modelo solo deja sugerencias
+// (origen 'sugerida') que nunca pisan una fila del equipo. Sin CHECK: la
+// validación vive en src/figuras.js.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS figuras_publicas (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL UNIQUE,
+    nombre TEXT,
+    rol TEXT NOT NULL,
+    alineacion TEXT,
+    origen TEXT NOT NULL,
+    notas TEXT,
+    creado_por TEXT,
+    creado_en TEXT NOT NULL,
+    actualizado_en TEXT NOT NULL
+  )
+`);
 
 const insertAnalisisStmt = db.prepare(`
   INSERT INTO analisis (plataforma, url, post_code, estado, started_at, analizado_por)
@@ -1155,7 +1183,8 @@ const finishAnalisisStmt = db.prepare(`
     positivo_pct = @positivoPct, negativo_pct = @negativoPct, nivel = @nivel,
     resultado = @resultado, temas = @temas, comentarios = @comentarios, cuando = @cuando,
     reporte_antes = @reporteAntes, reporte_despues = @reporteDespues, csv = @csv, reclamos = @reclamos,
-    usd_apify = @usdApify, usd_modelo = @usdModelo, tokens = @tokens
+    usd_apify = @usdApify, usd_modelo = @usdModelo, tokens = @tokens,
+    pct_neg = @pctNeg, tiene_hecho = @tieneHecho, n_verificados = @nVerificados, tema_estrella = @temaEstrella
   WHERE id = @id AND plataforma = @plataforma
 `);
 const failAnalisisStmt = db.prepare(`
@@ -1170,10 +1199,15 @@ const markAnalisisImageStmt = db.prepare(`
   WHERE id = @id AND plataforma = @plataforma
 `);
 const getAnalisisStmt = db.prepare('SELECT * FROM analisis WHERE id = ? AND plataforma = ?');
+// Los reclamos de un análisis se buscan por su publicación (la galería los
+// cuenta por cada análisis): sin este índice recorría todos los de la red.
+db.exec('CREATE INDEX IF NOT EXISTS idx_reclamos_post ON reclamos(plataforma, post_url)');
 // Las columnas livianas: lo que necesitan la tira de recientes, el inicio y
 // el aviso de "ya analizado" (sin comentarios ni informe).
 const ANALISIS_LIVIANO = `id, plataforma, url, post_code, post_id, estado, started_at, finished_at, cuenta, cuenta_nombre, caption,
-  posted_at, likes, comentarios_total, traidos, analizados, positivos, neutrales, negativos, ruido, image_saved_at`;
+  posted_at, likes, comentarios_total, traidos, analizados, positivos, neutrales, negativos, ruido, image_saved_at,
+  pct_neg, tiene_hecho, n_verificados, tema_estrella,
+  (SELECT COUNT(*) FROM reclamos r WHERE r.plataforma = analisis.plataforma AND r.post_url = analisis.url) AS reclamos_post`;
 const listAnalisisStmt = db.prepare(`
   SELECT ${ANALISIS_LIVIANO} FROM analisis WHERE plataforma = ? AND estado = 'ok' ORDER BY finished_at DESC, id DESC LIMIT ?
 `);
@@ -1181,6 +1215,68 @@ const findAnalisisByUrlStmt = db.prepare(`
   SELECT ${ANALISIS_LIVIANO} FROM analisis WHERE plataforma = ? AND url = ? AND estado = 'ok' ORDER BY finished_at DESC, id DESC LIMIT 1
 `);
 const updateAnalisisTemasStmt = db.prepare("UPDATE analisis SET temas = ? WHERE id = ? AND plataforma = ? AND estado = 'ok'");
+const updateTemaEstrellaStmt = db.prepare("UPDATE analisis SET tema_estrella = ? WHERE id = ? AND plataforma = ? AND estado = 'ok'");
+const updateColumnasGaleriaStmt = db.prepare(`
+  UPDATE analisis SET pct_neg = @pctNeg, tiene_hecho = @tieneHecho, n_verificados = @nVerificados, tema_estrella = @temaEstrella
+  WHERE id = @id AND plataforma = @plataforma AND estado = 'ok'
+`);
+// La galería: los terminados bien de la plataforma (se filtran y ordenan en
+// listAnalisisGaleria; son cientos, no miles: con más de 2000, la búsqueda y
+// los filtros miran los 2000 más recientes). total y desde, de todos.
+const listAnalisisGaleriaStmt = db.prepare(`
+  SELECT ${ANALISIS_LIVIANO} FROM analisis WHERE plataforma = ? AND estado = 'ok' ORDER BY finished_at DESC, id DESC LIMIT 2000
+`);
+const resumenGaleriaStmt = db.prepare("SELECT COUNT(*) AS total, MIN(finished_at) AS desde FROM analisis WHERE plataforma = ? AND estado = 'ok'");
+// Los análisis anteriores de una cuenta, para la comparación: sin el
+// actual ni otros de la misma publicación, y de cada publicación anterior
+// solo el último (re-analizar una no la cuenta dos veces). La ventana va
+// solo sobre id y fecha y las columnas pesadas (comentarios) se leen de los
+// elegidos: con SELECT * ordenaba todo y, con 300 análisis de una cuenta,
+// tardaba casi un segundo con el servidor parado.
+const listAnterioresDeCuentaStmt = db.prepare(`
+  SELECT id, started_at, finished_at, post_code, pct_neg, comentarios_total, n_verificados, comentarios, temas
+  FROM analisis
+  WHERE id IN (
+    SELECT id FROM (
+      SELECT id, started_at, ROW_NUMBER() OVER (PARTITION BY COALESCE(post_code, 'id:' || id) ORDER BY started_at DESC, id DESC) AS rn
+      FROM analisis
+      WHERE plataforma = @plataforma AND estado = 'ok' AND cuenta = @cuenta AND id <> @id AND started_at < @antesDe
+        AND (@postCode IS NULL OR post_code IS NULL OR post_code <> @postCode)
+    )
+    WHERE rn = 1
+    ORDER BY started_at DESC, id DESC LIMIT @limit
+  )
+  ORDER BY started_at DESC, id DESC
+`);
+// Los reclamos de una publicación (los guarda el análisis con su post_url),
+// con la regla del pin del mapa (ver countReclamosEnMapaStmt).
+const listReclamosDePostStmt = db.prepare(`
+  SELECT id, autor, categoria, subcategoria, direccion_detectada, direccion_normalizada, barrio, comuna, x, y,
+    geo_status, estado, precision,
+    CASE WHEN geo_status IS NOT 'fuera_caba' AND x IS NOT NULL AND y IS NOT NULL AND NOT (x = 0 AND y = 0)
+      AND COALESCE(direccion_normalizada, '') <> '' THEN 1 ELSE 0 END AS en_mapa
+  FROM reclamos WHERE plataforma = ? AND post_url = ? ORDER BY detected_at, id
+`);
+
+// Figuras públicas.
+const listFigurasStmt = db.prepare('SELECT * FROM figuras_publicas ORDER BY username');
+const getFiguraStmt = db.prepare('SELECT * FROM figuras_publicas WHERE username = ?');
+const getFigurasPorUsernamesStmt = db.prepare('SELECT * FROM figuras_publicas WHERE username IN (SELECT value FROM json_each(?))');
+const insertFiguraStmt = db.prepare(`
+  INSERT INTO figuras_publicas (username, nombre, rol, alineacion, origen, notas, creado_por, creado_en, actualizado_en)
+  VALUES (@username, @nombre, @rol, @alineacion, @origen, @notas, @creadoPor, @ahora, @ahora)
+`);
+// creado_por: quien la cargó o, en una que vino del modelo, quien la confirmó.
+const updateFiguraStmt = db.prepare(`
+  UPDATE figuras_publicas SET nombre = @nombre, rol = @rol, alineacion = @alineacion, origen = @origen, notas = @notas,
+    creado_por = COALESCE(creado_por, @creadoPor), actualizado_en = @ahora
+  WHERE username = @username
+`);
+const updateFiguraSugeridaStmt = db.prepare(`
+  UPDATE figuras_publicas SET rol = @rol, alineacion = @alineacion, actualizado_en = @ahora
+  WHERE username = @username AND origen = 'sugerida'
+`);
+const deleteFiguraStmt = db.prepare('DELETE FROM figuras_publicas WHERE username = ?');
 const markInterruptedAnalisisStmt = db.prepare(`
   UPDATE analisis SET estado = 'interrumpido', finished_at = ?,
     error = 'El servidor se reinició con el análisis en curso.',
@@ -1190,6 +1286,38 @@ const markInterruptedAnalisisStmt = db.prepare(`
 const sumApifyUsdForAnalisisStmt = db.prepare(
   'SELECT COALESCE(SUM(COALESCE(usd_real, usd)), 0) AS usd, COUNT(*) AS calls FROM apify_calls WHERE analisis_id = ?'
 );
+
+// Los análisis terminados antes de la fase F no tienen las columnas de la
+// galería: se completan una vez con lo que ya guardaron, con la MISMA cuenta
+// que la vista (analysisMetrics.js), así la galería y el análisis abierto
+// dicen lo mismo. Un v1 no tiene hecho dominante. n_verificados es la
+// marca: un v2 la escribe al terminar, así que esto nunca toca uno nuevo.
+try {
+  const sinColumnas = db
+    .prepare("SELECT id, analizados, resultado, comentarios, temas FROM analisis WHERE estado = 'ok' AND n_verificados IS NULL")
+    .all();
+  const rellenar = db.prepare('UPDATE analisis SET pct_neg = ?, tiene_hecho = ?, n_verificados = ?, tema_estrella = COALESCE(tema_estrella, ?) WHERE id = ?');
+  for (const row of sinColumnas) {
+    // Fila por fila: una rara no deja sin columnas a las demás. Se marca con
+    // n_verificados 0 para no volver a probarla en cada arranque.
+    try {
+      const col = analysisMetrics.columnasDeVista(
+        analysisMetrics.buildAnalysisView({
+          analizados: row.analizados,
+          resultado: parseJsonColumn(row.resultado),
+          comentarios: parseJsonColumn(row.comentarios),
+          temas: parseJsonColumn(row.temas),
+        })
+      );
+      rellenar.run(col.pctNeg, col.tieneHecho ? 1 : 0, col.nVerificados, col.temaEstrella, row.id);
+    } catch (err) {
+      console.warn(`[db] el análisis #${row.id} no se pudo completar para la galería: ${err && err.message}`);
+      rellenar.run(null, 0, 0, null, row.id);
+    }
+  }
+} catch (err) {
+  console.warn(`[db] no se pudieron completar las columnas de los análisis anteriores: ${err && err.message}`);
+}
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS magic_links (
@@ -2345,6 +2473,11 @@ function analisisLiviano(row) {
       ruido: numberOrNull(row.ruido),
     },
     imageSavedAt: row.image_saved_at || null,
+    pctNeg: numberOrNull(row.pct_neg),
+    tieneHecho: Number(row.tiene_hecho) === 1,
+    nVerificados: numberOrNull(row.n_verificados),
+    temaEstrella: row.tema_estrella || null,
+    nReclamos: numberOrNull(row.reclamos_post),
   };
 }
 
@@ -2436,6 +2569,10 @@ function finishAnalisis(id, plataforma, data) {
     usdApify: numberOrNull(data.usdApify),
     usdModelo: numberOrNull(data.usdModelo),
     tokens: numberOrNull(data.tokens),
+    pctNeg: numberOrNull(data.pctNeg),
+    tieneHecho: data.tieneHecho ? 1 : 0,
+    nVerificados: numberOrNull(data.nVerificados),
+    temaEstrella: data.temaEstrella ?? null,
   });
 }
 
@@ -2480,10 +2617,211 @@ function findAnalisisByUrl({ plataforma, url }) {
   return analisisLiviano(findAnalisisByUrlStmt.get(plataforma, url));
 }
 
-/** Los temas editados de un análisis terminado. @returns {boolean} si había uno. */
-function updateAnalisisTemas(id, plataforma, temas) {
+/**
+ * Los temas editados de un análisis terminado. Con `columnas`
+ * (analysisMetrics.columnasDeVista de la vista con los temas nuevos: unir
+ * temas puede cambiar la estrella y el hecho dominante), también las de la
+ * galería; con `temaEstrella` solo, esa.
+ * @returns {boolean} si había uno.
+ */
+function updateAnalisisTemas(id, plataforma, temas, { temaEstrella, columnas } = {}) {
   requirePlataforma(plataforma, 'updateAnalisisTemas');
-  return updateAnalisisTemasStmt.run(JSON.stringify(temas || []), Number(id), plataforma).changes > 0;
+  const ok = updateAnalisisTemasStmt.run(JSON.stringify(temas || []), Number(id), plataforma).changes > 0;
+  if (ok && columnas) {
+    updateColumnasGaleriaStmt.run({
+      pctNeg: columnas.pctNeg ?? null,
+      tieneHecho: columnas.tieneHecho ? 1 : 0,
+      nVerificados: columnas.nVerificados ?? null,
+      temaEstrella: columnas.temaEstrella ?? null,
+      id: Number(id),
+      plataforma,
+    });
+  } else if (ok && temaEstrella !== undefined) updateTemaEstrellaStmt.run(temaEstrella, Number(id), plataforma);
+  return ok;
+}
+
+// Sin acentos ni mayúsculas, para la búsqueda de la galería.
+function plegar(texto) {
+  return String(texto || '')
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .toLowerCase();
+}
+
+const GALERIA_ORDEN = {
+  recent: () => 0, // ya vienen del más reciente al más viejo
+  c: (a, b) => (b.comentariosTotal ?? -1) - (a.comentariosTotal ?? -1),
+  neg: (a, b) => (b.pctNeg ?? -1) - (a.pctNeg ?? -1),
+  ver: (a, b) => (b.nVerificados ?? -1) - (a.nVerificados ?? -1),
+};
+const GALERIA_FILTRO = {
+  all: () => true,
+  ev: (a) => a.tieneHecho,
+  neg: (a) => a.pctNeg !== null && a.pctNeg >= 40,
+  ver: (a) => (a.nVerificados || 0) > 0,
+};
+
+/**
+ * La galería de análisis terminados: búsqueda (cuenta, texto, tema estrella;
+ * sin acentos), filtro (all | ev con hecho dominante | neg 40 % o más |
+ * ver con verificados) y orden (recent | c comentarios | neg | ver).
+ * @returns {{ items: object[], total: number, desde: string|null }} total y
+ *   desde (el primero) son de todos los terminados, no del filtro.
+ */
+function listAnalisisGaleria({ plataforma, q = '', f = 'all', ord = 'recent', limit = 100 } = {}) {
+  requirePlataforma(plataforma, 'listAnalisisGaleria');
+  const buscado = plegar(q).trim();
+  // Object.hasOwn: "constructor" o "toString" en el pedido no son un filtro.
+  const filtro = Object.hasOwn(GALERIA_FILTRO, f) ? GALERIA_FILTRO[f] : GALERIA_FILTRO.all;
+  const orden = Object.hasOwn(GALERIA_ORDEN, ord) ? GALERIA_ORDEN[ord] : GALERIA_ORDEN.recent;
+  const n = Math.max(1, Math.min(200, Math.floor(Number(limit) || 100)));
+  const resumen = resumenGaleriaStmt.get(plataforma);
+  const total = Number(resumen.total) || 0;
+  const desde = resumen.desde || null;
+  // Sin búsqueda, filtro ni orden (el inicio pide 4 por minuto): directo con LIMIT.
+  if (!buscado && filtro === GALERIA_FILTRO.all && orden === GALERIA_ORDEN.recent) {
+    return { items: listAnalisisStmt.all(plataforma, n).map(analisisLiviano), total, desde };
+  }
+  const items = listAnalisisGaleriaStmt
+    .all(plataforma)
+    .map(analisisLiviano)
+    .filter((a) => filtro(a) && (!buscado || plegar(`${a.cuenta || ''} ${a.caption} ${a.temaEstrella || ''}`).includes(buscado)))
+    .map((a, i) => ({ a, i }))
+    .sort((x, y) => orden(x.a, y.a) || x.i - y.i)
+    .slice(0, n)
+    .map((x) => x.a);
+  return { items, total, desde };
+}
+
+/**
+ * Los análisis anteriores de una cuenta (sin el actual ni otros de la misma
+ * publicación), el más reciente primero, con sus comentarios para contar.
+ */
+function listAnterioresDeCuenta({ plataforma, cuenta, id, antesDe, postCode = null, limit = 12 }) {
+  requirePlataforma(plataforma, 'listAnterioresDeCuenta');
+  if (!cuenta) return [];
+  return listAnterioresDeCuentaStmt
+    .all({ plataforma, cuenta, id: Number(id) || 0, antesDe, postCode, limit: Math.max(1, Math.min(50, Number(limit) || 12)) })
+    .map((row) => ({
+      id: Number(row.id),
+      startedAt: row.started_at,
+      finishedAt: row.finished_at,
+      pctNeg: numberOrNull(row.pct_neg),
+      comentariosTotal: numberOrNull(row.comentarios_total),
+      nVerificados: numberOrNull(row.n_verificados),
+      comentarios: parseJsonColumn(row.comentarios) || [],
+      temas: parseJsonColumn(row.temas),
+    }));
+}
+
+/** Los reclamos que guardó el análisis de una publicación, con `enMapa` (la regla del pin). */
+function listReclamosDePost({ plataforma, postUrl }) {
+  requirePlataforma(plataforma, 'listReclamosDePost');
+  return listReclamosDePostStmt.all(plataforma, postUrl).map((r) => ({
+    id: r.id,
+    autor: r.autor || null,
+    categoria: r.categoria,
+    subcategoria: r.subcategoria || null,
+    direccion: r.direccion_normalizada || r.direccion_detectada || null,
+    barrio: r.barrio || null,
+    comuna: numberOrNull(r.comuna),
+    x: numberOrNull(r.x),
+    y: numberOrNull(r.y),
+    geoStatus: r.geo_status || null,
+    estado: r.estado,
+    precision: r.precision || null,
+    enMapa: Number(r.en_mapa) === 1,
+  }));
+}
+
+// --------------------------------------------------------------------
+// Figuras públicas (src/figuras.js valida). creado_por es un correo: las
+// rutas no lo mandan al navegador.
+// --------------------------------------------------------------------
+
+function figuraDeFila(row) {
+  if (!row) return null;
+  return {
+    username: row.username,
+    nombre: row.nombre || null,
+    rol: row.rol,
+    alineacion: row.alineacion || null,
+    origen: row.origen,
+    notas: row.notas || null,
+    creadoPor: row.creado_por || null,
+    creadoEn: row.creado_en,
+    actualizadoEn: row.actualizado_en,
+  };
+}
+
+function listFiguras() {
+  return listFigurasStmt.all().map(figuraDeFila);
+}
+
+function getFigura(username) {
+  return figuraDeFila(getFiguraStmt.get(figurasModelo.normalizeUsername(username)));
+}
+
+/** @returns {Map<string, object>} usuario (minúsculas) → figura, de los que están en la tabla. */
+function getFigurasPorUsernames(usernames) {
+  const lista = [...new Set((usernames || []).map(figurasModelo.normalizeUsername).filter(Boolean))];
+  if (!lista.length) return new Map();
+  return new Map(getFigurasPorUsernamesStmt.all(JSON.stringify(lista)).map((row) => [row.username, figuraDeFila(row)]));
+}
+
+/**
+ * Una figura nueva cargada por el equipo. Si ya estaba como sugerencia, la
+ * confirma con estos datos. Tira con code 'FIGURA_EXISTE' si ya es del equipo.
+ */
+function createFigura(input, { creadoPor = null, ahora = new Date().toISOString() } = {}) {
+  const datos = figurasModelo.validarFigura(input);
+  const actual = getFigura(datos.username);
+  if (actual && actual.origen === 'equipo') {
+    const e = new Error(`@${datos.username} ya está en la lista.`);
+    e.userMessage = e.message;
+    e.code = 'FIGURA_EXISTE';
+    throw e;
+  }
+  if (actual) updateFiguraStmt.run({ ...datos, origen: 'equipo', creadoPor, ahora });
+  else insertFiguraStmt.run({ ...datos, origen: 'equipo', creadoPor, ahora });
+  return getFigura(datos.username);
+}
+
+/**
+ * Cambia una figura (los campos que no vienen quedan); siempre queda como
+ * del equipo (confirmar una sugerencia es esto). `por`: el correo de quien
+ * la cambió, que queda como creado_por si no tenía (una sugerida no tiene).
+ * @returns {object|null}
+ */
+function updateFigura(username, patch, { por = null, ahora = new Date().toISOString() } = {}) {
+  const actual = getFigura(username);
+  if (!actual) return null;
+  const datos = figurasModelo.validarFigura(patch, { actual });
+  updateFiguraStmt.run({ ...datos, origen: 'equipo', creadoPor: por, ahora });
+  return getFigura(datos.username);
+}
+
+/** @returns {boolean} si estaba. */
+function deleteFigura(username) {
+  return deleteFiguraStmt.run(figurasModelo.normalizeUsername(username)).changes > 0;
+}
+
+/**
+ * Lo que sugirió el modelo para un verificado: entra como 'sugerida' si no
+ * estaba; si ya era sugerida, se actualiza; si es del equipo, no se toca.
+ * @returns {'nueva'|'actualizada'|'del equipo'|'descartada'}
+ */
+function upsertFiguraSugerida(raw, { ahora = new Date().toISOString() } = {}) {
+  const s = figurasModelo.sanitizarSugerencia(raw);
+  if (!s) return 'descartada';
+  const actual = getFigura(s.username);
+  if (actual && actual.origen === 'equipo') return 'del equipo';
+  if (actual) {
+    updateFiguraSugeridaStmt.run({ ...s, ahora });
+    return 'actualizada';
+  }
+  insertFiguraStmt.run({ ...s, nombre: null, notas: null, origen: 'sugerida', creadoPor: null, ahora });
+  return 'nueva';
 }
 
 /**
@@ -2512,6 +2850,16 @@ module.exports = {
   listAnalisis,
   findAnalisisByUrl,
   updateAnalisisTemas,
+  listAnalisisGaleria,
+  listAnterioresDeCuenta,
+  listReclamosDePost,
+  listFiguras,
+  getFigura,
+  getFigurasPorUsernames,
+  createFigura,
+  updateFigura,
+  deleteFigura,
+  upsertFiguraSugerida,
   markInterruptedAnalisis,
   sumApifyUsdForAnalisis,
   findExistingPostId,

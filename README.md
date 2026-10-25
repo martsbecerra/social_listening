@@ -49,8 +49,12 @@ social_listening_app/
 │   ├── apify.js              # Extrae comentarios y datos del posteo desde Apify.
 │   ├── analysisJob.js        # El análisis de publicación en el servidor (Apify → modelo → la fila).
 │   ├── analysisProgress.js   # Los pasos de cada análisis, en memoria (GET /api/analyze/progress).
-│   ├── analysisRoutes.js     # Rutas del análisis: POST /api/analyze, progreso, recientes, temas, foto.
-│   ├── analyzeComments.js    # El modelo: tandas de 100 comentarios, síntesis y reporte.
+│   ├── analysisRoutes.js     # Rutas del análisis: POST /api/analyze, progreso, galería, temas, CSV, foto.
+│   ├── analysisMetrics.js    # Todo lo numérico del análisis, calculado al leer la fila (fase F).
+│   ├── analysisTemas.js      # Renombrar, unir, agregar y quitar temas de un análisis.
+│   ├── analyzeComments.js    # El modelo: tandas de 50 comentarios, figuras públicas y síntesis.
+│   ├── figuras.js            # Figuras públicas: roles, alineaciones y validación.
+│   ├── figurasRoutes.js      # /api/figuras: la lista de figuras públicas.
 │   ├── commentTimeline.js    # "Cuándo comentaron": comentarios por tramo desde la publicación.
 │   ├── x/                    # Análisis de publicación de X: Grok fetch, KPIs, reporte, padrón.
 │   ├── platforms/            # Adapters del monitoreo por red (instagram.js con dos proveedores: instagramApidojo.js e instagramApify.js, elegidos por igActor.js; x.js) + registro y contrato.
@@ -165,10 +169,16 @@ social_listening_app/
   arma "Cuándo comentaron" y deja todo en la fila con el gasto. Lo arranca
   `POST /api/analyze` (`src/analysisRoutes.js`), que responde el id sin
   esperar.
-- **`src/analyzeComments.js`**: muestra estable, tandas de 100 comentarios
-  por llamada al modelo (tono, tipo de cuenta y reclamos), una síntesis con
-  todo lo clasificado (textos del informe y temas con sus comentarios),
-  reclamos y armado del reporte WhatsApp + CSV.
+- **`src/analyzeComments.js`**: muestra estable, tandas de 50 comentarios
+  por llamada al modelo (tono, postura hacia la gestión, tema, si habla del
+  posteo, si pide algo y reclamos; la primera tanda define los temas), el
+  cruce con las figuras públicas y una síntesis que escribe la lectura, el
+  hecho dominante y los pedidos con los números que ya contó el servidor.
+- **`src/analysisMetrics.js`**: todo lo numérico del análisis, calculado al
+  leer desde la fila guardada (tono, postura, temas, hecho dominante,
+  comparación con la cuenta…). **`src/reportBuilder.js`** arma con eso el
+  informe de 8 puntos y los CSV; **`src/figuras.js`** y
+  `src/figurasRoutes.js`, la lista de figuras públicas.
 - **`src/prompt.js`**: contiene la metodología completa de análisis (los
   "system prompts" de tanda y de síntesis). Separado para que sea fácil de
   ajustar.
@@ -1193,27 +1203,41 @@ nada ni vuelve a gastar, y el resultado queda en la tabla `analisis` y en
   curso, lo sigue. Enter con un análisis en curso no dispara otro.
 - **Pasos reales**: esperar turno en Apify (solo si había otras corridas
   ocupando los lugares), traer la publicación, traer los comentarios,
-  clasificar el tono (los clasificados de las tandas que van terminando:
-  "87 de 287", "187 de 287"…), detectar los temas y
-  armar la lectura, ubicar los reclamos y armar el informe. Cada detalle lo
-  escribe el trabajo; nada es una frase fija ni un porcentaje simulado.
+  clasificar tono, postura y temas (los clasificados de las tandas que van
+  terminando: "87 de 287", "187 de 287"…), detectar verificados y figuras
+  públicas, ubicar los reclamos y armar el informe. Cada detalle lo escribe
+  el trabajo; nada es una frase fija ni un porcentaje simulado.
 - **Cuántos comentarios**: `COMMENTS_LIMIT` (los que se piden a Apify) y
   `COMMENTS_ANALYSIS_LIMIT` (los que van al modelo) valen **300** por
   defecto; un valor en el `.env` los pisa. Valen solo para Instagram: X
   sigue con 150 y su propia variable, `X_COMMENTS_ANALYSIS_LIMIT`, porque
   manda todo el hilo en una sola llamada. Se clasifican en **tandas de
-  100** por llamada (así no se choca con el tope de salida del modelo) y
-  después una síntesis arma los textos y los temas. "Analizados" es lo que
-  el modelo clasificó de verdad: si una tanda falla, sus comentarios no
-  cuentan y el análisis sigue. La pantalla dice "analizados N de M" con M
-  el total que informa Instagram.
-- **Tono**: cantidades de positivos, neutrales y negativos, con el ruido
-  (bots, spam) aparte. El informe sigue con su porcentaje ponderado por
-  tipo de cuenta, y la pantalla lo rotula así.
-- **Temas**: hasta 8, cada uno con la cantidad de comentarios que hablan
-  de él. Un clic muestra esos comentarios; ✎ cambia el nombre o el texto,
-  o lo quita; "+ tema" agrega uno. Se guardan con el análisis y entran en
-  el informe.
+  50** por llamada (así no se choca con el tope de salida del modelo, que
+  también cuenta lo que el modelo razona: en la corrida real del 24/10/2026
+  una tanda de 100 se cortó): la primera sola, que define los temas de la
+  publicación, y las demás con esa lista, hasta 5 a la vez. Si una
+  respuesta igual se corta, esa tanda se parte en dos en vez de pedirse
+  igual otra vez, y lo que gastó el intento cortado se suma al costo. Después una síntesis escribe la lectura, el hecho dominante y
+  los pedidos. "Analizados" es lo que el modelo clasificó de verdad: si una
+  tanda falla, sus comentarios no cuentan y el análisis sigue. La pantalla
+  dice "analizados N de M" con M el total que informa Instagram.
+- **Los números no los da el modelo** (fase F, octubre 2026,
+  `openspec/changes/analisis-pro/`): tono, postura, "hablan del posteo",
+  temas, verificados, pedidos, emojis y la comparación con los análisis
+  anteriores de la cuenta se cuentan en el servidor al leer el análisis
+  (`src/analysisMetrics.js`), así un análisis viejo muestra lo que se puede
+  contar con sus comentarios. El ruido (bots, spam) va aparte. El hecho
+  dominante sale solo si el tema de fuera del posteo junta al menos el
+  20 % de los analizados. Ya no hay tipo de cuenta en Instagram: la postura
+  hacia la gestión lo reemplaza.
+- **Figuras públicas**: todos los que comentaron se cruzan con la tabla
+  `figuras_publicas` (`/api/figuras`). El modelo solo sugiere rol para
+  verificados que no tienen ficha, y la sugerencia queda como "sugerida"
+  hasta que el equipo la confirma; nunca pisa una del equipo.
+- **Temas**: los define el modelo, cada uno con la cantidad de comentarios
+  que hablan de él. Un clic muestra esos comentarios; ✎ cambia el nombre
+  (si coincide con otro, se unen); "+ tema" agrega uno a mano, sin conteo,
+  con un texto para el informe; solo los agregados a mano se quitan.
 - **Cuándo comentaron**: solo si la publicación trae su fecha y al menos 10
   comentarios traen la suya. Por hora hasta 48 h, de a 6 h hasta 7 días y
   por día después, con el pico marcado.
@@ -1221,9 +1245,11 @@ nada ni vuelve a gastar, y el resultado queda en la tabla `analisis` y en
   a Apify); si la publicación ya está en el Monitoreo con foto, se usa esa.
 - **Reclamos**: re-analizar una publicación (Instagram o X) ya no les borra
   el estado ni, si la dirección no cambió, la ubicación.
-- **Compartir**: el informe con los temas editados (aviso si pasa los 4.000
-  caracteres, donde WhatsApp lo corta), Copiar, WhatsApp y el CSV de
-  reclamos (deshabilitado si no hubo ninguno).
+- **Compartir**: el informe de 8 puntos (lo que pasó, tono, postura,
+  hablan del posteo, temas, quién habló, pedidos y lectura, con los
+  comentarios destacados), el mismo para Copiar y WhatsApp (aviso si pasa
+  los 4.000 caracteres, donde WhatsApp lo corta), y los CSV de comentarios
+  y de reclamos (este, solo si hubo).
 - **Gasto**: cada llamada a Apify del análisis queda en `apify_calls` con
   su `analisis_id`; la fila guarda lo de Apify y lo del modelo.
 - Si el servidor se reinicia con un análisis en curso, al arrancar queda

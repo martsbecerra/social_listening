@@ -33,20 +33,25 @@ async function requestStructuredAnalysis({
   timeoutMs,
 }) {
   const provider = providerOverride || getLlmProvider();
-  const result = await providerModule(provider).requestStructuredAnalysis({
-    system,
-    userPrompt,
-    schema,
-    schemaName,
-    model: modelOverride,
-    jsonFallback,
-    maxTokens,
-    timeoutMs,
-  });
-  result.usage = finalizeLlmUsage(result.usage, {
-    provider,
-    model: modelOverride || getAnalysisModel(provider),
-  });
+  const ctx = { provider, model: modelOverride || getAnalysisModel(provider) };
+  let result;
+  try {
+    result = await providerModule(provider).requestStructuredAnalysis({
+      system,
+      userPrompt,
+      schema,
+      schemaName,
+      model: modelOverride,
+      jsonFallback,
+      maxTokens,
+      timeoutMs,
+    });
+  } catch (err) {
+    // Lo gastado en los intentos fallidos (ver ./errors.js), con su costo.
+    if (err && typeof err === 'object' && err.tokenUsage) err.tokenUsage = finalizeLlmUsage(err.tokenUsage, ctx);
+    throw err;
+  }
+  result.usage = finalizeLlmUsage(result.usage, ctx);
   return result;
 }
 
