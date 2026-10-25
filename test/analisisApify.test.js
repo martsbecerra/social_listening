@@ -2,7 +2,8 @@
 
 // Lo que trae Apify para un análisis (src/apify.js): la publicación con su
 // fecha, id, código, tipo y foto; los comentarios con likes "sin dato"
-// cuando no vienen; los topes (300 por defecto); las dos corridas con sus
+// cuando no vienen; los topes (3.000 por defecto desde la fase G) y lo que
+// se le pide al actor de comentarios; las dos corridas con sus
 // avisos y su gasto atado al análisis; el aviso de espera del limitador.
 // fetch simulado y base temporal: ni Apify real ni data/monitoring.db.
 
@@ -100,20 +101,37 @@ describe('los comentarios', () => {
 });
 
 describe('topes', () => {
-  test('COMMENTS_LIMIT: 300 por defecto, el del .env, hasta 500', () => {
-    assert.equal(apify.resolveCommentsLimit(), 300);
+  afterEach(() => delete process.env.ANALISIS_FACTOR_RESPUESTAS);
+
+  test('COMMENTS_LIMIT: 3.000 ítems por defecto (fase G), el del .env, hasta 5.000', () => {
+    assert.equal(apify.resolveCommentsLimit(), 3000);
     process.env.COMMENTS_LIMIT = '120';
     assert.equal(apify.resolveCommentsLimit(), 120);
     process.env.COMMENTS_LIMIT = '9999';
-    assert.equal(apify.resolveCommentsLimit(), 500);
+    assert.equal(apify.resolveCommentsLimit(), 5000);
     process.env.COMMENTS_LIMIT = 'muchos';
-    assert.equal(apify.resolveCommentsLimit(), 300);
+    assert.equal(apify.resolveCommentsLimit(), 3000);
   });
 
-  test('COMMENTS_ANALYSIS_LIMIT: 300 en Instagram; X sigue con 150 y no lo lee: tiene X_COMMENTS_ANALYSIS_LIMIT', () => {
+  test('lo que se le pide al actor: todo si el número de Instagram cabe; si no, el tope dividido por 1,6 (las respuestas llegan de más)', () => {
+    assert.equal(apify.commentsResultsLimit(800), 800, 'el número de Instagram ya cuenta las respuestas');
+    assert.equal(apify.commentsResultsLimit(3000), 3000);
+    assert.equal(apify.commentsResultsLimit(5200), 1875, '3.000 / 1,6');
+    assert.equal(apify.commentsResultsLimit(null), 1875, 'sin el número, como si no cupiera');
+    assert.equal(apify.commentsResultsLimit(0), 1875);
+    assert.equal(apify.commentsResultsLimit(5200, 1000), 625, 'la opción parcial');
+    process.env.ANALISIS_FACTOR_RESPUESTAS = '2';
+    assert.equal(apify.commentsResultsLimit(5200), 1500);
+    process.env.ANALISIS_FACTOR_RESPUESTAS = '1,25';
+    assert.equal(apify.commentsResultsLimit(5200), 2400, 'acepta coma decimal');
+    process.env.ANALISIS_FACTOR_RESPUESTAS = '0.5';
+    assert.equal(apify.commentsResultsLimit(5200), 1875, 'menos de 1 no vale');
+  });
+
+  test('COMMENTS_ANALYSIS_LIMIT: 3.000 en Instagram (tope 5.000); X sigue con 150 (tope 500) y no lo lee: tiene X_COMMENTS_ANALYSIS_LIMIT', () => {
     const comments = Array.from({ length: 400 }, (_, i) => ({ username: `u${i}`, text: `t${i}`, likesCount: i, timestamp: null, isVerified: false }));
-    assert.equal(prepareCommentSample(comments).sample.length, 300);
-    const items = Array.from({ length: 400 }, (_, i) => ({ id: String(i), username: `u${i}`, text: `t${i}`, likes: i, kind: 'reply' }));
+    assert.equal(prepareCommentSample(comments).sample.length, 400);
+    const items = Array.from({ length: 600 }, (_, i) => ({ id: String(i), username: `u${i}`, text: `t${i}`, likes: i, kind: 'reply' }));
     const muestraX = () => prepareXSample({ post: { id: 'p', text: 'post', username: 'x' }, items }, new Map()).sample.length;
     assert.equal(muestraX(), 150);
     process.env.COMMENTS_ANALYSIS_LIMIT = '200';
@@ -122,6 +140,11 @@ describe('topes', () => {
     process.env.X_COMMENTS_ANALYSIS_LIMIT = '120';
     assert.equal(muestraX(), 120);
     assert.equal(prepareCommentSample(comments).sample.length, 200);
+    process.env.COMMENTS_ANALYSIS_LIMIT = '9999';
+    const muchos = Array.from({ length: 5200 }, (_, i) => ({ username: `u${i}`, text: `t${i}`, likesCount: i, timestamp: null, isVerified: false }));
+    assert.equal(prepareCommentSample(muchos).sample.length, 5000);
+    process.env.X_COMMENTS_ANALYSIS_LIMIT = '9999';
+    assert.equal(muestraX(), 500, 'el tope de X no cambió');
   });
 });
 
@@ -139,10 +162,11 @@ describe('las dos corridas', () => {
         apify.fetchAnalysisComments('https://www.instagram.com/p/DdaeSUND2AU/', { onAcquired: () => avisos.push('comentarios') }),
       ])
     );
-    assert.equal(limit, 300);
+    // Sin el número de Instagram: 3.000 / 1,6.
+    assert.equal(limit, 1875);
     const pedidos = global.fetch.inputs;
     const comentarios = pedidos.find((p) => p.actor === 'apify~instagram-comment-scraper');
-    assert.deepEqual(comentarios.input, { directUrls: ['https://www.instagram.com/p/DdaeSUND2AU/'], resultsLimit: 300, includeNestedComments: true });
+    assert.deepEqual(comentarios.input, { directUrls: ['https://www.instagram.com/p/DdaeSUND2AU/'], resultsLimit: 1875, includeNestedComments: true });
     const publicacion = pedidos.find((p) => p.actor === 'apify~instagram-scraper');
     assert.equal(publicacion.input.resultsType, 'posts');
     assert.equal(publicacion.input.resultsLimit, 1);

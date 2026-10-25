@@ -7,12 +7,15 @@
 // comentarios → mismo prompt → clasificaciones alineadas por índice.
 // ==========================================================================
 
-// 300 por defecto (decisión del dueño, octubre 2026): el análisis de
-// Instagram los clasifica en tandas de 50 (src/analyzeComments.js), así que
-// no chocan con el tope de salida del modelo. X tiene su propio tope y su
-// propia variable (src/x/sample.js).
-const DEFAULT_MAX_COMMENTS_TO_SEND = 300;
-// Tope duro por costo/latencia aunque el .env pida más.
+// 3.000 por defecto (decisión del dueño, fase G; eran 300): comentarios y
+// respuestas, como COMMENTS_LIMIT. El análisis de Instagram los clasifica
+// en tandas de 50 (src/analyzeComments.js), así que no chocan con el tope
+// de salida del modelo. X tiene su propio tope y su propia variable
+// (src/x/sample.js).
+const DEFAULT_MAX_COMMENTS_TO_SEND = 3000;
+// Tope duro por costo/latencia aunque el .env pida más: el de Instagram, y
+// el de X, que no cambió (manda todo el hilo en una sola llamada).
+const HARD_CAP_INSTAGRAM = 5000;
 const HARD_CAP_COMMENTS = 500;
 
 /**
@@ -27,7 +30,7 @@ function resolveMaxCommentsLimit(defaultMax = DEFAULT_MAX_COMMENTS_TO_SEND, vari
   const raw = process.env[variable];
   const n = Number(raw);
   if (Number.isFinite(n) && n > 0) {
-    return Math.min(Math.floor(n), HARD_CAP_COMMENTS);
+    return Math.min(Math.floor(n), variable === 'COMMENTS_ANALYSIS_LIMIT' ? HARD_CAP_INSTAGRAM : HARD_CAP_COMMENTS);
   }
   return defaultMax;
 }

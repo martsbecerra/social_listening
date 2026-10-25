@@ -18,7 +18,7 @@ UNA corrida real con respuestas al final, autorizadas por el dueño.
 
 ## Phase 2: tope y confirmación
 
-- [ ] 2.1 Topes de 3.000, el costo estimado y el factor de respuestas
+- [x] 2.1 Topes de 3.000, el costo estimado y el factor de respuestas
 - [ ] 2.2 Publicación primero, la espera, confirmar y cancelar
 - [ ] 2.3 Pantalla de la confirmación
 

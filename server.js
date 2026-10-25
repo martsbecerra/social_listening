@@ -35,6 +35,8 @@ const path = require('path');
 const { resolveCommentsLimit } = require('./src/apify');
 const apifyCost = require('./src/apifyCost');
 const { resolveMaxCommentsLimit } = require('./src/commentSample');
+const { BATCH_SIZE } = require('./src/analyzeComments');
+const { confirmarDesde } = require('./src/analysisCost');
 const { resolveXMaxItems } = require('./src/x/sample');
 const analysisRoutes = require('./src/analysisRoutes');
 const figurasRoutes = require('./src/figurasRoutes');
@@ -730,7 +732,7 @@ const server = app.listen(PORT, () => {
   );
   console.log(`   Alcance (REACH_*): ${describeReachRule(resolveReachRule())}`);
   console.log(
-    `   Límites del análisis: COMMENTS_LIMIT (Apify)=${resolveCommentsLimit()}, COMMENTS_ANALYSIS_LIMIT (modelo)=${resolveMaxCommentsLimit()}, en tandas de 100 · X: X_COMMENTS_ANALYSIS_LIMIT=${resolveXMaxItems()}`
+    `   Límites del análisis: COMMENTS_LIMIT (Apify, comentarios y respuestas)=${resolveCommentsLimit()}, COMMENTS_ANALYSIS_LIMIT (modelo)=${resolveMaxCommentsLimit()}, en tandas de ${BATCH_SIZE}; pide confirmación con más de ${confirmarDesde()} comentarios · X: X_COMMENTS_ANALYSIS_LIMIT=${resolveXMaxItems()}`
   );
   console.log(
     `   Login: APP_BASE_URL=${process.env.APP_BASE_URL || '(falta)'} | SMTP=${process.env.SMTP_HOST || '(falta SMTP_HOST)'}\n`

@@ -444,17 +444,44 @@ function isQuotaExceededError(err) {
   return String((err && err.message) || '').includes('Monthly usage hard limit exceeded');
 }
 
-// Cuántos comentarios se le piden al actor en un análisis: COMMENTS_LIMIT,
-// 300 por defecto (decisión del dueño, octubre 2026), hasta
-// COMMENTS_LIMIT_MAX. Cada comentario devuelto se cobra (0,0023 dólares
-// en Starter): 300 son unos 0,70 por análisis. Se lee en cada análisis.
-const COMMENTS_LIMIT_DEFAULT = 300;
-const COMMENTS_LIMIT_MAX = 500;
+// Cuántos ítems (comentarios y respuestas) trae como mucho un análisis:
+// COMMENTS_LIMIT, 3.000 por defecto (decisión del dueño, fase G), hasta
+// COMMENTS_LIMIT_MAX. Cada ítem devuelto se cobra (0,0023 dólares en
+// Starter): 3.000 son unos 6,90. Con más de 1.000 comentarios según
+// Instagram el análisis pide confirmación antes (src/analysisJob.js). Se
+// lee en cada análisis.
+const COMMENTS_LIMIT_DEFAULT = 3000;
+const COMMENTS_LIMIT_MAX = 5000;
+// El actor cuenta solo los comentarios de primer nivel: las respuestas
+// llegan de más. En la sonda del 25/10/2026, 10 pedidos trajeron 16 ítems
+// (1,6 por comentario): para unos T ítems se le piden T / 1,6.
+const FACTOR_RESPUESTAS_DEFAULT = 1.6;
 
 function resolveCommentsLimit() {
   const n = Number(process.env.COMMENTS_LIMIT);
   if (Number.isFinite(n) && n > 0) return Math.min(Math.floor(n), COMMENTS_LIMIT_MAX);
   return COMMENTS_LIMIT_DEFAULT;
+}
+
+/** ANALISIS_FACTOR_RESPUESTAS: ítems por comentario de primer nivel (1 o más; 1,6 por defecto). */
+function resolveFactorRespuestas() {
+  const raw = process.env.ANALISIS_FACTOR_RESPUESTAS;
+  const n = Number(String(raw ?? '').replace(',', '.'));
+  return raw !== undefined && raw !== '' && Number.isFinite(n) && n >= 1 ? n : FACTOR_RESPUESTAS_DEFAULT;
+}
+
+/**
+ * El resultsLimit que se le pide al actor de comentarios para traer unos
+ * `tope` ítems. Si Instagram informa N comentarios y N cabe en el tope, N
+ * (ese número ya cuenta las respuestas: alcanza para traer todo); si no se
+ * sabe o no cabe, tope / ANALISIS_FACTOR_RESPUESTAS.
+ * @param {number|null} comentariosInstagram post.commentsCount
+ * @param {number} [tope] los ítems que se quieren, COMMENTS_LIMIT por defecto
+ */
+function commentsResultsLimit(comentariosInstagram, tope = resolveCommentsLimit()) {
+  const n = Number(comentariosInstagram);
+  if (comentariosInstagram !== null && comentariosInstagram !== undefined && Number.isFinite(n) && n > 0 && n <= tope) return Math.floor(n);
+  return Math.max(1, Math.ceil(tope / resolveFactorRespuestas()));
 }
 
 /**
@@ -474,14 +501,16 @@ function fetchAnalysisPost(postUrl, hooks = {}) {
  * (COMMENTS_ACTOR con includeNestedComments; ver normalizeComments). Su
  * `resultsLimit` cuenta SOLO los comentarios de primer nivel: las
  * respuestas llegan aparte, de más (sonda del 25/10/2026: 10 pedidos, 10 +
- * 6 respuestas). Por defecto, COMMENTS_LIMIT; el trabajo del análisis pasa
- * el suyo. Tiene su propio tope de tiempo (ANALISIS_COMMENTS_TIMEOUT_MS).
+ * 6 respuestas). El trabajo del análisis pasa el suyo
+ * (commentsResultsLimit con el número de Instagram); sin él, el de un
+ * análisis sin ese número. Tiene su propio tope de tiempo
+ * (ANALISIS_COMMENTS_TIMEOUT_MS).
  * @param {string} postUrl
  * @param {{ onQueued?: () => void, onAcquired?: () => void }} [hooks]
  * @param {{ resultsLimit?: number }} [options]
  * @returns {Promise<{ items: Array, limit: number }>} los ítems crudos y el tope pedido
  */
-async function fetchAnalysisComments(postUrl, hooks = {}, { resultsLimit = resolveCommentsLimit() } = {}) {
+async function fetchAnalysisComments(postUrl, hooks = {}, { resultsLimit = commentsResultsLimit(null) } = {}) {
   const items = await runActorSync(
     { directUrls: [postUrl], resultsLimit, includeNestedComments: true },
     { actorId: COMMENTS_ACTOR, plataforma: 'instagram', timeoutMs: ANALISIS_COMMENTS_TIMEOUT_MS, ...hooks }
@@ -625,6 +654,8 @@ module.exports = {
   normalizePost,
   normalizeComments,
   resolveCommentsLimit,
+  resolveFactorRespuestas,
+  commentsResultsLimit,
   COMMENTS_LIMIT_DEFAULT,
   COMMENTS_LIMIT_MAX,
   COMMENTS_ACTOR,
