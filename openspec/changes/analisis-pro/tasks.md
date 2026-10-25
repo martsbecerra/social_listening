@@ -57,7 +57,7 @@ un servidor de prueba en otro puerto y una copia de la base.
 - [x] 7.4 Temas: filtro, ✎ y "+ tema" en v2 y v1 (REQ-PRO-12)
 - [x] 7.5 Figuras: tarjeta y "Lista de figuras" (REQ-PRO-17)
 - [x] 7.6 Comentarios y compartir (REQ-PRO-09, REQ-PRO-15)
-- [ ] 7.7 Galería e inicio (REQ-PRO-18)
+- [x] 7.7 Galería e inicio (REQ-PRO-18)
 
 ## Phase 8: cierre de la F2
 

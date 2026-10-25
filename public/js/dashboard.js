@@ -551,6 +551,8 @@ function homeAnaLine(a) {
     img.addEventListener('error', () => img.remove());
     th.appendChild(img);
   }
+  // El punto naranja de la maqueta: hubo un hecho dominante (fase F2).
+  if (a.tieneHecho) th.appendChild(homeNode('em'));
   const tx = homeNode('span', 'tx');
   // La fecha de la publicación; si no vino, la del análisis, dicha así.
   const publicada = homeAnaDate(a.postedAt);
@@ -565,11 +567,11 @@ function homeAnaLine(a) {
     corto = `${caption.slice(0, corte > 40 ? corte : HOME_ANA_CAPTION)}…`;
   }
   tx.appendChild(homeNode('small', '', corto || 'Sin texto.'));
-  const t = a.tonos || {};
-  const base = (t.positivos || 0) + (t.neutrales || 0) + (t.negativos || 0);
-  const pos = base > 0 ? Math.round(((t.positivos || 0) / base) * 100) : null;
+  // El % negativo es la columna de la galería (pct_neg): la misma cuenta
+  // que la pantalla del análisis, sobre los comentarios con opinión.
+  const neg = Number.isFinite(a.pctNeg) ? Math.round(a.pctNeg) : null;
   const num = homeNode('span', 'num');
-  if (pos !== null) num.appendChild(homeNode('span', 'sent-pos', `${pos} % pos`));
+  if (neg !== null) num.appendChild(homeNode('span', neg >= 40 ? 'neg sent-neg' : 'neg', `${neg} % neg.`));
   // Los analizados, dicho así: no es el total de comentarios de la publicación.
   num.appendChild(homeNode('span', '', `${homeCount(a.analizados)} analizados`));
   // Un nombre corto para el lector de pantalla (el texto entero no).
@@ -578,12 +580,21 @@ function homeAnaLine(a) {
     `Análisis de ${cuenta}`,
     publicada ? `publicación del ${HOME_ANA_FULL.format(publicada)}` : null,
     analizada ? `analizado el ${HOME_ANA_FULL.format(analizada)}` : null,
-    pos !== null ? `${pos} % positivo` : null,
+    neg !== null ? `${neg} % negativo` : null,
     `${homeCount(a.analizados)}${total} comentarios analizados`,
+    a.tieneHecho ? 'con un hecho dominante' : null,
   ];
   line.setAttribute('aria-label', partes.filter(Boolean).join(', '));
   // Dos análisis de la misma publicación se distinguen por cuándo se hicieron.
-  if (analizada) line.dataset.tip = `Analizado el ${HOME_ANA_FULL.format(analizada)} a las ${HOME_ANA_TIME.format(analizada)}`;
+  if (analizada) {
+    line.dataset.tipTitle = `${cuenta}${fecha ? ` · ${fecha}` : ''}`;
+    line.dataset.tip = [
+      a.tieneHecho ? '⚡ hubo un hecho dominante' : a.temaEstrella ? `Tema principal: ${a.temaEstrella}` : null,
+      `Analizado el ${HOME_ANA_FULL.format(analizada)} a las ${HOME_ANA_TIME.format(analizada)}`,
+    ]
+      .filter(Boolean)
+      .join('\n');
+  }
   line.append(th, tx, num);
   return line;
 }

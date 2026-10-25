@@ -8177,8 +8177,20 @@ a.fl {
   white-space: nowrap;
   font-family: var(--mono);
 }
-.recent .num .sent-pos {
+.recent .num .neg {
   display: block;
+}
+/* Hubo un hecho dominante (fase F2): el punto naranja de la maqueta. */
+.recent .th em {
+  position: absolute;
+  right: 3px;
+  top: 3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--c2);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85);
+  z-index: 1;
 }
 /* En celular los números van debajo del texto, en un renglón: al costado
    le quitaban el lugar a la cuenta y la fecha. */
@@ -8192,7 +8204,7 @@ a.fl {
     gap: 10px;
     text-align: left;
   }
-  .recent .num .sent-pos {
+  .recent .num .neg {
     display: inline;
   }
 }
