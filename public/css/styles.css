@@ -4402,6 +4402,11 @@ svg.line {
   grid-template-columns: 190px minmax(0, 1fr);
   gap: 16px;
 }
+.ana4 .an-post:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+  border-radius: 12px;
+}
 .ana4 .an-post .img {
   aspect-ratio: 1;
   border-radius: 12px;
@@ -5037,12 +5042,7 @@ svg.line {
   width: 26px;
   height: 26px;
   cursor: pointer;
-  opacity: 0.55;
   transition: 0.2s;
-}
-.ana4 .an-theme:hover .ed,
-.ana4 .an-theme .ed:focus-visible {
-  opacity: 1;
 }
 .ana4 .an-theme .ed:hover {
   color: var(--accent-text);
@@ -5059,7 +5059,11 @@ svg.line {
   background: none;
   padding: 8px 10px;
 }
-.ana4 .an-theme.add:disabled {
+.ana4 .an-theme.add[aria-disabled="true"] {
+  color: var(--muted);
+  cursor: default;
+}
+.ana4 .seg button[aria-disabled="true"] {
   color: var(--muted);
   cursor: default;
 }
@@ -5357,6 +5361,15 @@ svg.line {
 }
 .ana4 .an-ask.hot .n {
   color: var(--c2-text);
+}
+/* Sobre los fondos teñidos (elegido o del hecho) --muted y --accent-text
+   no llegan a 4,5:1: el porcentaje va en --fg2 y el número elegido en --fg. */
+.ana4 .an-ask.on .n small,
+.ana4 .an-ask.hot .n small {
+  color: var(--fg2);
+}
+.ana4 .an-ask.on .n {
+  color: var(--fg);
 }
 
 /* ---------- verificados y figuras ---------- */
@@ -6276,7 +6289,8 @@ svg.line {
   .ana4 .an-theme {
     grid-template-columns: minmax(0, 1fr) 44px 26px;
   }
-  .ana4 .an-theme .tr {
+  .ana4 .an-theme .tr,
+  .ana4 .an-theme .tr.manual {
     display: none;
   }
   .ana4 .an-calm > div {

@@ -41,6 +41,17 @@ let anaFigDlgEditando = null; // en el diálogo
 let anaFigDlgQuitando = null;
 let anaFigCambio = false; // algo cambió con el diálogo abierto
 let anaFigOpener = null;
+// El formulario abierto (en la tarjeta y en el diálogo) se arma una vez y se
+// vuelve a poner en cada redibujo: lo escrito no se pierde y el foco no salta.
+let anaFigFormCard = null; // { clave, form }
+let anaFigFormDlg = null; // { clave, form }
+
+/** Otro análisis a la vista: la tarjeta arranca sin formularios abiertos. */
+function anaFigReset() {
+  anaFigEditando = null;
+  anaFigQuitando = null;
+  anaFigFormCard = null;
+}
 
 function anaFigCargar() {
   anaFigListaLista = anaApi('/api/figuras').then((d) => {
@@ -65,6 +76,13 @@ function anaRolTexto(f) {
 }
 
 function anaRolChip(f, { sugerida = false } = {}) {
+  // Una descartada no lleva el rol ni la alineación que sugirió el modelo:
+  // el equipo dijo que no es figura pública.
+  if (f.origen === 'descartada') {
+    const chip = anaEl('span', 'an-rl sug', 'sugerencia descartada');
+    chip.dataset.tip = 'El equipo la descartó: el modelo no la vuelve a sugerir';
+    return chip;
+  }
   const chip = anaEl('span', `an-rl${f.alineacion ? ` ${f.alineacion}` : ''}${sugerida ? ' sug' : ''}`, `${sugerida ? 'sugerido: ' : ''}${anaRolTexto(f)}`);
   if (sugerida) chip.dataset.tip = 'Lo sugirió el modelo: confirmalo, editalo o descartalo';
   return chip;
@@ -84,6 +102,9 @@ function anaBtn(texto, clase = 'btn sm') {
  * @param {{ figura: object|null, usuario?: string|null, conUsuario?: boolean, onDone: Function, onCancel: Function }} opts
  */
 function anaFigForm({ figura, usuario = null, conUsuario = false, onDone, onCancel }) {
+  // Una descartada se agrega de cero: no se precargan el rol ni la
+  // alineación que había sugerido el modelo.
+  const base = figura && figura.origen !== 'descartada' ? figura : null;
   const form = anaEl('form', 'an-fig-form');
   form.noValidate = true;
   const sufijo = Math.random().toString(36).slice(2, 8);
@@ -107,11 +128,11 @@ function anaFigForm({ figura, usuario = null, conUsuario = false, onDone, onCanc
   const selRol = anaEl('select', 'field');
   selRol.append(new Option('Elegí un rol', ''));
   for (const [k, texto] of Object.entries(anaFigCatalogo ? anaFigCatalogo.roles : {})) selRol.append(new Option(texto, k));
-  selRol.value = (figura && figura.rol) || '';
+  selRol.value = (base && base.rol) || '';
   const selAl = anaEl('select', 'field');
   selAl.append(new Option('ninguna', ''));
   for (const [k, texto] of Object.entries(anaFigCatalogo ? anaFigCatalogo.alineaciones : {})) selAl.append(new Option(texto, k));
-  selAl.value = (figura && figura.alineacion) || '';
+  selAl.value = (base && base.alineacion) || '';
   const inNotas = anaEl('textarea', 'field');
   inNotas.rows = 2;
   inNotas.maxLength = 500;
@@ -158,9 +179,11 @@ function anaFigForm({ figura, usuario = null, conUsuario = false, onDone, onCanc
     }
     guardar.disabled = true;
     try {
-      // En la tabla (también descartada o sugerida): PATCH la pasa al equipo. Si no, alta.
-      const enTabla = figura || anaFigDe(u);
-      if (enTabla) await anaApi(`/api/figuras/${encodeURIComponent(enTabla.username)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(datos) });
+      // Abierto para una figura de la tabla (también sugerida o descartada):
+      // PATCH, que la deja del equipo. Un alta va siempre por POST: si ya es
+      // del equipo, el servidor responde 409 "ya está en la lista" en vez de
+      // pisarla; si era sugerida o descartada, la pasa al equipo.
+      if (figura) await anaApi(`/api/figuras/${encodeURIComponent(figura.username)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(datos) });
       else await anaApi('/api/figuras', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: u, ...datos }) });
       await onDone(u);
     } catch (err) {
@@ -207,10 +230,9 @@ async function anaFigAccion(usuario, accion) {
 
 function anaRenderPeople(v) {
   const lista = v.quienHablo;
-  const ver = lista.filter((q) => q.verificada).length;
-  const enLista = lista.filter((q) => q.figura && q.figura.origen === 'equipo').length;
+  const { verificados, enLista } = v.personas;
   anaF.hint.textContent = lista.length
-    ? `${anaPlural(ver, 'verificado', 'verificados')}${enLista ? ` · ${formatCount(enLista)} en la lista de figuras` : ''} · ordenados por likes`
+    ? `${anaPlural(verificados, 'verificado', 'verificados')}${enLista ? ` · ${formatCount(enLista)} en la lista de figuras` : ''} · ordenados por likes`
     : 'ninguno en esta publicación';
   const conFoco = anaF.people.contains(document.activeElement) ? document.activeElement : null;
   const focoClave = conFoco && conFoco.closest('[data-u]') ? `${conFoco.closest('[data-u]').dataset.u}|${conFoco.dataset.k || ''}` : null;
@@ -219,6 +241,11 @@ function anaRenderPeople(v) {
     return;
   }
   anaF.people.replaceChildren(...lista.map(anaPersona));
+  // El foco estaba en el formulario abierto (que se volvió a poner): queda ahí.
+  if (conFoco && conFoco.isConnected && anaF.people.contains(conFoco)) {
+    conFoco.focus({ preventScroll: true });
+    return;
+  }
   if (focoClave) {
     const [u, k] = focoClave.split('|');
     const fila = anaF.people.querySelector(`[data-u="${CSS.escape(u)}"]`);
@@ -252,7 +279,7 @@ function anaPersona(q, i) {
   if (f && f.nombre) nm.append(anaEl('small', '', `@${u}`));
   if (q.verificada) nm.append(anaEl('span', 'sr', '(verificada)'));
   if (f) nm.append(anaRolChip(f, { sugerida: f.origen === 'sugerida' }));
-  else if (q.descartada) nm.append(anaEl('span', 'an-rl', 'sugerencia descartada'));
+  else if (q.descartada) nm.append(anaRolChip({ origen: 'descartada' }));
   body.append(nm);
   if (q.comentario && q.comentario.texto) body.append(anaEl('div', 'tx', q.comentario.texto));
 
@@ -265,9 +292,18 @@ function anaPersona(q, i) {
     acts.append(b);
     return b;
   };
-  const editar = () => {
+  // Antes de abrir el formulario, la lista y los roles al día: la fila de
+  // la tabla trae las notas (la vista no) y otra persona pudo cambiarla.
+  const editar = async () => {
+    try {
+      await anaFigCargar();
+    } catch (err) {
+      anaToast(`No se pudo leer la lista de figuras: ${err.message}`);
+      return;
+    }
     anaFigEditando = clave;
     anaFigQuitando = null;
+    anaFigFormCard = null;
     anaRenderPeople(anaVista());
   };
   const correr = (nombre) => async () => {
@@ -316,23 +352,30 @@ function anaPersona(q, i) {
   row.append(av, body, st);
 
   if (anaFigEditando === clave) {
-    const enTabla = anaFigDe(clave) || (f ? { username: clave, ...f } : null);
-    row.append(
-      anaFigForm({
-        figura: enTabla,
-        usuario: clave,
-        onDone: async () => {
-          anaFigEditando = null;
-          await anaFigDespues('Figura guardada');
-        },
-        onCancel: () => {
-          anaFigEditando = null;
-          anaRenderPeople(anaVista());
-          const fila = anaF.people.querySelector(`[data-u="${CSS.escape(clave)}"]`);
-          if (fila) (fila.querySelector('[data-k="editar"], [data-k="agregar"]') || fila.querySelector('.who')).focus();
-        },
-      })
-    );
+    if (!anaFigFormCard || anaFigFormCard.clave !== clave) {
+      // La fila de la tabla (recién leída); sin fila, es un alta.
+      const enTabla = anaFigDe(clave);
+      anaFigFormCard = {
+        clave,
+        form: anaFigForm({
+          figura: enTabla,
+          usuario: clave,
+          onDone: async () => {
+            anaFigEditando = null;
+            anaFigFormCard = null;
+            await anaFigDespues('Figura guardada');
+          },
+          onCancel: () => {
+            anaFigEditando = null;
+            anaFigFormCard = null;
+            anaRenderPeople(anaVista());
+            const fila = anaF.people.querySelector(`[data-u="${CSS.escape(clave)}"]`);
+            if (fila) (fila.querySelector('[data-k="editar"], [data-k="agregar"]') || fila.querySelector('.who')).focus();
+          },
+        }),
+      };
+    }
+    row.append(anaFigFormCard.form);
   }
   return row;
 }
@@ -361,7 +404,16 @@ function anaFigRenderDlg() {
     for (const f of grupo) partes.push(anaFigFila(f));
   }
   if (!partes.length) partes.push(anaEl('div', 'empty', q ? 'Nadie en la lista coincide con esa búsqueda.' : 'La lista está vacía. Agregá la primera figura.'));
+  const conFoco = anaF.list.contains(document.activeElement) ? document.activeElement : null;
   anaF.list.replaceChildren(...partes);
+  // Escribiendo en el formulario (que se volvió a poner), el foco queda ahí.
+  if (conFoco && conFoco.isConnected && anaF.list.contains(conFoco)) conFoco.focus({ preventScroll: true });
+}
+
+/** Después de una acción en el diálogo: el foco a esa fila (su primer botón) o, si se fue, al buscador. */
+function anaFigFocoFila(username) {
+  const fila = anaF.list.querySelector(`[data-u="${CSS.escape(username)}"]`);
+  ((fila && fila.querySelector('.acts button')) || anaF.q).focus();
 }
 
 function anaFigFila(f) {
@@ -384,6 +436,7 @@ function anaFigFila(f) {
       anaFigDlgQuitando = null;
       await anaFigCargar();
       anaFigRenderDlg();
+      anaFigFocoFila(f.username);
     } catch (err) {
       anaF.msg.textContent = err.message;
     }
@@ -391,6 +444,7 @@ function anaFigFila(f) {
   const editar = () => {
     anaFigDlgEditando = f.username;
     anaFigDlgQuitando = null;
+    anaFigFormDlg = null;
     anaFigRenderDlg();
   };
   if (anaFigDlgQuitando === f.username) {
@@ -399,6 +453,7 @@ function anaFigFila(f) {
     accion('No', () => {
       anaFigDlgQuitando = null;
       anaFigRenderDlg();
+      anaFigFocoFila(f.username);
     });
   } else {
     if (f.origen === 'sugerida') {
@@ -414,28 +469,38 @@ function anaFigFila(f) {
     accion('Quitar', () => {
       anaFigDlgQuitando = f.username;
       anaFigDlgEditando = null;
+      anaFigFormDlg = null;
       anaFigRenderDlg();
+      anaFigFocoFila(f.username);
     });
   }
   row.append(nm, acts);
   if (anaFigDlgEditando === f.username) {
-    row.append(
-      anaFigForm({
-        figura: f,
-        usuario: f.username,
-        onDone: async () => {
-          anaFigDlgEditando = null;
-          anaFigCambio = true;
-          await anaFigCargar();
-          anaF.msg.textContent = `@${f.username} guardada.`;
-          anaFigRenderDlg();
-        },
-        onCancel: () => {
-          anaFigDlgEditando = null;
-          anaFigRenderDlg();
-        },
-      })
-    );
+    if (!anaFigFormDlg || anaFigFormDlg.clave !== f.username) {
+      anaFigFormDlg = {
+        clave: f.username,
+        form: anaFigForm({
+          figura: f,
+          usuario: f.username,
+          onDone: async () => {
+            anaFigDlgEditando = null;
+            anaFigFormDlg = null;
+            anaFigCambio = true;
+            await anaFigCargar();
+            anaF.msg.textContent = `@${f.username} guardada.`;
+            anaFigRenderDlg();
+            anaFigFocoFila(f.username);
+          },
+          onCancel: () => {
+            anaFigDlgEditando = null;
+            anaFigFormDlg = null;
+            anaFigRenderDlg();
+            anaFigFocoFila(f.username);
+          },
+        }),
+      };
+    }
+    row.append(anaFigFormDlg.form);
   }
   return row;
 }
@@ -446,6 +511,7 @@ anaF.open.addEventListener('click', async () => {
   anaFigCerrado = false;
   anaFigDlgEditando = null;
   anaFigDlgQuitando = null;
+  anaFigFormDlg = null;
   anaF.msg.textContent = '';
   anaF.formBox.replaceChildren();
   anaF.list.replaceChildren(anaEl('div', 'empty', 'Cargando la lista…'));

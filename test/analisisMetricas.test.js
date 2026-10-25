@@ -155,6 +155,9 @@ describe('las métricas de un análisis v2', () => {
     assert.equal(chico.hecho, null);
     assert.equal(chico.sinHecho.tema, 'Vendedor de churros');
     assert.equal(chico.sinHecho.temas.length, 3);
+    // F2: el % positivo del tema principal sale de la vista (la pantalla no cuenta).
+    const estrella = chico.temas.find((t) => t.estrella);
+    assert.equal(chico.sinHecho.positivo, estrella.tonos.positivo / (estrella.tonos.positivo + estrella.tonos.neutral + estrella.tonos.negativo));
     const otro = buildAnalysisView(filaV2({ resultado: { ...filaV2().resultado, hecho: { temaId: 2, titulo: 'x', descripcion: 'y' } } }));
     assert.equal(otro.hecho, null);
     const ninguno = buildAnalysisView(filaV2({ resultado: { ...filaV2().resultado, hecho: null } }));
@@ -171,6 +174,9 @@ describe('las métricas de un análisis v2', () => {
       ]
     );
     assert.equal(v.quienHablo[0].comentario.likes, 500);
+    // F2: lo que cuenta la tarjeta y su KPI. leg1 es verificada, del equipo y con
+    // alineación; jc6 tiene alineación pero es sugerida y no es verificada.
+    assert.deepEqual(v.personas, { verificados: 2, conAlineacion: 1, enLista: 1 });
   });
 
   test('una descartada (F2) no es figura: sin rol si es verificada, y fuera si no lo es', () => {
@@ -215,6 +221,8 @@ describe('las métricas de un análisis v2', () => {
     assert.equal(v.emojis.lista[0].n, 2);
     assert.equal(v.emojis.apoyo, 3, '👏 ❤ 🌳');
     assert.equal(v.emojis.bronca, 3, '😡 😡 🤦');
+    assert.equal(v.emojis.proporcionApoyo, 0.5);
+    assert.equal(buildAnalysisView(filaV2({ comentarios: [] })).emojis.proporcionApoyo, null, 'sin emojis de apoyo ni de bronca, sin proporción');
   });
 
   test('los que más pegaron: 6 por likes, con los del hecho marcados', () => {
@@ -229,6 +237,9 @@ describe('las métricas de un análisis v2', () => {
         [10, false],
       ]
     );
+    // F2: el resumen que muestra la nota de la tarjeta, contado acá.
+    const likes = v.top.reduce((n, c) => n + (c.likes || 0), 0);
+    assert.deepEqual(v.topResumen, { likes, delHecho: 4, positivos: v.top.filter((c) => c.tono === 'positivo').length });
   });
 
   test('el tiempo: primer comentario a 6 min, el 50 % a las 7 h, 5 en las últimas 24 h', () => {

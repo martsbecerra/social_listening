@@ -258,9 +258,13 @@ function anaRenderSteps(pasos) {
 
 // La barra: el paso en curso y el porcentaje que manda el servidor.
 function anaRenderProgress(view) {
-  const pct = Math.max(0, Math.min(100, Math.round(Number(view.porcentaje) || 0)));
   const enCurso = (view.pasos || []).find((p) => p.estado === 'en curso');
   anaSetText(anaEls.phase, view.estado === 'en curso' ? (enCurso ? `${enCurso.label}…` : 'Analizando…') : view.estado === 'ok' ? 'Listo' : 'No terminó');
+  // Sin porcentaje (la fila de un análisis que ya no está en memoria) la
+  // barra queda donde estaba: no vuelve a 0.
+  const n = Number(view.porcentaje);
+  if (view.porcentaje === null || view.porcentaje === undefined || !Number.isFinite(n)) return;
+  const pct = Math.max(0, Math.min(100, Math.round(n)));
   anaSetText(anaEls.pct, `${pct} %`);
   anaEls.bar.style.width = `${pct}%`;
   anaEls.barWrap.setAttribute('aria-valuenow', String(pct));
@@ -476,6 +480,8 @@ function anaPreload(url) {
   anaSetError('');
   anaHideNotice();
   if (anaShown && anaPostCode(anaShown.url) !== anaPostCode(url)) anaClearShown();
+  // El hash, el de lo que queda a la vista (podía ser el de la galería).
+  if (anaPanelVisible() && location.hash !== anaHashActual()) history.replaceState(null, '', anaHashActual());
   if (anaRunningId !== null || !anaPostCode(url)) return;
   const seq = anaLoadSeq;
   anaApi(`/api/analisis?plataforma=${ANA_PLATAFORMA}&url=${encodeURIComponent(url)}`)
@@ -612,7 +618,7 @@ function anaLoadGaleria() {
       if (seq !== anaGalSeq) return;
       anaTotal = Number.isFinite(data.total) ? data.total : anaTotal;
       anaEls.count.textContent = formatCount(anaTotal);
-      anaRenderGaleria(data.recientes || [], data.desde);
+      anaRenderGaleria(data.recientes || [], data.desde, data.coinciden);
     })
     .catch((err) => {
       if (seq !== anaGalSeq) return;
@@ -624,13 +630,16 @@ function anaLoadGaleria() {
     });
 }
 
-function anaRenderGaleria(lista, desde) {
+function anaRenderGaleria(lista, desde, coinciden) {
   const d = anaDateParts(desde);
   const filtrado = Boolean(anaGal.q || anaGal.f !== 'all');
+  // coinciden: los que pasan la búsqueda y el filtro antes del tope de 100.
+  const n = Number.isFinite(coinciden) ? coinciden : lista.length;
+  const cortada = n > lista.length ? ` · se muestran ${formatCount(lista.length)}: buscá para ver otras` : '';
   anaEls.galN.textContent =
     anaTotal === 0
       ? 'Todavía no hay análisis.'
-      : `${filtrado ? `${formatCount(lista.length)} de ` : ''}${anaPlural(anaTotal, 'publicación analizada', 'publicaciones analizadas')}${d ? ` · desde el ${d.corta}` : ''}`;
+      : `${filtrado ? `${formatCount(n)} de ` : ''}${anaPlural(anaTotal, 'publicación analizada', 'publicaciones analizadas')}${d ? ` · desde el ${d.corta}` : ''}${cortada}`;
   if (!lista.length) {
     anaEls.gal.replaceChildren(anaEl('div', 'empty', anaTotal ? 'Ninguna publicación coincide con esa búsqueda o filtro.' : 'Todavía no hay análisis guardados.'));
     return;
@@ -709,8 +718,17 @@ function anaGalCard(a, k) {
   );
   card.addEventListener('click', () => {
     anaUserChose();
-    anaSetView(1, { updateHash: false });
-    anaShowAnalysis(a.id).then(() => window.scrollTo({ top: 0, behavior: anaReducedMotion() ? 'auto' : 'smooth' }));
+    anaSetError('');
+    anaHideNotice();
+    anaSetView(1);
+    anaShowAnalysis(a.id).then(() => {
+      // La tarjeta se ocultó con la galería: el foco pasa a la publicación abierta.
+      if (anaShown && anaShown.id === a.id) {
+        const post = document.getElementById('anaPost');
+        post.focus({ preventScroll: true });
+      }
+      window.scrollTo({ top: 0, behavior: anaReducedMotion() ? 'auto' : 'smooth' });
+    });
   });
   return card;
 }
@@ -825,7 +843,11 @@ anaEls.noticeRun.addEventListener('click', () => {
 // la vista, salvo que haya un link en el campo o ya se esté viendo otro.
 // El hash es el de lo que se ve (#analisis-<id>, #analisis-galeria).
 window.openAnalysis = function openAnalysis() {
-  if (location.hash !== anaHashActual() && (anaShown || anaView === 2)) history.replaceState(null, '', anaHashActual());
+  // Al volver a la solapa (#tab-analysis), el hash pasa a ser el de lo que se
+  // ve. Uno que ya nombra un análisis o la galería es un pedido (un link
+  // pegado, Atrás): lo atiende anaOpenFromHash, no se pisa con lo anterior.
+  const pedido = ANA_HASH.test(location.hash) || location.hash === ANA_HASH_GALERIA;
+  if (!pedido && location.hash !== anaHashActual() && (anaShown || anaView === 2)) history.replaceState(null, '', anaHashActual());
   if (anaOpened) return;
   anaOpened = true;
   anaRecientesReady.then(() => {

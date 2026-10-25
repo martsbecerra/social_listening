@@ -166,7 +166,7 @@ function emojisResumen(comentarios) {
     .map(([emoji, n]) => ({ emoji, n }))
     .sort((a, b) => b.n - a.n || a.emoji.localeCompare(b.emoji))
     .slice(0, MAX_EMOJIS);
-  return { lista, apoyo, bronca };
+  return { lista, apoyo, bronca, proporcionApoyo: apoyo + bronca > 0 ? apoyo / (apoyo + bronca) : null };
 }
 
 // ---------------------------------------------------------------- tiempo
@@ -403,6 +403,8 @@ function buildAnalysisView(row, { figuras = new Map(), reclamos = [], anteriores
       tema: estrella.nombre,
       n: estrella.n,
       proporcion: analizados > 0 ? estrella.n / analizados : 0,
+      // De los comentarios del tema con opinión, los positivos (la tarjeta tranquila).
+      positivo: porTema.get(estrella.id).conOpinion > 0 ? estrella.tonos.positivo / porTema.get(estrella.id).conOpinion : null,
       temas: temasVista.filter((t) => !t.manual).slice(0, 4),
     };
   }
@@ -428,6 +430,18 @@ function buildAnalysisView(row, { figuras = new Map(), reclamos = [], anteriores
     .sort((a, b) => likesDe(b) - likesDe(a) || a.n - b.n)
     .slice(0, TOP_LIKES)
     .map((c) => ({ ...c, delHecho: esDelHecho(c) }));
+  const topResumen = {
+    likes: top.reduce((n, c) => n + likesDe(c), 0),
+    delHecho: top.filter((c) => c.delHecho).length,
+    positivos: top.filter((c) => c.tono === 'positivo').length,
+  };
+  // Lo que cuenta la tarjeta de verificados y su KPI: con alineación = una
+  // figura del equipo con oficialismo u oposición (roles políticos o de prensa).
+  const personas = {
+    verificados: quienHablo.filter((q) => q.verificada).length,
+    conAlineacion: quienHablo.filter((q) => q.verificada && q.figura && q.figura.origen === 'equipo' && q.figura.alineacion).length,
+    enLista: quienHablo.filter((q) => q.figura && q.figura.origen === 'equipo').length,
+  };
 
   // ---- comparación con la cuenta
   const actual = {
@@ -488,10 +502,12 @@ function buildAnalysisView(row, { figuras = new Map(), reclamos = [], anteriores
     lectura: (v2 ? resultado.lectura : resultado.lecturaEstrategica) || null,
     queMirar: v2 ? resultado.queMirar || null : null,
     quienHablo,
+    personas,
     pedidos,
     etiquetas: etiquetasDe(comentarios, verificados),
     emojis: emojisResumen(comentarios),
     top,
+    topResumen,
     tiempo: tiempoDe({ postedAt, finishedAt: row.finishedAt, cuando: row.cuando }, comentarios),
     comparacion,
     reclamos,

@@ -2670,8 +2670,9 @@ const GALERIA_FILTRO = {
  * La galería de análisis terminados: búsqueda (cuenta, texto, tema estrella;
  * sin acentos), filtro (all | ev con hecho dominante | neg 40 % o más |
  * ver con verificados) y orden (recent | c comentarios | neg | ver).
- * @returns {{ items: object[], total: number, desde: string|null }} total y
- *   desde (el primero) son de todos los terminados, no del filtro.
+ * @returns {{ items: object[], total: number, desde: string|null, coinciden: number }}
+ *   total y desde (el primero) son de todos los terminados, no del filtro;
+ *   coinciden, los que pasan la búsqueda y el filtro (antes del tope).
  */
 function listAnalisisGaleria({ plataforma, q = '', f = 'all', ord = 'recent', limit = 100 } = {}) {
   requirePlataforma(plataforma, 'listAnalisisGaleria');
@@ -2685,17 +2686,19 @@ function listAnalisisGaleria({ plataforma, q = '', f = 'all', ord = 'recent', li
   const desde = resumen.desde || null;
   // Sin búsqueda, filtro ni orden (el inicio pide 4 por minuto): directo con LIMIT.
   if (!buscado && filtro === GALERIA_FILTRO.all && orden === GALERIA_ORDEN.recent) {
-    return { items: listAnalisisStmt.all(plataforma, n).map(analisisLiviano), total, desde };
+    return { items: listAnalisisStmt.all(plataforma, n).map(analisisLiviano), total, desde, coinciden: total };
   }
-  const items = listAnalisisGaleriaStmt
+  const todos = listAnalisisGaleriaStmt
     .all(plataforma)
     .map(analisisLiviano)
-    .filter((a) => filtro(a) && (!buscado || plegar(`${a.cuenta || ''} ${a.caption} ${a.temaEstrella || ''}`).includes(buscado)))
+    .filter((a) => filtro(a) && (!buscado || plegar(`${a.cuenta || ''} ${a.caption} ${a.temaEstrella || ''}`).includes(buscado)));
+  // coinciden: cuántos pasan la búsqueda y el filtro antes del tope (la galería avisa si corta).
+  const items = todos
     .map((a, i) => ({ a, i }))
     .sort((x, y) => orden(x.a, y.a) || x.i - y.i)
     .slice(0, n)
     .map((x) => x.a);
-  return { items, total, desde };
+  return { items, total, desde, coinciden: todos.length };
 }
 
 /**

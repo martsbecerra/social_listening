@@ -50,6 +50,7 @@ const ANA_COMUNAS = [
 ];
 
 const anaB = {
+  post: document.getElementById('anaPost'),
   img: document.getElementById('anaImg'),
   av: document.getElementById('anaAv'),
   acc: document.getElementById('anaAcc'),
@@ -191,6 +192,7 @@ function anaRender(a) {
   anaShow(anaB.waText, false);
   anaB.waBtn.setAttribute('aria-expanded', 'false');
   anaB.waBtn.textContent = 'Ver texto para WhatsApp';
+  if (typeof anaFigReset === 'function') anaFigReset();
   anaRenderPost(a, v);
   anaRenderKpis(v);
   anaRenderAi(v);
@@ -216,7 +218,13 @@ function anaRender(a) {
 function anaRefresh() {
   const v = anaVista();
   if (!v) return;
-  if (anaCmtSel && anaCmtSel.tipo === 'tema' && !v.temas.some((t) => t.id === anaCmtSel.id)) anaCmtSel = null;
+  // El tema elegido: si se unió a otro o se quitó, se suelta; si cambió de
+  // nombre, la pastilla (y el filtro de un v1, que va por nombre) lo siguen.
+  if (anaCmtSel && anaCmtSel.tipo === 'tema') {
+    const t = v.temas.find((x) => x.id === anaCmtSel.id);
+    if (!t || t.manual) anaCmtSel = null;
+    else anaCmtSel.nombre = t.nombre;
+  }
   anaRenderKpis(v, { animar: false });
   anaRenderEvent(v, { animar: false });
   anaRenderSplit(v);
@@ -267,6 +275,8 @@ function anaRenderPost(a, v) {
     met(anaB.likes, '♥ ', formatCount(v.likes));
     anaB.likes.title = 'Me gusta';
   }
+  // El ancla del análisis a la vista (al abrirlo desde la galería, el foco va acá).
+  anaB.post.setAttribute('aria-label', `Publicación de ${v.cuenta ? `@${v.cuenta}` : 'cuenta sin dato'}${fecha ? ` del ${fecha.fecha}` : ''}`);
   met(anaB.coms, '💬 ', formatCount(v.comentariosTotal));
   anaB.coms.title = 'Comentarios que informa Instagram (con las respuestas)';
   const de = anaDeTotal(v);
@@ -322,14 +332,13 @@ function anaRenderKpis(v, { animar = true } = {}) {
   } else {
     kpis.push(anaKpi('Postura crítica', { valor: '—', clase: 'na', desc: v.postura ? 'sin comentarios con opinión' : ANA_NA }));
   }
-  const verificados = v.quienHablo.filter((q) => q.verificada);
-  const conRol = v.quienHablo.filter((q) => q.figura && q.figura.origen === 'equipo' && q.figura.alineacion).length;
+  const { verificados, conAlineacion } = v.personas;
   kpis.push(
     anaKpi('Verificados', {
-      valor: formatCount(verificados.length),
-      clase: verificados.length >= 3 ? 'warn' : '',
-      desc: verificados.length ? `comentaron${conRol ? ` · ${conRol} con rol político` : ''}` : 'ningún verificado comentó',
-      contar: [verificados.length, (x) => formatCount(Math.round(x))],
+      valor: formatCount(verificados),
+      clase: verificados >= 3 ? 'warn' : '',
+      desc: verificados ? `comentaron${conAlineacion ? ` · ${formatCount(conAlineacion)} con alineación` : ''}` : 'ningún verificado comentó',
+      contar: [verificados, (x) => formatCount(Math.round(x))],
     })
   );
   if (v.sobrePosteo && v.sobrePosteo.base > 0) {
@@ -450,9 +459,7 @@ function anaRenderEvent(v, { animar = true } = {}) {
       explica += ': la conversación está repartida';
     }
     partes.push(anaBigPct(s.proporcion, explica, animar), anaEl('h3', '', `Tema principal: ${s.tema}`));
-    const estrella = v.temas.find((t) => t.estrella);
-    const pos = estrella && estrella.n ? Math.round((estrella.tonos.positivo / estrella.n) * 100) : null;
-    let desc = `${anaPlural(s.n, 'comentario lo toca', 'comentarios lo tocan')}${pos !== null ? `; ${pos} % en tono positivo` : ''}.`;
+    let desc = `${anaPlural(s.n, 'comentario lo toca', 'comentarios lo tocan')}${s.positivo !== null && s.positivo !== undefined ? `; ${anaPct(s.positivo)} en tono positivo` : ''}.`;
     if (v.disponible.hecho) desc += ' Ningún hecho externo se adueñó de la conversación.';
     partes.push(anaEl('p', 'desc', desc));
     const max = Math.max(1, ...s.temas.map((t) => t.n || 0));
@@ -668,7 +675,8 @@ function anaRenderThemes() {
   add.type = 'button';
   add.id = 'anaTemaAdd';
   const lleno = !v2 && temas.length >= window.TemasConversacion.MAX;
-  add.disabled = lleno;
+  // aria-disabled: con el foco, el tooltip dice por qué no se puede.
+  add.setAttribute('aria-disabled', String(lleno));
   add.dataset.tipTitle = 'Agregar un tema';
   add.dataset.tip = lleno ? `Ya hay ${window.TemasConversacion.MAX}, el máximo.` : 'Se guarda con el análisis y entra en el informe, sin conteo';
   box.append(add);
@@ -685,18 +693,26 @@ function anaTemaPorId(id) {
   return anaVista().temas.find((t) => t.id === id) || null;
 }
 
+// Cambió lo que filtra los comentarios (un tema, un pedido o una persona):
+// se redibujan los tres lugares que lo marcan, el segmentado y la lista.
+function anaSelCambio({ enfocar = true } = {}) {
+  const v = anaVista();
+  if (anaCmtSel) anaCmtFilter = 'all';
+  anaCmtLimit = ANA_CMTS_PAGE;
+  anaRenderThemes();
+  anaRenderAsks(v);
+  anaRenderPeople(v);
+  anaRenderSeg();
+  anaRenderCmts();
+  if (enfocar && anaCmtSel) anaB.cmtsTitle.focus();
+}
+
 function anaToggleTema(id) {
   const t = anaTemaPorId(id);
   if (!t || t.manual) return;
   const elegido = anaCmtSel && anaCmtSel.tipo === 'tema' && anaCmtSel.id === id;
   anaCmtSel = elegido ? null : { tipo: 'tema', id, nombre: t.nombre };
-  if (anaCmtSel) anaCmtFilter = 'all';
-  anaCmtLimit = ANA_CMTS_PAGE;
-  anaRenderThemes();
-  anaRenderAsks(anaVista());
-  anaRenderSeg();
-  anaRenderCmts();
-  if (anaCmtSel) anaB.cmtsTitle.focus();
+  anaSelCambio();
 }
 
 function anaOpenTemaForm(id) {
@@ -770,8 +786,9 @@ anaB.themes.addEventListener('click', (e) => {
     anaOpenTemaForm(Number(ed.closest('[data-id]').dataset.id));
     return;
   }
-  if (e.target.closest('#anaTemaAdd')) {
-    anaOpenTemaForm('nuevo');
+  const add = e.target.closest('#anaTemaAdd');
+  if (add) {
+    if (add.getAttribute('aria-disabled') !== 'true') anaOpenTemaForm('nuevo');
     return;
   }
   const row = e.target.closest('.an-theme[data-id]');
@@ -896,7 +913,8 @@ function anaRenderHist() {
   const v = anaVista();
   const c = v && v.comparacion;
   const serie = c && !c.primero && Array.isArray(c.serie) ? c.serie.filter((s) => s.neg !== null && Number.isFinite(s.neg)) : [];
-  if (serie.length < 2) {
+  // Sin el % negativo de esta publicación (todo ruido) no hay "esta" que marcar: no se dibuja.
+  if (serie.length < 2 || !serie[serie.length - 1].actual) {
     anaB.hist.replaceChildren();
     anaHistDrawnW = 0;
     anaB.histLbl.textContent = '';
@@ -968,7 +986,9 @@ function anaRenderWhen() {
   // Los chips: primer comentario, el 50 %, el pico y las últimas 24 h.
   const chips = [];
   if (t) {
-    if (t.primeroMin !== null) chips.push(anaChip('Primer comentario ', t.primeroMin < 60 ? `+${t.primeroMin} min` : anaHh(t.primeroMin / 60)));
+    if (t.primeroMin !== null) {
+      chips.push(t.primeroMin < 1 ? anaChip('Primer comentario ', 'en el primer minuto') : anaChip('Primer comentario ', t.primeroMin < 60 ? `+${t.primeroMin} min` : anaHh(t.primeroMin / 60)));
+    }
     if (t.mitadHoras !== null) chips.push(anaChip('El 50 % llegó en ', t.mitadHoras < 1 ? `${Math.max(1, Math.round(t.mitadHoras * 60))} min` : `${ANA_DEC.format(Math.round(t.mitadHoras * 10) / 10)} h`));
     if (t.picoHoras !== null && c) chips.push(anaChip('Pico ', anaPeakLabel(t.picoHoras, c.unidadHoras)));
     if (t.ultimas24 !== null) {
@@ -1021,11 +1041,14 @@ function anaRenderWhen() {
   defs.append(grad);
   svg.append(defs);
 
+  // Cada línea de la grilla a la altura del número que la rotula (0, la
+  // mitad y el máximo); arriba queda un 12 % de aire para el rótulo del pico.
+  const maximo = Math.max(1, ...data);
   for (const k of [0, 0.5, 1]) {
-    const gy = H - B - k * (H - T - B);
+    const gy = y(k * maximo);
     svg.append(anaSvg('line', { x1: L, x2: W - R, y1: gy, y2: gy, class: 'tl-grid' }));
     const label = anaSvg('text', { x: L - 4, y: gy + 3, 'text-anchor': 'end', class: 'tl-txt' });
-    label.textContent = formatCount(Math.round((mx * k) / 1.12));
+    label.textContent = formatCount(Math.round(k * maximo));
     svg.append(label);
   }
 
@@ -1081,7 +1104,8 @@ function anaRenderWhen() {
     const x0 = Math.max(L, x(i) - ancho / 2);
     const x1 = Math.min(W - R, x(i) + ancho / 2);
     const r = anaSvg('rect', { x: x0, y: T, width: Math.max(1, x1 - x0), height: H - T - B, class: 'tl-hit' });
-    r.dataset.tipTitle = c.unidadHoras === 1 && c.tramos[i].h === 0 ? 'Primera hora' : anaHourLabel(c.tramos[i].h);
+    // El primer tramo, como lo dice el pico: "La primera hora", "Las primeras 6 h", "El primer día".
+    r.dataset.tipTitle = c.tramos[i].h === 0 ? anaPeakLabel(0, c.unidadHoras).replace(/^./, (l) => l.toUpperCase()) : anaHourLabel(c.tramos[i].h);
     r.dataset.tip = anaPlural(val, 'comentario', 'comentarios');
     svg.append(r);
   });
@@ -1144,13 +1168,9 @@ function anaRenderAsks(v) {
       b.setAttribute('aria-label', `${p.texto}: ${anaPlural(p.n, 'comentario', 'comentarios')}${p.delHecho ? ', del hecho dominante' : ''}. Un clic los muestra abajo.`);
       b.addEventListener('click', () => {
         anaCmtSel = elegido ? null : { tipo: 'pedido', idx: i, texto: p.texto, ids: new Set(p.ids) };
-        if (anaCmtSel) anaCmtFilter = 'all';
-        anaCmtLimit = ANA_CMTS_PAGE;
-        anaRenderAsks(anaVista());
-        anaRenderThemes();
-        anaRenderSeg();
-        anaRenderCmts();
-        if (anaCmtSel) anaB.cmtsTitle.focus();
+        anaSelCambio();
+        // Al soltarlo, el foco queda en el mismo pedido (el botón se rehízo).
+        if (!anaCmtSel && anaB.asks.children[i]) anaB.asks.children[i].focus();
       });
       return b;
     })
@@ -1188,14 +1208,12 @@ function anaRenderTop(v) {
     })
   );
   anaGrow(anaB.top);
-  const total = lista.reduce((n, c) => n + (c.likes || 0), 0);
+  const r = v.topResumen;
   if (!lista.length) anaB.topNote.textContent = '';
   else if (v.hecho) {
-    const del = lista.filter((c) => c.delHecho).length;
-    anaB.topNote.textContent = `${formatCount(del)} de los ${lista.length} más likeados hablan del hecho dominante, no del posteo. Juntos suman ${anaPlural(total, 'like', 'likes')}.`;
+    anaB.topNote.textContent = `${formatCount(r.delHecho)} de los ${lista.length} más likeados hablan del hecho dominante, no del posteo. Los ${lista.length} suman ${anaPlural(r.likes, 'like', 'likes')}.`;
   } else {
-    const pos = lista.filter((c) => c.tono === 'positivo').length;
-    anaB.topNote.textContent = `Los ${lista.length} más likeados suman ${anaPlural(total, 'like', 'likes')}; ${pos === 1 ? '1 es positivo' : `${pos} son positivos`}.`;
+    anaB.topNote.textContent = `Los ${lista.length} más likeados suman ${anaPlural(r.likes, 'like', 'likes')}; ${r.positivos === 1 ? '1 es positivo' : `${formatCount(r.positivos)} son positivos`}.`;
   }
 }
 
@@ -1256,24 +1274,28 @@ function anaRenderRecl(v) {
     }
     svg.append(dot);
   });
+  // Sin ubicar: los pendientes se van a ubicar (USIG, después); los demás
+  // (fuera de la Ciudad, dirección no encontrada…) ya no.
+  const pendientes = todos.filter((r) => !ubicados.includes(r) && r.geoStatus === 'pendiente').length;
+  const sinUbicacion = todos.length - ubicados.length - pendientes;
   if (!ubicados.length) {
     const t = anaSvg('text', { x: W / 2, y: H - 12, 'text-anchor': 'middle', class: 'vacio' });
-    t.textContent = todos.length ? 'Todavía ninguno ubicado' : 'Sin reclamos con dirección';
+    t.textContent = !todos.length ? 'Sin reclamos con dirección' : pendientes ? 'Todavía ninguno ubicado' : 'Ninguno se pudo ubicar';
     svg.append(t);
   }
   svg.setAttribute('aria-label', ubicados.length ? `${anaPlural(ubicados.length, 'reclamo ubicado', 'reclamos ubicados')} en la Ciudad` : 'Mapa de la Ciudad sin reclamos ubicados');
 
-  const sinUbicar = todos.length - ubicados.length;
   anaB.reclHint.textContent = todos.length
-    ? `${anaPlural(ubicados.length, 'ubicado', 'ubicados')}${ubicados.length ? ` en ${anaPlural(grupos.length, 'punto', 'puntos')}` : ''}${sinUbicar ? ` · ${formatCount(sinUbicar)} sin ubicar todavía` : ''}`
+    ? `${anaPlural(ubicados.length, 'ubicado', 'ubicados')}${ubicados.length ? ` en ${anaPlural(grupos.length, 'punto', 'puntos')}` : ''}${pendientes ? ` · ${formatCount(pendientes)} sin ubicar todavía` : ''}${sinUbicacion ? ` · ${formatCount(sinUbicacion)} sin ubicación` : ''}`
     : 'ninguno en esta publicación';
+  const motivo = (r) => (r.geoStatus === 'pendiente' ? 'sin ubicar todavía' : r.geoStatus === 'fuera_caba' ? 'fuera de la Ciudad' : 'sin ubicación');
   const filas = [...ubicados, ...todos.filter((r) => !ubicados.includes(r))].slice(0, ANA_RECL_LISTA).map((r) => {
     const fila = anaEl('div');
     const punto = anaEl('i', ubicados.includes(r) ? '' : 'sin');
     if (ubicados.includes(r)) punto.style.background = temaColor(r.categoria);
     punto.setAttribute('aria-hidden', 'true');
     const texto = anaEl('span', '', `${anaReclTitulo(r)} · ${r.direccion || 'sin dirección'}`);
-    if (!ubicados.includes(r)) texto.append(anaEl('span', 'sr', ' (sin ubicar todavía)'));
+    if (!ubicados.includes(r)) texto.append(anaEl('span', 'sr', ` (${motivo(r)})`));
     fila.append(punto, texto, anaEl('small', '', r.autor ? `@${r.autor}` : ''));
     return fila;
   });
@@ -1354,11 +1376,11 @@ function anaRenderEmo(v) {
         })
       : [anaEl('p', 'note', 'Casi no hubo emojis.')])
   );
-  const tot = e.apoyo + e.bronca;
+  const hay = e.proporcionApoyo !== null && e.proporcionApoyo !== undefined;
   const [a, b] = anaB.emoSplit.children;
-  anaShow(anaB.emoSplit, tot > 0);
-  if (tot > 0) {
-    const pa = Math.round((e.apoyo / tot) * 100);
+  anaShow(anaB.emoSplit, hay);
+  if (hay) {
+    const pa = Math.round(e.proporcionApoyo * 100);
     const pb = 100 - pa;
     a.style.width = '0';
     b.style.width = '0';
@@ -1370,7 +1392,7 @@ function anaRenderEmo(v) {
     });
   }
   anaB.emoNote.textContent =
-    tot === 0
+    !hay
       ? 'Ningún emoji de apoyo ni de bronca.'
       : e.bronca > e.apoyo
         ? `El enojo le gana al aplauso: ${anaPlural(e.bronca, 'emoji', 'emojis')} de bronca contra ${formatCount(e.apoyo)} de apoyo.`
@@ -1387,10 +1409,16 @@ function anaRenderSeg() {
     const on = b.dataset.f === anaCmtFilter;
     b.classList.toggle('on', on);
     b.setAttribute('aria-pressed', String(on));
+    // aria-disabled, no disabled: sigue con el foco y su tooltip dice por qué.
     if (b.dataset.f === 'q') {
-      b.disabled = !v2;
-      if (v2) delete b.dataset.tip;
-      else b.dataset.tip = `${ANA_NA}: los pedidos se marcan en los análisis nuevos.`;
+      b.setAttribute('aria-disabled', String(!v2));
+      if (v2) {
+        delete b.dataset.tip;
+        b.removeAttribute('aria-label');
+      } else {
+        b.dataset.tip = `${ANA_NA}: los pedidos se marcan en los análisis nuevos.`;
+        b.setAttribute('aria-label', `Preguntas: ${ANA_NA.toLowerCase()}`);
+      }
     }
   });
 }
@@ -1468,11 +1496,7 @@ function anaRenderCmts() {
     x.setAttribute('aria-label', `Sacar el filtro «${texto}»`);
     x.addEventListener('click', () => {
       anaCmtSel = null;
-      anaCmtLimit = ANA_CMTS_PAGE;
-      anaRenderThemes();
-      anaRenderAsks(anaVista());
-      anaRenderPeople(anaVista());
-      anaRenderCmts();
+      anaSelCambio({ enfocar: false });
       anaB.cmtsTitle.focus();
     });
     chip.append(x);
@@ -1497,22 +1521,13 @@ function anaFiltrarPersona(usuario) {
   const u = String(usuario).toLowerCase();
   const elegido = anaCmtSel && anaCmtSel.tipo === 'persona' && anaCmtSel.usuario === u;
   anaCmtSel = elegido ? null : { tipo: 'persona', usuario: u };
-  if (anaCmtSel) anaCmtFilter = 'all';
-  anaCmtLimit = ANA_CMTS_PAGE;
-  anaRenderThemes();
-  anaRenderAsks(anaVista());
-  anaRenderPeople(anaVista());
-  anaRenderSeg();
-  anaRenderCmts();
-  if (anaCmtSel) {
-    anaB.cmtsTitle.focus();
-    anaB.cmtsTitle.closest('.card').scrollIntoView({ behavior: anaReducedMotion() ? 'auto' : 'smooth', block: 'start' });
-  }
+  anaSelCambio();
+  if (anaCmtSel) anaB.cmtsTitle.closest('.card').scrollIntoView({ behavior: anaReducedMotion() ? 'auto' : 'smooth', block: 'start' });
 }
 
 anaB.cmtSeg.addEventListener('click', (e) => {
   const b = e.target.closest('button[data-f]');
-  if (!b || !anaShown || b.disabled) return;
+  if (!b || !anaShown || b.getAttribute('aria-disabled') === 'true') return;
   anaCmtFilter = b.dataset.f;
   anaCmtLimit = ANA_CMTS_PAGE;
   anaRenderSeg();
