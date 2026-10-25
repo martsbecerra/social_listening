@@ -5,7 +5,8 @@
 // (geocode.js) y asigna comuna/barrio (territorios.js). /api/analyze nunca
 // geocodifica en el momento — deja las filas en 'pendiente' y responde
 // enseguida; este worker las resuelve después (cron de scheduler.js, o
-// disparado sin esperar tras un análisis).
+// disparado sin esperar tras un análisis). reintentarSinCoordenadas, una
+// sola vez al arrancar, vuelve a mandar a USIG los que quedaron sin punto.
 // ==========================================================================
 
 const db = require('./db');
@@ -13,9 +14,12 @@ const { geocodeAddress } = require('./geocode');
 const { ubicarPunto } = require('./territorios');
 
 /**
+ * @param {{ reintentar?: Set<string> }} [opts] reintentar: los ids del
+ *   reintento de los sin coordenadas; para esos no vale una caché de "no
+ *   encontrada" (se le vuelve a preguntar a USIG).
  * @returns {Promise<{ pending: number, processed: number, errors: number, fueraDeCaba: number }>}
  */
-async function processPendingReclamos() {
+async function processPendingReclamos({ reintentar = null } = {}) {
   const pending = db.listPendingGeoReclamos();
   let processed = 0;
   let errors = 0;
@@ -40,7 +44,7 @@ async function processPendingReclamos() {
     }
 
     try {
-      const geo = await geocodeAddress(reclamo.direccionDetectada);
+      const geo = await geocodeAddress(reclamo.direccionDetectada, { sinCacheFallida: Boolean(reintentar && reintentar.has(reclamo.id)) });
 
       if (geo.geoStatus !== 'ok') {
         // USIG puede resolver la dirección en otro partido (ver geocode.js):
@@ -119,4 +123,33 @@ function processPendingReclamosInBackground() {
   });
 }
 
-module.exports = { processPendingReclamos, processPendingReclamosInBackground };
+// La marca en refresh_state: el reintento corre una sola vez, en el primer
+// arranque con el arreglo del (0,0) (los siguientes no vuelven a gastar
+// consultas a USIG en direcciones que ya no se encontraron).
+const MARCA_REINTENTO = 'geo_reintento_sin_coordenadas';
+
+/**
+ * Una sola vez: vuelve a ubicar con USIG todos los reclamos con dirección
+ * escrita y sin un punto válido (sin coordenadas o en el (0,0)), con el
+ * mismo worker de siempre (de a una dirección, con el backoff de USIG) y sin
+ * la caché de "no encontrada". Lo llama server.js al arrancar. Deja la marca
+ * antes de empezar: si el proceso se corta, los que quedaron 'pendiente' los
+ * termina el worker del ciclo.
+ * @returns {Promise<{ total: number, ubicados: number } | null>} null si ya se había hecho.
+ */
+async function reintentarSinCoordenadas({ ahora = new Date().toISOString() } = {}) {
+  if (db.getRefreshState(MARCA_REINTENTO)) return null;
+  const ids = db.reabrirSinCoordenadas();
+  db.setRefreshState(MARCA_REINTENTO, ahora);
+  if (!ids.length) {
+    console.log('[geo] reintento de los reclamos sin coordenadas: no había ninguno');
+    return { total: 0, ubicados: 0 };
+  }
+  console.log(`[geo] reintento de los reclamos sin coordenadas: ${ids.length} vuelven a USIG`);
+  await processPendingReclamos({ reintentar: new Set(ids) });
+  const ubicados = db.contarUbicados(ids);
+  console.log(`[geo] reintento de los reclamos sin coordenadas: ${ubicados} de ${ids.length} ubicados`);
+  return { total: ids.length, ubicados };
+}
+
+module.exports = { processPendingReclamos, processPendingReclamosInBackground, reintentarSinCoordenadas, MARCA_REINTENTO };

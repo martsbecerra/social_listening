@@ -65,7 +65,7 @@ const {
 } = require('./src/scheduler');
 const monitoringProgress = require('./src/monitoringProgress');
 const { startKeepAwake, stopKeepAwake } = require('./src/keepAwake');
-const { processPendingReclamosInBackground } = require('./src/geoWorker');
+const { processPendingReclamosInBackground, reintentarSinCoordenadas } = require('./src/geoWorker');
 const accountStats = require('./src/accountStats');
 const postImageRoutes = require('./src/postImageRoutes');
 const { buildLastRun } = require('./src/lastRun');
@@ -738,6 +738,9 @@ const server = app.listen(PORT, () => {
   // Windows: que la máquina no se suspenda mientras la app corre (ver
   // src/keepAwake.js). Nunca tira; en otros sistemas no hace nada.
   startKeepAwake();
+  // Una sola vez (marca en refresh_state): los reclamos sin coordenadas o en
+  // el (0,0) vuelven a USIG, sin esperar. Loguea "N de M ubicados".
+  reintentarSinCoordenadas().catch((err) => console.warn('[geo] el reintento de los reclamos sin coordenadas falló:', err.message));
 });
 
 server.on('error', (err) => {

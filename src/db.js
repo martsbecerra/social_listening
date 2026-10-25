@@ -1046,6 +1046,22 @@ const upsertReclamoConservandoStmt = db.prepare(`
     direccion_detectada = excluded.direccion_detectada
 `);
 const listPendingGeoReclamosStmt = db.prepare(`SELECT * FROM reclamos WHERE geo_status = 'pendiente'`);
+// El reintento único de los reclamos sin punto (geoWorker.reintentarSinCoordenadas):
+// con una dirección escrita y sin coordenadas, o en el (0,0) que dejaba una
+// respuesta de USIG sin punto (geocode.js lo leía como 0).
+const listSinCoordenadasStmt = db.prepare(`
+  SELECT id FROM reclamos
+  WHERE TRIM(COALESCE(direccion_detectada, '')) <> ''
+    AND (x IS NULL OR y IS NULL OR (x = 0 AND y = 0))
+`);
+const reabrirGeoStmt = db.prepare(`
+  UPDATE reclamos SET geo_status = 'pendiente', x = NULL, y = NULL, comuna = NULL, barrio = NULL WHERE id = ?
+`);
+const contarUbicadosStmt = db.prepare(`
+  SELECT COUNT(*) AS n FROM reclamos
+  WHERE id IN (SELECT value FROM json_each(?))
+    AND geo_status = 'ok' AND x IS NOT NULL AND y IS NOT NULL AND NOT (x = 0 AND y = 0)
+`);
 const updateEstadoStmt = db.prepare('UPDATE reclamos SET estado = ? WHERE id = ?');
 const updateReclamoGeoStmt = db.prepare(`
   UPDATE reclamos
@@ -1694,6 +1710,29 @@ function updateEstado(id, estado) {
 
 function listPendingGeoReclamos() {
   return listPendingGeoReclamosStmt.all().map(mapReclamoRow);
+}
+
+/**
+ * Pasa a 'pendiente' los reclamos con dirección escrita y sin un punto
+ * válido (y les borra el (0,0)), para que el geoWorker los vuelva a ubicar.
+ * @returns {string[]} sus ids
+ */
+function reabrirSinCoordenadas() {
+  const ids = listSinCoordenadasStmt.all().map((r) => r.id);
+  db.exec('BEGIN');
+  try {
+    for (const id of ids) reabrirGeoStmt.run(id);
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+  return ids;
+}
+
+/** De esos ids, cuántos quedaron ubicados (ok, con un punto que no es el (0,0)). */
+function contarUbicados(ids) {
+  return Number(contarUbicadosStmt.get(JSON.stringify(ids || [])).n) || 0;
 }
 
 /** Aplica el resultado del geoWorker (USIG + comuna/barrio) a una fila. */
@@ -2960,6 +2999,8 @@ module.exports = {
   deleteReclamosPorOrigen,
   updateEstado,
   listPendingGeoReclamos,
+  reabrirSinCoordenadas,
+  contarUbicados,
   updateReclamoGeo,
   countReclamos,
   getGeocodeCache,
