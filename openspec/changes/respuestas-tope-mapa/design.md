@@ -42,13 +42,27 @@
    `respondeAUsuario`, `esRespuesta`, `deLaCuenta` y
    `respuestasDeclaradas`. `resultado.respuestas: true` marca un análisis
    con respuestas.
-5. Al leer (`analysisMetrics.js`): las de la cuenta quedan fuera de tono,
-   postura, temas, "hablan del posteo", ruido y "sin clasificar"; `debates`
-   son los 6 comentarios con más respuestas traídas (con el tono de sus
-   respuestas); `laCuentaRespondio` dice a cuántos comentarios contestó la
-   cuenta y cuáles. Una respuesta que empieza con "@usuario" (la mención de
-   Instagram al responder) no cuenta esa mención en "A quién etiquetan".
-   Un análisis sin respuestas (antes de la G) los trae como no disponibles.
+5. Al leer (`analysisMetrics.js`): lo de la cuenta queda fuera de todo lo
+   que se cuenta (tono, postura, temas, "hablan del posteo", ruido, "sin
+   clasificar", verificados y figuras, los que más pegaron, etiquetas,
+   emojis, el tiempo); sigue en la lista de comentarios. Cada comentario
+   de primer nivel dice cuántas respuestas le llegaron (`respuestas`, las
+   de la cuenta incluidas). `debates`: los 6 del público con más
+   respuestas DEL PÚBLICO (`respuestasPublico`, con su tono y si la cuenta
+   también contestó; uno que solo contestó la cuenta no es un debate).
+   `respuestas`: las traídas del público, las de la cuenta, cuántos
+   comentarios tuvieron respuesta y las que declara Instagram.
+   `laCuentaRespondio`: a cuántos comentarios contestó (cuántos negativos),
+   cuáles y qué les dijo, y lo que comentó suelto. Una respuesta que
+   empieza con "@usuario" (la mención de Instagram al responder) no cuenta
+   esa mención en "A quién etiquetan". Un análisis sin respuestas (antes de
+   la G) los trae en null, con `disponible.respuestas` false.
+   El informe lo dice al final de "Quién habló" ("5 respuestas (2
+   comentarios con respuesta; el que más tuvo, @x, 3) · la cuenta respondió
+   a 3 comentarios"; uno anterior, "no disponible … anterior a la fase
+   G"), la síntesis lo recibe en sus NÚMEROS si hay algo, y el CSV de
+   comentarios suma "Responde al número", "Responde a", "De la cuenta" y
+   "Respuestas traídas" (vacías en uno anterior).
 6. "Analizados N de M": N, los comentarios y respuestas clasificados; M, el
    total de Instagram (que cuenta las respuestas).
 

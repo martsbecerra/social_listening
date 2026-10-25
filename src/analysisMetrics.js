@@ -19,6 +19,11 @@
 //   - el hecho dominante vale solo si el modelo lo marcó sobre el tema
 //     principal de los que no hablan del posteo Y ese tema junta al menos
 //     el 20 % de los analizados.
+// Desde la fase G (resultado.respuestas) llegan también las respuestas:
+// cuentan como cualquier comentario, salvo las de la propia cuenta
+// (deLaCuenta), que quedan fuera de todo lo que se cuenta y van solo a
+// "¿La cuenta respondió?". Los debates son los comentarios con más
+// respuestas traídas. Un análisis anterior los trae como no disponibles.
 //
 // Sin dependencias (no carga la base): la usan las rutas, el trabajo (las
 // columnas de la galería al terminar) y reportBuilder (el informe).
@@ -109,12 +114,16 @@ function temasDeFila(temas) {
 
 // ---------------------------------------------------------------- etiquetas y emojis
 
+// La @mención con la que Instagram abre una respuesta (a quien se le
+// responde) no es una etiqueta.
+const MENCION_DE_RESPUESTA = /^\s*@[A-Za-z0-9._]{1,30}\s*/;
+
 function etiquetasDe(comentarios, verificados) {
   const cuentas = new Map();
   const hashtags = new Map();
   let conEtiqueta = 0;
   for (const c of comentarios) {
-    const texto = String(c.texto || '');
+    const texto = c.esRespuesta ? String(c.texto || '').replace(MENCION_DE_RESPUESTA, '') : String(c.texto || '');
     const menciones = new Set([...texto.matchAll(/@([A-Za-z0-9._]{1,30})/g)].map((m) => m[1].replace(/\.+$/, '').toLowerCase()).filter(Boolean));
     if (menciones.size) conEtiqueta += 1;
     for (const m of menciones) cuentas.set(m, (cuentas.get(m) || 0) + 1);
@@ -239,9 +248,25 @@ function buildAnalysisView(row, { figuras = new Map(), reclamos = [], anteriores
       temasV1: v2 ? null : todosV1.get(c.n) || [],
       sobrePosteo: v2 && typeof c.sobrePosteo === 'boolean' ? c.sobrePosteo : null,
       pedido: v2 && typeof c.pedido === 'boolean' ? c.pedido : null,
+      esRespuesta: Boolean(c.esRespuesta),
+      respondeA: Number.isInteger(c.respondeA) ? c.respondeA : null,
+      respondeAUsuario: c.respondeAUsuario ? String(c.respondeAUsuario) : null,
+      deLaCuenta: Boolean(c.deLaCuenta),
+      respuestasDeclaradas: num(c.respuestasDeclaradas),
     };
   });
-  const clasificados = comentarios.filter((c) => c.tono !== null);
+  // Fase G: las respuestas de cada comentario (por su número) y, en cada
+  // uno de primer nivel, cuántas llegaron; null en un análisis anterior.
+  const conRespuestas = Boolean(resultado.respuestas);
+  const respuestasDe = new Map();
+  if (conRespuestas) {
+    for (const c of comentarios) if (c.esRespuesta && c.respondeA !== null) respuestasDe.set(c.respondeA, [...(respuestasDe.get(c.respondeA) || []), c]);
+  }
+  for (const c of comentarios) c.respuestas = conRespuestas && !c.esRespuesta ? (respuestasDe.get(c.n) || []).length : null;
+  // Lo que se cuenta es del público: los de la propia cuenta no van al
+  // modelo (sin tono) y quedan fuera de todo, salvo "¿La cuenta respondió?".
+  const publico = comentarios.filter((c) => !c.deLaCuenta);
+  const clasificados = publico.filter((c) => c.tono !== null);
   const base = clasificados.filter((c) => c.tono !== 'ruido');
   const analizados = num(row.analizados) ?? clasificados.length;
 
@@ -258,7 +283,7 @@ function buildAnalysisView(row, { figuras = new Map(), reclamos = [], anteriores
     neutrales: cuentaTono.neutral,
     negativos: cuentaTono.negativo,
     ruido: clasificados.length - base.length,
-    sinClasificar: comentarios.length - clasificados.length,
+    sinClasificar: publico.length - clasificados.length,
     base: tonoP.base,
     proporcion: tonoP.proporcion,
     ponderado: proporciones(pesoTono, TONOS).proporcion,
@@ -347,10 +372,10 @@ function buildAnalysisView(row, { figuras = new Map(), reclamos = [], anteriores
   // ---- verificados y figuras públicas (todos los que comentaron se cruzan con la tabla)
   // Una sugerida que el equipo descartó no es figura: sin rol, y si no es
   // verificada no aparece (descartada avisa a la pantalla que ya se vio).
-  const verificados = new Set(comentarios.filter((c) => c.verificada).map((c) => usuarioClave(c.usuario)));
+  const verificados = new Set(publico.filter((c) => c.verificada).map((c) => usuarioClave(c.usuario)));
   const vigentes = new Map([...figuras].filter(([, f]) => f && f.origen !== 'descartada'));
   const porUsuario = new Map();
-  for (const c of comentarios) {
+  for (const c of publico) {
     const k = usuarioClave(c.usuario);
     if (!verificados.has(k) && !vigentes.has(k)) continue;
     const actual = porUsuario.get(k);
@@ -379,7 +404,7 @@ function buildAnalysisView(row, { figuras = new Map(), reclamos = [], anteriores
     const delTema = base.filter((c) => c.temaId === fueraDelPosteo && c.sobrePosteo === false);
     const share = analizados > 0 ? delTema.length / analizados : 0;
     if (share >= UMBRAL_HECHO) {
-      const likesTotal = comentarios.reduce((n, c) => n + likesDe(c), 0);
+      const likesTotal = publico.reduce((n, c) => n + likesDe(c), 0);
       const likesTema = delTema.reduce((n, c) => n + likesDe(c), 0);
       const horas = delTema.map((c) => c.horas).filter((h) => h !== null);
       hecho = {
@@ -425,11 +450,67 @@ function buildAnalysisView(row, { figuras = new Map(), reclamos = [], anteriores
       .sort((a, b) => b.n - a.n);
   }
 
-  // ---- los que más pegaron
-  const top = [...comentarios]
+  // ---- los que más pegaron: por likes y, con respuestas, los debates (los
+  // comentarios del público con más respuestas traídas, con el tono de esas
+  // respuestas; las de la cuenta no tienen tono y se marcan aparte)
+  const top = [...publico]
     .sort((a, b) => likesDe(b) - likesDe(a) || a.n - b.n)
     .slice(0, TOP_LIKES)
     .map((c) => ({ ...c, delHecho: esDelHecho(c) }));
+  let debates = null;
+  let respuestas = null;
+  let laCuentaRespondio = null;
+  if (conRespuestas) {
+    // Un debate es del público: uno que solo contestó la cuenta no entra.
+    const conDelPublico = publico
+      .filter((c) => !c.esRespuesta && c.respuestas > 0)
+      .map((c) => {
+        const suyas = respuestasDe.get(c.n);
+        const delPublico = suyas.filter((r) => !r.deLaCuenta);
+        const tonos = { positivo: 0, neutral: 0, negativo: 0 };
+        for (const r of delPublico) if (TONOS.includes(r.tono)) tonos[r.tono] += 1;
+        return { ...c, respuestasPublico: delPublico.length, tonosRespuestas: tonos, respondioLaCuenta: suyas.length > delPublico.length, delHecho: esDelHecho(c) };
+      })
+      .filter((c) => c.respuestasPublico > 0);
+    debates = [...conDelPublico].sort((a, b) => b.respuestasPublico - a.respuestasPublico || likesDe(b) - likesDe(a) || a.n - b.n).slice(0, TOP_LIKES);
+    const declaradas = publico.filter((c) => !c.esRespuesta).map((c) => c.respuestasDeclaradas).filter((v) => v !== null);
+    respuestas = {
+      // Del público (las de la cuenta, aparte): las que llegaron, que no
+      // son todas las que declara Instagram. Una cuyo comentario no entró
+      // en la muestra cuenta en traidas pero no en ningún comentario.
+      traidas: publico.filter((c) => c.esRespuesta).length,
+      deLaCuenta: comentarios.filter((c) => c.deLaCuenta && c.esRespuesta).length,
+      comentariosConRespuesta: conDelPublico.length,
+      declaradas: declaradas.length ? declaradas.reduce((a, b) => a + b, 0) : null,
+    };
+    // ¿La cuenta respondió?: a qué comentarios y qué les dijo. Una respuesta
+    // cuyo comentario no llegó va sola, con el @usuario si se sabe.
+    const porN = new Map(comentarios.map((c) => [c.n, c]));
+    const grupos = new Map();
+    for (const r of comentarios.filter((c) => c.deLaCuenta && c.esRespuesta)) {
+      const padre = r.respondeA !== null ? porN.get(r.respondeA) || null : null;
+      if (padre && padre.deLaCuenta) continue; // un hilo de la cuenta consigo misma
+      const clave = padre ? `n${padre.n}` : `r${r.n}`;
+      if (!grupos.has(clave)) {
+        grupos.set(clave, {
+          comentario: padre
+            ? { n: padre.n, usuario: padre.usuario, texto: padre.texto, likes: padre.likes, tono: padre.tono, verificada: padre.verificada, horas: padre.horas }
+            : { n: null, usuario: r.respondeAUsuario, texto: null, likes: null, tono: null, verificada: false, horas: null },
+          respuestas: [],
+        });
+      }
+      grupos.get(clave).respuestas.push({ n: r.n, texto: r.texto, likes: r.likes, horas: r.horas });
+    }
+    const lista = [...grupos.values()].sort((a, b) => likesDe(b.comentario) - likesDe(a.comentario) || a.respuestas[0].n - b.respuestas[0].n);
+    laCuentaRespondio = {
+      comentarios: lista.length,
+      respuestas: lista.reduce((n, g) => n + g.respuestas.length, 0),
+      negativos: lista.filter((g) => g.comentario.tono === 'negativo').length,
+      // Lo que la cuenta comentó suelto en su publicación (no una respuesta).
+      sueltos: comentarios.filter((c) => c.deLaCuenta && !c.esRespuesta).length,
+      lista,
+    };
+  }
   const topResumen = {
     likes: top.reduce((n, c) => n + likesDe(c), 0),
     delHecho: top.filter((c) => c.delHecho).length,
@@ -492,7 +573,7 @@ function buildAnalysisView(row, { figuras = new Map(), reclamos = [], anteriores
     comentariosTotal: num(row.comentariosTotal),
     traidos: num(row.traidos),
     analizados,
-    disponible: { postura: v2, sobrePosteo: v2, hecho: v2, pedidos: v2 },
+    disponible: { postura: v2, sobrePosteo: v2, hecho: v2, pedidos: v2, respuestas: conRespuestas },
     tono,
     postura,
     sobrePosteo,
@@ -504,11 +585,14 @@ function buildAnalysisView(row, { figuras = new Map(), reclamos = [], anteriores
     quienHablo,
     personas,
     pedidos,
-    etiquetas: etiquetasDe(comentarios, verificados),
-    emojis: emojisResumen(comentarios),
+    etiquetas: etiquetasDe(publico, verificados),
+    emojis: emojisResumen(publico),
     top,
     topResumen,
-    tiempo: tiempoDe({ postedAt, finishedAt: row.finishedAt, cuando: row.cuando }, comentarios),
+    debates,
+    respuestas,
+    laCuentaRespondio,
+    tiempo: tiempoDe({ postedAt, finishedAt: row.finishedAt, cuando: row.cuando }, publico),
     comparacion,
     reclamos,
     costo: {

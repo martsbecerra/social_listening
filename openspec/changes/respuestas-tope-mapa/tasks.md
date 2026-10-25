@@ -13,7 +13,7 @@ UNA corrida real con respuestas al final, autorizadas por el dueño.
 
 - [x] 1.1 El actor de comentarios, las respuestas con su padre, el tiempo de espera y la tarifa
 - [x] 1.2 Las respuestas en las tandas; las de la cuenta, afuera
-- [ ] 1.3 Métricas, informe y CSV
+- [x] 1.3 Métricas, informe y CSV
 - [ ] 1.4 Pantalla: "Más respuestas", "¿La cuenta respondió?", "↳ responde a" y el filtro
 
 ## Phase 2: tope y confirmación

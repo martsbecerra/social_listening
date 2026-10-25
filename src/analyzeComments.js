@@ -379,8 +379,10 @@ async function analizar({ url, post, comments, pasos = NO_PASOS }, gasto) {
 
   // ---- 4) síntesis, con los números del servidor
   pasos.start('informe', 'lectura, hecho dominante y pedidos');
+  // respuestas: los comentarios llegan con sus respuestas (fase G); la
+  // síntesis recibe cuántas hubo y a cuántos contestó la cuenta.
   const vista = buildAnalysisView(
-    { resultado: { version: 2 }, temas: temasV2, comentarios, analizados, postedAt: post.postedAt, comentariosTotal: post.commentsCount },
+    { resultado: { version: 2, respuestas: true }, temas: temasV2, comentarios, analizados, postedAt: post.postedAt, comentariosTotal: post.commentsCount },
     { figuras }
   );
   const verificadosSinFicha = [...verificados].filter((u) => !conFicha.has(u) && !descartadas.has(u)).sort();
