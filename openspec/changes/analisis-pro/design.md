@@ -121,6 +121,18 @@ análisis. Quedaron 50 de 150 analizados. Cambios:
   hecho. No sugirió a los dos verificados sin ficha. La postura salió casi
   igual que el tono (2 de 46 distintos).
 
+**La repetición solo del modelo** (autorizada, 24/10/2026): los mismos 150
+comentarios (las respuestas de Apify guardadas, sin llamar a Apify) con
+las tandas de 50. Clasificó los 150 en 3 tandas, ninguna cortada: 8.978,
+7.027 y 9.186 tokens de salida contra el tope de 16.000, con unos 8.800 de
+entrada cada una. La partición no hizo falta: la cubren los tests. Costo
+registrado US$ 0,357 (3 tandas US$ 0,305, la síntesis US$ 0,048, la
+subcategoría de 5 reclamos US$ 0,004), igual a la suma de lo que informó
+OpenRouter por llamada. Sin hecho dominante (el 63 % se desvía, repartido
+en varios temas), 8 pedidos (5 de un comentario, ya sin los irónicos),
+ninguna figura sugerida para los 2 verificados sin ficha, la postura
+distinta del tono en 5 de 145.
+
 ## Testing Strategy
 
 | Capa | Qué | Cómo |

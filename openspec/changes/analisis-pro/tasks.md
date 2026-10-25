@@ -38,4 +38,5 @@ un servidor de prueba en otro puerto y una copia de la base.
 - [x] 4.3 La corrida real autorizada (24/10/2026)
 - [x] 4.3a Lo que mostró: tandas de 50 con 16.000 de tope, la respuesta cortada se parte en dos, lo gastado en los errores, el punto 1 del informe, los temas vacíos, el prompt de ruido y pedidos
 - [x] 4.3b Los fixtures anonimizados y su test (REQ-PRO-14): `test/analisisFixtureRealF.test.js`
-- [ ] 4.4 Revisor independiente y PR sin mergear
+- [x] 4.4 Revisor independiente y PR sin mergear
+- [x] 4.5 La repetición solo del modelo con tandas de 50 (150 de 150, ninguna cortada, US$ 0,357) y el borrado de `data/account-types.example.json` (autorizado por el dueño)
