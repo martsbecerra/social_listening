@@ -32,5 +32,5 @@ UNA corrida real con respuestas al final, autorizadas por el dueño.
 
 - [x] 4.1 CLAUDE.md y README
 - [x] 4.2 Suite con `IG_ACTOR=apidojo` y `apify` (671 y 671, en modo liviano); capturas a 1366 y 375 px en claro y oscuro (36, sin errores de JavaScript ni desborde)
-- [ ] 4.3 PR sin mergear
+- [x] 4.3 PR sin mergear (#32)
 - [ ] 4.4 La corrida real con respuestas (con el link y el OK del dueño)
