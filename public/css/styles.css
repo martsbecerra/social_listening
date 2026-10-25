@@ -7409,7 +7409,7 @@ html.feed-pop-lock body {
 }
 /* Por encima de la tarjeta del mapa: las dos llevan .rv y la animación
    (transform) le da a cada una su propia capa; sin esto, los desplegables de
-   Categoría, Subcategoría y Estado quedaban tapados por el mapa. */
+   Categoría y Subcategoría quedaban tapados por el mapa. */
 .claims-filters-card {
   z-index: 3;
   padding: 14px 16px;
@@ -7767,15 +7767,6 @@ html.feed-pop-lock body {
   color: var(--muted);
   font-size: 11.5px;
   margin: 2px 0 0;
-}
-.claims-popup-estado {
-  margin: 0;
-  padding: 5px 8px;
-  border-radius: 8px;
-  border: 1px solid var(--line2);
-  background: var(--surface2);
-  color: var(--fg);
-  font-size: 12.5px;
 }
 
 /* ---------- Inicio (dashboard.html) ----------
