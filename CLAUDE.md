@@ -1143,7 +1143,11 @@ públicas). La F va en dos PR: F1 (modelo y servidor, tag `v4-fase-f1`) y F2
   publicación anterior, solo su último análisis: `db.listAnterioresDeCuenta`;
   promedio de % negativo, comentarios, verificados y "sobre el posteo"; la
   pantalla lo dice "+74 %", nunca "1,7×"), los reclamos del posteo y el
-  costo. **Hecho dominante**: solo si el modelo lo marcó sobre el tema
+  costo. Desde la F2 también lo que antes contaba la pantalla: `personas`
+  (verificados, `conAlineacion` —verificados del equipo con oficialismo u
+  oposición— y `enLista`), `topResumen` (likes de los 6, cuántos del hecho,
+  cuántos positivos), `sinHecho.positivo` y `emojis.proporcionApoyo`.
+  **Hecho dominante**: solo si el modelo lo marcó sobre el tema
   principal de los que no hablan del posteo Y los comentarios de ese tema
   que no hablan del posteo son al menos `UMBRAL_HECHO` (20 %) de los
   analizados (el informe dice "un hecho ajeno al posteo"); si no, `hecho`
@@ -1256,7 +1260,8 @@ públicas). La F va en dos PR: F1 (modelo y servidor, tag `v4-fase-f1`) y F2
   y tema estrella; `f` `all` | `ev` (con hecho dominante) | `neg` (40 % o
   más negativo) | `ver` (con verificados); `ord` `recent` | `c`
   (comentarios) | `neg` | `ver`; hasta 200; devuelve `recientes`
-  terminados bien, `total`, `desde` y `enCurso`, cada uno con `propio`: lo
+  terminados bien, `total`, `desde`, `coinciden` (los que pasan la búsqueda
+  y el filtro antes del tope: la galería avisa si corta) y `enCurso`, cada uno con `propio`: lo
   arrancó el mismo correo, en cualquier sesión de esa persona, y sin login
   todos; el correo no sale), `?url=` (`ultimo` y `enCurso`: el aviso de "ya
   se analizó"), `GET /api/analisis/:id` (la fila más `vista` e `informe`;
@@ -1292,9 +1297,12 @@ públicas). La F va en dos PR: F1 (modelo y servidor, tag `v4-fase-f1`) y F2
     la foto, la cuenta, la fecha, el texto, la barra de tono, el tema
     estrella, analizados de M, % negativo, verificados y reclamos).
     `#analisis-<id>` abre ese análisis; `#analisis-galeria`, la galería;
-    con uno a la vista, el hash es el suyo. La primera vez que se abre la
-    solapa (`openAnalysis`, desde `openTab`) muestra el más reciente, salvo
-    que haya un link en el campo o se haya elegido otra cosa.
+    con uno a la vista, el hash es el suyo (al volver a la solapa,
+    `openAnalysis` lo pone; uno que ya nombra un análisis o la galería es un
+    pedido —un link pegado, Atrás— y no lo pisa con lo anterior). Abrir una
+    tarjeta lleva el foco a la publicación (`#anaPost`, tabindex -1). La
+    primera vez que se abre la solapa muestra el más reciente, salvo que
+    haya un link en el campo o se haya elegido otra cosa.
   - **Bloques**: la publicación (la foto entera sobre negro, "analizados N
     de M") con cuatro KPI (tono neto, postura crítica, verificados,
     hablan del posteo; `kpiCountUp`) y la lectura (escrita en ~1,5 s;
@@ -1335,7 +1343,12 @@ públicas). La F va en dos PR: F1 (modelo y servidor, tag `v4-fase-f1`) y F2
     formulario (nombre, rol, alineación —deshabilitada para un rol que no
     la lleva—, notas) es el mismo en la tarjeta y en "Lista de figuras"
     (un `<dialog>`: buscar, agregar, y por grupo del equipo, sugeridas y
-    descartadas). El servidor valida y responde el motivo. Después de un
+    descartadas). Editar en la tarjeta vuelve a leer la lista antes de
+    abrir el formulario (la vista no trae las notas); un alta va siempre
+    por POST (una del equipo da 409, no se pisa); el formulario abierto se
+    arma una vez y se vuelve a poner en cada redibujo (no pierde lo escrito
+    ni roba el foco); una descartada se agrega sin precargar lo que sugirió
+    el modelo. El servidor valida y responde el motivo. Después de un
     cambio se vuelve a leer el análisis: la vista, el informe y los KPI
     cambian. Al cerrar el diálogo el foco vuelve a "Lista de figuras" (con
     ✕, Escape o el evento `close`, el que llegue primero: el navegador del
