@@ -7,12 +7,15 @@
 // comentarios → mismo prompt → clasificaciones alineadas por índice.
 // ==========================================================================
 
-// 300 por defecto (decisión del dueño, octubre 2026): el análisis de
-// Instagram los clasifica en tandas de 50 (src/analyzeComments.js), así que
-// no chocan con el tope de salida del modelo. X tiene su propio tope y su
-// propia variable (src/x/sample.js).
-const DEFAULT_MAX_COMMENTS_TO_SEND = 300;
-// Tope duro por costo/latencia aunque el .env pida más.
+// 3.000 por defecto (decisión del dueño, fase G; eran 300): comentarios y
+// respuestas, como COMMENTS_LIMIT. El análisis de Instagram los clasifica
+// en tandas de 50 (src/analyzeComments.js), así que no chocan con el tope
+// de salida del modelo. X tiene su propio tope y su propia variable
+// (src/x/sample.js).
+const DEFAULT_MAX_COMMENTS_TO_SEND = 3000;
+// Tope duro por costo/latencia aunque el .env pida más: el de Instagram, y
+// el de X, que no cambió (manda todo el hilo en una sola llamada).
+const HARD_CAP_INSTAGRAM = 5000;
 const HARD_CAP_COMMENTS = 500;
 
 /**
@@ -27,7 +30,7 @@ function resolveMaxCommentsLimit(defaultMax = DEFAULT_MAX_COMMENTS_TO_SEND, vari
   const raw = process.env[variable];
   const n = Number(raw);
   if (Number.isFinite(n) && n > 0) {
-    return Math.min(Math.floor(n), HARD_CAP_COMMENTS);
+    return Math.min(Math.floor(n), variable === 'COMMENTS_ANALYSIS_LIMIT' ? HARD_CAP_INSTAGRAM : HARD_CAP_COMMENTS);
   }
   return defaultMax;
 }
@@ -76,13 +79,15 @@ function compareCommentsForSample(a, b) {
 
 /**
  * Elimina duplicados exactos (mismo @usuario + mismo texto) preservando el primero
- * en el orden original de Apify, para no contar dos veces la misma fila.
+ * en el orden original de Apify, para no contar dos veces la misma fila. Dos
+ * respuestas iguales a comentarios distintos ("¡Gracias!" de la cuenta a dos
+ * vecinos) no son la misma fila: el comentario al que responden entra en la clave.
  */
 function dedupeComments(comments) {
   const seen = new Set();
   const out = [];
   for (const c of comments) {
-    const key = `${(c.username || '').toLowerCase()}\n${c.text || ''}`;
+    const key = `${(c.username || '').toLowerCase()}\n${c.text || ''}\n${c.esRespuesta ? `↳${c.parentApifyId ?? ''}` : ''}`;
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(c);
@@ -112,6 +117,35 @@ function prepareCommentSample(comments, max = resolveMaxCommentsLimit()) {
   };
 }
 
+/**
+ * Cada respuesta va detrás de su comentario, así la tanda lee la charla
+ * seguida (las de un mismo comentario, de la más vieja a la más nueva, como
+ * se leen en Instagram). Una respuesta cuyo comentario no está en la lista
+ * queda en su lugar, y el resto no se mueve: sin respuestas, la lista queda
+ * igual.
+ * @param {Array} lista comentarios normalizados (apifyId, esRespuesta, parentApifyId)
+ */
+function ordenarConRespuestas(lista) {
+  const padres = new Set(lista.filter((c) => !c.esRespuesta && c.apifyId != null).map((c) => String(c.apifyId)));
+  const padreDe = (c) => (c.esRespuesta && c.parentApifyId != null && padres.has(String(c.parentApifyId)) ? String(c.parentApifyId) : null);
+  const hijas = new Map();
+  for (const c of lista) {
+    const p = padreDe(c);
+    if (p === null) continue;
+    if (!hijas.has(p)) hijas.set(p, []);
+    hijas.get(p).push(c);
+  }
+  if (hijas.size === 0) return lista;
+  const out = [];
+  for (const c of lista) {
+    if (padreDe(c) !== null) continue;
+    out.push(c);
+    const suyas = !c.esRespuesta && c.apifyId != null ? hijas.get(String(c.apifyId)) : null;
+    if (suyas) out.push(...[...suyas].sort((a, b) => timestampMs(a) - timestampMs(b) || compareCommentsForSample(a, b)));
+  }
+  return out;
+}
+
 /** Texto aclaratorio cuando la muestra es parcial (metodología + criterio de priorización). */
 const PARTIAL_SAMPLE_DISCLOSURE =
   'Análisis realizado sobre muestra parcial provista (priorizadas cuentas verificadas y comentarios con más likes).';
@@ -121,6 +155,7 @@ module.exports = {
   resolveMaxCommentsLimit,
   compareCommentsForSample,
   dedupeComments,
+  ordenarConRespuestas,
   DEFAULT_MAX_COMMENTS_TO_SEND,
   PARTIAL_SAMPLE_DISCLOSURE,
 };

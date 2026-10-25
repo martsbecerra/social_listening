@@ -7,9 +7,16 @@
 // gastar: el resultado queda en la fila (src/db.js) y en "Recientes".
 //
 // El trabajo:
-//   1) Trae la publicación y los comentarios: dos corridas del actor
-//      oficial en paralelo (src/apify.js), cada una avisa al terminar.
-//   2) Guarda los datos de la publicación y, sin esperar, su foto: la del
+//   1) Trae la publicación (el actor oficial) y la guarda. Con el número de
+//      comentarios que informa Instagram decide (fase G): 0, "sin
+//      comentarios" sin pedir nada más; hasta ANALISIS_CONFIRMAR_DESDE
+//      (1.000) o sin el número, sigue; con más, espera la confirmación
+//      (POST /api/analyze/:id/confirmar: todo —hasta COMMENTS_LIMIT—, una
+//      parte o cancelar), con el costo estimado de cada opción
+//      (src/analysisCost.js). La espera vence a los 30 minutos. Después trae
+//      los comentarios con sus respuestas (apify/instagram-comment-scraper):
+//      la publicación nunca se pide dos veces.
+//   2) Guarda, sin esperar, la foto: la del
 //      Monitoreo si ya la tiene, o una copia nueva del link que trajo la
 //      corrida (src/postImages.js, mismo archivo; ningún pedido nuevo a
 //      Apify).
@@ -38,6 +45,9 @@ const analyzer = require('./analyzeComments');
 const postImages = require('./postImages');
 const geoWorker = require('./geoWorker');
 const progress = require('./analysisProgress');
+const apifyCost = require('./apifyCost');
+const { opcionesDeConfirmacion, confirmarDesde } = require('./analysisCost');
+const { resolveMaxCommentsLimit } = require('./commentSample');
 const { buildCommentTimeline } = require('./commentTimeline');
 const { buildAnalysisView, columnasDeVista } = require('./analysisMetrics');
 const { buildInforme } = require('./reportBuilder');
@@ -46,14 +56,21 @@ const { runWithContext } = require('./usageContext');
 
 const PLATAFORMA = 'instagram';
 const INT = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 });
+const USD = new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const MENSAJE_SIN_COMENTARIOS = 'La publicación no tiene comentarios visibles o no se pudieron extraer. Probá con otra publicación.';
 const MENSAJE_ERROR = 'Ocurrió un error al procesar la publicación. Intentá de nuevo en unos minutos.';
+const MENSAJE_CANCELADO = 'Se canceló antes de traer los comentarios: solo se gastó la publicación.';
+const MENSAJE_VENCIDO = 'Nadie confirmó en 30 minutos: no se trajeron los comentarios.';
+// La espera de la confirmación (ANALISIS_CONFIRMAR_MS, solo para los tests).
+const CONFIRMAR_MS_DEFAULT = 30 * 60 * 1000;
 
-// link normalizado → id, id → la promesa del trabajo (para los tests) e
-// id → quién lo arrancó (para que cada persona siga solo los suyos).
+// link normalizado → id, id → la promesa del trabajo (para los tests),
+// id → quién lo arrancó (para que cada persona siga solo los suyos) e id →
+// la confirmación que espera (con más de 1.000 comentarios).
 const enCurso = new Map();
 const corridas = new Map();
 const duenos = new Map();
+const esperas = new Map();
 
 function log(id, texto, detalle) {
   const extra = detalle && Object.keys(detalle).length ? ` ${JSON.stringify(detalle)}` : '';
@@ -126,6 +143,62 @@ function waitFor(id) {
   return corridas.get(Number(id)) || Promise.resolve();
 }
 
+function confirmarMs() {
+  const n = Number(process.env.ANALISIS_CONFIRMAR_MS);
+  return Number.isFinite(n) && n > 0 ? n : CONFIRMAR_MS_DEFAULT;
+}
+
+/**
+ * Espera a que alguien elija (confirmar(), abajo): resuelve con el alcance
+ * ('todo' | 'parcial' | 'cancelar') o 'vencido'. Mientras tanto, el progreso
+ * muestra el paso "Confirmar el costo" con las opciones.
+ */
+function esperarConfirmacion(id, { comentarios, opciones }, pasos) {
+  const ms = confirmarMs();
+  pasos.start('confirmar', `${INT.format(comentarios)} comentarios · elegí cuántos analizar`);
+  progress.setConfirmacion(id, { comentarios, opciones, venceAt: new Date(Date.now() + ms).toISOString() });
+  log(id, 'esperando confirmación', { comentarios, opciones: opciones.map((o) => `${o.alcance}:${o.items}:${o.total.toFixed(2)}`) });
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      esperas.delete(id);
+      resolve('vencido');
+    }, ms);
+    if (typeof timer.unref === 'function') timer.unref();
+    esperas.set(id, {
+      opciones,
+      elegir(alcance) {
+        clearTimeout(timer);
+        esperas.delete(id);
+        resolve(alcance);
+      },
+    });
+  }).finally(() => progress.setConfirmacion(id, null));
+}
+
+/** ¿Esa persona (su correo) puede confirmar el gasto? Quien lo arrancó; sin login, cualquiera. */
+function puedeConfirmar(id, quien) {
+  const dueno = duenos.get(Number(id)) || null;
+  return !dueno || quien === dueno;
+}
+
+/**
+ * La elección de la persona (POST /api/analyze/:id/confirmar).
+ * @param {number} id
+ * @param {'todo'|'parcial'|'cancelar'} alcance
+ * @param {{ quien?: string|null }} [opts] quien: el correo de la sesión
+ * @returns {'ok'|'no-espera'|'ajeno'|'sin-opcion'} 'ajeno': lo arrancó otra
+ *   persona (solo ella confirma un gasto); 'sin-opcion': ese alcance no
+ *   estaba entre las opciones.
+ */
+function confirmar(id, alcance, { quien = null } = {}) {
+  const espera = esperas.get(Number(id));
+  if (!espera) return 'no-espera';
+  if (!puedeConfirmar(id, quien)) return 'ajeno';
+  if (alcance !== 'cancelar' && !espera.opciones.some((o) => o.alcance === alcance)) return 'sin-opcion';
+  espera.elegir(alcance);
+  return 'ok';
+}
+
 /**
  * Los avisos de una corrida de Apify para el progreso: "Esperar turno" solo
  * si alguna tuvo que esperar cupo; el paso de la corrida arranca cuando
@@ -134,7 +207,7 @@ function waitFor(id) {
 function turnoTracker(pasos) {
   let esperando = 0;
   let desde = null;
-  return (paso) => {
+  return (paso, detalle = null) => {
     let encolada = false;
     // apify.js llama a los avisos sueltos (sin this): todo va por `hooks`.
     const hooks = {
@@ -153,7 +226,7 @@ function turnoTracker(pasos) {
           else pasos.update('turno', esperando === 1 ? '1 corrida esperando cupo' : `${esperando} corridas esperando cupo`);
         }
         hooks.desde = Date.now();
-        pasos.start(paso);
+        pasos.start(paso, detalle);
       },
     };
     return hooks;
@@ -202,45 +275,81 @@ async function run(id, url) {
   let traidos = null;
   let gastoModeloListo = null; // lo del modelo, si algo tira después de que terminó
   try {
-    // ---- 1) publicación y comentarios, en paralelo
+    // ---- 1) la publicación: con su número de comentarios se decide cuántos
+    // traer y si hay que confirmar antes de gastar
     const hPost = hooks('publicacion');
-    const hComentarios = hooks('comentarios');
-    const [postRes, comRes] = await Promise.allSettled([
-      apify.fetchAnalysisPost(url, hPost).then((items) => {
-        const conDatos = (Array.isArray(items) ? items : []).filter((item) => item && !item.error);
-        if (conDatos.length === 0) {
-          pasos.done('publicacion', 'Instagram no la devolvió · sin datos de la publicación');
-        } else {
-          const post = apify.normalizePost(conDatos, null, url);
-          const likes = post.likesCount === null ? 'likes ocultos' : `${INT.format(post.likesCount)} likes`;
-          pasos.done('publicacion', `@${post.ownerUsername} · ${likes} · ${segundosDesde(hPost.desde)} s`);
-        }
-        return conDatos;
-      }),
-      apify.fetchAnalysisComments(url, hComentarios).then((res) => {
-        const n = apify.normalizeComments(res.items).length;
-        pasos.done('comentarios', `${INT.format(n)} ${n === 1 ? 'comentario' : 'comentarios'} · ${segundosDesde(hComentarios.desde)} s`);
-        return res;
-      }),
-    ]);
-    if (postRes.status === 'rejected') {
+    let postItems;
+    try {
+      const items = await apify.fetchAnalysisPost(url, hPost);
+      postItems = (Array.isArray(items) ? items : []).filter((item) => item && !item.error);
+    } catch (err) {
       pasos.fail('publicacion');
-      if (comRes.status === 'rejected') pasos.fail('comentarios');
-      throw postRes.reason;
+      throw err;
     }
-    if (comRes.status === 'rejected') {
-      pasos.fail('comentarios');
-      throw comRes.reason;
+    const post = apify.normalizePost(postItems, null, url);
+    if (postItems.length === 0) {
+      pasos.done('publicacion', 'Instagram no la devolvió · sin datos de la publicación');
+    } else {
+      const likes = post.likesCount === null ? 'likes ocultos' : `${INT.format(post.likesCount)} likes`;
+      pasos.done('publicacion', `@${post.ownerUsername} · ${likes} · ${segundosDesde(hPost.desde)} s`);
     }
-    const { post, comments, scrapeMeta } = apify.buildAnalysisData(postRes.value, comRes.value.items, url, comRes.value.limit);
-    traidos = comments.length;
     db.saveAnalisisPost(id, PLATAFORMA, post);
-    log(id, 'datos traídos', { cuenta: post.ownerUsername, comentarios: traidos, enPost: scrapeMeta.commentsOnPost, tope: scrapeMeta.commentsLimitRequested });
+    const enInstagram = post.commentsCount;
 
-    if (comments.length === 0) {
+    const cerrarSinComentarios = () => {
       db.failAnalisis(id, PLATAFORMA, { estado: 'sin comentarios', error: MENSAJE_SIN_COMENTARIOS, traidos: 0, usdApify: db.sumApifyUsdForAnalisis(id).usd });
       progress.finish(id, { estado: 'sin comentarios', error: MENSAJE_SIN_COMENTARIOS });
       log(id, 'sin comentarios');
+    };
+    // Instagram dice 0: no se pide la corrida de los comentarios.
+    if (enInstagram === 0) {
+      pasos.skip('comentarios', 'Instagram informa 0 comentarios');
+      cerrarSinComentarios();
+      return;
+    }
+
+    // ---- la confirmación, con más de ANALISIS_CONFIRMAR_DESDE (1.000)
+    let items = apify.resolveCommentsLimit();
+    let maxComentarios = resolveMaxCommentsLimit();
+    if (Number.isFinite(enInstagram) && enInstagram > confirmarDesde()) {
+      const opciones = opcionesDeConfirmacion(enInstagram, { tope: items, topeAnalisis: maxComentarios, usdPorItemApify: apifyCost.usdForItems(1) });
+      const alcance = await esperarConfirmacion(id, { comentarios: enInstagram, opciones }, pasos);
+      if (alcance === 'cancelar' || alcance === 'vencido') {
+        const mensaje = alcance === 'cancelar' ? MENSAJE_CANCELADO : MENSAJE_VENCIDO;
+        pasos.skip('confirmar', alcance === 'cancelar' ? 'cancelado' : 'venció la espera');
+        db.failAnalisis(id, PLATAFORMA, { estado: 'cancelado', error: mensaje, traidos: 0, usdApify: db.sumApifyUsdForAnalisis(id).usd });
+        progress.finish(id, { estado: 'cancelado', error: mensaje });
+        log(id, alcance === 'cancelar' ? 'cancelado' : 'venció la confirmación');
+        return;
+      }
+      const elegida = opciones.find((o) => o.alcance === alcance);
+      items = elegida.items;
+      maxComentarios = Math.min(maxComentarios, elegida.items);
+      pasos.done('confirmar', `${elegida.completo ? 'todos' : `${INT.format(elegida.items)} de ${INT.format(enInstagram)}`} · ~US$ ${USD.format(elegida.total)} estimado`);
+      log(id, 'confirmado', { alcance, items });
+    }
+
+    // ---- los comentarios con sus respuestas
+    const resultsLimit = apify.commentsResultsLimit(enInstagram, items);
+    const hComentarios = hooks('comentarios', `pidiendo ${INT.format(resultsLimit)} comentarios con sus respuestas`);
+    let comRes;
+    try {
+      comRes = await apify.fetchAnalysisComments(url, hComentarios, { resultsLimit });
+    } catch (err) {
+      pasos.fail('comentarios');
+      throw err;
+    }
+    const { comments, scrapeMeta } = apify.buildAnalysisData(postItems, comRes.items, url, comRes.limit);
+    const respuestas = comments.filter((c) => c.esRespuesta).length;
+    pasos.done(
+      'comentarios',
+      `${INT.format(comments.length - respuestas)} ${comments.length - respuestas === 1 ? 'comentario' : 'comentarios'} y ${INT.format(respuestas)} ${respuestas === 1 ? 'respuesta' : 'respuestas'} · ${segundosDesde(hComentarios.desde)} s`
+    );
+    traidos = comments.length;
+    log(id, 'datos traídos', { cuenta: post.ownerUsername, comentarios: traidos, respuestas, enPost: scrapeMeta.commentsOnPost, pedidos: resultsLimit });
+
+    if (comments.length === 0) {
+      cerrarSinComentarios();
       return;
     }
 
@@ -249,7 +358,7 @@ async function run(id, url) {
 
     // ---- 3) el modelo
     const desdeModelo = Date.now();
-    const result = await analyzer.analyzeComments({ url, post, comments, pasos });
+    const result = await analyzer.analyzeComments({ url, post, comments, pasos, maxComentarios });
     gastoModeloListo = result.tokenUsage || null;
     log(id, 'modelo listo', { ms: Date.now() - desdeModelo, ...result.numeros, tokens: result.tokenUsage ? result.tokenUsage.totalTokens : null });
 
@@ -258,7 +367,18 @@ async function run(id, url) {
     await foto;
     const s = result.sintesis;
     // lecturaEstrategica: la que lee la solapa de la fase E hasta la F2.
-    const resultado = { version: 2, lectura: s.lectura, lecturaEstrategica: s.lectura, hecho: s.hecho, pedidos: s.pedidos, queMirar: s.queMirar, figurasSugeridas: s.figurasSugeridas };
+    // respuestas: los comentarios se pidieron con sus respuestas (fase G);
+    // sin la marca, la pantalla dice "No disponible en análisis anteriores".
+    const resultado = {
+      version: 2,
+      respuestas: true,
+      lectura: s.lectura,
+      lecturaEstrategica: s.lectura,
+      hecho: s.hecho,
+      pedidos: s.pedidos,
+      queMirar: s.queMirar,
+      figurasSugeridas: s.figurasSugeridas,
+    };
     const finishedAt = new Date().toISOString();
     const usdApify = db.sumApifyUsdForAnalisis(id).usd;
     const usdModelo = result.tokenUsage ? result.tokenUsage.costUsd ?? null : null;
@@ -333,4 +453,4 @@ async function run(id, url) {
   }
 }
 
-module.exports = { start, waitFor, normalizeAnalysisUrl, enCursoDe, listEnCurso, MENSAJE_SIN_COMENTARIOS };
+module.exports = { start, waitFor, confirmar, puedeConfirmar, normalizeAnalysisUrl, enCursoDe, listEnCurso, MENSAJE_SIN_COMENTARIOS, MENSAJE_CANCELADO, MENSAJE_VENCIDO };

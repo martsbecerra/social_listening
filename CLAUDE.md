@@ -15,6 +15,12 @@ saber antes de tocar algo.
   los adapters (sobre el objeto del módulo) y `global.fetch`. Ningún test
   toca `data/monitoring.db` ni `config/monitoring.json`, ni llama a Apify o
   a un LLM. La suite tiene que pasar también con `IG_ACTOR=apify`.
+- En la notebook del dueño, la suite con el paralelismo por defecto (7
+  procesos a la vez) congeló Windows dos veces (25/10/2026). Se corre en
+  modo liviano, un actor por vez y con la salida a un archivo:
+  `cmd /c start "" /belownormal /b /wait node --test --test-concurrency=2 "test/*.test.js"`
+  (los procesos hijos heredan la prioridad baja; tarda lo mismo, unos 20
+  s). Los tests dejan sus carpetas `sl-*` en `%TEMP%` y no las borran.
 - Nada corre contra Apify real (ni tests, ni scripts, ni el server) sin
   autorización explícita del dueño; cada prueba real se pide con el costo
   estimado.
@@ -42,9 +48,11 @@ saber antes de tocar algo.
   saben qué actor hay abajo. Un valor desconocido aborta el arranque.
 - **Análisis de publicación** (`src/apify.js` → `fetchAnalysisPost` y
   `fetchAnalysisComments`, que llama `src/analysisJob.js` desde
-  `POST /api/analyze`): SIEMPRE `apify/instagram-scraper`, porque apidojo no
-  devuelve comentarios. No migrarlo. Ver "Análisis de publicación de
-  Instagram".
+  `POST /api/analyze`): la publicación, SIEMPRE `apify/instagram-scraper`;
+  los comentarios, desde la fase G, `apify/instagram-comment-scraper` con
+  `includeNestedComments` (`COMMENTS_ACTOR`): apidojo no devuelve
+  comentarios y el oficial no trae las respuestas. No migrarlos. Ver
+  "Análisis de publicación de Instagram".
 - Todas las llamadas pasan por `runActorSync` (`src/apify.js`): cola global
   de `APIFY_MAX_CONCURRENT` runs, un reintento del 402
   `concurrent-runs-limit-exceeded`, y registro de cada llamada en
@@ -53,7 +61,11 @@ saber antes de tocar algo.
   real (`usd_real`) NO se lee al terminar (Apify lo asienta con demora):
   lo concilia `apifyCost.reconcileRealCosts` al cerrar el ciclo siguiente
   o `node scripts/costo-apify.js --conciliar`. `APIFY_REAL_COST=0` lo apaga.
-  El oficial sigue con `run-sync-get-dataset-items`.
+  El oficial sigue con `run-sync-get-dataset-items`. Una llamada con un tope
+  de tiempo propio mayor que 300 s (`runActorSync(input, { timeoutMs })`:
+  los comentarios del análisis, `ANALISIS_COMMENTS_TIMEOUT_MS`, 30 min) va
+  SIEMPRE por el asincrónico, también con `APIFY_REAL_COST=0`: el
+  sincrónico de Apify corta a los 300 s.
 
 ## Fuentes de detección de Instagram (`config/monitoring.json`, sección `instagram`)
 
@@ -120,6 +132,12 @@ entero no se anota nada.
   incluidos, más `APIDOJO_RATE_ITEM` (0,0005) por posteo de más: perfil
   0,005 (10 incl.), hashtag 0,015 (30), búsqueda 0,015 (20), posteo suelto
   0,005 (`APIDOJO_RATE_*`, `APIDOJO_INCLUDED_*`). Uso de plataforma incluido.
+- `apify/instagram-comment-scraper` (los comentarios del análisis, fase G)
+  cobra **por resultado**, con las mismas tarifas que el oficial: cada
+  respuesta es un resultado (la sonda del 25/10/2026: 16 por 0,0368).
+  `usdForCall` lo estima así (`chargesPerResult`); como va por el flujo
+  asincrónico, su fila tiene `apify_run_id` y `usd_real`, y en los reportes
+  suma con los de costo real.
 - `apify_calls` guarda por llamada: fase, ciclo, `actor`, `query_type`
   (user | hashtag | search | post | details), items, `usd` estimado,
   `usd_real`, `apify_run_id` y, en un análisis de publicación,
@@ -500,7 +518,10 @@ rama y un PR por fase: A `sistema-visual-v4` (el marco en todas las
 páginas), B `monitoreo-v4`, C `estadisticas`, D `inicio-y-login`, E
 `analisis-v4`, y la F (la maqueta nueva del análisis) en dos: F1
 `analisis-pro` (modelo y servidor) y F2 `analisis-pro-pantalla` (la
-pantalla, el inicio y las figuras). El estado anterior (riel, radar y las maquetas viejas) quedó
+pantalla, el inicio y las figuras), y la G `respuestas-tope-mapa` (las
+respuestas, el tope con confirmación del costo, "Abrir Gmail", los
+mosaicos de Google y el estado de los reclamos fuera de la pantalla; SDD
+en `openspec/changes/respuestas-tope-mapa/`). El estado anterior (riel, radar y las maquetas viejas) quedó
 en el tag `v3-riel-radar`. SDD de la fase A en
 `openspec/changes/sistema-visual-v4/`; de la B, en
 `openspec/changes/monitoreo-v4/`; de la C, en `openspec/changes/estadisticas/`.
@@ -763,8 +784,19 @@ La D va sin SDD (decisión del dueño). De la E, en
   (`monitoring.js` al llegar la config; el inicio, con la suya). Va antes
   que todos en `instagram.html`, `x.html` y `dashboard.html`. Una pieza de
   dibujo nueva que sirva a más de una página va acá.
-- **Mapa**: mosaicos de OpenStreetMap claros también en oscuro; controles,
-  leyenda, popups y tooltips de Leaflet con los tokens. Los colores de
+- **Mapa** (`public/js/claimsMap.js`, el mismo en `instagram.html` y
+  `x.html`): desde la fase G, mosaicos de Google
+  (`https://mt{0-3}.google.com/vt/lyrs=m…`; `lyrs=s` el satélite, como el
+  panel de El Niño, sin su API: riesgo aceptado por el dueño) con un
+  selector Mapa / Satélite arriba a la derecha (`.map-capa`, recordado en
+  `localStorage` `sl.mapa.capa`, con try/catch). Respaldo automático: con
+  `TILE_FALLAS_RESPALDO` (4) mosaicos fallidos antes de uno bueno, o más
+  fallidos que buenos después, pasa solo a OpenStreetMap, lo dice ("Google
+  no respondió: OpenStreetMap") y deja el selector apagado. Claros también
+  en oscuro; controles, leyenda, popups y tooltips de Leaflet con los
+  tokens. El estado de los reclamos (Pendiente, En tratamiento…) no se
+  muestra ni se edita desde la G: no hay filtro "Estado" ni selector en el
+  pop-up; la columna y `PATCH /api/reclamos/:id` quedan. Los colores de
   categoría (`--cat-1` … `--cat-12`) salen de la paleta de la maqueta, en su
   tono oscuro (el número del pin va en blanco). La tarjeta de filtros lleva
   `z-index: 3`: las dos tarjetas tienen `.rv`, cuya animación les da su
@@ -810,7 +842,10 @@ La D va sin SDD (decisión del dueño). De la E, en
     link… / Link enviado ✓); 2) "Revisá tu correo": a qué dirección,
     "Mandar otro link" (con `aria-disabled`, no `disabled`, que le sacaría
     el foco, y la cuenta regresiva de `retryAfterSeconds`) y "Cambiar el
-    correo". El envío y el reenvío llevan su propia bandera (con un reenvío
+    correo". Desde la fase G, debajo de la dirección, "Abrir Gmail" (un
+    `<a class="btn lg-webmail">` a otra pestaña, `noopener noreferrer`)
+    según el dominio (`LOGIN_WEBMAIL`: Gmail, Outlook —también Hotmail y
+    Live—, Yahoo, iCloud y Proton); con otro dominio, sin botón. El envío y el reenvío llevan su propia bandera (con un reenvío
     en vuelo se puede volver y pedir para otra dirección; para la MISMA no:
     un segundo link anularía el primero, el backend borra los no usados) y
     el aviso de "Te mandamos otro link" va fuera de los pasos. Un reenvío que
@@ -1025,7 +1060,7 @@ vigente es `design/social-listening-v4.html`. SDD en
 prueba en el navegador con un servidor de prueba aparte (otro puerto, copia
 de la base, sin scheduler ni Apify).
 
-## Análisis de publicación de Instagram (fases E y F)
+## Análisis de publicación de Instagram (fases E, F y G)
 
 `POST /api/analyze` (`src/analysisRoutes.js`) valida el link
 (`checkAnalyzeUrl`) y responde 202 `{ id, yaEnCurso }` ANTES de gastar; el
@@ -1040,7 +1075,9 @@ queda en la tabla `analisis` (`db.startAnalisis`, `saveAnalisisPost`,
 `finishAnalisis`, `failAnalisis`…, todas por plataforma, sin default; las
 dos que no la reciben son por id o para todas: `markInterruptedAnalisis` y
 `sumApifyUsdForAnalisis`):
-`en curso` | `ok` | `sin comentarios` | `error` | `interrumpido`. Los "en
+`en curso` | `ok` | `sin comentarios` | `error` | `interrumpido` |
+`cancelado` (fase G: cancelado en la confirmación o sin respuesta en 30
+minutos; la columna no tiene CHECK). Los "en
 curso" de un arranque anterior los pasa a "interrumpido" SOLO `server.js`
 al arrancar (`db.markInterruptedAnalisis`, con el `usd_apify` que ya
 gastaron), nunca la carga de `db.js`: un script que abre la base no puede
@@ -1049,16 +1086,30 @@ tocar un análisis vivo. SDD en
 (F: el modelo nuevo, las métricas, el informe de 8 puntos y las figuras
 públicas). La F va en dos PR: F1 (modelo y servidor, tag `v4-fase-f1`) y F2
 (la pantalla de la maqueta nueva, el inicio y la edición de figuras, tag
-`v4-fase-f`).
+`v4-fase-f`). La G (`openspec/changes/respuestas-tope-mapa/`, tag
+`v4-fase-g`) suma las respuestas y el tope con confirmación.
 
-- **Apify**: dos corridas del actor oficial en paralelo (la publicación y
-  los comentarios con `addParentData`), por `runActorSync` con los avisos
-  `onQueued` (el limitador lleno, `concurrencyLimiter.run(fn, target, {
-  onQueued })`) y `onAcquired`. Cada llamada queda en
+- **Apify** (desde la fase G): primero la publicación (el actor oficial,
+  una corrida) y, con el número de comentarios que informa Instagram
+  (`post.commentsCount`), el trabajo decide: 0, "sin comentarios" sin
+  pedir nada más; hasta `ANALISIS_CONFIRMAR_DESDE` (1.000) o sin el
+  número, sigue; con más, espera la confirmación (ver "La confirmación").
+  Después los comentarios con sus respuestas: `COMMENTS_ACTOR`
+  (`apify~instagram-comment-scraper`) con `{ directUrls, resultsLimit,
+  includeNestedComments: true }`, por el flujo asincrónico (run id y
+  `usd_real`) y con su propio tope de 30 minutos. **El `resultsLimit` del
+  actor cuenta solo los de primer nivel**: las respuestas llegan de más.
+  `commentsResultsLimit(N, tope)` pide N si el número de Instagram cabe en
+  el tope (ese número ya cuenta las respuestas) y si no, `tope /
+  ANALISIS_FACTOR_RESPUESTAS` (1,6, de la sonda: 10 pedidos trajeron 16).
+  La publicación nunca se pide dos veces. Los avisos `onQueued` (el
+  limitador lleno, `concurrencyLimiter.run(fn, target, { onQueued })`) y
+  `onAcquired` siguen. Cada llamada queda en
   `apify_calls.analisis_id`; `usd_apify` de la fila es su suma
-  (`db.sumApifyUsdForAnalisis`). `COMMENTS_LIMIT` (lo que se pide a Apify)
-  y `COMMENTS_ANALYSIS_LIMIT` (lo que va al modelo) valen 300 por defecto
-  (decisión del dueño, 24/10/2026; tope 500); el `.env` los pisa. Los dos
+  (`db.sumApifyUsdForAnalisis`). `COMMENTS_LIMIT` (lo que se pide a Apify,
+  comentarios y respuestas) y `COMMENTS_ANALYSIS_LIMIT` (lo que va al
+  modelo) valen 3.000 por defecto (decisión del dueño, fase G; tope 5.000;
+  eran 300); el `.env` los pisa. Los dos
   son solo de Instagram: X sigue con 150 y su propia variable,
   `X_COMMENTS_ANALYSIS_LIMIT` (`resolveXMaxItems`, src/x/sample.js), porque
   manda todo el hilo en una sola llamada (subir el de Instagram no puede
@@ -1067,6 +1118,44 @@ públicas). La F va en dos PR: F1 (modelo y servidor, tag `v4-fase-f1`) y F2
   los comentarios. Sin la corrida de la publicación (vacía o un ítem de
   error), cuenta, likes y texto quedan sin dato: los campos de primer nivel
   de un comentario son del comentario, nunca del posteo.
+- **Las respuestas** (fase G): cada respuesta es un ítem propio con
+  `parentCommentUrl` (`…/c/<id del padre>/`); `normalizeComments` le pone
+  `esRespuesta`, `parentApifyId` y, al de primer nivel,
+  `respuestasDeclaradas` (`repliesCount`: no llegan todas). En
+  `analyzeComments` (`armarMuestra`), los comentarios de la propia cuenta
+  (el usuario es `post.ownerUsername`) NO van al modelo ni ocupan el tope:
+  quedan en la fila con `deLaCuenta: true` y sin tono. El resto va en las
+  tandas; cada respuesta, detrás de su comentario (`ordenarConRespuestas`,
+  las de uno mismo de la más vieja a la más nueva) y con la línea `N.
+  @usuario ↳ responde a @padre: «principio del comentario»` (140
+  caracteres; "(la cuenta que publicó)" si responde a la cuenta). La regla
+  E del prompt: se clasifica la respuesta (lo de «…» es contexto); si solo
+  le da la razón, lleva el tono y la postura de lo que respalda; la
+  @mención del principio no es una etiqueta. El schema no cambió. Dos
+  respuestas iguales a comentarios distintos no son la misma fila
+  (`dedupeComments`). Cada comentario guardado suma `esRespuesta`,
+  `respondeA` (el número del padre en la muestra, o null), `respondeAUsuario`,
+  `deLaCuenta` y `respuestasDeclaradas`; `resultado.respuestas: true` marca
+  un análisis de la G. "Analizados N de M": N, comentarios y respuestas
+  clasificados; M, el total de Instagram, que cuenta las respuestas.
+- **La confirmación** (fase G, `src/analysisCost.js` puro y
+  `src/analysisJob.js`): con más de `ANALISIS_CONFIRMAR_DESDE` comentarios
+  según Instagram, el trabajo guarda la publicación y espera en memoria
+  (`esperarConfirmacion`): el paso "Confirmar el costo" en curso y, en la
+  vista del progreso, `confirmacion: { comentarios, opciones, venceAt,
+  puedeConfirmar }`. Las opciones (`opcionesDeConfirmacion`): `todo` (hasta
+  `COMMENTS_LIMIT`; `completo` si entran todos) y `parcial`
+  (`ANALISIS_CONFIRMAR_DESDE` ítems), cada una con `items` y su costo
+  estimado: Apify a la tarifa del plan por ítem (`apifyCost.usdForItems(1)`)
+  y el modelo según lo medido el 24/10 (`ANALISIS_USD_POR_COMENTARIO`
+  0,0021 por comentario + `ANALISIS_USD_FIJO` 0,06). `POST
+  /api/analyze/:id/confirmar { alcance: 'todo' | 'parcial' | 'cancelar' }`:
+  solo quien lo arrancó (`puedeConfirmar`; sin login, cualquiera; si no,
+  403), 409 si ya no espera, 400 una opción que no se ofreció. Con
+  `parcial`, al modelo va hasta esa cantidad (`maxComentarios` de
+  `analyzeComments`). Cancelado, o a los 30 minutos sin respuesta
+  (`ANALISIS_CONFIRMAR_MS` solo para tests), queda `cancelado` con su
+  aviso, sin gastar más que la publicación; con un reinicio, "interrumpido".
 - **Modelo, v2 desde la fase F** (`src/analyzeComments.js`, `prompt.js`,
   `userPrompt.js`, `analysisSchema.js`, `validateAnalysis.js`): la muestra
   (`commentSample.js`) va en tandas de `BATCH_SIZE` 50 por llamada
@@ -1170,6 +1259,20 @@ públicas). La F va en dos PR: F1 (modelo y servidor, tag `v4-fase-f1`) y F2
   no frena a las demás). `listAnterioresDeCuenta` hace la ventana por
   publicación solo sobre id y fecha y lee los comentarios de los elegidos
   (con `SELECT *` tardaba casi un segundo con 300 análisis de una cuenta).
+  **Desde la fase G** (`disponible.respuestas` = `resultado.respuestas`):
+  lo de la propia cuenta (`deLaCuenta`) queda fuera de TODO lo que se
+  cuenta (tono, postura, temas, "hablan del posteo", ruido, sin
+  clasificar, verificados y figuras, los que más pegaron, etiquetas,
+  emojis, el tiempo) y sigue en `comentarios`; cada comentario de primer
+  nivel lleva `respuestas` (las que llegaron, las de la cuenta incluidas);
+  `debates`: los 6 del público con más respuestas DEL PÚBLICO
+  (`respuestasPublico`, `tonosRespuestas`, `respondioLaCuenta`; uno que
+  solo contestó la cuenta no es un debate); `respuestas`: `{ traidas,
+  deLaCuenta, comentariosConRespuesta, declaradas }`; `laCuentaRespondio`:
+  `{ comentarios, respuestas, negativos, sueltos, lista }` (cada grupo, el
+  comentario contestado —o el @usuario de uno que no llegó— y lo que le
+  dijo la cuenta). La @mención con la que abre una respuesta no cuenta en
+  "A quién etiquetan". En un análisis anterior, los tres en null.
 - **Informe y CSV** (`src/reportBuilder.js`): `buildInforme(vista)` es el
   de 8 puntos (lo que pasó, tono, postura, hablan del posteo, temas, quién
   habló, pedidos, lectura), más "Comentarios destacados" y el pie
@@ -1190,7 +1293,15 @@ públicas). La F va en dos PR: F1 (modelo y servidor, tag `v4-fase-f1`) y F2
   reclamos de un análisis anterior ya quedó guardado como estaba, y el de
   X (`src/x/reportBuilder.js`) no cambió (X no se toca en esta fase). Un
   análisis donde todo lo clasificado es ruido dice "sin comentarios con
-  opinión para medir" en los puntos 1 a 4.
+  opinión para medir" en los puntos 1 a 4. Fase G: "Quién habló" termina
+  con las respuestas ("5 respuestas (2 comentarios con respuesta; el que
+  más tuvo, @x, 3) · la cuenta respondió a 3 comentarios (1 negativo)"; uno
+  anterior, "respuestas: no disponible en este análisis (es anterior a la
+  fase G)"), la síntesis lo recibe en sus NÚMEROS si hay algo
+  (`lineaRespuestas` de `userPrompt.js`), y el CSV de comentarios suma
+  "Responde al número", "Responde a" (sin @, como Usuario), "De la cuenta"
+  y "Respuestas traídas" antes del texto (vacías en uno anterior); el tono
+  de lo de la cuenta dice "de la cuenta".
 - **Figuras públicas** (`src/figuras.js`, puro; tabla `figuras_publicas`,
   la única nueva): usuario (minúsculas, sin @), nombre, rol (`ROLES`, sin
   género en el texto: "Legislador/a"), alineación (oficialismo | oposición,
@@ -1237,7 +1348,10 @@ públicas). La F va en dos PR: F1 (modelo y servidor, tag `v4-fase-f1`) y F2
   El importador sigue como antes.
 - **Progreso** (`src/analysisProgress.js`,
   `GET /api/analyze/progress?plataforma=&id=`): turno (solo si alguna
-  corrida esperó cupo), publicación, comentarios, clasificar tono, postura
+  corrida esperó cupo), publicación, confirmar el costo (fase G: solo si
+  espera la confirmación; la vista suma `confirmacion`, con
+  `puedeConfirmar` según quién pregunta), comentarios y sus respuestas
+  (con 0 según Instagram, `omitido`), clasificar tono, postura
   y temas (los clasificados de las tandas que van terminando, en el orden
   en que terminan: "87 de 287" si termina primero la corta), verificados y
   figuras públicas, reclamos e informe, cada uno `pendiente` | `en curso` |
@@ -1285,7 +1399,10 @@ públicas). La F va en dos PR: F1 (modelo y servidor, tag `v4-fase-f1`) y F2
   ve sale de `vista`: el navegador no cuenta nada (ni un porcentaje). En
   un v1, los bloques que necesitan los campos nuevos muestran la placa
   "No disponible en análisis anteriores" (`.an-na`, decisión del dueño),
-  sin ocultarse ni inventar; el filtro "Preguntas" queda deshabilitado.
+  sin ocultarse ni inventar; el filtro "Preguntas" queda deshabilitado. Lo
+  mismo con lo de la fase G en un análisis anterior a ella: "¿La cuenta
+  respondió?" con la placa, y "Más respuestas" y el filtro "Respuestas"
+  con `aria-disabled` y su tooltip.
   - **Analizar**: pregunta primero `?url=` (si hay uno terminado, "ya se
     analizó el …" con "Ver ese análisis" / "Analizar de nuevo"; si hay
     uno en curso, lo sigue), después POST, y consulta los pasos cada 1 s:
@@ -1297,7 +1414,15 @@ públicas). La F va en dos PR: F1 (modelo y servidor, tag `v4-fase-f1`) y F2
     "Ver ese análisis". Los pasos son una región viva (se anuncia lo que
     cambió); el sondeo corta con un 401 o a los ~3 min sin respuesta. La
     tira de recientes: los 10 últimos (el punto naranja = hecho
-    dominante) y "+N · ver todas", que lleva a la galería.
+    dominante) y "+N · ver todas", que lleva a la galería. Fase G: con
+    `confirmacion` en el progreso, debajo de los pasos va `#anaConfirm`
+    ("Esta publicación tiene N comentarios · costo estimado US$ X", qué se
+    analiza como mucho y a qué hora se cancela, y los botones "Analizar
+    todo" —o "Analizar 3.000"— y "Analizar 1.000" con su costo, y
+    "Cancelar"; `POST /api/analyze/:id/confirmar`; después el foco pasa a
+    `#anaPhase`). Quien no lo arrancó ve "Espera que confirme el costo
+    quien arrancó el análisis", sin botones. Un `cancelado` se muestra como
+    cualquier análisis que no terminó: su aviso en `#anaError`.
   - **Vistas**: "Analizar" y "Publicaciones analizadas" (la galería:
     `GET /api/analisis` con `q`, `f` y `ord`, hasta 100; cada tarjeta con
     la foto, la cuenta, la fecha, el texto, la barra de tono, el tema
@@ -1327,14 +1452,26 @@ públicas). La F va en dos PR: F1 (modelo y servidor, tag `v4-fase-f1`) y F2
     real, una franja por tramo con `data-tip`, la marca del 50 % y el
     pico; con la solapa o la vista ocultas no se dibuja y se arma al
     aparecer, por un `ResizeObserver`); los pedidos (un clic filtra sus
-    comentarios); verificados y figuras; los 6 que más pegaron; los
+    comentarios); verificados y figuras y, debajo (fase G, en la misma
+    `.an-col`), "¿La cuenta respondió?" (`anaRenderAcct`: cuántos
+    comentarios contestó, cuántos eran negativos, hasta 4 con lo que les
+    dijo —`.an-acct-g`, `.rp`— y "ver el hilo", y "Ver todo lo que
+    escribió la cuenta"); los 6 que más pegaron, con el selector "Más
+    likes / Más respuestas" (`anaTopOrden`; "Más respuestas" son los
+    debates: las respuestas del público, la barra partida con su tono,
+    "respondió la cuenta" y "ver el hilo"); los
     reclamos en el mapita (el contorno de la Ciudad y los centros de las
     comunas de la maqueta; solo los `enMapa`, agrupados a menos de 16 px,
     con el color de su categoría, `temaColor`; los sin ubicar van en la
     lista, sin punto); etiquetas, hashtags y emojis (apoyo contra bronca);
     los comentarios (buscar, Destacados = los 6 con más likes, Negativos,
-    Positivos, Neutros, Preguntas, Verificados, Todos de a 50; con tono,
-    postura, tema, pregunta/pedido y horas), y compartir: en un v2, el
+    Positivos, Neutros, Preguntas, Respuestas —fase G—, Verificados, Todos
+    de a 50; con tono, postura, tema, pregunta/pedido y horas; una
+    respuesta dice "↳ responde a @usuario", lo de la cuenta lleva "la
+    cuenta" y la barra del acento en vez de un tono, y un comentario con
+    respuestas, "N respuestas", que abre su hilo: la selección `hilo` —o
+    `cuenta`— ordena por número, que ya sigue la charla, y corre cada
+    respuesta debajo de su comentario, `.cmt.rep`), y compartir: en un v2, el
     informe de 8 puntos (`anaReportText`; el PATCH de los temas lo trae
     rehecho); en un v1, el de antes con los temas editados
     (`TemasConversacion.assemble`). Aviso pasados los 4.000 caracteres
@@ -1368,7 +1505,7 @@ públicas). La F va en dos PR: F1 (modelo y servidor, tag `v4-fase-f1`) y F2
   columnas nuevas y el completado de los v1), `test/figuras.test.js`,
   `test/analisisMetricas.test.js` (la vista v2 y v1 contra cuentas hechas a
   mano), `test/analisisTemas.test.js`, `test/analisisApify.test.js`
-  (normalización, topes, las dos corridas, el limitador lleno),
+  (normalización, topes, la publicación y los comentarios, el limitador lleno),
   `test/analisisModelo.test.js` (la primera tanda sola, los temas nuevos
   unidos, una caída, la cortada partida en dos, lo gastado en las
   fallidas, índices omitidos, la síntesis y sus límites, las
@@ -1389,8 +1526,31 @@ públicas). La F va en dos PR: F1 (modelo y servidor, tag `v4-fase-f1`) y F2
   los números del informe real. El anonimizador conserva lo que miran las
   heurísticas de `classificationHeuristics.js` (solo emojis, solo
   menciones, menos de 3 caracteres, palabras de sorteo) sin el texto
-  real).
-- **Lo que trae de verdad el actor** (esa corrida, un reel con 138
+  real). Fase G: `test/analisisCosto.test.js` (puro: el costo estimado y
+  las opciones de la confirmación), y en los de arriba el actor de
+  comentarios, las respuestas con su padre y el tope del actor
+  (`analisisApify`, con `test/fixtures/apify/analisis-g-comentarios.json`:
+  la sonda anonimizada), las respuestas en las tandas y lo de la cuenta
+  afuera (`analisisModelo`), los debates, "¿La cuenta respondió?", el
+  informe y el CSV (`analisisMetricas`), y la confirmación —directo, 0
+  comentarios, esperar, parcial, todo, cancelar, vencer, quién confirma—
+  y su ruta (`analisisTrabajo`). `test/helpers/apifySimulado.js` simula la
+  API de Apify con los dos flujos (el sincrónico de la publicación y el
+  asincrónico de los comentarios: arrancar el run y bajar el dataset); no
+  es un archivo `*.test.js`.
+- **Lo que trae de verdad el actor de comentarios con respuestas** (la
+  sonda autorizada del 25/10/2026, US$ 0,0368: `resultsLimit` 10 con
+  `includeNestedComments` sobre la publicación de la fase F): 16 ítems, 10
+  comentarios de primer nivel y 6 respuestas: **el tope cuenta solo los de
+  primer nivel**. Cada respuesta es un ítem propio con `parentCommentUrl`
+  (`…/c/<id del padre>/`) y un `commentUrl` que termina en `/r/…`; el
+  padre trae `repliesCount` y `replies` viene siempre null. **No llegan
+  todas**: los padres declaraban 8, 1 y 1 respuestas y llegaron 6, todas
+  del primero. El orden de los de primer nivel no es por fecha. Los campos
+  son los del oficial (`id`, `text`, `ownerUsername`, `timestamp`,
+  `likesCount`, `owner` con `is_verified`), más `postUrl`, sin
+  `metaData`.
+- **Lo que trae de verdad el actor oficial** (la corrida del 24/10/2026, un reel con 138
   comentarios según Instagram): 64 comentarios, solo los de primer nivel
   (`repliesCount` y `replies` en null: el total de Instagram suma las
   respuestas, por eso "analizados 64 de 138"). Cada comentario: `id`,

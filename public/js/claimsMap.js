@@ -1,6 +1,9 @@
-// Mapa de reclamos: filtros (categoría, estado, barrio, comuna, fecha, texto)
-// contra GET /api/reclamos, agrupado por dirección en el cliente. Leaflet CDN.
-// Se refresca cada vez que se entra a la solapa (main.js).
+// Mapa de reclamos: filtros (categoría, subcategoría, barrio, comuna, fecha,
+// texto) contra GET /api/reclamos, agrupado por dirección en el cliente.
+// Leaflet CDN. Se refresca cada vez que se entra a la solapa (main.js).
+// Desde la fase G el estado de los reclamos (Pendiente, En tratamiento…) no
+// se muestra ni se edita acá (decisión del dueño); la columna y la API
+// (PATCH /api/reclamos/:id) siguen como estaban.
 
 const CABA_CENTER = [-34.6083, -58.4386];
 const CABA_ZOOM = 12;
@@ -21,11 +24,8 @@ let claimsMap = null;
 let claimsLayer = null;
 let rawReclamos = [];
 let allCategorias = [];
-let allEstados = [];
 let selectedCategorias = new Set();
-let selectedEstados = new Set();
 let categoriaMultiSelect = null;
-let estadoMultiSelect = null;
 let openFilterPanel = null;
 let searchDebounceTimer = null;
 // Árbol categoría -> subcategorías y conteo global, ambos del servidor.
@@ -102,6 +102,123 @@ function cssVar(name) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
 
+// -------------------------------------------------------------------------
+// Mosaicos (fase G, decisión del dueño): los de Google, como el panel de El
+// Niño, con el selector Mapa / Satélite (recordado en sl.mapa.capa),
+// aceptando el riesgo de usarlos sin su API. Respaldo automático: si los de
+// Google no cargan (TILE_FALLAS_RESPALDO fallas antes de que llegue uno
+// bueno, o más fallas que buenos después), el mapa pasa solo a
+// OpenStreetMap, lo dice en el selector y lo deja apagado.
+// -------------------------------------------------------------------------
+
+const TILES_GOOGLE = {
+  mapa: 'https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
+  satelite: 'https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
+};
+const TILES_OSM = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+const TILE_FALLAS_RESPALDO = 4;
+const CAPA_KEY = 'sl.mapa.capa';
+
+let capaActual = null; // la tileLayer a la vista
+let capaElegida = 'mapa'; // 'mapa' | 'satelite'
+let enRespaldo = false; // Google no cargó: OpenStreetMap
+let capaControl = null; // el contenedor del selector
+
+function leerCapa() {
+  try {
+    return localStorage.getItem(CAPA_KEY) === 'satelite' ? 'satelite' : 'mapa';
+  } catch {
+    return 'mapa';
+  }
+}
+
+function guardarCapa(capa) {
+  try {
+    localStorage.setItem(CAPA_KEY, capa);
+  } catch {
+    /* sin almacenamiento: vale para esta visita */
+  }
+}
+
+function ponerCapa(capa) {
+  if (capaActual) claimsMap.removeLayer(capaActual);
+  if (enRespaldo) {
+    capaActual = L.tileLayer(TILES_OSM, { attribution: '&copy; OpenStreetMap', maxZoom: 19 });
+  } else {
+    capaActual = L.tileLayer(TILES_GOOGLE[capa], { subdomains: ['0', '1', '2', '3'], attribution: 'Mapa &copy; Google', maxZoom: 20 });
+    // El respaldo: se cuentan los mosaicos buenos y los que fallan de esta capa.
+    let buenos = 0;
+    let fallas = 0;
+    const esta = capaActual;
+    esta.on('tileload', () => {
+      buenos += 1;
+    });
+    esta.on('tileerror', () => {
+      fallas += 1;
+      if (capaActual !== esta || enRespaldo) return;
+      if ((buenos === 0 && fallas >= TILE_FALLAS_RESPALDO) || (fallas >= TILE_FALLAS_RESPALDO * 3 && fallas > buenos)) pasarARespaldo();
+    });
+  }
+  capaActual.addTo(claimsMap);
+  capaActual.bringToBack();
+  pintarSelectorCapa();
+}
+
+function pasarARespaldo() {
+  enRespaldo = true;
+  console.warn('[mapa] los mosaicos de Google no cargan: el mapa pasa a OpenStreetMap');
+  ponerCapa(capaElegida);
+}
+
+function pintarSelectorCapa() {
+  if (!capaControl) return;
+  capaControl.querySelectorAll('button[data-capa]').forEach((b) => {
+    const on = !enRespaldo && b.dataset.capa === capaElegida;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', String(on));
+    // aria-disabled, no disabled: sigue con el foco y dice por qué.
+    b.setAttribute('aria-disabled', String(enRespaldo));
+  });
+  const nota = capaControl.querySelector('.nota');
+  nota.textContent = enRespaldo ? 'Google no respondió: OpenStreetMap' : '';
+  nota.hidden = !enRespaldo;
+}
+
+function agregarSelectorCapa() {
+  const Selector = L.Control.extend({
+    options: { position: 'topright' },
+    onAdd() {
+      const box = L.DomUtil.create('div', 'leaflet-control map-capa');
+      const seg = L.DomUtil.create('div', 'seg', box);
+      seg.setAttribute('role', 'group');
+      seg.setAttribute('aria-label', 'Tipo de mapa');
+      for (const [capa, texto] of [
+        ['mapa', 'Mapa'],
+        ['satelite', 'Satélite'],
+      ]) {
+        const b = L.DomUtil.create('button', '', seg);
+        b.type = 'button';
+        b.dataset.capa = capa;
+        b.textContent = texto;
+      }
+      const nota = L.DomUtil.create('div', 'nota', box);
+      nota.hidden = true;
+      L.DomEvent.disableClickPropagation(box);
+      L.DomEvent.disableScrollPropagation(box);
+      seg.addEventListener('click', (e) => {
+        const b = e.target.closest('button[data-capa]');
+        if (!b || enRespaldo || b.dataset.capa === capaElegida) return;
+        capaElegida = b.dataset.capa;
+        guardarCapa(capaElegida);
+        ponerCapa(capaElegida);
+      });
+      capaControl = box;
+      return box;
+    },
+  });
+  new Selector().addTo(claimsMap);
+}
+
 function ensureClaimsMap() {
   if (claimsMap) return claimsMap;
   claimsMap = L.map('claims-map', {
@@ -110,12 +227,10 @@ function ensureClaimsMap() {
     maxBounds: AMBA_BOUNDS,
     maxBoundsViscosity: 1.0,
   }).setView(CABA_CENTER, CABA_ZOOM);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; OpenStreetMap',
-    maxZoom: 19,
-  }).addTo(claimsMap);
+  capaElegida = leerCapa();
+  agregarSelectorCapa();
+  ponerCapa(capaElegida);
   claimsLayer = L.layerGroup().addTo(claimsMap);
-  wireGlobalPopupHandlers();
   return claimsMap;
 }
 
@@ -133,7 +248,6 @@ function currentFilters() {
       selectedSubcategorias.size > 0 && selectedSubcategorias.size < allSubcategorias.length
         ? [...selectedSubcategorias]
         : [],
-    estado: [...selectedEstados],
     barrio: document.getElementById('claimsBarrio')?.value || '',
     comuna: document.getElementById('claimsComuna')?.value || '',
     desde: document.getElementById('claimsDesde')?.value || '',
@@ -146,7 +260,6 @@ function isDefaultFilters(f) {
   return (
     f.categoria.length === allCategorias.length &&
     f.subcategoria.length === 0 &&
-    f.estado.length === allEstados.length &&
     !f.barrio &&
     !f.comuna &&
     !f.desde &&
@@ -165,9 +278,6 @@ function buildQueryString(f) {
   if (f.subcategoria.length > 0) {
     params.set('subcategoria', f.subcategoria.join(','));
   }
-  if (f.estado.length > 0 && f.estado.length < allEstados.length) {
-    params.set('estado', f.estado.join(','));
-  }
   if (f.barrio) params.set('barrio', f.barrio);
   if (f.comuna) params.set('comuna', f.comuna);
   if (f.desde) params.set('desde', f.desde);
@@ -183,9 +293,9 @@ async function applyFiltersAndReload() {
   // categorías, cada una pasa a tener color propio.
   recalcularPaleta();
 
-  // "Ninguna" categoría/estado tildado: no hay nada que mostrar, no hace
-  // falta pegarle al servidor.
-  if (selectedCategorias.size === 0 || selectedEstados.size === 0) {
+  // "Ninguna" categoría tildada: no hay nada que mostrar, no hace falta
+  // pegarle al servidor.
+  if (selectedCategorias.size === 0) {
     rawReclamos = [];
     renderMarkers();
     return;
@@ -249,7 +359,7 @@ function populateBarrioComunaOptions(reclamos) {
 }
 
 // -------------------------------------------------------------------------
-// Multi-select desplegable (categoría / estado): botón cerrado con contador
+// Multi-select desplegable (categoría / subcategoría): botón cerrado con contador
 // + panel flotante con checkboxes. Tildar filtra al instante, sin botón
 // "Aplicar". Mismo mecanismo de apertura/cierre que el dropdown de usuario
 // del header (main.js: toggle de .hidden + click afuera), más Escape.
@@ -490,16 +600,6 @@ function tooltipHtml(group) {
   return `<strong>${escapeHtml(group.address)}</strong><br>${group.reclamos.length} reclamo(s)<br>${lines}`;
 }
 
-function estadoSelectHtml(reclamo) {
-  const options = allEstados
-    .map(
-      (e) =>
-        `<option value="${escapeHtml(e)}"${e === reclamo.estado ? ' selected' : ''}>${escapeHtml(e)}</option>`
-    )
-    .join('');
-  return `<select class="claims-popup-estado" data-id="${escapeHtml(reclamo.id)}">${options}</select>`;
-}
-
 function popupHtml(group) {
   // Desglose por categoría del punto. El pin sólo puede mostrar un color (el de
   // la categoría dominante), así que acá va la composición completa — si no, un
@@ -537,7 +637,6 @@ function popupHtml(group) {
         ${sub}
         <div class="claims-popup-comment">${comment}</div>
         <a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">Ver posteo</a>
-        ${estadoSelectHtml(r)}
       </div>`;
     })
     .join('');
@@ -560,7 +659,7 @@ function setEmptyState(isEmpty, filtered) {
   if (!isEmpty || !title || !text) return;
   if (filtered) {
     title.textContent = 'Ningún reclamo coincide con los filtros';
-    text.textContent = 'Probá ampliar el rango de fechas o tildar más categorías/estados.';
+    text.textContent = 'Probá ampliar el rango de fechas o tildar más categorías.';
   } else {
     title.textContent = title.dataset.defaultTitle || 'Todavía no hay reclamos ubicados';
     text.textContent =
@@ -624,42 +723,6 @@ function renderMarkers() {
 }
 
 // -------------------------------------------------------------------------
-// Estado editable desde el popup (PATCH /api/reclamos/:id)
-// -------------------------------------------------------------------------
-
-function wireGlobalPopupHandlers() {
-  claimsMap.on('popupopen', (e) => {
-    const root = e.popup.getElement();
-    if (!root) return;
-    root.querySelectorAll('.claims-popup-estado').forEach((select) => {
-      select.dataset.previous = select.value;
-      select.addEventListener('change', async () => {
-        const id = select.dataset.id;
-        const nuevoEstado = select.value;
-        const previous = select.dataset.previous;
-        select.disabled = true;
-        try {
-          const resp = await fetch(`/api/reclamos/${encodeURIComponent(id)}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ estado: nuevoEstado }),
-          });
-          if (!resp.ok) throw new Error('No se pudo actualizar el estado.');
-          const row = rawReclamos.find((r) => r.id === id);
-          if (row) row.estado = nuevoEstado;
-          select.dataset.previous = nuevoEstado;
-        } catch (err) {
-          select.value = previous;
-          window.alert(err.message || 'No se pudo actualizar el estado.');
-        } finally {
-          select.disabled = false;
-        }
-      });
-    });
-  });
-}
-
-// -------------------------------------------------------------------------
 // Carga inicial
 // -------------------------------------------------------------------------
 
@@ -706,11 +769,9 @@ async function refreshClaimsMap() {
     const data = await resp.json();
 
     allCategorias = Array.isArray(data.categorias) ? data.categorias : [];
-    allEstados = Array.isArray(data.estados) ? data.estados : [];
     subcategoriasPorCategoria = data.subcategoriasPorCategoria || {};
     conteoPorCategoria = data.conteoPorCategoria || {};
     selectedCategorias = new Set(allCategorias);
-    selectedEstados = new Set(allEstados);
     rawReclamos = Array.isArray(data.reclamos) ? data.reclamos : [];
 
     recalcularPaleta();
@@ -721,12 +782,6 @@ async function refreshClaimsMap() {
       label: 'Categoría',
       options: allCategorias,
       selectedSet: selectedCategorias,
-    });
-    estadoMultiSelect = createFilterMultiSelect({
-      containerId: 'claimsEstadoSelect',
-      label: 'Estado',
-      options: allEstados,
-      selectedSet: selectedEstados,
     });
     rebuildSubcategoriaFilter();
     populateBarrioComunaOptions(rawReclamos);
@@ -756,7 +811,6 @@ document.getElementById('claimsBuscar')?.addEventListener('input', () => {
 });
 document.getElementById('claimsClearBtn')?.addEventListener('click', () => {
   categoriaMultiSelect?.selectAll();
-  estadoMultiSelect?.selectAll();
   rebuildSubcategoriaFilter();
   subcategoriaMultiSelect?.selectAll();
   resetOtherFilters();

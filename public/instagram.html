@@ -323,7 +323,6 @@
         <!-- Dependiente del anterior: se puebla con las subcategorías de las
              categorías seleccionadas (ver rebuildSubcategoriaFilter). -->
         <div id="claimsSubcategoriaSelect"></div>
-        <div id="claimsEstadoSelect"></div>
         <select id="claimsBarrio">
           <option value="">Barrio</option>
         </select>
@@ -404,6 +403,12 @@
             <div class="bar" id="anaBarWrap" role="progressbar" aria-label="Avance del análisis" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="anaBar"></i></div>
           </div>
           <div class="steps" id="anaSteps" aria-live="polite"></div>
+          <!-- Fase G: con más de 1.000 comentarios, el costo estimado y la elección antes de traerlos. -->
+          <div class="an-confirm hidden" id="anaConfirm" role="group" aria-labelledby="anaConfirmText">
+            <p class="ct-t" id="anaConfirmText"></p>
+            <p class="note" id="anaConfirmNote"></p>
+            <div class="acts" id="anaConfirmActs"></div>
+          </div>
         </div>
       </div>
 
@@ -498,13 +503,29 @@
         </div>
 
         <div class="grid an-2 rv">
-          <div class="card">
-            <div class="ct"><h2>Verificados y figuras públicas</h2><span class="hint" id="anaVerHint"></span></div>
-            <div class="an-people" id="anaPeople"></div>
-            <p class="note an-people-note">El rol y la alineación salen de la lista de figuras públicas que mantiene el equipo. A los vecinos comunes no se los etiqueta: se mide la postura del comentario. <button type="button" class="lnkbtn" id="anaFigOpen" aria-haspopup="dialog">Lista de figuras</button></p>
+          <div class="an-col">
+            <div class="card">
+              <div class="ct"><h2>Verificados y figuras públicas</h2><span class="hint" id="anaVerHint"></span></div>
+              <div class="an-people" id="anaPeople"></div>
+              <p class="note an-people-note">El rol y la alineación salen de la lista de figuras públicas que mantiene el equipo. A los vecinos comunes no se los etiqueta: se mide la postura del comentario. <button type="button" class="lnkbtn" id="anaFigOpen" aria-haspopup="dialog">Lista de figuras</button></p>
+            </div>
+            <div class="card">
+              <div class="ct"><h2>¿La cuenta respondió?</h2><span class="hint" id="anaAcctHint"></span></div>
+              <div class="an-acct" id="anaAcct"></div>
+              <p class="note" id="anaAcctNote"></p>
+            </div>
           </div>
           <div class="card">
-            <div class="ct"><h2>Los que más pegaron</h2><span class="hint">los comentarios con más likes · marcan el clima</span></div>
+            <div class="ct">
+              <h2>Los que más pegaron</h2>
+              <div class="tools">
+                <span class="hint" id="anaTopHint">los comentarios con más likes · marcan el clima</span>
+                <div class="seg" id="anaTopSeg" role="group" aria-label="Ordenar los que más pegaron por">
+                  <button type="button" data-o="likes" class="on" aria-pressed="true">Más likes</button>
+                  <button type="button" data-o="resp" aria-pressed="false">Más respuestas</button>
+                </div>
+              </div>
+            </div>
             <div class="an-top" id="anaTop"></div>
             <p class="note" id="anaTopNote"></p>
           </div>
@@ -546,6 +567,7 @@
                 <button type="button" data-f="positivo" aria-pressed="false">Positivos</button>
                 <button type="button" data-f="neutral" aria-pressed="false">Neutros</button>
                 <button type="button" data-f="q" aria-pressed="false">Preguntas</button>
+                <button type="button" data-f="resp" aria-pressed="false">Respuestas</button>
                 <button type="button" data-f="ver" aria-pressed="false">Verificados</button>
                 <button type="button" data-f="all" aria-pressed="false">Todos</button>
               </div>

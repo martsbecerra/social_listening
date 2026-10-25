@@ -71,6 +71,7 @@ const DIA_MES = new Intl.DateTimeFormat('es-AR', { timeZone: TZ, day: '2-digit',
 const FECHA = new Intl.DateTimeFormat('es-AR', { timeZone: TZ, day: '2-digit', month: '2-digit', year: 'numeric' });
 const FECHA_HORA = new Intl.DateTimeFormat('es-AR', { timeZone: TZ, day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
 const NO_DISPONIBLE = 'no disponible en este análisis (es anterior a la fase F).';
+const NO_DISPONIBLE_G = 'no disponible en este análisis (es anterior a la fase G)';
 
 const pct = (p) => `${Math.round((p || 0) * 100)} %`;
 const fechaDe = (fmt, iso) => {
@@ -83,6 +84,26 @@ function quienTexto(q) {
   const f = q.figura;
   if (f && f.origen === 'equipo') return `${f.nombre || `@${q.usuario}`} (${rolTexto(f)})`;
   return `@${q.usuario}`;
+}
+
+const plural = (n, uno, varios) => `${formatCountWithDots(n)} ${n === 1 ? uno : varios}`;
+
+/**
+ * Fase G, dentro de "Quién habló": las respuestas del público (y el
+ * comentario que más tuvo) y a cuántos comentarios contestó la cuenta.
+ */
+function respuestasTexto(vista) {
+  if (!vista.disponible.respuestas || !vista.respuestas) return `respuestas: ${NO_DISPONIBLE_G}`;
+  const r = vista.respuestas;
+  const lc = vista.laCuentaRespondio;
+  const d = vista.debates && vista.debates[0];
+  const del = r.traidas
+    ? `${plural(r.traidas, 'respuesta', 'respuestas')} (${plural(r.comentariosConRespuesta, 'comentario', 'comentarios')} con respuesta${d ? `; el que más tuvo, @${d.usuario}, ${formatCountWithDots(d.respuestasPublico)}` : ''})`
+    : 'sin respuestas entre los comentarios';
+  const cuenta = lc && lc.comentarios
+    ? `la cuenta respondió a ${plural(lc.comentarios, 'comentario', 'comentarios')}${lc.negativos ? ` (${plural(lc.negativos, 'negativo', 'negativos')})` : ''}`
+    : 'la cuenta no respondió';
+  return `${del} · ${cuenta}`;
 }
 
 /**
@@ -146,6 +167,7 @@ function buildInforme(vista) {
   const otros = vista.quienHablo.filter((q) => !q.verificada);
   let quien = ver.length ? `${ver.length} verificado${ver.length === 1 ? '' : 's'} — ${ver.map((q) => quienTexto(q)).join(', ')}` : 'ningún verificado';
   if (otros.length) quien += ` · figuras públicas sin tilde: ${otros.map((q) => quienTexto(q)).join(', ')}`;
+  quien += ` · ${respuestasTexto(vista)}`;
   lineas.push(`6) *Quién habló:* ${quien}`);
 
   // 7) pedidos
@@ -188,8 +210,15 @@ function buildComentariosCsv(vista) {
     'Tema',
     'Habla del posteo',
     'Pedido o pregunta',
+    'Responde al número',
+    'Responde a',
+    'De la cuenta',
+    'Respuestas traídas',
     'Texto',
   ];
+  // Las columnas de las respuestas van vacías en un análisis anterior a la
+  // fase G (no se sabe), y "Respuestas traídas" solo en los de primer nivel.
+  const g = Boolean(vista.disponible.respuestas);
   const rows = [header.map(escapeCsvField).join(',')];
   for (const c of vista.comentarios) {
     rows.push(
@@ -200,12 +229,18 @@ function buildComentariosCsv(vista) {
         c.likes ?? '',
         fechaDe(FECHA_HORA, c.fecha) || '',
         c.horas !== null ? Math.round(c.horas * 10) / 10 : '',
-        c.tono || 'sin clasificar',
+        // Los de la cuenta no van al modelo: no es que falló.
+        c.deLaCuenta ? 'de la cuenta' : c.tono || 'sin clasificar',
         POSTURA_TEXTO[c.postura] || '',
         // Un v1: todos sus temas (la vista cuenta cada tema por su lista).
         Array.isArray(c.temasV1) ? c.temasV1.join(' · ') : c.tema || '',
         SI_NO(c.sobrePosteo),
         SI_NO(c.pedido),
+        g && c.esRespuesta ? c.respondeA ?? '' : '',
+        // Sin @, como la columna Usuario (con @ llevaría el apóstrofo de escapeCsvField).
+        g && c.esRespuesta && c.respondeAUsuario ? c.respondeAUsuario : '',
+        g ? SI_NO(c.deLaCuenta) : '',
+        g && c.respuestas !== null ? c.respuestas : '',
         c.texto,
       ]
         .map(escapeCsvField)

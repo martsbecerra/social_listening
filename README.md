@@ -26,7 +26,11 @@ App web que:
    página pide `GET /api/reclamos?plataforma=instagram|x`. Círculos por
    dirección normalizada, con filtros combinables por categoría y subcategoría
    (esquema de dos niveles del cliente, en `config/categorias-reclamos.json`),
-   estado, barrio/comuna, rango de fechas y texto libre. Se alimenta de dos
+   barrio/comuna, rango de fechas y texto libre. Desde la fase G el mapa usa
+   los mosaicos de Google, con un selector Mapa / Satélite; si no cargan,
+   pasa solo a OpenStreetMap y lo dice. El estado de cada reclamo (Pendiente,
+   En tratamiento…) ya no se muestra ni se edita en la pantalla: la columna
+   sigue en la base. Se alimenta de dos
    fuentes: el análisis de una publicación (`/api/analyze` e `/api/x/analyze`
    guardan reclamos con ubicación en `geo_status = 'pendiente'`; un worker los
    geocodifica con USIG después, sin bloquear la respuesta) y el importador
@@ -159,18 +163,22 @@ social_listening_app/
 
 - **`server.js`**: levanta el servidor, sirve la web y expone las rutas de la
   API (análisis puntual + monitoreo). Arranca el cron al iniciar.
-- **`src/apify.js`**: habla con la API de Apify. Corre el actor
-  `apify/instagram-scraper` (modo `comments` y modo `posts`) usando el
-  endpoint **sincrónico** `run-sync-get-dataset-items`. También expone
-  `runActorSync` para que el adapter de Instagram
+- **`src/apify.js`**: habla con la API de Apify. Para el análisis trae la
+  publicación con el actor `apify/instagram-scraper` (endpoint
+  **sincrónico** `run-sync-get-dataset-items`) y, desde la fase G, los
+  comentarios con sus respuestas con `apify/instagram-comment-scraper`
+  (`includeNestedComments`, flujo asincrónico, hasta 30 minutos). También
+  expone `runActorSync` para que el adapter de Instagram
   (`src/platforms/instagram.js`) lo reuse, y marca los errores de clave,
   rate limit y cuota con `code` (ver `src/platforms/errors.js`).
 - **`src/analysisJob.js`**: el análisis de publicación de Instagram. Abre su
-  fila en la tabla `analisis`, trae la publicación y los comentarios (dos
-  corridas en paralelo), guarda la foto sin pedir nada más, llama al modelo,
-  arma "Cuándo comentaron" y deja todo en la fila con el gasto. Lo arranca
-  `POST /api/analyze` (`src/analysisRoutes.js`), que responde el id sin
-  esperar.
+  fila en la tabla `analisis`, trae primero la publicación y, con el número
+  de comentarios que informa Instagram, decide: si son más de 1.000, espera
+  que la persona confirme el costo estimado (`src/analysisCost.js`) antes
+  de traer los comentarios. Guarda la foto sin pedir nada más, llama al
+  modelo, arma "Cuándo comentaron" y deja todo en la fila con el gasto. Lo
+  arranca `POST /api/analyze` (`src/analysisRoutes.js`), que responde el id
+  sin esperar.
 - **`src/analyzeComments.js`**: muestra estable, tandas de 50 comentarios
   por llamada al modelo (tono, postura hacia la gestión, tema, si habla del
   posteo, si pide algo y reclamos; la primera tanda define los temas), el
@@ -202,7 +210,9 @@ un solo uso) → abre el mail, toca el link y, en la página que se abre, hace
 clic en **Entrar**. La respuesta de la API es la misma aunque el email no
 esté en la lista (no se enumeran los autorizados), y la pantalla tampoco dice
 nada distinto: "Revisá tu correo", con "Mandar otro link" (espera 2 minutos
-por dirección) y "Cambiar el correo". Antes de entrar no se ve ninguna
+por dirección) y "Cambiar el correo"; con un correo de Gmail (u Outlook,
+Yahoo, iCloud o Proton), también "Abrir Gmail" (o el que corresponda), que
+abre ese webmail en otra pestaña. Antes de entrar no se ve ninguna
 publicación: la parte de la izquierda muestra solo temas y cantidades de
 `GET /api/public/resumen`.
 
@@ -927,12 +937,16 @@ mantiene la conexión abierta.
 
 ### ¿Por qué dos corridas de Apify?
 
-Una en modo `comments` (los comentarios) y otra en modo `posts` (caption, likes,
-comentarios totales, reproducciones, autor). Corren **en paralelo**, así que casi
-no suma tiempo. Si la de `posts` no trae nada, la publicación queda sin cuenta,
-likes ni texto: los datos de primer nivel de un comentario son del comentario,
-nunca del posteo. Las dos pasan por la cola
-de runs simultáneos (abajo) y siguen corriendo a la vez mientras haya lugar.
+Una de la publicación (`apify/instagram-scraper` en modo `posts`: caption,
+likes, comentarios totales, reproducciones, autor) y otra de los
+comentarios. Desde la fase G van **una después de la otra**: primero la
+publicación, porque su número de comentarios decide cuántos pedir y si
+hay que confirmar el costo antes (con más de 1.000); después los
+comentarios con sus respuestas (`apify/instagram-comment-scraper` con
+`includeNestedComments`). Si la publicación no trae nada, queda sin cuenta,
+likes ni texto: los datos de primer nivel de un comentario son del
+comentario, nunca del posteo. Las dos pasan por la cola de runs
+simultáneos (abajo).
 
 ### Runs simultáneos de Apify (cola global)
 
@@ -1188,7 +1202,7 @@ en el tag `v3-riel-radar`.
   **últimas publicaciones** de Instagram: un clic abre esa publicación en el
   pop-up del Monitoreo. Se actualiza solo cada minuto. Los **análisis
   recientes** (fase E): los 4 últimos, cada uno abre su análisis.
-- **Análisis de publicación** (fases E y F): la solapa de la maqueta. Ver
+- **Análisis de publicación** (fases E, F y G): la solapa de la maqueta. Ver
   "Análisis de publicación en el servidor" más abajo.
 - **Favicon** nuevo: el ◎ de la marca.
 
@@ -1204,14 +1218,34 @@ nada ni vuelve a gastar, y el resultado queda en la tabla `analisis` y en
   lo dice con su fecha y ofrece verlo o analizar de nuevo. Si hay uno en
   curso, lo sigue. Enter con un análisis en curso no dispara otro.
 - **Pasos reales**: esperar turno en Apify (solo si había otras corridas
-  ocupando los lugares), traer la publicación, traer los comentarios,
+  ocupando los lugares), traer la publicación, confirmar el costo (solo con
+  más de 1.000 comentarios), traer los comentarios y sus respuestas,
   clasificar tono, postura y temas (los clasificados de las tandas que van
   terminando: "87 de 287", "187 de 287"…), detectar verificados y figuras
   públicas, ubicar los reclamos y armar el informe. Cada detalle lo escribe
   el trabajo; nada es una frase fija ni un porcentaje simulado.
-- **Cuántos comentarios**: `COMMENTS_LIMIT` (los que se piden a Apify) y
-  `COMMENTS_ANALYSIS_LIMIT` (los que van al modelo) valen **300** por
-  defecto; un valor en el `.env` los pisa. Valen solo para Instagram: X
+- **Con más de 1.000 comentarios** (fase G, `openspec/changes/respuestas-tope-mapa/`):
+  la publicación ya se trajo, pero antes de traer los comentarios la
+  pantalla muestra "Esta publicación tiene N comentarios · costo estimado
+  US$ X" con "Analizar todo" (o "Analizar 3.000", si tiene más) y
+  "Analizar 1.000", cada uno con su costo, y "Cancelar". El costo es un
+  estimado: Apify a 0,0023 por ítem y el modelo según lo medido en una
+  corrida real. Solo confirma quien lo arrancó; si nadie elige en 30
+  minutos, se cancela. La publicación no se vuelve a pedir.
+- **Las respuestas** (fase G): los comentarios llegan con sus respuestas, y
+  cada respuesta se clasifica como un comentario más, sabiendo a quién
+  responde. Las de la propia cuenta no se clasifican ni cuentan en nada:
+  van a "¿La cuenta respondió?" (a cuántos comentarios contestó, cuáles y
+  qué les dijo). "Los que más pegaron" se ve por likes o por respuestas
+  (los debates, con el tono de sus respuestas); en la lista, cada respuesta
+  dice "↳ responde a @usuario", un comentario con respuestas abre su hilo
+  y hay un filtro "Respuestas". El informe lo dice en "Quién habló" y el
+  CSV suma a qué número y a quién responde cada una. No llegan todas las
+  respuestas que declara Instagram: "analizados N de M" dice lo que llegó.
+- **Cuántos comentarios**: `COMMENTS_LIMIT` (lo que se pide a Apify:
+  comentarios y respuestas) y `COMMENTS_ANALYSIS_LIMIT` (lo que va al
+  modelo) valen **3.000** por defecto desde la fase G (tope 5.000); un
+  valor en el `.env` los pisa. Valen solo para Instagram: X
   sigue con 150 y su propia variable, `X_COMMENTS_ANALYSIS_LIMIT`, porque
   manda todo el hilo en una sola llamada. Se clasifican en **tandas de
   50** por llamada (así no se choca con el tope de salida del modelo, que
@@ -1654,8 +1688,10 @@ de perfil y tiene la búsqueda nativa de Instagram.
 
 **Qué se conservó**:
 
-- El análisis de una publicación (comentarios, `src/apify.js`) sigue con
-  `apify/instagram-scraper`: apidojo no devuelve comentarios.
+- El análisis de una publicación (comentarios, `src/apify.js`) siguió con
+  `apify/instagram-scraper`: apidojo no devuelve comentarios. Desde la fase
+  G la publicación sigue con ese actor y los comentarios van con
+  `apify/instagram-comment-scraper`, el único que trae las respuestas.
 - La forma de los datos: `detected_posts.id` (id numérico de Instagram) y
   `url` (`/p/{code}/`) son los mismos en los dos actores, verificado contra
   una corrida real; el dedupe y el refresco de métricas siguen matcheando y

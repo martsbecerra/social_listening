@@ -389,3 +389,83 @@ describe('reclamos', { concurrency: false }, () => {
     assert.deepEqual(eventos.find(([, key]) => key === 'reclamos').slice(0, 3), ['skip', 'reclamos', 'sin reclamos con ubicación']);
   });
 });
+
+describe('respuestas (fase G)', { concurrency: false }, () => {
+  const hora = (min) => new Date(Date.parse(POST.postedAt) + min * 60000).toISOString();
+  const respuesta = (apifyId, username, parentApifyId, text, extra = {}) => ({
+    apifyId,
+    username,
+    isVerified: false,
+    likesCount: 1,
+    timestamp: hora(100),
+    text,
+    esRespuesta: true,
+    parentApifyId,
+    respuestasDeclaradas: null,
+    ...extra,
+  });
+  // vecino2 tiene dos respuestas (una de la cuenta); la cuenta contesta igual
+  // a vecino4 y a vecino5; una respuesta llega sin su comentario.
+  const conRespuestas = () => [
+    ...comentarios(6, (i) => ({ esRespuesta: false, parentApifyId: null, respuestasDeclaradas: i === 1 ? 3 : 0 })),
+    respuesta('r1', 'vecino9', 'c2', '@vecino2 tal cual', { likesCount: 2000, timestamp: hora(90) }),
+    respuesta('r2', 'GCBA', 'c2', '@vecino2 Ya lo pasamos al área.', { timestamp: hora(80) }),
+    respuesta('r3', 'gcba', 'c4', '¡Gracias!'),
+    respuesta('r4', 'gcba', 'c5', '¡Gracias!'),
+    respuesta('r5', 'vecino10', 'c999', 'respuesta sin su comentario'),
+  ];
+
+  test('las de la cuenta no van al modelo: quedan guardadas, sin tono, y no cuentan como analizadas', async () => {
+    const r = await analyzeComments({ url: URL, post: POST, comments: conRespuestas() });
+    const enviados = llamadas.filter((l) => l.schemaName === 'tanda_instagram').flatMap((l) => numerosDelPrompt(l.userPrompt).map(([, u]) => u));
+    assert.ok(!enviados.some((u) => u.toLowerCase() === 'gcba'), 'ninguna de la cuenta en las tandas');
+    assert.equal(enviados.length, 8);
+    const propias = r.comentarios.filter((c) => c.deLaCuenta);
+    assert.equal(propias.length, 3, 'las dos "¡Gracias!" a comentarios distintos no son la misma fila');
+    assert.ok(propias.every((c) => c.tono === null && c.postura === null && c.tema === null));
+    assert.equal(r.numeros.analizados, 8);
+    assert.equal(r.numeros.enviados, 8);
+    assert.equal(r.numeros.deLaCuenta, 3);
+    assert.equal(r.tonos.positivos + r.tonos.negativos + r.tonos.neutrales + r.tonos.ruido, 8);
+  });
+
+  test('cada respuesta va detrás de su comentario, con a quién responde y el principio de ese comentario', async () => {
+    await analyzeComments({ url: URL, post: POST, comments: conRespuestas() });
+    const prompt = llamadas.find((l) => l.schemaName === 'tanda_instagram').userPrompt;
+    assert.match(prompt, /^\d+\. @vecino2 \([^\n]*\n\d+\. @vecino9 ↳ responde a @vecino2: «Comentario número 2 sobre la plaza» \(2000 likes/m);
+    assert.match(prompt, /^\d+\. @vecino10 \(/m, 'sin su comentario, va sin la flecha');
+    assert.ok(!/@vecino10 ↳/.test(prompt));
+  });
+
+  test('una respuesta a la cuenta lo dice en la tanda', async () => {
+    const comments = [
+      { apifyId: 'p1', username: 'gcba', isVerified: true, likesCount: 5, timestamp: hora(1), text: 'Hoy inauguramos la plaza', esRespuesta: false, parentApifyId: null },
+      respuesta('r9', 'vecino1', 'p1', '@gcba ¿y la de Lugano?'),
+    ];
+    await analyzeComments({ url: URL, post: POST, comments });
+    const prompt = llamadas.find((l) => l.schemaName === 'tanda_instagram').userPrompt;
+    assert.match(prompt, /@vecino1 ↳ responde a @gcba \(la cuenta que publicó\): «Hoy inauguramos la plaza»/);
+  });
+
+  test('lo que guarda la fila: respuesta, número y @usuario al que responde, de la cuenta, respuestas declaradas', async () => {
+    const r = await analyzeComments({ url: URL, post: POST, comments: conRespuestas() });
+    const de = (texto) => r.comentarios.find((c) => c.texto === texto);
+    const padre = r.comentarios.find((c) => c.usuario === 'vecino2');
+    assert.equal(padre.esRespuesta, false);
+    assert.equal(padre.respuestasDeclaradas, 3);
+    const r1 = de('@vecino2 tal cual');
+    assert.deepEqual([r1.esRespuesta, r1.respondeA, r1.respondeAUsuario, r1.deLaCuenta], [true, padre.n, 'vecino2', false]);
+    assert.equal(r1.n, padre.n + 2, 'detrás de su comentario, después de la de la cuenta, que es más vieja');
+    const r2 = de('@vecino2 Ya lo pasamos al área.');
+    assert.deepEqual([r2.deLaCuenta, r2.respondeA, r2.n], [true, padre.n, padre.n + 1]);
+    const huerfana = de('respuesta sin su comentario');
+    assert.deepEqual([huerfana.esRespuesta, huerfana.respondeA, huerfana.respondeAUsuario], [true, null, null]);
+    assert.ok(r.comentarios.every((c, i) => c.n === i + 1));
+  });
+
+  test('sin respuestas (análisis de antes), los comentarios quedan en el mismo orden de siempre', async () => {
+    const r = await analyzeComments({ url: URL, post: POST, comments: comentarios(12) });
+    assert.ok(r.comentarios.every((c) => c.esRespuesta === false && c.respondeA === null && c.deLaCuenta === false));
+    assert.equal(r.numeros.deLaCuenta, 0);
+  });
+});

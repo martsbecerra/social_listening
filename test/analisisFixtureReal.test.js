@@ -32,6 +32,7 @@ const geoWorker = require('../src/geoWorker');
 const postImages = require('../src/postImages');
 const analysisJob = require('../src/analysisJob');
 const { buildCommentTimeline } = require('../src/commentTimeline');
+const { apifySimulado } = require('./helpers/apifySimulado');
 
 const FIX = path.join(__dirname, 'fixtures', 'apify');
 const PUBLICACION = JSON.parse(fs.readFileSync(path.join(FIX, 'analisis-publicacion.json'), 'utf8'));
@@ -102,11 +103,18 @@ describe('la normalización contra el fixture', () => {
       const { post, comments, scrapeMeta } = apify.buildAnalysisData(PUBLICACION, COMENTARIOS, URL_POST, 300);
       assert.equal(post.commentsCount, 138);
       assert.equal(comments.length, 64);
-      assert.deepEqual(scrapeMeta, { commentsLimitRequested: 300, rawCommentItems: 64, commentsOnPost: 138, comentariosTrasNormalizar: 64 });
+      assert.deepEqual(scrapeMeta, {
+        commentsLimitRequested: 300,
+        rawCommentItems: 64,
+        primerNivel: 64,
+        respuestas: 0,
+        commentsOnPost: 138,
+        comentariosTrasNormalizar: 64,
+      });
     } finally {
       console.warn = warn;
     }
-    assert.match(avisos.join('\n'), /64 ítems de comentarios, menos que COMMENTS_LIMIT=300\. Instagram reporta 138/);
+    assert.match(avisos.join('\n'), /64 comentarios de primer nivel \(y 0 respuestas\), menos que los 300 pedidos\. Instagram reporta 138/);
   });
 
   test('"Cuándo comentaron" se arma: 64 con fecha, de a 6 h (48,9 h de comentarios), pico en el primer tramo', () => {
@@ -129,14 +137,7 @@ describe('el análisis entero con lo que devolvió el actor', { concurrency: fal
     console.log = () => {};
     console.warn = () => {};
     console.error = () => {};
-    global.fetch = async (url, opts) => {
-      if (!String(url).includes('api.apify.com')) throw new Error(`sin red: ${url}`);
-      const body = JSON.parse(opts.body);
-      return new Response(JSON.stringify(body.resultsType === 'posts' ? PUBLICACION : COMENTARIOS), {
-        status: 201,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    };
+    global.fetch = apifySimulado((input) => (input.resultsType === 'posts' ? PUBLICACION : COMENTARIOS));
     llm.requestStructuredAnalysis = async ({ schemaName, userPrompt }) => {
       if (schemaName === 'tanda_instagram') {
         const lista = [...userPrompt.matchAll(/^(\d+)\. @(\S+)/gm)].map((m) => Number(m[1]));

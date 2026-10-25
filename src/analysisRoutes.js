@@ -5,6 +5,7 @@
 // navegador.
 // --------------------------------------------------------------------------
 //   POST  /api/analyze                     { url } → 202 { id, yaEnCurso }
+//   POST  /api/analyze/:id/confirmar       { alcance: 'todo' | 'parcial' | 'cancelar' } (fase G)
 //   GET   /api/analyze/progress?plataforma=&id=      los pasos (o la fila)
 //   GET   /api/analisis?plataforma=&limit=&q=&f=&ord= recientes / galería y en curso
 //   GET   /api/analisis?plataforma=&url=             ¿ya se analizó ese link?
@@ -177,13 +178,38 @@ function register(app) {
     }
   });
 
+  // Con más de 1.000 comentarios el trabajo espera esta elección antes de
+  // traerlos (src/analysisJob.js). Solo la confirma quien lo arrancó.
+  const CONFIRMAR_ERRORES = {
+    'no-espera': [409, 'Ese análisis ya no está esperando una confirmación.'],
+    ajeno: [403, 'Solo puede confirmarlo quien arrancó el análisis.'],
+    'sin-opcion': [400, 'Esa opción no está entre las ofrecidas.'],
+  };
+  app.post('/api/analyze/:id/confirmar', (req, res) => {
+    const id = idDe(req);
+    if (!id) return res.status(400).json({ error: 'Falta el id del análisis.' });
+    const alcance = req.body && typeof req.body.alcance === 'string' ? req.body.alcance : '';
+    if (!['todo', 'parcial', 'cancelar'].includes(alcance)) return res.status(400).json({ error: 'Elegí analizar todo, una parte o cancelar.' });
+    const r = analysisJob.confirmar(id, alcance, { quien: req.auth ? req.auth.email : null });
+    if (r !== 'ok') {
+      const [status, error] = CONFIRMAR_ERRORES[r];
+      return res.status(status).json({ error });
+    }
+    return res.json({ ok: true, alcance });
+  });
+
   app.get('/api/analyze/progress', (req, res) => {
     const plataforma = plataformaDe(req, res);
     if (!plataforma) return undefined;
     const id = Number(req.query.id);
     if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'Falta el id del análisis.' });
     const view = progress.getView(id, plataforma);
-    if (view) return res.json(view);
+    if (view) {
+      // Si espera la confirmación: ¿la puede dar quien mira? (si no, la
+      // pantalla no le ofrece los botones). El correo no sale de acá.
+      if (view.confirmacion) view.confirmacion = { ...view.confirmacion, puedeConfirmar: analysisJob.puedeConfirmar(id, req.auth ? req.auth.email : null) };
+      return res.json(view);
+    }
     // Ya no está en memoria (terminó hace rato o se reinició el servidor): la fila.
     const fila = db.getAnalisis(id, plataforma);
     if (!fila) return res.status(404).json({ error: 'No existe ese análisis.' });

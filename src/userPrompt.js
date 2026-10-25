@@ -26,9 +26,24 @@ function commentHead(c) {
   return { verified, datos: `${likes}${fecha}` };
 }
 
+// Del comentario al que responde una respuesta va el principio: es
+// contexto, no algo a clasificar.
+const PADRE_MAX = 140;
+
+/** " ↳ responde a @usuario: «…»" para una respuesta con su comentario conocido; "" si no. */
+function respondeA(c, post) {
+  if (!c.padre) return '';
+  const texto = String(c.padre.texto || '').replace(/\s+/g, ' ').trim();
+  const recorte = texto.length > PADRE_MAX ? `${texto.slice(0, PADRE_MAX - 1).trimEnd()}…` : texto;
+  const dueno = post && post.ownerUsername ? String(post.ownerUsername).toLowerCase() : null;
+  const cuenta = dueno && String(c.padre.usuario || '').toLowerCase() === dueno ? ' (la cuenta que publicó)' : '';
+  return ` ↳ responde a @${c.padre.usuario}${cuenta}: «${recorte}»`;
+}
+
 /**
  * Una tanda: los comentarios numerados desde 1 (el index de la respuesta es
- * el de esta lista, no el de la muestra entera).
+ * el de esta lista, no el de la muestra entera). Una respuesta lleva, como
+ * contexto, a quién responde y el principio de ese comentario.
  * @param {{ url: string, post: object, batch: Array, numero: number, tandas: number, temas: Array<{ numero: number, nombre: string }> }} params
  *   temas: la lista vigente; vacía = esta tanda define los temas.
  */
@@ -36,7 +51,7 @@ function buildBatchPrompt({ url, post, batch, numero, tandas, temas }) {
   const commentsText = batch
     .map((c, i) => {
       const { verified, datos } = commentHead(c);
-      return `${i + 1}. @${c.username}${verified} (${datos}): ${c.text}`;
+      return `${i + 1}. @${c.username}${verified}${respondeA(c, post)} (${datos}): ${c.text}`;
     })
     .join('\n');
   const bloqueTemas =
@@ -59,6 +74,15 @@ ${commentsText}
 
 const POSTURA = { favor: 'a favor', neutra: 'postura neutra', critica: 'crítica' };
 
+/** Fase G: las respuestas y si la cuenta contestó, solo si hay algo que decir. */
+function lineaRespuestas(vista) {
+  const r = vista.respuestas;
+  const lc = vista.laCuentaRespondio;
+  if (!r || !lc || (r.traidas === 0 && lc.comentarios === 0)) return null;
+  const debate = vista.debates && vista.debates[0] ? `; el que más respuestas tuvo: @${vista.debates[0].usuario} (${vista.debates[0].respuestasPublico})` : '';
+  return `Respuestas del público: ${r.traidas} (${r.comentariosConRespuesta} comentarios con respuesta${debate}). La cuenta que publicó respondió a ${lc.comentarios} comentarios (${lc.negativos} negativos); sus respuestas no se clasifican`;
+}
+
 /**
  * La síntesis: los números del sistema (de analysisMetrics), los temas con
  * sus cantidades, el tema principal fuera del posteo, los verificados que no
@@ -77,6 +101,7 @@ function buildSynthesisPrompt({ url, post, vista, muestra, verificadosSinFicha }
     `Tono: ${t.positivos} positivos (${pct(t.proporcion.positivo)}), ${t.neutrales} neutrales (${pct(t.proporcion.neutral)}), ${t.negativos} negativos (${pct(t.proporcion.negativo)}); ruido aparte: ${t.ruido}`,
     p ? `Postura hacia la gestión: ${p.favor} a favor (${pct(p.proporcion.favor)}), ${p.neutra} neutra (${pct(p.proporcion.neutra)}), ${p.critica} crítica (${pct(p.proporcion.critica)})` : null,
     s ? `Hablan del posteo: ${s.si} (${pct(s.proporcion)}); lo usan para otra cosa: ${s.no}` : null,
+    lineaRespuestas(vista),
   ].filter(Boolean);
   // Los fuera del posteo de CADA tema (los desvíos de la vista son solo los 4 primeros).
   const temas = vista.temas

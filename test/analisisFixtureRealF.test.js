@@ -36,6 +36,7 @@ const analysisJob = require('../src/analysisJob');
 const { BATCH_SIZE, BATCH_MAX_TOKENS } = require('../src/analyzeComments');
 const { normalizeBatchClassifications, normalizeTemasDeTanda, normalizeSynthesis } = require('../src/validateAnalysis');
 const { POSTURAS } = require('../src/analysisSchema');
+const { apifySimulado } = require('./helpers/apifySimulado');
 
 const leer = (...partes) => JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', ...partes), 'utf8'));
 const PUBLICACION = leer('apify', 'analisis-f-publicacion.json');
@@ -126,11 +127,7 @@ describe('el análisis entero, como en la corrida', { concurrency: false }, () =
     console.log = () => {};
     console.warn = () => {};
     console.error = () => {};
-    global.fetch = async (url, opts) => {
-      if (!String(url).includes('api.apify.com')) throw new Error(`sin red: ${url}`);
-      const body = JSON.parse(opts.body);
-      return new Response(JSON.stringify(body.resultsType === 'posts' ? PUBLICACION : COMENTARIOS), { status: 201, headers: { 'Content-Type': 'application/json' } });
-    };
+    global.fetch = apifySimulado((input) => (input.resultsType === 'posts' ? PUBLICACION : COMENTARIOS));
     // La tanda con los mismos usuarios que la que respondió, su respuesta
     // real; las otras se cortan por el tope (y sus mitades fallan), así
     // quedan los 50 clasificados de la corrida.

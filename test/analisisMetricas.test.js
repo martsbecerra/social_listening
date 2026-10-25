@@ -310,7 +310,7 @@ describe('un análisis v1 (fase E) se sigue abriendo', () => {
 
   test('lo que se puede contar con sus comentarios, y los bloques v2 no disponibles', () => {
     assert.equal(v.version, 1);
-    assert.deepEqual(v.disponible, { postura: false, sobrePosteo: false, hecho: false, pedidos: false });
+    assert.deepEqual(v.disponible, { postura: false, sobrePosteo: false, hecho: false, pedidos: false, respuestas: false });
     assert.equal(v.postura, null);
     assert.equal(v.sobrePosteo, null);
     assert.equal(v.pedidos, null);
@@ -383,7 +383,8 @@ describe('el informe de 8 puntos y el CSV de comentarios', () => {
     const csv = buildComentariosCsv(v).trim().split('\n');
     assert.equal(csv.length, 21);
     assert.match(csv[0], /^"Número","Usuario","Verificada","Likes","Fecha \(hora de Argentina\)"/);
-    assert.equal(csv[1], '"1","leg1","sí","500","19/10/2026, 10:06","0.1","negativo","crítica","Vendedor de churros","no","no","Mientras inauguran, le sacan el carrito al churrero. @gcba @GCBA 😡😡"');
+    // Las columnas de las respuestas, vacías: es anterior a la fase G.
+    assert.equal(csv[1], '"1","leg1","sí","500","19/10/2026, 10:06","0.1","negativo","crítica","Vendedor de churros","no","no","","","","","Mientras inauguran, le sacan el carrito al churrero. @gcba @GCBA 😡😡"');
     assert.match(csv[20], /"sin clasificar"/);
   });
 });
@@ -498,5 +499,157 @@ describe('correcciones de la revisión', () => {
     assert.equal(campo('-3 cuadras'), `"'-3 cuadras"`);
     assert.equal(campo('\t=1'), `"'\t=1"`);
     assert.equal(campo('\r=1'), `"'\r=1"`);
+  });
+});
+
+// Fase G: las respuestas. La fila de siempre (los 20 de comentariosV2) más
+// cinco respuestas del público, dos de la cuenta (@jorgemacri, la dueña:
+// verificada y con likes, para ver que no entra en nada) y un comentario
+// suelto de la cuenta.
+function filaG() {
+  const resp = (n, usuario, respondeA, respondeAUsuario, tono, texto, extra = {}) => ({
+    n,
+    usuario,
+    verificada: false,
+    likes: 1,
+    tono,
+    postura: tono === 'negativo' ? 'critica' : tono === 'positivo' ? 'favor' : 'neutra',
+    tema: 2,
+    sobrePosteo: true,
+    pedido: false,
+    texto,
+    fecha: en(12),
+    esRespuesta: true,
+    respondeA,
+    respondeAUsuario,
+    deLaCuenta: false,
+    respuestasDeclaradas: null,
+    ...extra,
+  });
+  const deLaCuenta = (n, extra) => ({
+    n,
+    usuario: 'jorgemacri',
+    verificada: true,
+    likes: 500,
+    tono: null,
+    postura: null,
+    tema: null,
+    sobrePosteo: null,
+    pedido: null,
+    fecha: en(13),
+    esRespuesta: true,
+    respondeAUsuario: null,
+    deLaCuenta: true,
+    respuestasDeclaradas: null,
+    ...extra,
+  });
+  const comentarios = [
+    // vecina9 (n 9) declara 6 respuestas; leg1 (n 1), 2.
+    ...comentariosV2().map((c) => ({ ...c, esRespuesta: false, respondeA: null, respondeAUsuario: null, deLaCuenta: false, respuestasDeclaradas: c.n === 9 ? 6 : c.n === 1 ? 2 : 0 })),
+    resp(21, 'vecino21', 9, 'vecina9', 'positivo', '@vecina9 tal cual 👏'),
+    resp(22, 'vecino22', 9, 'vecina9', 'negativo', '@vecina9 @gcba no estoy de acuerdo'),
+    resp(23, 'vecino23', 9, 'vecina9', 'positivo', '@vecina9 hermoso'),
+    deLaCuenta(24, { respondeA: 9, respondeAUsuario: 'vecina9', texto: '@vecina9 ¡Gracias!' }),
+    resp(25, 'vecino25', 1, 'leg1', 'negativo', '@leg1 Exacto'),
+    resp(26, 'vecino26', 1, 'leg1', 'negativo', '@leg1 Una vergüenza'),
+    // A un comentario que no entró en la muestra.
+    deLaCuenta(27, { respondeA: null, respondeAUsuario: 'vecino99', texto: '@vecino99 Ya lo vemos' }),
+    // Suelto, no una respuesta.
+    deLaCuenta(28, { esRespuesta: false, respondeA: null, texto: 'Gracias a todos por venir 🙌' }),
+    // vecina12 (n 12) solo tiene la respuesta de la cuenta: no es un debate.
+    deLaCuenta(29, { respondeA: 12, respondeAUsuario: 'vecina12', texto: '@vecina12 ¡Gracias!' }),
+  ];
+  return filaV2({ comentarios, traidos: 29, analizados: 24, resultado: { ...filaV2().resultado, respuestas: true } });
+}
+
+describe('respuestas (fase G)', () => {
+  const v = buildAnalysisView(filaG(), { figuras: FIGURAS });
+
+  test('lo de la cuenta queda fuera de todo: tono, sin clasificar, verificados, los que más pegaron, emojis', () => {
+    // 18 sin ruido + las 5 respuestas del público: 8 + 2 positivos, 3 + 0 neutrales, 7 + 3 negativos.
+    assert.deepEqual([v.tono.positivos, v.tono.neutrales, v.tono.negativos, v.tono.base], [10, 3, 10, 23]);
+    assert.equal(v.tono.sinClasificar, 1, 'solo nadie20: los de la cuenta no son "sin clasificar"');
+    assert.ok(!v.quienHablo.some((q) => q.usuario === 'jorgemacri'), 'la cuenta no "habló" en su publicación');
+    assert.ok(!v.top.some((c) => c.deLaCuenta), 'con 500 likes, no entra en los que más pegaron');
+    assert.ok(!v.emojis.lista.some((e) => e.emoji === '🙌'), 'su 🙌 no cuenta');
+    assert.ok(v.comentarios.some((c) => c.n === 28 && c.deLaCuenta), 'pero sigue en la lista');
+  });
+
+  test('etiquetas: la @mención con la que abre una respuesta no cuenta; las demás, sí', () => {
+    const de = (cuenta) => (v.etiquetas.cuentas.find((x) => x.cuenta === cuenta) || {}).n || 0;
+    assert.equal(de('@vecina9'), 0);
+    assert.equal(de('@gcba'), 3, 'la de la respuesta 22, después de la mención, suma');
+    assert.equal(de('@leg1'), 1, 'solo la del comentario 5');
+  });
+
+  test('cada comentario sabe cuántas respuestas le llegaron (también las de la cuenta)', () => {
+    const n = (k) => v.comentarios.find((c) => c.n === k);
+    assert.deepEqual([n(9).respuestas, n(9).respuestasDeclaradas], [4, 6]);
+    assert.equal(n(1).respuestas, 2);
+    assert.equal(n(12).respuestas, 1);
+    assert.equal(n(2).respuestas, 0);
+    assert.equal(n(21).respuestas, null, 'una respuesta no tiene respuestas');
+  });
+
+  test('debates: los del público con más respuestas del público, con su tono', () => {
+    assert.deepEqual(
+      v.debates.map((d) => [d.n, d.respuestasPublico, d.tonosRespuestas, d.respondioLaCuenta]),
+      [
+        [9, 3, { positivo: 2, neutral: 0, negativo: 1 }, true],
+        [1, 2, { positivo: 0, neutral: 0, negativo: 2 }, false],
+      ]
+    );
+    assert.equal(v.debates[1].delHecho, true, 'leg1 es del hecho');
+    assert.deepEqual(v.respuestas, { traidas: 5, deLaCuenta: 3, comentariosConRespuesta: 2, declaradas: 8 });
+  });
+
+  test('¿La cuenta respondió?: a quién, qué, y lo que comentó suelto', () => {
+    const lc = v.laCuentaRespondio;
+    assert.deepEqual([lc.comentarios, lc.respuestas, lc.negativos, lc.sueltos], [3, 3, 0, 1]);
+    assert.deepEqual(
+      lc.lista.map((g) => [g.comentario.n, g.comentario.usuario, g.comentario.tono, g.respuestas.map((r) => r.texto)]),
+      [
+        [9, 'vecina9', 'positivo', ['@vecina9 ¡Gracias!']],
+        [12, 'vecina12', 'positivo', ['@vecina12 ¡Gracias!']],
+        [null, 'vecino99', null, ['@vecino99 Ya lo vemos']],
+      ]
+    );
+  });
+
+  test('un análisis anterior a la G: las respuestas no disponibles', () => {
+    const vieja = buildAnalysisView(filaV2(), {});
+    assert.equal(vieja.disponible.respuestas, false);
+    assert.deepEqual([vieja.debates, vieja.respuestas, vieja.laCuentaRespondio], [null, null, null]);
+    assert.equal(vieja.comentarios[0].respuestas, null);
+    assert.match(buildInforme(vieja), /6\) \*Quién habló:\* [^\n]* · respuestas: no disponible en este análisis \(es anterior a la fase G\)\n/);
+  });
+
+  test('el informe lo dice en "Quién habló"', () => {
+    const t = buildInforme(v);
+    assert.match(
+      t,
+      /6\) \*Quién habló:\* 2 verificados — [^\n]* · 5 respuestas \(2 comentarios con respuesta; el que más tuvo, @vecina9, 3\) · la cuenta respondió a 3 comentarios\n/
+    );
+    const sinNada = buildInforme(buildAnalysisView(filaV2({ resultado: { ...filaV2().resultado, respuestas: true } }), {}));
+    assert.match(sinNada, / · sin respuestas entre los comentarios · la cuenta no respondió\n/);
+  });
+
+  test('el CSV: a qué número y a quién responde, si es de la cuenta y cuántas respuestas trajo', () => {
+    const csv = buildComentariosCsv(v).trim().split('\n');
+    assert.match(csv[0], /"Pedido o pregunta","Responde al número","Responde a","De la cuenta","Respuestas traídas","Texto"$/);
+    const fila = (n) => csv.find((r) => r.startsWith(`"${n}",`));
+    assert.match(fila(9), /,"sí","no","","","no","4","Hermoso el lago/);
+    // El usuario va sin @, como en la columna Usuario; el texto que empieza
+    // con @ lleva el apóstrofo contra las fórmulas de Excel.
+    assert.match(fila(21), /,"positivo","a favor","Parque y obra","sí","no","9","vecina9","no","","'@vecina9 tal cual/);
+    assert.match(fila(24), /^"24","jorgemacri","sí","500","[^"]*","[^"]*","de la cuenta","","","","","9","vecina9","sí","",/);
+  });
+
+  test('la síntesis recibe las respuestas en sus números', () => {
+    const { buildSynthesisPrompt } = require('../src/userPrompt');
+    const prompt = buildSynthesisPrompt({ url: 'u', post: { ownerUsername: 'jorgemacri', commentsCount: 1284 }, vista: v, muestra: [], verificadosSinFicha: [] });
+    assert.match(prompt, /^Respuestas del público: 5 \(2 comentarios con respuesta; el que más respuestas tuvo: @vecina9 \(3\)\)\. La cuenta que publicó respondió a 3 comentarios \(0 negativos\); sus respuestas no se clasifican$/m);
+    const vieja = buildSynthesisPrompt({ url: 'u', post: { ownerUsername: 'x', commentsCount: 1 }, vista: buildAnalysisView(filaV2(), {}), muestra: [], verificadosSinFicha: [] });
+    assert.doesNotMatch(vieja, /Respuestas del público/);
   });
 });
