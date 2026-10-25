@@ -137,7 +137,7 @@ const CLASIFICACION_TANDA_SCHEMA = {
     sentiment: { type: 'string', enum: SENTIMENTS },
     postura: { type: 'string', enum: POSTURAS, description: 'Qué dice de la gestión, no cómo suena.' },
     tema: { type: 'integer', minimum: 0, description: 'El número del tema de la lista; 0 si es ruido o no encaja en ninguno.' },
-    sobre_posteo: { type: 'boolean', description: 'true si habla de lo que publica la cuenta; false si usa el posteo para otra cosa.' },
+    sobre_posteo: { type: 'boolean', description: 'true si habla de lo que publica la cuenta o es una reacción genérica a la persona (elogio o insulto sin tema concreto); false solo si usa el posteo para otro tema concreto.' },
     pedido: { type: 'boolean', description: 'true si pide algo concreto o pregunta.' },
     reclamosGeo: { type: 'array', items: RECLAMO_GEO_SCHEMA },
   },
