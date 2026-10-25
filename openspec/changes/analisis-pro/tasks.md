@@ -40,3 +40,28 @@ un servidor de prueba en otro puerto y una copia de la base.
 - [x] 4.3b Los fixtures anonimizados y su test (REQ-PRO-14): `test/analisisFixtureRealF.test.js`
 - [x] 4.4 Revisor independiente y PR sin mergear
 - [x] 4.5 La repetición solo del modelo con tandas de 50 (150 de 150, ninguna cortada, US$ 0,357) y el borrado de `data/account-types.example.json` (autorizado por el dueño)
+
+## Phase 5: F2, decisiones (rama `analisis-pro-pantalla`)
+
+- [x] 5.1 Respuestas del dueño (24/10/2026): edición de figuras en la tarjeta más una lista; las sugeridas descartadas quedan en la misma tabla con `origen = descartada`; en un v1, "No disponible en análisis anteriores" a la vista; el mapita solo con reclamos ubicados (los pendientes en la lista, sin punto); `#analisis-<id>` y `#analisis-galeria`. Se prueba con el análisis v2 de la repetición, sin gastar nada.
+
+## Phase 6: F2, servidor
+
+- [ ] 6.1 Figuras descartadas: `origen = descartada`, `POST /api/figuras/:username/descartar`, sin rol en la vista, fuera de los verificados sin ficha de la síntesis, una sugerencia nueva no la toca (REQ-PRO-17)
+
+## Phase 7: F2, pantalla
+
+- [ ] 7.1 La solapa de la maqueta en `instagram.html` y sus estilos bajo `.ana4` (REQ-PRO-15)
+- [ ] 7.2 Analizar, pasos con porcentaje, avisos, tira de recientes y vistas (REQ-PRO-15, REQ-PRO-18)
+- [ ] 7.3 Los bloques del resultado desde `vista`, con "No disponible en análisis anteriores" (REQ-PRO-15, REQ-PRO-16)
+- [ ] 7.4 Temas: filtro, ✎ y "+ tema" en v2 y v1 (REQ-PRO-12)
+- [ ] 7.5 Figuras: tarjeta y "Lista de figuras" (REQ-PRO-17)
+- [ ] 7.6 Comentarios y compartir (REQ-PRO-09, REQ-PRO-15)
+- [ ] 7.7 Galería e inicio (REQ-PRO-18)
+
+## Phase 8: cierre de la F2
+
+- [ ] 8.1 Servidor de prueba con el análisis v2 de la repetición, el v1 real de la fase E y los sembrados; capturas a 1366 y 375 px en claro, oscuro y con movimiento reducido; contraste
+- [ ] 8.2 CLAUDE.md, README y la lista de diferencias con la maqueta
+- [ ] 8.3 Suite con `IG_ACTOR=apidojo` y `apify`
+- [ ] 8.4 Revisor independiente y PR sin mergear

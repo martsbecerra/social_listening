@@ -133,6 +133,35 @@ en varios temas), 8 pedidos (5 de un comentario, ya sin los irónicos),
 ninguna figura sugerida para los 2 verificados sin ficha, la postura
 distinta del tono en 5 de 145.
 
+## F2: la pantalla
+
+La solapa 3 de la maqueta en `instagram.html`, todo bajo `.ana4` (X no
+cambia). Dos vistas con el selector de la maqueta: **Analizar** (el link,
+los pasos con su porcentaje, la tira de recientes y el resultado) y
+**Publicaciones analizadas** (la galería). El navegador no cuenta nada:
+cada bloque lee `vista` de `GET /api/analisis/:id` y, si no tiene el dato
+(un v1), lo dice ("No disponible en análisis anteriores") en vez de
+ocultarse. Scripts clásicos con prefijo `ana`, en tres archivos: el flujo
+(`analysis.js`: analizar, pasos, recientes, galería, hash), los bloques del
+resultado (`analysisBlocks.js`) y las figuras (`analysisFiguras.js`: la
+tarjeta y el diálogo "Lista de figuras").
+
+- **Figuras descartadas**: la misma tabla, `origen = descartada`
+  (`POST /api/figuras/:username/descartar`, solo para una sugerida). La
+  vista la trata como sin ficha (sin rol), la síntesis no la recibe como
+  verificado sin ficha y `upsertFiguraSugerida` no la toca. Agregarla o
+  editarla la pasa al equipo; quitarla la borra.
+- **Mapita**: el contorno de la Ciudad y los centros de las comunas de la
+  maqueta, en SVG; un punto por reclamo con `enMapa` (la regla del Mapa),
+  agrupados si quedan cerca, con el color de su categoría (`temaColor`).
+  Los que no están ubicados van en la lista, sin punto.
+- **Temas**: en un v2, ✎ manda `renombrar` (une si el nombre coincide),
+  "+ tema" `agregar` y "Quitar" (solo a mano) `quitar`; la respuesta es el
+  análisis entero. En un v1, la lista vieja, como en la fase E, y después
+  se vuelve a leer el análisis.
+- **Hash**: `#analisis-<id>` abre ese análisis; `#analisis-galeria`, la
+  galería.
+
 ## Testing Strategy
 
 | Capa | Qué | Cómo |
