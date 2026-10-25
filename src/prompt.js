@@ -118,7 +118,12 @@ D. Desempate general:
 - Si dudás entre positivo y negativo, clasificá neutral. Si dudás entre favor y critica, neutra.
 - No uses la cantidad de likes del comentario para decidir nada.
 - El badge [VERIFICADA] no implica por sí solo ningún tono ni postura; basate en el texto.
-- No le asignes a nadie una ideología ni un rol político: la postura es del comentario, no de la persona.`;
+- No le asignes a nadie una ideología ni un rol político: la postura es del comentario, no de la persona.
+
+E. Respuestas a otro comentario (las que dicen "↳ responde a @usuario: «…»"):
+- Se clasifica la respuesta, no el comentario al que responde: lo de «…» es contexto para entenderla.
+- Si la respuesta solo le da la razón ("tal cual", "exacto", "👏"), lleva el tono y la postura de lo que respalda. Si lo discute o agrega otra cosa, clasificá lo que dice ella.
+- La @mención del principio de una respuesta es la que pone Instagram al responder: no es una etiqueta a un amigo.`;
 
 // La clasificación de UNA tanda.
 const TANDA_SYSTEM_PROMPT = `${INTRO}

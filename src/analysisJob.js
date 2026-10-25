@@ -258,7 +258,18 @@ async function run(id, url) {
     await foto;
     const s = result.sintesis;
     // lecturaEstrategica: la que lee la solapa de la fase E hasta la F2.
-    const resultado = { version: 2, lectura: s.lectura, lecturaEstrategica: s.lectura, hecho: s.hecho, pedidos: s.pedidos, queMirar: s.queMirar, figurasSugeridas: s.figurasSugeridas };
+    // respuestas: los comentarios se pidieron con sus respuestas (fase G);
+    // sin la marca, la pantalla dice "No disponible en análisis anteriores".
+    const resultado = {
+      version: 2,
+      respuestas: true,
+      lectura: s.lectura,
+      lecturaEstrategica: s.lectura,
+      hecho: s.hecho,
+      pedidos: s.pedidos,
+      queMirar: s.queMirar,
+      figurasSugeridas: s.figurasSugeridas,
+    };
     const finishedAt = new Date().toISOString();
     const usdApify = db.sumApifyUsdForAnalisis(id).usd;
     const usdModelo = result.tokenUsage ? result.tokenUsage.costUsd ?? null : null;

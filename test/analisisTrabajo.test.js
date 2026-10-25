@@ -204,6 +204,7 @@ describe('el trabajo del análisis', { concurrency: false }, () => {
     assert.deepEqual([a.traidos, a.unicos, a.enviados, a.analizados], [25, 25, 25, 25]);
     assert.deepEqual(a.tonos, { positivos: 19, neutrales: 0, negativos: 6, ruido: 0 });
     assert.equal(a.resultado.version, 2);
+    assert.equal(a.resultado.respuestas, true, 'los comentarios se pidieron con sus respuestas (fase G)');
     assert.equal(a.resultado.lectura, 'La lectura estratégica.');
     assert.equal(a.resultado.lecturaEstrategica, 'La lectura estratégica.', 'la que lee la solapa de la fase E');
     assert.deepEqual(a.resultado.hecho, { temaId: 1, titulo: 'Un pozo enorme en Salta', descripcion: 'Lo mencionan muchos.' });
@@ -229,6 +230,11 @@ describe('el trabajo del análisis', { concurrency: false }, () => {
       tema: 2,
       sobrePosteo: true,
       pedido: false,
+      esRespuesta: false,
+      respondeA: null,
+      respondeAUsuario: null,
+      deLaCuenta: false,
+      respuestasDeclaradas: null,
     });
     assert.equal(a.cuando.unidadHoras, 1);
     assert.equal(a.cuando.conFecha, 25);

@@ -25,11 +25,19 @@
 2. `normalizeComments` le pone a cada ítem `parentApifyId` (el id del padre,
    de `parentCommentUrl`), `esRespuesta` y `respuestasDeclaradas`
    (`repliesCount`).
-3. Las respuestas de la propia cuenta (el usuario es el dueño de la
-   publicación) no van al modelo: se guardan con `deLaCuenta: true` y sin
-   tono. El resto va en las tandas como cualquier comentario, con la línea
-   `N. @usuario ↳ responde a #M @padre …` (M, el número del padre en la
-   muestra, si está). El schema no cambia.
+3. Los comentarios de la propia cuenta (el usuario es el dueño de la
+   publicación) no van al modelo ni ocupan el tope: se guardan con
+   `deLaCuenta: true` y sin tono. El resto va en las tandas como cualquier
+   comentario; cada respuesta, detrás de su comentario (las de uno mismo,
+   de la más vieja a la más nueva) y con la línea `N. @usuario ↳ responde
+   a @padre: «principio del comentario de arriba»` (hasta 140 caracteres;
+   "(la cuenta que publicó)" si responde a la cuenta). No va el número del
+   padre: la tanda numera solo su lista, y el de arriba puede estar en
+   otra. El prompt suma la regla E (se clasifica la respuesta; si solo le
+   da la razón, lleva el tono y la postura de lo que respalda; la
+   @mención del principio no es una etiqueta). El schema no cambia. Dos
+   respuestas iguales a comentarios distintos ("¡Gracias!") no se toman
+   como repetidas.
 4. Cada comentario guardado suma `respondeA` (el número del padre, o null),
    `respondeAUsuario`, `esRespuesta`, `deLaCuenta` y
    `respuestasDeclaradas`. `resultado.respuestas: true` marca un análisis

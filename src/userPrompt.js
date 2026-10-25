@@ -26,9 +26,24 @@ function commentHead(c) {
   return { verified, datos: `${likes}${fecha}` };
 }
 
+// Del comentario al que responde una respuesta va el principio: es
+// contexto, no algo a clasificar.
+const PADRE_MAX = 140;
+
+/** " ↳ responde a @usuario: «…»" para una respuesta con su comentario conocido; "" si no. */
+function respondeA(c, post) {
+  if (!c.padre) return '';
+  const texto = String(c.padre.texto || '').replace(/\s+/g, ' ').trim();
+  const recorte = texto.length > PADRE_MAX ? `${texto.slice(0, PADRE_MAX - 1).trimEnd()}…` : texto;
+  const dueno = post && post.ownerUsername ? String(post.ownerUsername).toLowerCase() : null;
+  const cuenta = dueno && String(c.padre.usuario || '').toLowerCase() === dueno ? ' (la cuenta que publicó)' : '';
+  return ` ↳ responde a @${c.padre.usuario}${cuenta}: «${recorte}»`;
+}
+
 /**
  * Una tanda: los comentarios numerados desde 1 (el index de la respuesta es
- * el de esta lista, no el de la muestra entera).
+ * el de esta lista, no el de la muestra entera). Una respuesta lleva, como
+ * contexto, a quién responde y el principio de ese comentario.
  * @param {{ url: string, post: object, batch: Array, numero: number, tandas: number, temas: Array<{ numero: number, nombre: string }> }} params
  *   temas: la lista vigente; vacía = esta tanda define los temas.
  */
@@ -36,7 +51,7 @@ function buildBatchPrompt({ url, post, batch, numero, tandas, temas }) {
   const commentsText = batch
     .map((c, i) => {
       const { verified, datos } = commentHead(c);
-      return `${i + 1}. @${c.username}${verified} (${datos}): ${c.text}`;
+      return `${i + 1}. @${c.username}${verified}${respondeA(c, post)} (${datos}): ${c.text}`;
     })
     .join('\n');
   const bloqueTemas =

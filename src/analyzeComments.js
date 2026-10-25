@@ -35,7 +35,7 @@
 
 const { TANDA_SYSTEM_PROMPT, SINTESIS_SYSTEM_PROMPT } = require('./prompt');
 const { TANDA_JSON_SCHEMA, SINTESIS_JSON_SCHEMA } = require('./analysisSchema');
-const { prepareCommentSample } = require('./commentSample');
+const { prepareCommentSample, dedupeComments, ordenarConRespuestas } = require('./commentSample');
 const { normalizeBatchClassifications, normalizeTemasDeTanda, applyHeuristicsToClassified, normalizeSynthesis } = require('./validateAnalysis');
 const { buildReclamosCsv } = require('./reportBuilder');
 const { countTones } = require('./sentimentAggregate');
@@ -122,8 +122,18 @@ function crearTemas() {
   };
 }
 
-/** Los comentarios como los guarda la fila (v2), numerados desde 1 en la muestra. */
+/**
+ * Los comentarios como los guarda la fila (v2), numerados desde 1 en la
+ * muestra. Desde la fase G cada uno dice si es una respuesta (y a qué número
+ * de la muestra responde, o null si ese no entró, y a qué @usuario), si es
+ * de la propia cuenta (sin clasificar: no va al modelo) y, el de primer
+ * nivel, cuántas respuestas declara Instagram.
+ */
 function comentariosParaGuardar(sample, classifications) {
+  const numeroDe = new Map();
+  sample.forEach((c, i) => {
+    if (!c.esRespuesta && c.apifyId != null) numeroDe.set(String(c.apifyId), i + 1);
+  });
   return sample.map((c, i) => {
     const row = classifications[i];
     return {
@@ -138,8 +148,41 @@ function comentariosParaGuardar(sample, classifications) {
       tema: row ? row.temaId : null,
       sobrePosteo: row ? row.sobrePosteo : null,
       pedido: row ? row.pedido : null,
+      esRespuesta: Boolean(c.esRespuesta),
+      respondeA: c.esRespuesta && c.parentApifyId != null ? numeroDe.get(String(c.parentApifyId)) ?? null : null,
+      respondeAUsuario: c.padre ? c.padre.usuario : null,
+      deLaCuenta: Boolean(c.deLaCuenta),
+      respuestasDeclaradas: c.respuestasDeclaradas ?? null,
     };
   });
+}
+
+/** El usuario dueño de la publicación, en minúsculas; null si no se sabe. */
+function duenoDe(post) {
+  const u = String((post && post.ownerUsername) || '').trim().toLowerCase();
+  return u && u !== 'n/d' ? u : null;
+}
+
+/**
+ * La muestra del análisis: los comentarios del público, con su tope
+ * (prepareCommentSample), y aparte, sin tope, los de la propia cuenta, que
+ * no van al modelo (solo "¿La cuenta respondió?"). Cada respuesta lleva el
+ * @usuario y el texto del comentario al que responde (`padre`), aunque ese
+ * no haya entrado en la muestra; cada una va detrás de su comentario.
+ * @returns {{ sample: Array, paraModelo: Array, unicos: number, propios: number }}
+ */
+function armarMuestra(comments, post) {
+  const dueno = duenoDe(post);
+  const esDeLaCuenta = (c) => dueno !== null && String(c.username || '').toLowerCase() === dueno;
+  const { sample: publico, total: unicos } = prepareCommentSample(comments.filter((c) => !esDeLaCuenta(c)));
+  const propios = dedupeComments(comments.filter(esDeLaCuenta)).map((c) => ({ ...c, deLaCuenta: true }));
+  const porId = new Map(comments.filter((c) => !c.esRespuesta && c.apifyId != null).map((c) => [String(c.apifyId), c]));
+  const conPadre = (c) => {
+    const p = c.esRespuesta && c.parentApifyId != null ? porId.get(String(c.parentApifyId)) : null;
+    return p ? { ...c, padre: { usuario: p.username, texto: p.text } } : c;
+  };
+  const sample = ordenarConRespuestas([...publico, ...propios].map(conPadre));
+  return { sample, paraModelo: sample.filter((c) => !c.deLaCuenta), unicos, propios: propios.length };
 }
 
 /** La muestra que lee la síntesis: los pedidos, los de más likes, los del tema principal fuera del posteo y los verificados. */
@@ -179,20 +222,20 @@ async function analyzeComments(params) {
 /** El análisis en sí; `gasto.tokenUsage` va sumando cada llamada al modelo. */
 async function analizar({ url, post, comments, pasos = NO_PASOS }, gasto) {
   const provider = getLlmProvider();
-  const { sample, total: unicos } = prepareCommentSample(comments);
+  const { sample, paraModelo, unicos, propios } = armarMuestra(comments, post);
   const sumUsage = (usage) => {
     if (usage) gasto.tokenUsage = gasto.tokenUsage ? addTokenUsage(gasto.tokenUsage, usage) : usage;
   };
 
   // ---- 1) clasificar: la primera tanda sola define los temas; las demás los reusan
-  const tandas = chunk(sample, BATCH_SIZE);
+  const tandas = chunk(paraModelo, BATCH_SIZE);
   const porTanda = new Array(tandas.length);
   const temas = crearTemas();
   let hechos = 0;
   let fallidas = 0;
   let ultimoError = null;
   const desde = Date.now();
-  const total = sample.length;
+  const total = paraModelo.length;
   pasos.start('clasificar', `0 de ${INT.format(total)}`);
   pasos.update('clasificar', `0 de ${INT.format(total)}`, { avance: 0 });
   // Una llamada para un lote: sus filas (con temaId), o tira con lo gastado.
@@ -269,9 +312,12 @@ async function analizar({ url, post, comments, pasos = NO_PASOS }, gasto) {
     tandas.slice(solas).map((_, k) => () => correrTanda(solas + k)),
     BATCH_CONCURRENCY
   );
-  let classifications = applyHeuristicsToClassified(sample, porTanda.flat());
-  // El ruido no tiene tema (las heurísticas lo dejan en 0).
-  classifications = classifications.map((row) => (row && !row.tema ? { ...row, temaId: null } : row));
+  const clasificados = applyHeuristicsToClassified(paraModelo, porTanda.flat())
+    // El ruido no tiene tema (las heurísticas lo dejan en 0).
+    .map((row) => (row && !row.tema ? { ...row, temaId: null } : row));
+  // De vuelta al orden de la muestra: los de la cuenta quedan sin clasificar.
+  const deCada = new Map(paraModelo.map((c, i) => [c, clasificados[i]]));
+  const classifications = sample.map((c) => deCada.get(c) ?? null);
   const analizados = classifications.filter(Boolean).length;
   if (analizados === 0) {
     pasos.fail('clasificar', 'no se pudo clasificar');
@@ -288,10 +334,11 @@ async function analizar({ url, post, comments, pasos = NO_PASOS }, gasto) {
   const comentarios = comentariosParaGuardar(sample, classifications);
   const temasV2 = { version: 2, lista: temas.lista.map((t) => ({ id: t.id, nombre: t.nombre })) };
 
-  // ---- 2) verificados y figuras públicas: todos los que comentaron, contra la tabla
+  // ---- 2) verificados y figuras públicas: todos los que comentaron (no la
+  // propia cuenta), contra la tabla
   pasos.start('verificados');
-  const figuras = db.getFigurasPorUsernames(sample.map((c) => c.username));
-  const verificados = new Set(sample.filter((c) => c.isVerified).map((c) => String(c.username || '').toLowerCase()));
+  const figuras = db.getFigurasPorUsernames(paraModelo.map((c) => c.username));
+  const verificados = new Set(paraModelo.filter((c) => c.isVerified).map((c) => String(c.username || '').toLowerCase()));
   // Con ficha = confirmada por el equipo; una sugerida el modelo la puede
   // volver a sugerir (se actualiza) y en pantalla va como "sugerido".
   const conFicha = new Set([...figuras.entries()].filter(([, x]) => x.origen === 'equipo').map(([u]) => u));
@@ -374,7 +421,7 @@ async function analizar({ url, post, comments, pasos = NO_PASOS }, gasto) {
     comentarios,
     sintesis,
     tonos: countTones(classifications),
-    numeros: { traidos: comments.length, unicos, enviados: sample.length, analizados, tandas: tandas.length, fallidas },
+    numeros: { traidos: comments.length, unicos, enviados: paraModelo.length, analizados, tandas: tandas.length, fallidas, deLaCuenta: propios },
     reclamos: reclamos.length,
     reclamosCsv: buildReclamosCsv(sample, classifications),
     tokenUsage: gasto.tokenUsage,
