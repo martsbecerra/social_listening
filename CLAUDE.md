@@ -1177,8 +1177,12 @@ públicas). La F va en dos PR: F1 (modelo y servidor, tag `v4-fase-f1`) y F2
   análisis de X): una respuesta cortada ya no se pide dos veces. Por comentario: tono,
   postura hacia la gestión (`favor` | `neutra` | `critica`), tema (el
   número de la lista; 0 ninguno, también el ruido: el modelo no arma un
-  tema para eso), si habla del posteo, si pide algo en serio (no una
-  pregunta irónica) y los
+  tema para eso), si habla del posteo (una reacción genérica a la
+  persona, elogio o insulto sin tema concreto como "Excelente Jorge 👏",
+  cuenta como del posteo; "lo usa para otra cosa" es solo con otro tema
+  concreto: decisión del dueño, 25/10/2026, porque en la corrida real esos
+  elogios cambiaban de lado entre una corrida y otra), si pide algo en
+  serio (no una pregunta irónica) y los
   reclamos con ubicación. La PRIMERA tanda va sola y define los temas
   ("DEFINÍ LOS TEMAS"); si cae o no devuelve ninguno, la siguiente también
   va sola (`MAX_TANDAS_SOLAS` 2: si no, las que corren en paralelo armaban

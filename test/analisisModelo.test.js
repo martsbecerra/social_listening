@@ -469,3 +469,18 @@ describe('respuestas (fase G)', { concurrency: false }, () => {
     assert.equal(r.numeros.deLaCuenta, 0);
   });
 });
+
+describe('la regla de sobre_posteo', () => {
+  // Decisión del dueño (25/10/2026): una reacción genérica a la persona
+  // cuenta como del posteo; "lo usa para otra cosa" es solo con otro tema
+  // concreto.
+  test('el prompt de las tandas y el schema lo dicen', () => {
+    const { TANDA_SYSTEM_PROMPT } = require('../src/prompt');
+    const { TANDA_JSON_SCHEMA } = require('../src/analysisSchema');
+    assert.match(TANDA_SYSTEM_PROMPT, /true también si es una reacción genérica a la persona, sin ningún tema concreto/);
+    assert.match(TANDA_SYSTEM_PROMPT, /"Excelente Jorge 👏"/);
+    assert.match(TANDA_SYSTEM_PROMPT, /false solo si usa el posteo para hablar de otro tema concreto/);
+    const item = TANDA_JSON_SCHEMA.properties.classifications.items;
+    assert.match(item.properties.sobre_posteo.description, /reacción genérica a la persona/);
+  });
+});

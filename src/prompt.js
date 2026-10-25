@@ -66,7 +66,8 @@ Ejemplo: "Qué lindo quedó, pero a Macri ni lo nombren" es tono positivo y post
 
 4. sobre_posteo
 - true si el comentario habla de lo que publica la cuenta (la obra, el anuncio, el hecho del posteo).
-- false si usa el posteo para hablar de otra cosa (otro hecho, otro barrio, la política en general, un reclamo ajeno al posteo).
+- true también si es una reacción genérica a la persona, sin ningún tema concreto: un elogio o un insulto ("Excelente Jorge 👏", "Grande Jorgito", "Sos un desastre") o solo aplausos o emojis.
+- false solo si usa el posteo para hablar de otro tema concreto (otro hecho, otro barrio, una candidatura, la política nacional, un reclamo ajeno al posteo). Sin un tema concreto, no es "otra cosa".
 
 5. pedido
 - true si pide algo concreto o pregunta en serio ("¿y para Lugano cuándo?", "pongan baños", "¿cuánto costó?").
