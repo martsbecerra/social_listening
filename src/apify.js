@@ -63,8 +63,11 @@
 // fetchRunCost (apifyCost.reconcileRealCosts, que el scheduler corre al
 // cerrar cada ciclo para las llamadas de ciclos anteriores).
 // APIFY_REAL_COST=0 lo apaga (vuelve al sincrónico, sin run id ni costo
-// real). El actor oficial (análisis de publicación e IG_ACTOR=apify) sigue
-// con el sincrónico de siempre: sus filas no tienen usd_real.
+// real). El actor oficial (la publicación del análisis, el detalle, el
+// refresco e IG_ACTOR=apify) sigue con el sincrónico de siempre: sus filas
+// no tienen usd_real. Los comentarios del análisis (COMMENTS_ACTOR) van
+// siempre por el asincrónico: con miles de comentarios pasan los 300 s del
+// sincrónico.
 // ==========================================================================
 
 const { createLimiter } = require('./concurrencyLimiter');
@@ -73,6 +76,10 @@ const { recordApifyCall, describeInput } = require('./apifyCost');
 
 // Nombre del actor en la API (el "/" se escribe como "~")
 const APIFY_ACTOR = 'apify~instagram-scraper';
+// Los comentarios del análisis, con sus respuestas (fase G): el oficial no
+// trae respuestas. Cobra por resultado, como el oficial (apifyCost.js), y
+// cada respuesta es un resultado.
+const COMMENTS_ACTOR = 'apify~instagram-comment-scraper';
 const APIFY_BASE = 'https://api.apify.com/v2';
 
 // Cuánto esperamos como máximo antes de cortar por nuestra cuenta (5 min).
@@ -105,6 +112,9 @@ const TERMINAL_STATUSES = ['SUCCEEDED', 'FAILED', 'ABORTED', 'TIMED-OUT'];
 // pasa el tope se corta, se cobra igual y sus resultados se pierden. El
 // timeout es contra el cuelgue, no contra una consulta lenta.
 const APIFY_CALL_TIMEOUT_MS = Math.max(1000, Math.floor(Number(process.env.APIFY_CALL_TIMEOUT_MS) || 300000));
+// Los comentarios de un análisis con miles de comentarios y sus respuestas
+// tardan más que eso: su llamada tiene su propio tope, 30 minutos.
+const ANALISIS_COMMENTS_TIMEOUT_MS = 30 * 60 * 1000;
 
 const apifyLimiter = createLimiter(APIFY_MAX_CONCURRENT, 'apify');
 
@@ -172,17 +182,20 @@ function isConcurrentRunsError(err) {
  * La duración se mide desde que la llamada obtiene su lugar en la cola.
  *
  * @param {object} input - La configuración (input) que espera el actor.
- * @param {{ actorId?: string, plataforma: string, onQueued?: () => void, onAcquired?: () => void }} options -
- *   Actor a correr. Por defecto el oficial (el análisis, abajo, no lo
- *   pasa); los adapters de src/platforms/ pasan el suyo, así este módulo
- *   queda genérico. plataforma: para la fila de apify_calls, obligatoria
- *   (sin default a instagram: el gasto de otra red no se etiqueta como
- *   Instagram en silencio). onQueued / onAcquired: avisos para el progreso
- *   del análisis (tuvo que esperar cupo / lo consiguió); un error suyo no
- *   afecta la llamada.
+ * @param {{ actorId?: string, plataforma: string, onQueued?: () => void, onAcquired?: () => void, timeoutMs?: number }} options -
+ *   Actor a correr. Por defecto el oficial (la publicación del análisis,
+ *   abajo, no lo pasa); los adapters de src/platforms/ pasan el suyo, así
+ *   este módulo queda genérico. plataforma: para la fila de apify_calls,
+ *   obligatoria (sin default a instagram: el gasto de otra red no se
+ *   etiqueta como Instagram en silencio). onQueued / onAcquired: avisos
+ *   para el progreso del análisis (tuvo que esperar cupo / lo consiguió);
+ *   un error suyo no afecta la llamada. timeoutMs: el tope de la llamada,
+ *   APIFY_CALL_TIMEOUT_MS si no se pasa; uno mayor que REQUEST_TIMEOUT_MS
+ *   va siempre por el flujo asincrónico (el sincrónico de Apify corta a
+ *   los 300 s) y espera el run hasta ese tope.
  * @returns {Promise<Array>} Lista de items scrapeados.
  */
-async function runActorSync(input, { actorId = APIFY_ACTOR, plataforma, onQueued, onAcquired } = {}) {
+async function runActorSync(input, { actorId = APIFY_ACTOR, plataforma, onQueued, onAcquired, timeoutMs = APIFY_CALL_TIMEOUT_MS } = {}) {
   if (typeof plataforma !== 'string' || !plataforma.trim()) {
     throw new Error('runActorSync: falta plataforma (instagram | x); no hay default.');
   }
@@ -217,12 +230,13 @@ async function runActorSync(input, { actorId = APIFY_ACTOR, plataforma, onQueued
     // real de ~30 min sin timeout mató el proceso a mano). No cuenta como
     // "de plataforma" (ver platforms/errors.js): una sola cuenta/hashtag con
     // timeout se loguea y se sigue, no tira abajo el resto del ciclo.
+    const largo = timeoutMs > REQUEST_TIMEOUT_MS;
     const once = () =>
       withTimeout(
-        usesRealCost(actorId)
-          ? runActorRealCostOnce(input, actorId)
+        usesRealCost(actorId) || largo
+          ? runActorRealCostOnce(input, actorId, { maxWaitMs: Math.max(REQUEST_TIMEOUT_MS, timeoutMs) })
           : runActorSyncOnce(input, actorId).then((items) => ({ items, run: null })),
-        APIFY_CALL_TIMEOUT_MS,
+        timeoutMs,
         target
       );
 
@@ -244,7 +258,7 @@ async function runActorSync(input, { actorId = APIFY_ACTOR, plataforma, onQueued
     } catch (err) {
       const durationMs = Date.now() - startedAt;
       if (err.code === 'TIMEOUT') {
-        console.error(`[apify] ← TIMEOUT target=${target || '(sin target)'} tras ${durationMs}ms (tope ${APIFY_CALL_TIMEOUT_MS}ms)`);
+        console.error(`[apify] ← TIMEOUT target=${target || '(sin target)'} tras ${durationMs}ms (tope ${timeoutMs}ms)`);
       } else {
         console.error(`[apify] ← error target=${target || '(sin target)'} en ${durationMs}ms: ${describeError(err)}`);
       }
@@ -272,13 +286,13 @@ async function runActorSyncOnce(input, actorId) {
 
 /**
  * Flujo asincrónico (ver encabezado): arranca el run y espera hasta 60 s,
- * sigue esperando de a 60 s hasta REQUEST_TIMEOUT_MS y baja los items del
- * dataset. Devuelve el id del run para conciliar el costo después. Un run
- * que no termina en SUCCEEDED tira con el estado y el statusMessage de
- * Apify (y err.apifyRunId, para la fila de apify_calls).
+ * sigue esperando de a 60 s hasta `maxWaitMs` (REQUEST_TIMEOUT_MS si no se
+ * pasa) y baja los items del dataset. Devuelve el id del run para conciliar
+ * el costo después. Un run que no termina en SUCCEEDED tira con el estado y
+ * el statusMessage de Apify (y err.apifyRunId, para la fila de apify_calls).
  * @returns {Promise<{ items: Array, run: { id: string } }>}
  */
-async function runActorRealCostOnce(input, actorId) {
+async function runActorRealCostOnce(input, actorId, { maxWaitMs = REQUEST_TIMEOUT_MS } = {}) {
   const token = encodeURIComponent(process.env.APIFY_API_TOKEN);
   const t0 = Date.now();
   // Los endpoints de runs envuelven el objeto en { data: ... }; el de items
@@ -295,7 +309,7 @@ async function runActorRealCostOnce(input, actorId) {
     throw e;
   }
   while (!TERMINAL_STATUSES.includes(run.status)) {
-    if (Date.now() - t0 > REQUEST_TIMEOUT_MS) {
+    if (Date.now() - t0 > maxWaitMs) {
       const e = new Error(`Apify tardó demasiado en responder (run ${run.id} sigue en ${run.status}).`);
       e.userMessage = 'La extracción tardó demasiado. Probá de nuevo en unos minutos.';
       e.apifyRunId = run.id;
@@ -456,42 +470,47 @@ function fetchAnalysisPost(postUrl, hooks = {}) {
 }
 
 /**
- * La corrida de los COMENTARIOS de un análisis (modo "comments", hasta
- * COMMENTS_LIMIT), con addParentData (lo que el actor agregue del posteo
- * a cada comentario no se usa como dato de la publicación: ver
- * normalizePost).
+ * La corrida de los COMENTARIOS de un análisis, con sus respuestas
+ * (COMMENTS_ACTOR con includeNestedComments; ver normalizeComments). Su
+ * `resultsLimit` cuenta SOLO los comentarios de primer nivel: las
+ * respuestas llegan aparte, de más (sonda del 25/10/2026: 10 pedidos, 10 +
+ * 6 respuestas). Por defecto, COMMENTS_LIMIT; el trabajo del análisis pasa
+ * el suyo. Tiene su propio tope de tiempo (ANALISIS_COMMENTS_TIMEOUT_MS).
  * @param {string} postUrl
  * @param {{ onQueued?: () => void, onAcquired?: () => void }} [hooks]
+ * @param {{ resultsLimit?: number }} [options]
  * @returns {Promise<{ items: Array, limit: number }>} los ítems crudos y el tope pedido
  */
-async function fetchAnalysisComments(postUrl, hooks = {}) {
-  const limit = resolveCommentsLimit();
+async function fetchAnalysisComments(postUrl, hooks = {}, { resultsLimit = resolveCommentsLimit() } = {}) {
   const items = await runActorSync(
-    { directUrls: [postUrl], resultsType: 'comments', resultsLimit: limit, addParentData: true },
-    { plataforma: 'instagram', ...hooks }
+    { directUrls: [postUrl], resultsLimit, includeNestedComments: true },
+    { actorId: COMMENTS_ACTOR, plataforma: 'instagram', timeoutMs: ANALISIS_COMMENTS_TIMEOUT_MS, ...hooks }
   );
-  return { items, limit };
+  return { items, limit: resultsLimit };
 }
 
 /**
  * Junta lo que trajeron las dos corridas: la publicación y los comentarios
- * normalizados, y los conteos para el log y la pantalla.
+ * normalizados (con sus respuestas), y los conteos para el log.
  * @returns {{ post: object, comments: Array, scrapeMeta: object }}
  */
 function buildAnalysisData(postItems, commentItems, postUrl, commentsLimitRequested = null) {
   const rawCommentItems = Array.isArray(commentItems) ? commentItems.length : 0;
   const post = normalizePost(postItems, commentItems, postUrl);
   const comments = normalizeComments(commentItems);
+  const primerNivel = Array.isArray(commentItems) ? commentItems.filter((c) => c && !esItemRespuesta(c)).length : 0;
   const scrapeMeta = {
     commentsLimitRequested,
     rawCommentItems,
+    primerNivel,
+    respuestas: rawCommentItems - primerNivel,
     commentsOnPost: post.commentsCount,
     comentariosTrasNormalizar: comments.length,
   };
-  if (Number.isFinite(commentsLimitRequested) && rawCommentItems > 0 && rawCommentItems < commentsLimitRequested) {
+  if (Number.isFinite(commentsLimitRequested) && primerNivel > 0 && primerNivel < commentsLimitRequested) {
     console.warn(
-      `[apify] Apify devolvió ${rawCommentItems} ítems de comentarios, menos que COMMENTS_LIMIT=${commentsLimitRequested}.` +
-        (post.commentsCount != null && post.commentsCount > rawCommentItems ? ` Instagram reporta ${post.commentsCount} comentarios en el post.` : '')
+      `[apify] Apify devolvió ${primerNivel} comentarios de primer nivel (y ${rawCommentItems - primerNivel} respuestas), menos que los ${commentsLimitRequested} pedidos.` +
+        (post.commentsCount != null && post.commentsCount > rawCommentItems ? ` Instagram reporta ${post.commentsCount} comentarios en el post, con las respuestas.` : '')
     );
   }
   return { post, comments, scrapeMeta };
@@ -555,10 +574,26 @@ function normalizePost(postItems, commentItems, postUrl) {
   };
 }
 
+// Una respuesta es un ítem propio con parentCommentUrl
+// (…/c/<id del padre>/) y un commentUrl que termina en /r/…; el padre trae
+// repliesCount, las que declara Instagram (no siempre llegan todas: en la
+// sonda, 6 de 10). `replies` viene siempre null.
+function esItemRespuesta(c) {
+  return typeof c.parentCommentUrl === 'string' && c.parentCommentUrl.trim() !== '';
+}
+
+function parentIdOf(c) {
+  const m = esItemRespuesta(c) ? c.parentCommentUrl.match(/\/c\/(\d+)/) : null;
+  return m ? m[1] : null;
+}
+
 /**
  * Deja cada comentario en un formato limpio con solo los campos que necesitamos.
  * El orden del array no se garantiza; commentSample.js lo normaliza antes del análisis.
  * Likes sin dato (o negativos) quedan null, no 0: "sin dato" no es cero.
+ * Una respuesta lleva `esRespuesta` y el id de su padre (`parentApifyId`,
+ * null si el link no lo trae); un comentario de primer nivel, las
+ * respuestas que declara Instagram (`respuestasDeclaradas`).
  */
 function normalizeComments(commentItems) {
   if (!Array.isArray(commentItems)) return [];
@@ -576,6 +611,9 @@ function normalizeComments(commentItems) {
       likesCount: countOrNull(c.likesCount),
       timestamp: c.timestamp || null,
       text: c.text.trim(),
+      esRespuesta: esItemRespuesta(c),
+      parentApifyId: parentIdOf(c),
+      respuestasDeclaradas: esItemRespuesta(c) ? null : countOrNull(c.repliesCount),
     }));
 }
 
@@ -589,6 +627,8 @@ module.exports = {
   resolveCommentsLimit,
   COMMENTS_LIMIT_DEFAULT,
   COMMENTS_LIMIT_MAX,
+  COMMENTS_ACTOR,
+  ANALISIS_COMMENTS_TIMEOUT_MS,
   runActorSync,
   fetchRunCost,
   mapApifyError,

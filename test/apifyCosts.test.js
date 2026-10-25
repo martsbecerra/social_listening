@@ -108,6 +108,11 @@ describe('costo de Apify', { concurrency: false }, () => {
     near(apifyCost.usdForCall({ actor: APIDOJO, queryType: 'hashtag', items: 31 }), 0.0155);
     near(apifyCost.usdForCall({ actor: OFICIAL, queryType: 'hashtag', items: 31 }), (31 * 2.3) / 1000, 'el oficial sigue por resultados');
     near(apifyCost.usdForCall({ actor: null, queryType: 'user', items: 10 }), (10 * 2.3) / 1000, 'sin actor = oficial (filas viejas)');
+    near(
+      apifyCost.usdForCall({ actor: 'apify~instagram-comment-scraper', queryType: 'post', items: 16 }),
+      0.0368,
+      'el de comentarios cobra por resultado, como el oficial (la sonda del 25/10/2026: 16 por 0,0368)'
+    );
 
     process.env.APIDOJO_RATE_USER = '0.004';
     process.env.APIDOJO_INCLUDED_USER = '20';

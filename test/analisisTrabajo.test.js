@@ -41,6 +41,7 @@ const figurasRoutes = require('../src/figurasRoutes');
 const { buildCommentTimeline } = require('../src/commentTimeline');
 const { createAuthGate } = require('../src/auth/gate');
 const { setSessionCookie } = require('../src/auth/session');
+const { apifySimulado } = require('./helpers/apifySimulado');
 
 const POST_FIXTURE = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'apify', 'post-detail.json'), 'utf8'));
 const POSTED_AT = '2026-10-20T12:00:00.000Z';
@@ -385,12 +386,10 @@ describe('el trabajo del análisis', { concurrency: false }, () => {
   test('con Apify de verdad (fetch simulado): las dos corridas quedan atadas al análisis y el gasto en la fila', async () => {
     apify.fetchAnalysisPost = original.fetchAnalysisPost;
     apify.fetchAnalysisComments = original.fetchAnalysisComments;
-    global.fetch = async (url, opts) => {
-      if (!String(url).includes('api.apify.com')) return realFetch(url, opts);
-      const body = JSON.parse(opts.body);
-      const items = body.resultsType === 'posts' ? postItem({ id: '777', shortCode: 'REAL' }) : commentItems(12);
-      return new Response(JSON.stringify(items), { status: 200, headers: { 'Content-Type': 'application/json' } });
-    };
+    global.fetch = apifySimulado((input) => (input.resultsType === 'posts' ? postItem({ id: '777', shortCode: 'REAL' }) : commentItems(12)), {
+      status: 200,
+      otro: realFetch,
+    });
     const id = await analizar('https://www.instagram.com/p/REAL/');
     const a = db.getAnalisis(id, 'instagram');
     assert.equal(a.estado, 'ok');

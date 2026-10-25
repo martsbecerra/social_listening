@@ -27,7 +27,13 @@ const { runWithContext, getContext } = require('../src/usageContext');
 const { prepareCommentSample } = require('../src/commentSample');
 const { prepareXSample } = require('../src/x/sample');
 
+const { apifySimulado } = require('./helpers/apifySimulado');
+
 const POST_FIXTURE = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'apify', 'post-detail.json'), 'utf8'));
+// La sonda autorizada del 25/10/2026 (apify/instagram-comment-scraper con
+// includeNestedComments, resultsLimit 10), anonimizada: 10 comentarios y 6
+// respuestas, todas al tercero.
+const RESPUESTAS_FIXTURE = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'apify', 'analisis-g-comentarios.json'), 'utf8'));
 const realFetch = global.fetch;
 
 afterEach(() => {
@@ -120,14 +126,11 @@ describe('topes', () => {
 });
 
 describe('las dos corridas', () => {
-  test('cada una pide lo suyo, avisa al conseguir cupo y queda atada al análisis', async () => {
-    const bodies = [];
-    global.fetch = async (url, opts) => {
-      const body = JSON.parse(opts.body);
-      bodies.push(body);
-      const items = body.resultsType === 'posts' ? POST_FIXTURE : [{ id: 'c1', ownerUsername: 'a', text: 'hola', timestamp: '2026-09-18T04:00:00.000Z' }];
-      return new Response(JSON.stringify(items), { status: 200, headers: { 'Content-Type': 'application/json' } });
-    };
+  test('cada una pide lo suyo a su actor, avisa al conseguir cupo y queda atada al análisis', async () => {
+    global.fetch = apifySimulado(
+      (input) => (input.resultsType === 'posts' ? POST_FIXTURE : [{ id: 'c1', ownerUsername: 'a', text: 'hola', timestamp: '2026-09-18T04:00:00.000Z' }]),
+      { status: 200 }
+    );
     const avisos = [];
     const analisisId = db.startAnalisis({ plataforma: 'instagram', url: 'https://www.instagram.com/p/DdaeSUND2AU/' });
     const [postItems, { items: commentItems, limit }] = await runWithContext({ phase: 'analisis', analisisId }, () =>
@@ -137,15 +140,69 @@ describe('las dos corridas', () => {
       ])
     );
     assert.equal(limit, 300);
-    const comentarios = bodies.find((b) => b.resultsType === 'comments');
-    assert.equal(comentarios.resultsLimit, 300);
-    assert.equal(comentarios.addParentData, true);
-    assert.equal(bodies.find((b) => b.resultsType === 'posts').resultsLimit, 1);
+    const pedidos = global.fetch.inputs;
+    const comentarios = pedidos.find((p) => p.actor === 'apify~instagram-comment-scraper');
+    assert.deepEqual(comentarios.input, { directUrls: ['https://www.instagram.com/p/DdaeSUND2AU/'], resultsLimit: 300, includeNestedComments: true });
+    const publicacion = pedidos.find((p) => p.actor === 'apify~instagram-scraper');
+    assert.equal(publicacion.input.resultsType, 'posts');
+    assert.equal(publicacion.input.resultsLimit, 1);
     assert.deepEqual(avisos.sort(), ['comentarios', 'publicación']);
     const data = apify.buildAnalysisData(postItems, commentItems, 'https://www.instagram.com/p/DdaeSUND2AU/', limit);
     assert.equal(data.comments.length, 1);
     assert.equal(data.scrapeMeta.rawCommentItems, 1);
     assert.equal(db.sumApifyUsdForAnalisis(analisisId).calls, 2, 'las dos filas de apify_calls llevan el id del análisis');
+  });
+
+  test('los comentarios: el tope que pide el trabajo, el run id en la fila y el costo por resultado', async () => {
+    global.fetch = apifySimulado(() => RESPUESTAS_FIXTURE);
+    const analisisId = db.startAnalisis({ plataforma: 'instagram', url: 'https://www.instagram.com/p/PRUEBAG/' });
+    const { items, limit } = await runWithContext({ phase: 'analisis', analisisId }, () =>
+      apify.fetchAnalysisComments('https://www.instagram.com/p/PRUEBAG/', {}, { resultsLimit: 10 })
+    );
+    assert.equal(limit, 10);
+    assert.equal(items.length, 16);
+    assert.equal(global.fetch.inputs[0].input.resultsLimit, 10);
+    const { DatabaseSync } = require('node:sqlite');
+    const base = new DatabaseSync(process.env.MONITORING_DB_PATH, { readOnly: true });
+    const fila = base.prepare('SELECT actor, items, usd, apify_run_id FROM apify_calls WHERE analisis_id = ?').get(analisisId);
+    base.close();
+    assert.equal(fila.actor, 'apify~instagram-comment-scraper');
+    assert.equal(fila.items, 16);
+    assert.ok(Math.abs(fila.usd - 16 * 0.0023) < 1e-9, `por resultado, como el oficial: ${fila.usd}`);
+    assert.equal(fila.apify_run_id, 'run-1', 'flujo asincrónico: el run queda para el costo real');
+  });
+
+  test('los comentarios tienen su propio tope de tiempo, más largo que el de las demás llamadas', () => {
+    assert.equal(apify.ANALISIS_COMMENTS_TIMEOUT_MS, 30 * 60 * 1000);
+    assert.ok(apify.ANALISIS_COMMENTS_TIMEOUT_MS > apify.APIFY_CALL_TIMEOUT_MS);
+  });
+});
+
+describe('las respuestas (lo que trajo la sonda del 25/10/2026, anonimizado)', () => {
+  test('cada respuesta sabe a qué comentario responde; el padre, cuántas declara Instagram', () => {
+    const comments = apify.normalizeComments(RESPUESTAS_FIXTURE);
+    assert.equal(comments.length, 16);
+    const respuestas = comments.filter((c) => c.esRespuesta);
+    assert.equal(respuestas.length, 6);
+    const padre = comments.find((c) => c.apifyId === '18000000000003333');
+    assert.equal(padre.esRespuesta, false);
+    assert.equal(padre.respuestasDeclaradas, 8, 'declara 8');
+    assert.ok(respuestas.every((r) => r.parentApifyId === '18000000000003333'), 'llegaron 6, todas de ese');
+    assert.ok(respuestas.every((r) => r.respuestasDeclaradas === null));
+    assert.equal(comments.find((c) => c.apifyId === '18000000000001111').respuestasDeclaradas, 0);
+  });
+
+  test('un link de padre sin número deja la respuesta marcada, sin padre', () => {
+    const [c] = apify.normalizeComments([{ id: 'r1', ownerUsername: 'a', text: 'sí', parentCommentUrl: 'https://www.instagram.com/p/X/' }]);
+    assert.equal(c.esRespuesta, true);
+    assert.equal(c.parentApifyId, null);
+  });
+
+  test('scrapeMeta separa los de primer nivel de las respuestas (el tope cuenta solo los primeros)', () => {
+    const data = apify.buildAnalysisData(POST_FIXTURE, RESPUESTAS_FIXTURE, 'https://www.instagram.com/p/PRUEBAG/', 10);
+    assert.equal(data.scrapeMeta.rawCommentItems, 16);
+    assert.equal(data.scrapeMeta.primerNivel, 10);
+    assert.equal(data.scrapeMeta.respuestas, 6);
   });
 });
 

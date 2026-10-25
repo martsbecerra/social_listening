@@ -13,6 +13,11 @@
 //     como estas llamadas van por el flujo asincrónico (src/apify.js), la
 //     fila guarda el id del run y, minutos después (reconcileRealCosts),
 //     lo que Apify cobró de verdad (usd_real).
+//   - apify/instagram-comment-scraper (los comentarios del análisis, con sus
+//     respuestas, desde la fase G): cobra POR RESULTADO con las mismas
+//     tarifas que el oficial (cada respuesta es un resultado; la sonda del
+//     25/10/2026 cobró 0,0368 por 16), pero va por el flujo asincrónico:
+//     su fila tiene usd_real y en los reportes suma con los de costo real.
 // Acá viven:
 //   - las tarifas y el plan activo,
 //   - el registro de cada llamada (recordApifyCall, lo llama runActorSync):
@@ -36,6 +41,7 @@ const PLANS = ['free', 'starter', 'scale'];
 const DEFAULT_RATES = { free: 2.7, starter: 2.3, scale: 1.9 };
 const OFFICIAL_ACTOR = 'apify~instagram-scraper';
 const APIDOJO_ACTOR = 'apidojo~instagram-scraper-api';
+const COMMENTS_ACTOR = 'apify~instagram-comment-scraper';
 // Tarifas de apidojo (USD por consulta, USD por posteo extra) y posteos
 // incluidos por consulta, según su pestaña de precios (septiembre 2026).
 const APIDOJO_DEFAULTS = {
@@ -137,9 +143,14 @@ function usdForApidojo(queryType, items, rates = getApidojoRates()) {
   return rates[type] + Math.max(0, count - included) * rates.item;
 }
 
-/** USD estimado de una llamada según el actor: oficial por resultados y plan; apidojo por consulta. */
+/** true para los actores que cobran por resultado: el oficial y el de comentarios. */
+function chargesPerResult(actor) {
+  return isOfficialActor(actor) || actor === COMMENTS_ACTOR;
+}
+
+/** USD estimado de una llamada según el actor: oficial y comentarios por resultados y plan; apidojo por consulta. */
 function usdForCall({ actor, queryType, items, plan }) {
-  return isOfficialActor(actor) ? usdForItems(items, plan) : usdForApidojo(queryType, items);
+  return chargesPerResult(actor) ? usdForItems(items, plan) : usdForApidojo(queryType, items);
 }
 
 function urlOf(entry) {
