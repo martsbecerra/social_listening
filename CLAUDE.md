@@ -1087,8 +1087,8 @@ públicas). La F va en dos PR: F1 (modelo y servidor, tag `v4-fase-f1`) y F2
   pantalla son solo 4). **El modelo no da números**: todo lo que se cuenta
   sale del servidor. Sin tipo de cuenta en Instagram: la postura lo
   reemplaza; `accountRegistry.js` ya no existe, Instagram no lee ni
-  escribe `data/account-types.json` (queda `data/account-types.example.json`,
-  sin uso) y el tono no se pondera por tipo (X conserva lo suyo). Una tanda
+  escribe `data/account-types.json` y el tono no se pondera por tipo (X
+  conserva lo suyo). Una tanda
   que falla deja sus comentarios en null y el análisis sigue (el contador
   del paso suma solo lo clasificado); si fallan todas, error con el
   `userMessage` del proveedor (sin crédito, clave inválida: reintentar no lo
