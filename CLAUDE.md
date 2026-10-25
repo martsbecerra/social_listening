@@ -470,8 +470,14 @@ por campo, con lecturas de `db.js` que solo cuentan
 `getFirstDetectedAtAny`, `countReclamosEnMapa`): `publicacionesHoy` y
 `publicaciones30Dias` (todas las redes), `reclamosEnMapa` (los que tienen
 pin, con la regla del mapa, `hasMapLocation`: no de fuera de CABA, con x, y
-y dirección normalizada, y no en el (0,0) que deja una respuesta de USIG sin
-coordenadas; los sin dirección, no encontrados o pendientes no cuentan),
+y dirección normalizada, y no en el (0,0) que dejaba una respuesta de USIG sin
+coordenadas; los sin dirección, no encontrados o pendientes no cuentan). Desde
+octubre 2026 `geocode.js` ya no lo produce: una coordenada vacía o en 0 es
+"no encontrada" (nunca "ok"), y una entrada "ok" de la caché en el (0,0) se
+vuelve a consultar. Al arrancar, UNA vez (marca `geo_reintento_sin_coordenadas`
+en `refresh_state`), `geoWorker.reintentarSinCoordenadas` manda de nuevo a
+USIG, con el worker de siempre y sin la caché de "no encontrada", todos los
+reclamos con dirección escrita y sin punto, y loguea "N de M ubicados";
 `primerDia` y `diasEscuchando` (desde la primera DETECCIÓN, contando los dos
 extremos: la primera fecha de publicación puede ser de días antes),
 `runHours`, `corridasPorDia` y `temas` (los 8 de 7 días, con `n` y

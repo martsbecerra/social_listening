@@ -97,17 +97,35 @@ async function buscarEnOtroPartido(direccionLimpia) {
   };
 }
 
+// Una coordenada de USIG: vacía, nula o que no es número es null. Antes se
+// pasaba por Number() y '' daba 0: una respuesta sin punto quedaba "ok" en el
+// (0,0), en el golfo de Guinea.
+function coordenada(valor) {
+  if (valor === null || valor === undefined || String(valor).trim() === '') return null;
+  const n = Number(valor);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Un punto que se puede mostrar: las dos coordenadas y no el (0,0). */
+function puntoValido(x, y) {
+  return x !== null && y !== null && Number.isFinite(x) && Number.isFinite(y) && !(x === 0 && y === 0);
+}
+
 /**
  * Geocodifica una dirección ya detectada (por Claude o por el import de
  * Excel) contra USIG, con caché por dirección limpia.
  * @param {string} direccionDetectada
+ * @param {{ soloLectura?: boolean, sinCacheFallida?: boolean }} [opts]
+ *   sinCacheFallida: una dirección que la caché tiene como no encontrada (o
+ *   de otro partido) se vuelve a consultar; la usa el reintento de los
+ *   reclamos sin coordenadas (geoWorker.reintentarSinCoordenadas).
  * @returns {Promise<{
  *   direccionNormalizada: string|null, calle: string|null, altura: number|null,
  *   cruce: string|null, x: number|null, y: number|null, precision: string|null,
  *   geoStatus: 'ok'|'no_encontrada'|'invalida'|'fuera_caba'
  * }>}
  */
-async function geocodeAddress(direccionDetectada, { soloLectura = false } = {}) {
+async function geocodeAddress(direccionDetectada, { soloLectura = false, sinCacheFallida = false } = {}) {
   // soloLectura: consulta y lee la cache, pero no la escribe. Lo usa el
   // --dry-run del importador, que no debe dejar rastro en la base.
   const guardarCache = (entry) => { if (!soloLectura) db.setGeocodeCache(entry); };
@@ -128,7 +146,11 @@ async function geocodeAddress(direccionDetectada, { soloLectura = false } = {}) 
 
   const cacheKey = buildCacheKey(limpia);
   const cached = db.getGeocodeCache(cacheKey);
-  if (cached) {
+  // Una entrada "ok" sin punto válido (las del (0,0)) no sirve: se pregunta
+  // de nuevo. Con sinCacheFallida, tampoco las que no se encontraron.
+  const cacheSirve =
+    cached && (cached.status === 'ok' ? puntoValido(coordenada(cached.lng), coordenada(cached.lat)) : !sinCacheFallida);
+  if (cacheSirve) {
     // 'fuera_caba' se cachea igual que los demás: una dirección de otro
     // partido no cambia de partido, no hay por qué volver a preguntar.
     const geoStatus =
@@ -159,7 +181,10 @@ async function geocodeAddress(direccionDetectada, { soloLectura = false } = {}) 
   // cod_partido: por si la desambiguación por ", CABA" no alcanzara, no
   // geocodificamos un reclamo de CABA a un partido del conurbano.
   const hits = (data && Array.isArray(data.direccionesNormalizadas) && data.direccionesNormalizadas) || [];
-  const hit = hits.find((h) => h && h.coordenadas && h.cod_partido === 'caba') || null;
+  // Un candidato de CABA con coordenadas vacías (o en 0,0) no es un punto:
+  // cae en "la reconoce pero no puede darle un punto", más abajo.
+  const hit =
+    hits.find((h) => h && h.coordenadas && h.cod_partido === 'caba' && puntoValido(coordenada(h.coordenadas.x), coordenada(h.coordenadas.y))) || null;
   if (!hit) {
     const ahora = new Date().toISOString();
 
@@ -245,8 +270,9 @@ async function geocodeAddress(direccionDetectada, { soloLectura = false } = {}) 
     };
   }
 
-  const x = Number(hit.coordenadas.x);
-  const y = Number(hit.coordenadas.y);
+  // El hit ya tiene un punto válido (ver el find de arriba).
+  const x = coordenada(hit.coordenadas.x);
+  const y = coordenada(hit.coordenadas.y);
   const calle = hit.nombre_calle || null;
   const altura = hit.altura != null && hit.altura !== '' ? Number(hit.altura) : null;
   const cruce = hit.nombre_calle_cruce || null;
@@ -254,8 +280,8 @@ async function geocodeAddress(direccionDetectada, { soloLectura = false } = {}) 
 
   guardarCache({
     queryKey: cacheKey,
-    lat: Number.isFinite(y) ? y : null,
-    lng: Number.isFinite(x) ? x : null,
+    lat: y,
+    lng: x,
     displayName: direccionNormalizada,
     status: 'ok',
     fetchedAt: new Date().toISOString(),
@@ -269,11 +295,11 @@ async function geocodeAddress(direccionDetectada, { soloLectura = false } = {}) 
     calle,
     altura,
     cruce,
-    x: Number.isFinite(x) ? x : null,
-    y: Number.isFinite(y) ? y : null,
+    x,
+    y,
     precision: 'exacta',
-    geoStatus: Number.isFinite(x) && Number.isFinite(y) ? 'ok' : 'sin_direccion',
+    geoStatus: 'ok',
   };
 }
 
-module.exports = { geocodeAddress };
+module.exports = { geocodeAddress, coordenada, puntoValido };
