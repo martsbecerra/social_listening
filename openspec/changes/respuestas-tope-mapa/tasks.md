@@ -33,4 +33,4 @@ UNA corrida real con respuestas al final, autorizadas por el dueño.
 - [x] 4.1 CLAUDE.md y README
 - [x] 4.2 Suite con `IG_ACTOR=apidojo` y `apify` (671 y 671, en modo liviano); capturas a 1366 y 375 px en claro y oscuro (36, sin errores de JavaScript ni desborde)
 - [x] 4.3 PR sin mergear (#32)
-- [ ] 4.4 La corrida real con respuestas (con el link y el OK del dueño)
+- [x] 4.4 La corrida real con respuestas (25/10/2026, con el link y el OK del dueño; la publicación de la corrida de la F, 387 comentarios según Instagram): 235 ítems, 204 de primer nivel y 31 respuestas (de 62 que declara Instagram); afuera 5 sin texto y 28 repetidos (mismo usuario y mismo texto); 201 analizados y la única respuesta de la cuenta aparte; 11 comentarios con respuestas del público. US$ 1,06 (Apify 0,54, el real igual al estimado; modelo 0,52) contra ~1,76 estimado para 387. Contra la corrida sin respuestas, el tono de los 150 comentarios de las dos coincide en 144; "hablan del posteo" no: 49 elogios genéricos ("Excelente Jorge 👏") pasaron de no a sí (la regla no dice qué hacer con ellos)
