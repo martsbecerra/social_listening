@@ -30,7 +30,7 @@ UNA corrida real con respuestas al final, autorizadas por el dueño.
 
 ## Phase 4: cierre
 
-- [ ] 4.1 CLAUDE.md y README
+- [x] 4.1 CLAUDE.md y README
 - [ ] 4.2 Suite con `IG_ACTOR=apidojo` y `apify`; capturas a 1366 y 375 px en claro y oscuro
 - [ ] 4.3 PR sin mergear
 - [ ] 4.4 La corrida real con respuestas (con el link y el OK del dueño)
