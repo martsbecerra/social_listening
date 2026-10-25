@@ -345,21 +345,25 @@ function buildAnalysisView(row, { figuras = new Map(), reclamos = [], anteriores
   for (const t of temasVista) t.estrella = Boolean(estrella && t.id === estrella.id);
 
   // ---- verificados y figuras públicas (todos los que comentaron se cruzan con la tabla)
+  // Una sugerida que el equipo descartó no es figura: sin rol, y si no es
+  // verificada no aparece (descartada avisa a la pantalla que ya se vio).
   const verificados = new Set(comentarios.filter((c) => c.verificada).map((c) => usuarioClave(c.usuario)));
+  const vigentes = new Map([...figuras].filter(([, f]) => f && f.origen !== 'descartada'));
   const porUsuario = new Map();
   for (const c of comentarios) {
     const k = usuarioClave(c.usuario);
-    if (!verificados.has(k) && !figuras.has(k)) continue;
+    if (!verificados.has(k) && !vigentes.has(k)) continue;
     const actual = porUsuario.get(k);
     if (!actual || likesDe(c) > likesDe(actual)) porUsuario.set(k, c);
   }
   const quienHablo = [...porUsuario.entries()]
     .map(([k, c]) => {
-      const f = figuras.get(k) || null;
+      const f = vigentes.get(k) || null;
       return {
         usuario: c.usuario,
         verificada: verificados.has(k),
         figura: f ? { nombre: f.nombre, rol: f.rol, alineacion: f.alineacion, origen: f.origen } : null,
+        descartada: !f && Boolean(figuras.get(k)),
         comentario: { n: c.n, texto: c.texto, likes: c.likes, tono: c.tono, horas: c.horas },
       };
     })

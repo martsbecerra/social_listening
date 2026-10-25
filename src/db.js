@@ -1150,7 +1150,8 @@ db.exec('CREATE INDEX IF NOT EXISTS idx_analisis_cuenta ON analisis(plataforma, 
 
 // Figuras públicas (fase F, src/figuras.js): el rol y la alineación de quien
 // comenta. La mantiene el equipo; el modelo solo deja sugerencias
-// (origen 'sugerida') que nunca pisan una fila del equipo. Sin CHECK: la
+// (origen 'sugerida') que nunca pisan una fila del equipo, y una sugerida
+// que el equipo descarta queda como 'descartada' (fase F2). Sin CHECK: la
 // validación vive en src/figuras.js.
 db.exec(`
   CREATE TABLE IF NOT EXISTS figuras_publicas (
@@ -1274,6 +1275,10 @@ const updateFiguraStmt = db.prepare(`
 `);
 const updateFiguraSugeridaStmt = db.prepare(`
   UPDATE figuras_publicas SET rol = @rol, alineacion = @alineacion, actualizado_en = @ahora
+  WHERE username = @username AND origen = 'sugerida'
+`);
+const descartarFiguraStmt = db.prepare(`
+  UPDATE figuras_publicas SET origen = 'descartada', actualizado_en = @ahora
   WHERE username = @username AND origen = 'sugerida'
 `);
 const deleteFiguraStmt = db.prepare('DELETE FROM figuras_publicas WHERE username = ?');
@@ -2770,8 +2775,9 @@ function getFigurasPorUsernames(usernames) {
 }
 
 /**
- * Una figura nueva cargada por el equipo. Si ya estaba como sugerencia, la
- * confirma con estos datos. Tira con code 'FIGURA_EXISTE' si ya es del equipo.
+ * Una figura nueva cargada por el equipo. Si ya estaba como sugerencia (o
+ * descartada), pasa al equipo con estos datos. Tira con code
+ * 'FIGURA_EXISTE' si ya es del equipo.
  */
 function createFigura(input, { creadoPor = null, ahora = new Date().toISOString() } = {}) {
   const datos = figurasModelo.validarFigura(input);
@@ -2807,15 +2813,36 @@ function deleteFigura(username) {
 }
 
 /**
+ * El equipo descarta una sugerencia del modelo (fase F2): queda en la tabla
+ * con origen 'descartada', así el modelo no la vuelve a sugerir. Tira con
+ * code 'FIGURA_NO_SUGERIDA' si es del equipo o ya estaba descartada.
+ * @returns {object|null} la figura; null si no está en la tabla.
+ */
+function descartarFigura(username, { ahora = new Date().toISOString() } = {}) {
+  const actual = getFigura(username);
+  if (!actual) return null;
+  if (actual.origen !== 'sugerida') {
+    const e = new Error(`@${actual.username} no es una sugerencia del modelo.`);
+    e.userMessage = actual.origen === 'equipo' ? `@${actual.username} es del equipo: para sacarla de la lista, quitala.` : `@${actual.username} ya estaba descartada.`;
+    e.code = 'FIGURA_NO_SUGERIDA';
+    throw e;
+  }
+  descartarFiguraStmt.run({ username: actual.username, ahora });
+  return getFigura(actual.username);
+}
+
+/**
  * Lo que sugirió el modelo para un verificado: entra como 'sugerida' si no
- * estaba; si ya era sugerida, se actualiza; si es del equipo, no se toca.
- * @returns {'nueva'|'actualizada'|'del equipo'|'descartada'}
+ * estaba; si ya era sugerida, se actualiza; si es del equipo o el equipo la
+ * descartó, no se toca.
+ * @returns {'nueva'|'actualizada'|'del equipo'|'descartada por el equipo'|'descartada'}
  */
 function upsertFiguraSugerida(raw, { ahora = new Date().toISOString() } = {}) {
   const s = figurasModelo.sanitizarSugerencia(raw);
   if (!s) return 'descartada';
   const actual = getFigura(s.username);
   if (actual && actual.origen === 'equipo') return 'del equipo';
+  if (actual && actual.origen === 'descartada') return 'descartada por el equipo';
   if (actual) {
     updateFiguraSugeridaStmt.run({ ...s, ahora });
     return 'actualizada';
@@ -2859,6 +2886,7 @@ module.exports = {
   createFigura,
   updateFigura,
   deleteFigura,
+  descartarFigura,
   upsertFiguraSugerida,
   markInterruptedAnalisis,
   sumApifyUsdForAnalisis,

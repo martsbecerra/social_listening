@@ -686,4 +686,21 @@ describe('las rutas', { concurrency: false }, () => {
     assert.equal((await pedir('/api/figuras/leg.uno', { method: 'DELETE' })).status, 204);
     assert.equal((await pedir('/api/figuras/leg.uno', { method: 'DELETE' })).status, 404);
   });
+
+  test('figuras públicas (F2): descartar una sugerida, no una del equipo; restaurarla', async () => {
+    db.upsertFiguraSugerida({ username: 'cre.sugerido', rol: 'creador' });
+    assert.equal((await pedir('/api/figuras/cre.sugerido/descartar', { method: 'POST', conCookie: false })).status, 401);
+    const desc = await pedir('/api/figuras/cre.sugerido/descartar', { method: 'POST' });
+    assert.equal(desc.status, 200);
+    const { figura } = await desc.json();
+    assert.equal(figura.origen, 'descartada');
+    assert.equal('creadoPor' in figura, false);
+    const otra = await pedir('/api/figuras/cre.sugerido/descartar', { method: 'POST' });
+    assert.equal(otra.status, 409);
+    assert.match((await otra.json()).error, /ya estaba descartada/);
+    assert.equal((await pedir('/api/figuras/medio.sugerido/descartar', { method: 'POST' })).status, 409, 'una del equipo no se descarta');
+    assert.equal((await pedir('/api/figuras/nadie/descartar', { method: 'POST' })).status, 404);
+    const restaurada = await pedir('/api/figuras/cre.sugerido', { method: 'PATCH', body: {} });
+    assert.equal((await restaurada.json()).figura.origen, 'equipo');
+  });
 });

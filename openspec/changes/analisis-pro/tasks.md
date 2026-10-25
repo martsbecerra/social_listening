@@ -47,7 +47,7 @@ un servidor de prueba en otro puerto y una copia de la base.
 
 ## Phase 6: F2, servidor
 
-- [ ] 6.1 Figuras descartadas: `origen = descartada`, `POST /api/figuras/:username/descartar`, sin rol en la vista, fuera de los verificados sin ficha de la síntesis, una sugerencia nueva no la toca (REQ-PRO-17)
+- [x] 6.1 Figuras descartadas: `origen = descartada`, `POST /api/figuras/:username/descartar`, sin rol en la vista, fuera de los verificados sin ficha de la síntesis, una sugerencia nueva no la toca (REQ-PRO-17)
 
 ## Phase 7: F2, pantalla
 

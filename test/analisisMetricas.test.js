@@ -173,6 +173,22 @@ describe('las métricas de un análisis v2', () => {
     assert.equal(v.quienHablo[0].comentario.likes, 500);
   });
 
+  test('una descartada (F2) no es figura: sin rol si es verificada, y fuera si no lo es', () => {
+    const conDescartadas = new Map([
+      ['leg1', { ...FIGURAS.get('leg1'), origen: 'descartada' }],
+      ['jc6', { ...FIGURAS.get('jc6'), origen: 'descartada' }],
+    ]);
+    const d = buildAnalysisView(filaV2(), { figuras: conDescartadas });
+    assert.deepEqual(
+      d.quienHablo.map((q) => [q.usuario, q.figura, q.descartada]),
+      [
+        ['leg1', null, true],
+        ['medio2', null, false],
+      ]
+    );
+    assert.equal(v.quienHablo.find((q) => q.usuario === 'jc6').descartada, false);
+  });
+
   test('pedidos: solo números que existen, el ejemplo con más likes, si es del hecho', () => {
     assert.deepEqual(
       v.pedidos.map((p) => [p.texto, p.n, p.delHecho]),
