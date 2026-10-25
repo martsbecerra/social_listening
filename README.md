@@ -126,7 +126,9 @@ social_listening_app/
 │       ├── loginVerify.js    # Último paso del login: verify por fetch y el aviso del link vencido.
 │       ├── dashboard.js      # El inicio (GET /api/inicio, las últimas publicaciones y los análisis recientes).
 │       ├── postView.js       # Cómo se ve un posteo (piezas compartidas por el Monitoreo, Estadísticas y el inicio).
-│       ├── analysis.js       # Solapa "Análisis de publicación" de Instagram (pasos, recientes, el análisis guardado).
+│       ├── analysis.js       # Solapa "Análisis de publicación" de Instagram: el flujo (pasos, recientes, galería, hash).
+│       ├── analysisBlocks.js # Los bloques del análisis a la vista (todo desde `vista`).
+│       ├── analysisFiguras.js # Verificados y figuras públicas: la tarjeta y la lista.
 │       ├── x-analysis.js     # Análisis de publicación de X (`/api/x/analyze`).
 │       ├── temasEditor.js    # Temas emergentes editables (antes de copiar/WhatsApp).
 │       ├── monitoring.js     # Monitoreo en vivo (parametrizado por data-platform).
@@ -1186,7 +1188,7 @@ en el tag `v3-riel-radar`.
   **últimas publicaciones** de Instagram: un clic abre esa publicación en el
   pop-up del Monitoreo. Se actualiza solo cada minuto. Los **análisis
   recientes** (fase E): los 4 últimos, cada uno abre su análisis.
-- **Análisis de publicación** (fase E): la solapa de la maqueta. Ver
+- **Análisis de publicación** (fases E y F): la solapa de la maqueta. Ver
   "Análisis de publicación en el servidor" más abajo.
 - **Favicon** nuevo: el ◎ de la marca.
 
@@ -1233,14 +1235,19 @@ nada ni vuelve a gastar, y el resultado queda en la tabla `analisis` y en
 - **Figuras públicas**: todos los que comentaron se cruzan con la tabla
   `figuras_publicas` (`/api/figuras`). El modelo solo sugiere rol para
   verificados que no tienen ficha, y la sugerencia queda como "sugerida"
-  hasta que el equipo la confirma; nunca pisa una del equipo.
+  hasta que el equipo la confirma; nunca pisa una del equipo. Desde la
+  pantalla (fase F2) una sugerida se confirma, se edita o se **descarta**
+  (queda en la tabla como "descartada" y el modelo no la vuelve a
+  sugerir), una del equipo se edita o se quita y un verificado sin ficha
+  se agrega; "Lista de figuras" las muestra todas, con buscar y agregar.
 - **Temas**: los define el modelo, cada uno con la cantidad de comentarios
   que hablan de él. Un clic muestra esos comentarios; ✎ cambia el nombre
   (si coincide con otro, se unen); "+ tema" agrega uno a mano, sin conteo,
   con un texto para el informe; solo los agregados a mano se quitan.
-- **Cuándo comentaron**: solo si la publicación trae su fecha y al menos 10
-  comentarios traen la suya. Por hora hasta 48 h, de a 6 h hasta 7 días y
-  por día después, con el pico marcado.
+- **Cuándo comentaron**: la curva, solo si la publicación trae su fecha y
+  al menos 10 comentarios traen la suya (si no, el bloque dice por qué).
+  Por hora hasta 48 h, de a 6 h hasta 7 días y por día después, con el
+  pico y el momento en que llegó la mitad de los comentarios marcados.
 - **La foto** sale de la misma corrida de la publicación (ningún pedido más
   a Apify); si la publicación ya está en el Monitoreo con foto, se usa esa.
 - **Reclamos**: re-analizar una publicación (Instagram o X) ya no les borra
@@ -1256,6 +1263,21 @@ nada ni vuelve a gastar, y el resultado queda en la tabla `analisis` y en
   como "interrumpido".
 - "Analizar comentarios" del pop-up del Monitoreo deja el link en el campo
   sin analizar, y `instagram.html#analisis-<id>` abre un análisis guardado.
+- **La pantalla nueva** (fase F2, la solapa 3 de la maqueta): arriba, la
+  publicación con cuatro números (tono neto, postura crítica, verificados
+  y cuántos hablan del posteo) y la lectura; al lado, el hecho dominante
+  (o, sin él, el tema que más junta). Después tono, postura y "¿hablan
+  del posteo?", los temas con su tono, la comparación con los análisis
+  anteriores de la cuenta, cuándo comentaron, los pedidos (un clic muestra
+  sus comentarios), verificados y figuras, los que más pegaron, los
+  reclamos en un mapita de la Ciudad (solo los ya ubicados), a quién
+  etiquetan, los emojis, los comentarios con buscador y filtros, y
+  compartir. "Publicaciones analizadas" es la galería de todos los
+  análisis, con buscador, filtros (con hecho dominante, más críticas, con
+  verificados) y orden (`instagram.html#analisis-galeria`). Un análisis
+  de antes de la fase F dice "No disponible en análisis anteriores" en lo
+  que no tiene. En el inicio, "Análisis recientes" muestra el % negativo y
+  marca los que tuvieron un hecho dominante.
 
 ### Estadísticas: `GET /api/monitoring/stats` (octubre 2026)
 
