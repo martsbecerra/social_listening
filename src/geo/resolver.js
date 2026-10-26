@@ -77,7 +77,15 @@ async function direccionDeLugar(lugar) {
   const clave = `lugar:${lugar.clave || normalizarLugar(lugar.nombre)}`;
   const enCache = db.getLugarCache(clave);
   if (enCache && enCache.direccion) return enCache.direccion;
-  const direccion = await usig.inversa(lugar.x, lugar.y);
+  // El punto sale del dataset; la puerta es solo para mostrar. Con USIG
+  // caído el lugar queda ubicado igual, con su nombre (y nada en la caché).
+  let direccion;
+  try {
+    direccion = await usig.inversa(lugar.x, lugar.y);
+  } catch (err) {
+    if (err && err.transient) return null;
+    throw err;
+  }
   if (direccion) db.setLugarCache({ clave, nombre: lugar.nombre, x: lugar.x, y: lugar.y, direccion, fuente: lugar.tipo });
   return direccion || null;
 }

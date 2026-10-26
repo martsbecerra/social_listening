@@ -285,6 +285,15 @@ describe('el worker', { concurrency: false }, () => {
     assert.deepEqual([db.getReclamo('x:10').geoStatus, db.getReclamo('x:10').motivoSinUbicar], ['sin_direccion', 'sin_direccion']);
   });
 
+  test('con USIG caído, un lugar del índice queda ubicado igual, con su nombre (y sin caché de la puerta)', async () => {
+    assert.equal(db.getLugarCache('lugar:parque centenario'), null);
+    caido = true;
+    const r = await resolver.resolver({ tipo: 'lugar', nombre_lugar: 'el Parque Centenario' });
+    assert.ok(pedidos.some((p) => p.includes('reversegeocoding')), 'se pidió la puerta');
+    assert.deepEqual([r.geoStatus, r.precision, r.nombreLugar, r.direccionNormalizada], ['ok', 'lugar', 'Parque Centenario', 'Parque Centenario']);
+    assert.equal(db.getLugarCache('lugar:parque centenario'), null);
+  });
+
   test('con USIG caído, el reclamo queda pendiente', async () => {
     db.upsertReclamo({ id: 'x:11', comentarioId: 'x:11', plataforma: 'x', textoOriginal: 'bache', categoria: 'Higiene urbana', direccionDetectada: 'Juramento 3109' });
     caido = true;
