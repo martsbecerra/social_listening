@@ -95,7 +95,7 @@ describe('la configuración', { concurrency: false }, () => {
     for (const p of c.patrones_direccion_invalida) assert.doesNotThrow(() => new RegExp(p, 'i'), p);
     for (const l of c.lugares_extra) {
       assert.ok(l.nombre && Array.isArray(l.variantes) && l.variantes.length, l.nombre);
-      assert.ok(Boolean(l.club) !== Boolean(l.direccion), `${l.nombre}: club o direccion, uno solo`);
+      assert.equal([l.club, l.lugar, l.direccion].filter(Boolean).length, 1, `${l.nombre}: club, lugar o direccion, uno solo`);
     }
     assert.ok(c.lugares_extra.length >= 40, 'estadios y unos 30 hitos');
   });
