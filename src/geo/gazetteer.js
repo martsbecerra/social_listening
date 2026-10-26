@@ -262,19 +262,34 @@ function buscar(nombreLugar, indice, { textoCompleto = '', barrios = [], config 
  * Las variantes de lugares_extra → su entrada. Las de `club` y `lugar`
  * salen del índice (punto y dirección del dataset); las de `direccion`, de
  * `ubicarDireccion` (resolver.js, con USIG), que puede no estar (tests).
- * Una que cae fuera de su barrio no se usa: se avisa por log.
+ * Una que cae fuera de su barrio no se usa: se avisa por log. Si USIG falla
+ * de paso (caído, 502), las de `direccion` que faltan quedan en `pasajeros`
+ * y no frenan las demás: el resto del índice sigue sirviendo.
  */
 async function armarExtras(entradasCrudas, { ubicarDireccion = null, config = geoConfig() } = {}) {
   const porNombre = new Map(entradasCrudas.map((e) => [e.nombre, e]));
   const extras = new Map();
   const sinUbicar = [];
+  const pasajeros = [];
   for (const l of config.lugares_extra || []) {
     let base = null;
     if (l.club || l.lugar) {
       const e = porNombre.get(l.club || l.lugar);
       if (e) base = { x: e.x, y: e.y, direccion: e.direccion || null, fuente: e.tipo };
     } else if (l.direccion && ubicarDireccion) {
-      const r = await ubicarDireccion(l.direccion);
+      // Con USIG ya caído en esta pasada, las que faltan ni se preguntan.
+      if (pasajeros.length) {
+        pasajeros.push(l.nombre);
+        continue;
+      }
+      let r;
+      try {
+        r = await ubicarDireccion(l.direccion);
+      } catch (err) {
+        if (!err || !err.transient) throw err;
+        pasajeros.push(l.nombre);
+        continue;
+      }
       if (r && Number.isFinite(r.x) && Number.isFinite(r.y)) base = { x: r.x, y: r.y, direccion: r.direccionNormalizada || l.direccion, fuente: 'lugares_extra' };
     }
     if (!base) {
@@ -296,8 +311,14 @@ async function armarExtras(entradasCrudas, { ubicarDireccion = null, config = ge
     }
   }
   if (sinUbicar.length) console.warn(`[geo] lugares_extra sin ubicar: ${sinUbicar.join(', ')}`);
-  return { extras, sinUbicar };
+  if (pasajeros.length) console.warn(`[geo] lugares_extra: USIG no contestó; ${pasajeros.length} se vuelven a pedir en ${REINTENTO_EXTRAS_MIN} min`);
+  return { extras, sinUbicar, pasajeros };
 }
+
+// Un índice con lugares extra que faltan por una falla de USIG se rearma
+// recién pasado este tiempo: con USIG caído, cada búsqueda esperaría sus
+// reintentos.
+const REINTENTO_EXTRAS_MIN = 10;
 
 let memo = null;
 
@@ -307,10 +328,21 @@ let memo = null;
  */
 async function obtenerIndice({ ahora, forzar, ubicarDireccion = null } = {}) {
   const crudo = await obtenerCrudo({ ahora, forzar });
-  if (memo && memo.fetchedAt === crudo.fetchedAt && memo.config === geoConfig() && memo.conDirecciones === Boolean(ubicarDireccion)) return memo;
+  const t = ahora ? new Date(ahora).getTime() : Date.now();
+  if (memo && memo.fetchedAt === crudo.fetchedAt && memo.config === geoConfig() && memo.conDirecciones === Boolean(ubicarDireccion) && !(memo.reintentarEn && t >= memo.reintentarEn)) return memo;
   const { entradas, resumen } = filtrar(crudo.filas);
-  const { extras, sinUbicar } = await armarExtras(crudo.filas, { ubicarDireccion });
-  memo = { fetchedAt: crudo.fetchedAt, config: geoConfig(), conDirecciones: Boolean(ubicarDireccion), entradas, resumen, extras, extrasSinUbicar: sinUbicar, ...indexar(entradas) };
+  const { extras, sinUbicar, pasajeros } = await armarExtras(crudo.filas, { ubicarDireccion });
+  memo = {
+    fetchedAt: crudo.fetchedAt,
+    config: geoConfig(),
+    conDirecciones: Boolean(ubicarDireccion),
+    reintentarEn: pasajeros.length ? t + REINTENTO_EXTRAS_MIN * 60000 : null,
+    entradas,
+    resumen,
+    extras,
+    extrasSinUbicar: sinUbicar,
+    ...indexar(entradas),
+  };
   return memo;
 }
 

@@ -200,6 +200,39 @@ describe('el índice de lugares', { concurrency: false }, () => {
     assert.ok(avisos.some((m) => m.includes('cae en Parque Patricios, no en Palermo')));
   });
 
+  test('con USIG caído, los extras con dirección se saltean (una sola pregunta) y el índice se rearma a los 10 minutos', async () => {
+    const original = console.warn;
+    console.warn = () => {};
+    try {
+      let pedidos = 0;
+      const caido = async () => {
+        pedidos += 1;
+        throw Object.assign(new Error('USIG HTTP 502'), { transient: true });
+      };
+      const { extras, pasajeros } = await gazetteer.armarExtras(indice.entradas, {
+        ubicarDireccion: caido,
+        config: {
+          lugares_extra: [
+            { nombre: 'Uno', direccion: 'Corrientes 1000' },
+            { nombre: 'Dos', direccion: 'Callao 100' },
+            { nombre: 'Huracán', club: 'Atlético Huracán Estadio Tomás Adolfo Ducó', barrio: 'Parque Patricios' },
+          ],
+        },
+      });
+      assert.deepEqual([pedidos, pasajeros], [1, ['Uno', 'Dos']]);
+      assert.ok(extras.has('huracan'), 'lo que no depende de USIG queda');
+      const ahora = Date.now();
+      const primero = await gazetteer.obtenerIndice({ ubicarDireccion: caido, ahora: new Date(ahora) });
+      assert.ok(primero.reintentarEn > ahora);
+      assert.equal(await gazetteer.obtenerIndice({ ubicarDireccion: async () => null, ahora: new Date(ahora + 60000) }), primero, 'dentro de los 10 minutos, el mismo');
+      const despues = await gazetteer.obtenerIndice({ ubicarDireccion: async () => null, ahora: new Date(ahora + 11 * 60000) });
+      assert.notEqual(despues, primero);
+      assert.equal(despues.reintentarEn, null);
+    } finally {
+      console.warn = original;
+    }
+  });
+
   test('las versiones del nombre: entero y sin los indicadores del principio', () => {
     assert.deepEqual(gazetteer.versiones('cruce peatonal de Ruiz de los Llanos').map((v) => v.texto), ['cruce peatonal de ruiz de los llanos', 'ruiz de los llanos']);
     assert.deepEqual(gazetteer.versiones('locales de Once').map((v) => v.texto), ['locales de once', 'once']);
