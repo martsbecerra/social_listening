@@ -172,6 +172,12 @@ describe('el índice de lugares', { concurrency: false }, () => {
     assert.equal(nombre(gazetteer.buscar('el bar La Casona Azul', chico, { barrios })), 'La Casona Azul');
   });
 
+  test('un lugar extra también con el artículo adelante', () => {
+    const estacion = { nombre: 'Estación Villa Pueyrredón (Mitre)', tipo: 'lugar_extra', x: -58.5019, y: -34.5805 };
+    const chico = { ...gazetteer.indexar([]), entradas: [], extras: new Map([['estacion villa pueyrredon', estacion]]) };
+    assert.equal(nombre(gazetteer.buscar('la estación Villa Pueyrredón', chico, { barrios })), 'Estación Villa Pueyrredón (Mitre)');
+  });
+
   test('una escuela con su indicador sí', () => {
     const r = gazetteer.buscar('colegio Nº 02 Domingo Faustino Sarmiento DE 01', indice, { barrios });
     assert.equal(r.lugar && r.lugar.tipo, 'escuela');

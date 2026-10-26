@@ -239,7 +239,9 @@ function buscar(nombreLugar, indice, { textoCompleto = '', barrios = [], config 
   const exclusionBarrios = new Set([...(config.barrios_y_comunas_excluidos || []).map(normalizarLugar), ...barrios]);
   let motivo = 'no_encontrado';
   for (const v of opciones) {
-    const extra = indice.extras && indice.extras.get(v.texto);
+    // Las variantes de un lugar extra van sin el artículo de adelante: "la
+    // estación Villa Pueyrredón" es "estación villa pueyrredon".
+    const extra = indice.extras && (indice.extras.get(v.texto) || indice.extras.get(v.texto.replace(/^(?:el|la|los|las) /, '')));
     if (extra) return { lugar: extra, motivo: null };
     if (exclusionBarrios.has(v.texto) && !v.conIndicador) {
       motivo = 'barrio_sin_indicador';
