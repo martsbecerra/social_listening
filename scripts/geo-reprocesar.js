@@ -65,7 +65,8 @@ async function main(argv = process.argv) {
   }
   // ANTES de cargar nada de src/ (db.js abre la base al cargarse).
   process.env.MONITORING_DB_PATH = base;
-  if (args.modo === 'si') require('dotenv').config({ path: path.join(REPO, '.env'), quiet: true });
+  // MONITORING_ENV_PATH: el .env de otra carpeta (corrido desde una copia del repo).
+  if (args.modo === 'si') require('dotenv').config({ path: process.env.MONITORING_ENV_PATH || path.join(REPO, '.env'), quiet: true });
 
   const reproceso = require('../src/geo/reproceso');
   const extraccion = require('../src/geo/extraccion');
