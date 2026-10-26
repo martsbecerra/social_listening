@@ -2936,6 +2936,8 @@ function listReclamosDePost({ plataforma, postUrl }) {
     categoria: r.categoria,
     subcategoria: r.subcategoria || null,
     direccion: r.direccion_normalizada || r.direccion_detectada || null,
+    direccionDetectada: r.direccion_detectada || null,
+    direccionNormalizada: r.direccion_normalizada || null,
     barrio: r.barrio || null,
     comuna: numberOrNull(r.comuna),
     x: numberOrNull(r.x),

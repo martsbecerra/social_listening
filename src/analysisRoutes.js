@@ -43,7 +43,7 @@ const postImages = require('./postImages');
 const { checkAnalyzeUrl } = require('./platforms/urlPlatform');
 const { CACHE_CONTROL } = require('./postImageRoutes');
 const { buildAnalysisView, columnasDeVista } = require('./analysisMetrics');
-const { buildInforme, buildComentariosCsv } = require('./reportBuilder');
+const { buildInforme, buildComentariosCsv, buildReclamosCsvDeBase } = require('./reportBuilder');
 const { aplicarCambio, traducirListaVieja } = require('./analysisTemas');
 
 const PLATAFORMAS = new Set(['instagram', 'x']);
@@ -322,10 +322,13 @@ function register(app) {
     if (!plataforma) return undefined;
     const id = idDe(req);
     const analisis = id ? db.getAnalisis(id, plataforma) : null;
-    if (!analisis || analisis.estado !== 'ok' || !analisis.csv || !(analisis.reclamos > 0)) {
+    // Fase H: se arma con lo que está en la tabla (lo que resolvió el
+    // servidor y lo corregido a mano), con la temática del CSV guardado.
+    const reclamos = analisis && analisis.estado === 'ok' ? db.listReclamosDePost({ plataforma, postUrl: analisis.url }) : [];
+    if (!reclamos.length) {
       return res.status(404).json({ error: 'Ese análisis no tiene reclamos con ubicación.' });
     }
-    return enviarCsv(res, nombreCsv('reclamos', analisis), analisis.csv);
+    return enviarCsv(res, nombreCsv('reclamos', analisis), buildReclamosCsvDeBase(reclamos, analisis.csv));
   });
 
   app.get('/api/analisis/:id/image', (req, res) => {

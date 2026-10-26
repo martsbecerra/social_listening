@@ -73,32 +73,32 @@ Ejemplo: "Qué lindo quedó, pero a Macri ni lo nombren" es tono positivo y post
 - true si pide algo concreto o pregunta en serio ("¿y para Lugano cuándo?", "pongan baños", "¿cuánto costó?").
 - false si no, y también si la pregunta es retórica, irónica o un chiste ("¿te arrodillaste?", "¿quién te votó?").
 
-6. Reclamos geolocalizables (reclamosGeo)
-Generá una entrada SOLO si el comentario menciona una ubicación ACCIONABLE, es decir, un lugar al que se podría mandar una cuadrilla. Ser estricto acá importa más que no perderse un caso: una ubicación inventada ensucia el mapa para siempre.
+6. Reclamos con un lugar (reclamosGeo)
+Un reclamo es un problema concreto (algo roto, sucio, peligroso, que falta o que no funciona) o el pedido de que alguien lo resuelva, en un lugar que el comentario NOMBRA. Generá una entrada por cada lugar nombrado. Sin ningún lugar nombrado no hay entrada, aunque el comentario pida algo (eso ya cuenta como pedido). Una opinión política, una chicana o un lugar mencionado de paso sin reportar nada no son reclamos.
 
-SÍ son accionables (los cuatro tipos, con su tipoUbicacion):
-- calle_altura — calle con número: "Juramento 3109", "hay un bache en Salta 250".
-- cruce — esquina entre dos calles: "Nazca y Rivadavia", "en Corrientes esquina Medrano".
-- tramo — una avenida entre dos calles: "Cabildo entre Juramento y Mendoza".
-- lugar_nombrado — lugar con nombre propio y ubicación única: plazas, parques, estaciones, hospitales, escuelas, monumentos, clubes. Ejemplos: "Plaza Italia", "Hospital Durand", "la estación Palermo", "el Parque Centenario", "Escuela Raggio".
-
-NO son accionables. Si el comentario sólo tiene esto, NO generes entrada, aunque el reclamo sea real y esté bien fundado:
-- Un barrio solo: "vivo en Palermo", "esto pasa en Almagro", "Villa Santa Rita está abandonada".
-- Una comuna, la ciudad, una provincia o un país: "la Comuna 7", "en CABA", "en Buenos Aires", "mi hijo vive en España".
-- Referencias vagas o relativas: "en el centro", "por mi casa", "a la vuelta", "toda la zona", "en el barrio de siempre".
-- Números que NO son altura: horarios ("hasta las 18h", "a las 7am"), fechas, precios ("por 200 pesos"), cantidades ("1 o 2 o 3"). Un número suelto cerca de un nombre de calle no lo convierte en dirección.
-
-Ante la duda, NO generes la entrada.
-
-- direccionDetectada: cita textual o casi textual del usuario.
-- direccionNormalizada: formato apto para mapa; "N/D" si no hay datos suficientes.
-- tipoUbicacion: uno de los cuatro tipos de arriba.
+En "ubicacion" separá lo que escribió la persona, campo por campo. Vos extraés; la ubicación la resuelve el sistema: NUNCA des coordenadas ni completes lo que el comentario no dice.
+- tipo:
+  - calle_altura: calle con número ("Juramento 3109", "un bache en Salta 250"). Van calle y altura.
+  - cruce: dos calles que se cruzan ("Nazca y Rivadavia", "Corrientes esquina Medrano"; "Cabildo entre Juramento y Mendoza" es el cruce Cabildo y Juramento). Van calle y calle2.
+  - lugar: un lugar con nombre propio: plaza, parque, estación, hospital, escuela, club, cancha, centro cultural, shopping, monumento ("la cancha de Huracán", "Plaza Italia", "la estación Villa Pueyrredón", "el Hospital Durand"). Va nombre_lugar.
+  - villa: una villa o un asentamiento ("la 31", "la 1-11-14", "Ciudad Oculta", "Zavaleta", "el Playón de Chacarita"). Va nombre_lugar.
+  - barrio: un barrio o una comuna, sin un lugar más preciso ("en Palermo", "la Comuna 7", "los locales de Once", "Villa Santa Rita está abandonada"). Va barrio_o_comuna. Un barrio o una comuna solos son barrio, no un punto.
+  - lineal: una avenida, una autopista, una vía o un arroyo sin altura ni cruce ("la General Paz", "toda Rivadavia", "la autopista Illia", "las vías del Sarmiento"). Va calle. Una avenida sola es lineal, no un punto.
+  - ninguna: un lugar fuera de la Ciudad (un municipio del conurbano, "provincia", "zona sur", "Tigre"), con fuera_de_caba true; o un lugar nombrado que no entra en ningún tipo.
+- calle y calle2: como aparecen en el texto ("Av. Rivadavia", "Gral. Paz"). altura: el número, entero; 0 si no hay. No inventes una altura ni un cruce. Una altura menor a 10 solo si viene pegada a su calle ("Caffarena 2").
+- Un número que no es una altura NO va en altura: horarios, fechas, leyes, cantidades, ordinales, rutas, kilómetros. Ejemplos de lo que NO es una dirección: "hasta las 18", "a las 7", "van a ser 2 horas", "llovieron 77 mm", "ruta nacional 1", "ley 1120", "artículo 14", "km 12", "el 28 de noviembre", "dic 24", "la 2da sección", "el sábado 19", "de 11 a 19", "por 200 pesos". Un número cerca de un nombre de calle no lo convierte en dirección.
+- La General Paz, el Riachuelo y el Río de la Plata son el límite de la Ciudad, no afuera: solos son lineal.
+- "Acá", "esta plaza", "este parque": usá el lugar de la publicación (LUGAR DE LA PUBLICACIÓN en los datos del posteo) o el que nombre el texto del posteo; si no hay ninguno, no inventes uno.
+- texto_original: el tramo exacto del comentario que nombra el lugar.
+- barrio_o_comuna: también en cualquier otro tipo, si el comentario lo dice ("en Corrientes 1200, Balvanera").
+- confianza: alta, media o baja (si dudás del tipo o de los campos, baja).
+- Los campos que el tipo no usa van vacíos ("") y altura en 0; fuera_de_caba es false salvo afuera.
 - tematica: frase corta de 2 a 4 palabras en minúsculas que nombre el tipo de reclamo (ej. bache, alumbrado, poda de árboles, plaza abandonada). No uses oraciones ni puntuación. Reutilizá la misma etiqueta si el tema es el mismo. Usá "otro" solo si el reclamo tiene ubicación pero no se puede nombrar.
 - categoria: elegí EXACTAMENTE UNA de esta lista, copiada tal cual (respetá mayúsculas y acentos). Es sólo el primer nivel: la subcategoría se pide en un paso aparte, no la incluyas acá.
 ${CATEGORIAS_PARA_PROMPT}
 Si el reclamo no encaja en ninguna, usá "Coyuntura / Otros".
-Un comentario puede tener varias entradas si menciona varias ubicaciones accionables.
-Si no hay ubicación accionable, reclamosGeo debe ser [].`;
+Un comentario puede tener varias entradas si nombra varios lugares.
+Si no hay ningún reclamo con un lugar nombrado, reclamosGeo debe ser [].`;
 
 const REGLAS_DE_DESEMPATE = `REGLAS DE DESEMPATE (obligatorias; prioridad sobre interpretación libre)
 

@@ -26,9 +26,48 @@ const MAX_TEMAS_POR_TANDA = 12;
 // tiene que poder mostrar esa diferencia en vez de fingir precisión.
 const TIPOS_UBICACION = ['calle_altura', 'cruce', 'tramo', 'lugar_nombrado'];
 
+// Fase H (openspec/changes/geo-pro): la ubicación de un reclamo en la tanda
+// de Instagram, campo por campo. El modelo extrae; la resuelve el servidor
+// (src/geo/resolver.js). Sin null (modo estricto del proveedor): un campo
+// vacío es "" y la altura, 0; validateAnalysis.js los pasa a lo que valen.
+const TIPOS_UBICACION_H = ['calle_altura', 'cruce', 'lugar', 'villa', 'barrio', 'lineal', 'ninguna'];
+const CONFIANZAS = ['alta', 'media', 'baja'];
+const UBICACION_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    tipo: { type: 'string', enum: TIPOS_UBICACION_H, description: 'Qué clase de lugar nombra el comentario (ver la sección 6 del prompt).' },
+    calle: { type: 'string', description: 'calle_altura, cruce o lineal: la calle como aparece; "" si no va.' },
+    altura: { type: 'integer', minimum: 0, description: 'calle_altura: el número; 0 si no hay.' },
+    calle2: { type: 'string', description: 'cruce: la otra calle; "" si no va.' },
+    nombre_lugar: { type: 'string', description: 'lugar o villa: el nombre tal como lo escribió la persona; "" si no va.' },
+    barrio_o_comuna: { type: 'string', description: 'El barrio o la comuna, si el comentario lo dice; "" si no.' },
+    texto_original: { type: 'string', description: 'El tramo exacto del comentario que nombra el lugar.' },
+    confianza: { type: 'string', enum: CONFIANZAS },
+    fuera_de_caba: { type: 'boolean', description: 'true si el lugar está fuera de la Ciudad.' },
+  },
+  required: ['tipo', 'calle', 'altura', 'calle2', 'nombre_lugar', 'barrio_o_comuna', 'texto_original', 'confianza', 'fuera_de_caba'],
+};
+const RECLAMO_TANDA_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    ubicacion: UBICACION_SCHEMA,
+    tematica: { type: 'string', maxLength: 40, description: 'Etiqueta corta (2 a 4 palabras) del tipo de reclamo. No es un enum: el backend la normaliza.' },
+    categoria: {
+      type: 'string',
+      enum: listCategorias(),
+      description: 'Categoría cerrada del reclamo. Sólo el primer nivel: la subcategoría se pide aparte. "Coyuntura / Otros" si no encaja en ninguna.',
+    },
+  },
+  required: ['ubicacion', 'tematica', 'categoria'],
+};
+
 // Una fila del CSV de reclamos (puede haber varias por comentario). También
 // alimenta la tabla `reclamos` del mapa: direccionDetectada + categoria son
-// los campos que usa reclamosFromAnalysis.js (ver src/db.js).
+// los campos que usa reclamosFromAnalysis.js (ver src/db.js). Desde la fase
+// H la tanda de Instagram usa RECLAMO_TANDA_SCHEMA; este queda para el
+// schema por defecto de los proveedores (ANALYSIS_JSON_SCHEMA).
 const RECLAMO_GEO_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -139,7 +178,7 @@ const CLASIFICACION_TANDA_SCHEMA = {
     tema: { type: 'integer', minimum: 0, description: 'El número del tema de la lista; 0 si es ruido o no encaja en ninguno.' },
     sobre_posteo: { type: 'boolean', description: 'true si habla de lo que publica la cuenta o es una reacción genérica a la persona (elogio o insulto sin tema concreto); false solo si usa el posteo para otro tema concreto.' },
     pedido: { type: 'boolean', description: 'true si pide algo concreto o pregunta.' },
-    reclamosGeo: { type: 'array', items: RECLAMO_GEO_SCHEMA },
+    reclamosGeo: { type: 'array', items: RECLAMO_TANDA_SCHEMA },
   },
   required: ['index', 'sentiment', 'postura', 'tema', 'sobre_posteo', 'pedido', 'reclamosGeo'],
 };
@@ -234,5 +273,7 @@ module.exports = {
   ACCOUNT_TYPES,
   POSTURAS,
   TIPOS_UBICACION,
+  TIPOS_UBICACION_H,
+  CONFIANZAS,
   MAX_TEMAS_POR_TANDA,
 };

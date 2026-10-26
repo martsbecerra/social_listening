@@ -8,6 +8,8 @@
 
 const { formatCountWithDots } = require('./sentimentAggregate');
 const { rolTexto } = require('./figuras');
+const { leerCsv } = require('./geo/geometria');
+const ETIQUETA = require('./geo/etiquetas');
 
 // Encabezado fijo exigido por la metodología (descarga en el front).
 const CSV_HEADER =
@@ -23,6 +25,18 @@ function escapeCsvField(value) {
   let s = value == null ? '' : String(value);
   if (/^[=+\-@\t\r]/.test(s) && !/^-?\d+([.,]\d+)?$/.test(s)) s = `'${s}`;
   return `"${s.replace(/"/g, '""')}"`;
+}
+
+// La ubicación del modelo (fase H) dicha en una línea, para la columna
+// "Direccion normalizada" del CSV que se guarda con el análisis.
+function ubicacionEnUnaLinea(u) {
+  if (!u) return '';
+  if (u.tipo === 'calle_altura') return `${u.calle} ${u.altura}`;
+  if (u.tipo === 'cruce') return `${u.calle} y ${u.calle2}`;
+  if (u.tipo === 'lugar' || u.tipo === 'villa') return u.nombre_lugar;
+  if (u.tipo === 'barrio') return u.barrio_o_comuna;
+  if (u.tipo === 'lineal') return u.calle;
+  return u.fuera_de_caba ? 'fuera de la Ciudad' : '';
 }
 
 /**
@@ -51,13 +65,57 @@ function buildReclamosCsv(sample, classifications) {
         [
           escapeCsvField(username),
           escapeCsvField(r.direccionDetectada),
-          escapeCsvField(r.direccionNormalizada || 'N/D'),
+          escapeCsvField(ubicacionEnUnaLinea(r.ubicacion) || r.direccionNormalizada || 'N/D'),
           escapeCsvField(r.tematica || 'N/D'),
         ].join(',')
       );
     }
   }
 
+  return `${rows.join('\n')}\n`;
+}
+
+const CSV_RECLAMOS_EXTRA = '"Categoria","Subcategoria","Tipo de ubicacion","Precision","Lugar","Barrio","Comuna","Motivo sin ubicar"';
+const sinApostrofo = (v) => String(v || '').replace(/^'(?=[=+\-@\t\r])/, '');
+
+/**
+ * El CSV de reclamos que se descarga (fase H): las cuatro columnas de la
+ * metodología, con la dirección que resolvió el servidor (y la corrección
+ * a mano, si la hubo), más la categoría, el tipo de ubicación, la
+ * precisión, el lugar, el barrio, la comuna y el motivo de los sin ubicar.
+ * La temática no se guarda en la tabla: sale del CSV guardado con el
+ * análisis, por usuario y dirección detectada.
+ * @param {object[]} reclamos db.listReclamosDePost
+ * @param {string} [csvGuardado] el del análisis (buildReclamosCsv)
+ */
+function buildReclamosCsvDeBase(reclamos, csvGuardado = '') {
+  const tematicas = new Map();
+  for (const f of leerCsv(csvGuardado || '')) {
+    const clave = `${sinApostrofo(f['Nombre de usuario'])}|${sinApostrofo(f['Direccion detectada'])}`;
+    if (!tematicas.has(clave)) tematicas.set(clave, sinApostrofo(f['Tematica detectada']));
+  }
+  const rows = [`${CSV_HEADER},${CSV_RECLAMOS_EXTRA}`];
+  for (const r of reclamos) {
+    const usuario = r.autor || 'desconocido';
+    rows.push(
+      [
+        usuario,
+        r.direccionDetectada || '',
+        r.direccionNormalizada || 'N/D',
+        tematicas.get(`${usuario}|${r.direccionDetectada || ''}`) || 'N/D',
+        r.categoria || '',
+        r.subcategoria || '',
+        ETIQUETA.TIPO[r.ubicacionTipo] || '',
+        ETIQUETA.PRECISION[r.precision] || '',
+        r.nombreLugar || '',
+        r.barrio || '',
+        r.comuna ?? '',
+        ETIQUETA.MOTIVO[r.motivoSinUbicar] || '',
+      ]
+        .map(escapeCsvField)
+        .join(',')
+    );
+  }
   return `${rows.join('\n')}\n`;
 }
 
@@ -250,4 +308,4 @@ function buildComentariosCsv(vista) {
   return `${rows.join('\n')}\n`;
 }
 
-module.exports = { buildReclamosCsv, buildInforme, buildComentariosCsv };
+module.exports = { buildReclamosCsv, buildReclamosCsvDeBase, buildInforme, buildComentariosCsv };

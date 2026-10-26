@@ -37,7 +37,7 @@ function buildReclamosFromAnalysis({ url, sample, classifications }) {
       comment.apifyId != null ? `ig:${comment.apifyId}` : fallbackId(url, comment.username, comment.text);
 
     reclamosGeo.forEach((r, idx) => {
-      if (!r || !r.direccionDetectada) return;
+      if (!r || (!r.direccionDetectada && !(r.ubicacion && r.ubicacion.fuera_de_caba))) return;
       const comentarioId = idx === 0 ? baseId : `${baseId}-${idx + 1}`;
       rows.push({
         id: comentarioId,
@@ -52,7 +52,7 @@ function buildReclamosFromAnalysis({ url, sample, classifications }) {
         categoria: r.categoria,
         // La completa el paso 2 (clasificarReclamo.js) antes de guardar.
         subcategoria: '',
-        direccionDetectada: r.direccionDetectada,
+        direccionDetectada: r.direccionDetectada || null,
         direccionNormalizada: null,
         calle: null,
         altura: null,
@@ -61,11 +61,13 @@ function buildReclamosFromAnalysis({ url, sample, classifications }) {
         y: null,
         comuna: null,
         barrio: null,
-        // Un lugar con nombre propio ("Plaza Italia") se geocodifica igual,
-        // pero cae en el centroide del lugar, no en una altura. Se marca
-        // distinto para que el mapa no finja una precisión que no hay; el
-        // resto de los tipos son direcciones puntuales.
-        precision: r.tipoUbicacion === 'lugar_nombrado' ? 'aproximada' : 'exacta',
+        // Fase H: la ubicación del modelo, campo por campo; la precisión y
+        // el punto (o el motivo) los pone el worker con el resolver
+        // (src/geo/resolver.js), que no es el mismo para un lugar con
+        // nombre, una villa o una altura.
+        ubicacionTipo: r.ubicacion ? r.ubicacion.tipo : null,
+        ubicacion: r.ubicacion || null,
+        precision: null,
         geoStatus: 'pendiente',
         estado: 'Pendiente',
       });
