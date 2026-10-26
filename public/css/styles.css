@@ -5825,20 +5825,15 @@ svg.line {
   font: 600 9px var(--mono);
   fill: #fff;
 }
-.ana4 .an-map .halo {
-  animation: anHalo 2.4s ease-out infinite;
-  transform-box: fill-box;
-  transform-origin: center;
+/* La precisión (fase H), como en el Mapa: un lugar con nombre, un anillo
+   punteado; una villa, un halo grande; una dirección o un cruce, nada. */
+.ana4 .an-map .halo-lugar {
+  fill-opacity: 0.22;
+  stroke-width: 1.2;
+  stroke-dasharray: 2 2;
 }
-@keyframes anHalo {
-  0% {
-    transform: scale(0.6);
-    opacity: 0.7;
-  }
-  100% {
-    transform: scale(3.2);
-    opacity: 0;
-  }
+.ana4 .an-map .halo-area {
+  fill-opacity: 0.18;
 }
 .ana4 .an-map .vacio {
   font: 500 11px var(--body);
@@ -5867,6 +5862,15 @@ svg.line {
 }
 .ana4 .an-recl i.sin {
   border: 1.5px solid var(--muted);
+}
+.ana4 .an-recl i.p-lugar {
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--muted) 45%, transparent);
+}
+.ana4 .an-recl i.p-area {
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--muted) 35%, transparent);
+}
+.ana4 .an-recl .mot {
+  color: var(--muted);
 }
 .ana4 .an-recl small {
   color: var(--muted);

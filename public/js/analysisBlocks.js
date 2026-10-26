@@ -1453,17 +1453,27 @@ function anaRenderRecl(v) {
     const color = temaColor(g.items[0].categoria);
     const n = g.items.length;
     const rad = n > 1 ? 9 + Math.min(6, n) : 6;
-    const dot = anaSvg('g', { class: 'dot' });
+    const precision = anaPrecisionGrupo(g.items);
+    const dot = anaSvg('g', { class: `dot p-${precision}` });
     dot.style.animationDelay = `${0.2 + i * 0.12}s`;
     dot.dataset.tipTitle = n === 1 ? anaReclTitulo(g.items[0]) : `${n} reclamos`;
-    dot.dataset.tip = g.items
-      .slice(0, 4)
-      .map((r) => (n === 1 ? `${r.direccion || 'sin dirección'}${r.autor ? ` · @${r.autor}` : ''}` : `${anaReclTitulo(r)} · ${r.direccion || 'sin dirección'}`))
+    dot.dataset.tip = [ANA_PRECISION[precision]]
+      .concat(
+        g.items
+          .slice(0, 4)
+          .map((r) => (n === 1 ? `${anaReclLugar(r)}${r.autor ? ` · @${r.autor}` : ''}` : `${anaReclTitulo(r)} · ${anaReclLugar(r)}`))
+      )
       .concat(n > 4 ? ['…'] : [])
       .join('\n');
-    const halo = anaSvg('circle', { class: 'halo', cx: g.x.toFixed(1), cy: g.y.toFixed(1), r: Math.min(rad, 7), fill: color, opacity: 0.35 });
-    halo.style.animationDelay = `${i * 0.4}s`;
-    dot.append(halo, anaSvg('circle', { class: 'p', cx: g.x.toFixed(1), cy: g.y.toFixed(1), r: rad, fill: color }));
+    // La precisión (fase H), como en el Mapa: sin halo, una dirección o un
+    // cruce; con un anillo punteado, un lugar con nombre (aproximado); con un
+    // halo grande, una villa (un área).
+    if (precision === 'lugar') {
+      dot.append(anaSvg('circle', { class: 'halo-lugar', cx: g.x.toFixed(1), cy: g.y.toFixed(1), r: rad + 4, fill: color, stroke: color }));
+    } else if (precision === 'area') {
+      dot.append(anaSvg('circle', { class: 'halo-area', cx: g.x.toFixed(1), cy: g.y.toFixed(1), r: rad + 9, fill: color }));
+    }
+    dot.append(anaSvg('circle', { class: 'p', cx: g.x.toFixed(1), cy: g.y.toFixed(1), r: rad, fill: color }));
     if (n > 1) {
       const t = anaSvg('text', { x: g.x.toFixed(1), y: (g.y + 3.5).toFixed(1), 'text-anchor': 'middle' });
       t.textContent = String(n);
@@ -1485,27 +1495,39 @@ function anaRenderRecl(v) {
   anaB.reclHint.textContent = todos.length
     ? `${anaPlural(ubicados.length, 'ubicado', 'ubicados')}${ubicados.length ? ` en ${anaPlural(grupos.length, 'punto', 'puntos')}` : ''}${pendientes ? ` · ${formatCount(pendientes)} sin ubicar todavía` : ''}${sinUbicacion ? ` · ${formatCount(sinUbicacion)} sin ubicación` : ''}`
     : 'ninguno en esta publicación';
-  const motivo = (r) => (r.geoStatus === 'pendiente' ? 'sin ubicar todavía' : r.geoStatus === 'fuera_caba' ? 'fuera de la Ciudad' : 'sin ubicación');
   const filas = [...ubicados, ...todos.filter((r) => !ubicados.includes(r))].slice(0, ANA_RECL_LISTA).map((r) => {
     const fila = anaEl('div');
-    const punto = anaEl('i', ubicados.includes(r) ? '' : 'sin');
+    const punto = anaEl('i', ubicados.includes(r) ? `p-${anaPrecisionGrupo([r])}` : 'sin');
     if (ubicados.includes(r)) punto.style.background = temaColor(r.categoria);
     punto.setAttribute('aria-hidden', 'true');
-    const texto = anaEl('span', '', `${anaReclTitulo(r)} · ${r.direccion || 'sin dirección'}`);
-    if (!ubicados.includes(r)) texto.append(anaEl('span', 'sr', ` (${motivo(r)})`));
+    const texto = anaEl('span', '', `${anaReclTitulo(r)} · ${anaReclLugar(r)}`);
+    // El motivo a la vista: por qué ese no tiene punto.
+    if (!ubicados.includes(r)) texto.append(anaEl('span', 'mot', ` · ${anaReclMotivo(r)}`));
     fila.append(punto, texto, anaEl('small', '', r.autor ? `@${r.autor}` : ''));
     return fila;
   });
   const pie = anaEl('div');
   const vacio = anaEl('i');
   vacio.setAttribute('aria-hidden', 'true');
-  const link = anaEl('a', '', todos.length > ANA_RECL_LISTA ? `+${formatCount(todos.length - ANA_RECL_LISTA)} más · ver en el Mapa` : 'Ver en el Mapa de reclamos →');
+  const sinPunto = todos.length - ubicados.length;
+  const link = anaEl(
+    'a',
+    '',
+    todos.length > ANA_RECL_LISTA
+      ? `+${formatCount(todos.length - ANA_RECL_LISTA)} más · ver en el Mapa`
+      : sinPunto
+        ? `Corregir ${sinPunto === 1 ? 'el que no tiene punto' : `los ${formatCount(sinPunto)} sin punto`} en el Mapa →`
+        : 'Ver en el Mapa de reclamos →'
+  );
   link.href = '#tab-claims-map';
   link.addEventListener('click', (e) => {
     if (typeof openTab === 'function') {
       e.preventDefault();
       openTab('claims-map');
-      window.scrollTo(0, 0);
+      // Con reclamos sin punto, a la tarjeta "Sin ubicar" del Mapa (donde se corrigen).
+      const destino = sinPunto ? document.getElementById('claimsSinUbicar') : null;
+      if (destino) setTimeout(() => destino.scrollIntoView({ block: 'start' }), 400);
+      else window.scrollTo(0, 0);
     }
   });
   pie.append(vacio, link, anaEl('small'));
@@ -1514,6 +1536,43 @@ function anaRenderRecl(v) {
 
 function anaReclTitulo(r) {
   return r.subcategoria || r.categoria || 'Reclamo';
+}
+
+// Fase H: los mismos textos que el Mapa y el CSV (src/geo/etiquetas.js).
+const ANA_PRECISION = {
+  puntual: 'Dirección exacta',
+  cruce: 'Cruce de calles',
+  lugar: 'Lugar con nombre · ubicación aproximada',
+  area: 'Villa o asentamiento · ubicación del área',
+};
+const ANA_MOTIVO = {
+  lineal: 'una calle o avenida sin altura ni cruce',
+  fuera_de_caba: 'fuera de la Ciudad',
+  ambigua: 'ambigua: USIG dio varias opciones',
+  no_encontrada: 'no encontrada',
+  sin_direccion: 'sin dirección',
+  descartado: 'descartado por el equipo',
+};
+
+function anaPrecisionGrupo(items) {
+  const ps = items.map((r) => (r.precision === 'aproximada' ? 'lugar' : r.precision === 'exacta' ? 'puntual' : r.precision));
+  if (ps.some((p) => p === 'puntual' || p === 'cruce')) return ps.includes('puntual') ? 'puntual' : 'cruce';
+  if (ps.includes('lugar')) return 'lugar';
+  if (ps.includes('area')) return 'area';
+  return 'puntual';
+}
+
+// Lo que se muestra del lugar: el nombre (un lugar, una villa) y la dirección.
+function anaReclLugar(r) {
+  if (r.nombreLugar && r.direccion && r.nombreLugar !== r.direccion) return `${r.nombreLugar} (${r.direccion})`;
+  return r.nombreLugar || r.direccion || 'sin dirección';
+}
+
+function anaReclMotivo(r) {
+  if (r.geoStatus === 'pendiente') return 'sin ubicar todavía';
+  if (r.ubicacionTipo === 'barrio' && !r.motivoSinUbicar && r.barrio) return `solo el barrio: ${r.barrio}`;
+  if (r.motivoSinUbicar && ANA_MOTIVO[r.motivoSinUbicar]) return ANA_MOTIVO[r.motivoSinUbicar];
+  return r.geoStatus === 'fuera_caba' ? 'fuera de la Ciudad' : 'sin ubicación';
 }
 
 // ---------------------------------------------------------------- etiquetas y emojis
