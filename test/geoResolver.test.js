@@ -255,6 +255,17 @@ describe('texto libre (X, el importador)', { concurrency: false }, () => {
     const r = await resolver.resolver(resolver.desdeTextoLibre('Plaza Miserere', 'lugar_nombrado'));
     assert.equal(r.nombreLugar, 'Plaza Miserere');
   });
+
+  test('un nombre sin altura ni dos calles (una corrección): primero el índice, sin esperar al normalizador', async () => {
+    pedidos = [];
+    const r = await resolver.resolver(resolver.desdeTextoLibre('Plaza Miserere'));
+    assert.equal(r.nombreLugar, 'Plaza Miserere');
+    assert.ok(!pedidos.some((p) => p.startsWith('servicios/normalizar')), pedidos.join(' · '));
+    // Con dos calles sí va primero a USIG.
+    pedidos = [];
+    await resolver.resolver(resolver.desdeTextoLibre('Nazca y Rivadavia'));
+    assert.ok(pedidos.some((p) => p.startsWith('servicios/normalizar')));
+  });
 });
 
 describe('el worker', { concurrency: false }, () => {

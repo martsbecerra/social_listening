@@ -287,15 +287,27 @@ function tramoACruce(texto) {
   return m ? `${m[1]} y ${m[2]}` : texto;
 }
 
+// Una altura o dos calles: lo único con lo que USIG puede dar un punto.
+const pareceDireccion = (t) => /\d/.test(t) || /\s(?:y|e|esq\.?|esquina)\s/i.test(` ${t} `);
+
 async function resolverTexto(tramo, { texto, tipoUbicacion }) {
   if (!tramo) return sinUbicar('sin_direccion');
   if (tipoUbicacion === 'lugar_nombrado') return resolverLugar(tramo, { textoCompleto: texto });
+  const esLugar = (l) => l.geoStatus === 'ok' || l.ubicacionTipo === 'barrio';
+  // Un nombre sin altura ni dos calles ("Plaza Irlanda", una corrección a
+  // mano): primero el índice de lugares, que es local; el normalizador de
+  // USIG tarda 16 s o más en contestar "calle inexistente".
+  let lugar = null;
+  if (tipoUbicacion !== 'tramo' && !pareceDireccion(tramo)) {
+    lugar = await resolverLugar(tramo, { textoCompleto: texto });
+    if (esLugar(lugar)) return lugar;
+  }
   const consulta = tipoUbicacion === 'tramo' ? tramoACruce(tramo) : tramo;
   const r = await textoLibre(consulta);
   if (r.estado === 'ok' || r.estado === 'ambigua' || r.estado === 'fuera_caba') return deUsig(r, r.tipo || 'calle_altura');
   // USIG no la reconoce: ¿un lugar o un barrio?
-  const lugar = await resolverLugar(tramo, { textoCompleto: texto });
-  if (lugar.geoStatus === 'ok' || lugar.ubicacionTipo === 'barrio') return lugar;
+  if (!lugar) lugar = await resolverLugar(tramo, { textoCompleto: texto });
+  if (esLugar(lugar)) return lugar;
   return sinUbicar('no_encontrada');
 }
 
