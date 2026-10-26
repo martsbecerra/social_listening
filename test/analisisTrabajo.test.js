@@ -113,7 +113,7 @@ function stubs() {
             sobre_posteo: Number(m[2].replace('vecino', '')) % 2 !== 0,
             // Los que agrupa la síntesis de abajo (un pedido solo junta marcados PEDIDO).
             pedido: m[1] === '2' || m[1] === '3',
-            reclamosGeo: m[2] === 'vecino2' ? [{ direccionDetectada: 'Salta 250', direccionNormalizada: 'Salta 250', tematica: 'bache', categoria: 'Infraestructura', tipoUbicacion: 'calle_altura' }] : [],
+            reclamosGeo: m[2] === 'vecino2' ? [{ ubicacion: { tipo: 'calle_altura', calle: 'Salta', altura: 250, calle2: '', nombre_lugar: '', barrio_o_comuna: '', texto_original: 'Salta 250', confianza: 'alta', fuera_de_caba: false }, tematica: 'bache', categoria: 'Infraestructura' }] : [],
           })),
         },
         usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150, costUsd: 0.01 },

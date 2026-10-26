@@ -102,7 +102,7 @@ function stubModelo() {
                 tema: nuevo && k % 5 === 0 ? nuevo : k % 2 === 0 ? 2 : 1,
                 sobre_posteo: k % 2 !== 0,
                 pedido: k % 7 === 0,
-                reclamosGeo: k === 5 ? [{ direccionDetectada: 'Salta 250', direccionNormalizada: 'Salta 250', tematica: 'bache', categoria: 'Infraestructura', tipoUbicacion: 'calle_altura' }] : [],
+                reclamosGeo: k === 5 ? [{ ubicacion: { tipo: 'calle_altura', calle: 'Salta', altura: 250, calle2: '', nombre_lugar: '', barrio_o_comuna: '', texto_original: 'Salta 250', confianza: 'alta', fuera_de_caba: false }, tematica: 'bache', categoria: 'Infraestructura' }] : [],
               };
             }),
         },

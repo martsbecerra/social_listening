@@ -16,6 +16,7 @@ Link: ${url}
 Likes del posteo: ${fmt(post.likesCount)}
 Cantidad de comentarios (total del posteo): ${fmt(post.commentsCount)}
 Reproducciones de video (si aplica): ${fmt(post.videoPlayCount)}
+LUGAR DE LA PUBLICACIÓN: ${post.locationName ? post.locationName : 'N/D'}
 Texto / caption del posteo: ${post.caption ? post.caption : 'N/D'}`;
 }
 

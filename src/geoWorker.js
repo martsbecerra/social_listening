@@ -1,113 +1,76 @@
 // ==========================================================================
 // geoWorker.js
 // --------------------------------------------------------------------------
-// Procesa reclamos con geo_status = 'pendiente': geocodifica con USIG
-// (geocode.js) y asigna comuna/barrio (territorios.js). /api/analyze nunca
-// geocodifica en el momento — deja las filas en 'pendiente' y responde
-// enseguida; este worker las resuelve después (cron de scheduler.js, o
-// disparado sin esperar tras un análisis). reintentarSinCoordenadas, una
-// sola vez al arrancar, vuelve a mandar a USIG los que quedaron sin punto.
+// Procesa reclamos con geo_status = 'pendiente': los resuelve con
+// src/geo/resolver.js (villas, USIG, lugares con nombre, barrios; fase H) y
+// guarda el punto, la precisión y la comuna y el barrio, o el motivo.
+// /api/analyze nunca geocodifica en el momento — deja las filas en
+// 'pendiente' y responde enseguida; este worker las resuelve después (cron
+// de scheduler.js, o disparado sin esperar tras un análisis), de a una.
+// reintentarSinCoordenadas, una sola vez al arrancar, vuelve a mandar los
+// que quedaron sin punto.
 // ==========================================================================
 
 const db = require('./db');
-const { geocodeAddress } = require('./geocode');
-const { ubicarPunto } = require('./territorios');
+const resolver = require('./geo/resolver');
 
 /**
- * @param {{ reintentar?: Set<string> }} [opts] reintentar: los ids del
- *   reintento de los sin coordenadas; para esos no vale una caché de "no
- *   encontrada" (se le vuelve a preguntar a USIG).
+ * La ubicación con la que se resuelve un reclamo: la del modelo (fase H,
+ * ubicacion_json) o, si no la tiene (X, el importador, los de antes), su
+ * dirección detectada como texto libre.
+ */
+function ubicacionDe(reclamo) {
+  const u = reclamo.ubicacion;
+  if (u && u.tipo) return u;
+  const tipoViejo = reclamo.precision === 'aproximada' || reclamo.precision === 'lugar' ? 'lugar_nombrado' : null;
+  return resolver.desdeTextoLibre(reclamo.direccionDetectada, tipoViejo);
+}
+
+/**
  * @returns {Promise<{ pending: number, processed: number, errors: number, fueraDeCaba: number }>}
  */
-async function processPendingReclamos({ reintentar = null } = {}) {
+async function processPendingReclamos() {
   const pending = db.listPendingGeoReclamos();
   let processed = 0;
   let errors = 0;
   let fueraDeCaba = 0;
 
   for (const reclamo of pending) {
-    if (!reclamo.direccionDetectada || !reclamo.direccionDetectada.trim()) {
-      db.updateReclamoGeo(reclamo.id, {
-        direccionNormalizada: null,
-        calle: null,
-        altura: null,
-        cruce: null,
-        x: null,
-        y: null,
-        comuna: null,
-        barrio: null,
-        precision: null,
-        geoStatus: 'sin_direccion',
-      });
-      processed += 1;
-      continue;
-    }
-
+    const ubicacion = ubicacionDe(reclamo);
     try {
-      const geo = await geocodeAddress(reclamo.direccionDetectada, { sinCacheFallida: Boolean(reintentar && reintentar.has(reclamo.id)) });
-
-      if (geo.geoStatus !== 'ok') {
-        // USIG puede resolver la dirección en otro partido (ver geocode.js):
-        // eso es fuera_caba, no "no había dirección". Se cuenta acá también,
-        // no sólo en el chequeo de polígonos de más abajo.
-        if (geo.geoStatus === 'fuera_caba') fueraDeCaba += 1;
-        db.updateReclamoGeo(reclamo.id, {
-          direccionNormalizada: geo.direccionNormalizada,
-          calle: geo.calle,
-          altura: geo.altura,
-          cruce: geo.cruce,
-          x: geo.x,
-          y: geo.y,
-          comuna: null,
-          barrio: null,
-          precision: geo.precision,
-          geoStatus: geo.geoStatus,
-        });
-        processed += 1;
-        continue;
-      }
-
-      const territorio = await ubicarPunto(geo.x, geo.y);
-      const geoStatus = territorio ? 'ok' : 'fuera_caba';
-      if (geoStatus === 'fuera_caba') fueraDeCaba += 1;
-      db.updateReclamoGeo(reclamo.id, {
-        direccionNormalizada: geo.direccionNormalizada,
-        calle: geo.calle,
-        altura: geo.altura,
-        cruce: geo.cruce,
-        x: geo.x,
-        y: geo.y,
-        comuna: territorio ? territorio.comuna : null,
-        barrio: territorio ? territorio.barrio : null,
-        // USIG siempre devuelve 'exacta' cuando resuelve, porque para él la
-        // consulta resolvió y punto. Pero si el LLM dijo que la ubicación era
-        // un lugar con nombre propio ("Plaza Italia"), el punto es el centroide
-        // del lugar, no una altura: esa marca la puso reclamosFromAnalysis y no
-        // se pisa. Ver el pin punteado del mapa.
-        precision: reclamo.precision === 'aproximada' ? 'aproximada' : geo.precision,
-        geoStatus,
-      });
+      const r = ubicacion
+        ? await resolver.resolver(ubicacion, { texto: reclamo.textoOriginal })
+        : { precision: 'ninguna', geoStatus: 'sin_direccion', motivoSinUbicar: 'sin_direccion' };
+      if (r.geoStatus === 'fuera_caba') fueraDeCaba += 1;
+      db.updateReclamoGeo(reclamo.id, r);
       processed += 1;
     } catch (err) {
-      // Falla transitoria (red/timeout de USIG): se deja 'pendiente' para
-      // reintentar en la próxima corrida, no se pierde el reclamo.
-      console.warn(`[geoWorker] "${reclamo.direccionDetectada}" (${reclamo.id}): ${err.message}`);
+      // Falla pasajera (USIG o un dataset sin respuesta): queda 'pendiente'
+      // para la próxima corrida, no se pierde el reclamo. Cualquier otra
+      // cosa es un error nuestro: queda sin ubicar, con el log, para no
+      // volver a probarlo en cada ciclo.
+      if (!err.transient) {
+        console.error(`[geoWorker] "${reclamo.direccionDetectada}" (${reclamo.id}): ${err.message}`);
+        db.updateReclamoGeo(reclamo.id, { precision: 'ninguna', geoStatus: 'no_encontrada', motivoSinUbicar: 'no_encontrada' });
+      } else {
+        console.warn(`[geoWorker] "${reclamo.direccionDetectada}" (${reclamo.id}): ${err.message}`);
+      }
       errors += 1;
     }
   }
 
   if (pending.length > 0) {
     console.log(
-      `[geoWorker] ${processed}/${pending.length} reclamos geocodificados ` +
-        `(${errors} con error transitorio, ${fueraDeCaba} fuera_caba)`
+      `[geoWorker] ${processed}/${pending.length} reclamos resueltos ` +
+        `(${errors} con error, ${fueraDeCaba} fuera de la Ciudad)`
     );
-    // Muchos fuera_caba en una tanda suele ser una señal de que el
+    // Muchos fuera de la Ciudad en una tanda suele ser una señal de que el
     // geocoding está resolviendo mal las direcciones, no de reclamos
-    // legítimamente fuera de la ciudad. Estos reclamos quedan guardados pero
-    // nunca se muestran ni se exportan (ver listReclamosFiltered).
+    // legítimamente afuera. Quedan guardados, con su motivo, pero nunca
+    // tienen pin (ver listReclamosFiltered).
     if (fueraDeCaba > 0) {
       console.warn(
-        `[geoWorker] ${fueraDeCaba} reclamo(s) quedaron fuera_caba en esta corrida ` +
+        `[geoWorker] ${fueraDeCaba} reclamo(s) quedaron fuera de la Ciudad en esta corrida ` +
         `(dirección real, pero de otro partido). No se muestran en el mapa.`
       );
     }
@@ -129,12 +92,11 @@ function processPendingReclamosInBackground() {
 const MARCA_REINTENTO = 'geo_reintento_sin_coordenadas';
 
 /**
- * Una sola vez: vuelve a ubicar con USIG todos los reclamos con dirección
- * escrita y sin un punto válido (sin coordenadas o en el (0,0)), con el
- * mismo worker de siempre (de a una dirección, con el backoff de USIG) y sin
- * la caché de "no encontrada". Lo llama server.js al arrancar. Deja la marca
- * antes de empezar: si el proceso se corta, los que quedaron 'pendiente' los
- * termina el worker del ciclo.
+ * Una sola vez: vuelve a ubicar todos los reclamos con dirección escrita y
+ * sin un punto válido (sin coordenadas o en el (0,0)), con el mismo worker
+ * de siempre (de a uno, con el backoff de USIG). Lo llama server.js al
+ * arrancar. Deja la marca antes de empezar: si el proceso se corta, los que
+ * quedaron 'pendiente' los termina el worker del ciclo.
  * @returns {Promise<{ total: number, ubicados: number } | null>} null si ya se había hecho.
  */
 async function reintentarSinCoordenadas({ ahora = new Date().toISOString() } = {}) {
@@ -146,7 +108,7 @@ async function reintentarSinCoordenadas({ ahora = new Date().toISOString() } = {
     return { total: 0, ubicados: 0 };
   }
   console.log(`[geo] reintento de los reclamos sin coordenadas: ${ids.length} vuelven a USIG`);
-  await processPendingReclamos({ reintentar: new Set(ids) });
+  await processPendingReclamos();
   const ubicados = db.contarUbicados(ids);
   console.log(`[geo] reintento de los reclamos sin coordenadas: ${ubicados} de ${ids.length} ubicados`);
   return { total: ids.length, ubicados };

@@ -1,0 +1,374 @@
+{
+  "version": 1,
+  "_comentario": "Listas de la georreferenciación de reclamos (fase H, openspec/changes/geo-pro), adaptadas del config.json del proyecto georreferenciacion. Si existe data/geo/geo-config.json, cada clave que traiga reemplaza a la de acá. Los nombres se comparan normalizados (sin acentos, minúsculas, abreviaturas expandidas).",
+  "gazetteer": {
+    "refresco_dias": 30,
+    "fuentes": {
+      "espacio_verde": "https://cdn.buenosaires.gob.ar/datosabiertos/datasets/secretaria-de-desarrollo-urbano/espacios-verdes/espacio_verde_publico.csv",
+      "estacion_subte": "https://cdn.buenosaires.gob.ar/datosabiertos/datasets/sbase/subte-estaciones/estaciones_de_subte.geojson",
+      "estacion_tren": "https://cdn.buenosaires.gob.ar/datosabiertos/datasets/transporte-y-obras-publicas/estaciones-ferrocarril/estaciones-de-ferrocarril.geojson",
+      "hospital": "https://cdn.buenosaires.gob.ar/datosabiertos/datasets/ministerio-de-salud/hospitales/hospitales.geojson",
+      "club": "https://cdn.buenosaires.gob.ar/datosabiertos/datasets/vicejefatura-de-gobierno/clubes/clubes.geojson",
+      "espacio_cultural": "https://cdn.buenosaires.gob.ar/datosabiertos/datasets/ministerio-de-cultura/espacios-culturales/espacios-culturales.geojson",
+      "escuela": "https://cdn.buenosaires.gob.ar/datosabiertos/datasets/ministerio-de-educacion/establecimientos-educativos/establecimientos_educativos_WGS84.geojson"
+    },
+    "tipos_con_indicador": ["escuela"],
+    "indicadores_por_tipo": {
+      "escuela": ["escuela", "colegio", "jardin", "jardin de infantes", "instituto", "liceo"]
+    },
+    "longitud_minima_nombre": 8,
+    "minimo_tokens_nombre": 2,
+    "nombres_excluidos": [
+      "La Grieta", "La Ventana", "Los Mejores", "La Fábrica", "De Mujeres",
+      "La Laguna", "Santa Clara", "Buenos Aires Sur"
+    ],
+    "nombres_genericos": [
+      "plaza", "plazoleta", "parque", "parquizacion", "espacio verde", "predio",
+      "club", "club de barrio", "hospital", "centro cultural", "estacion",
+      "subte", "biblioteca", "polideportivo", "patio", "paseo", "jardin",
+      "jardin botanico", "cantero central", "barriocomplejo", "patio recreativo",
+      "patio de juegos inclusivo", "parque semipublico",
+      "la casa", "mi casa", "la estacion", "cualquier lado", "la farmacia",
+      "santa fe"
+    ]
+  },
+  "villas": {
+    "fuente": "https://cdn.buenosaires.gob.ar/datosabiertos/datasets/ministerio-de-desarrollo-humano-y-habitat/barrios-populares/barrios_populares_badata_WGS84.geojson",
+    "tipos_incluidos": ["Villas", "Asentamientos precarios", "Nùcleos Habitacionales Transitorios", "Barrio Urbanizado"],
+    "dataset_excluidos": ["Barrio Olìmpico", "Barrio Estación Buenos Aires"],
+    "grupos": [
+      {
+        "nombre": "Villa 31 y 31 bis (Barrio Padre Mugica)",
+        "dataset": ["Villa 31", "Villa 31 bis", "La Containera - Nuevo Barrio 31"],
+        "variantes": ["villa 31", "villa 31 bis", "la 31", "la 31 bis", "31 bis", "barrio 31", "barrio 31 bis",
+                      "barrio padre mugica", "barrio mugica", "barrio padre carlos mugica", "villa mugica", "la villa 31"]
+      },
+      {
+        "nombre": "Villa 21-24 (Barracas)",
+        "dataset": ["Villa 21-24"],
+        "variantes": ["villa 21 24", "villa 21", "la 21 24", "la 21", "barrio 21 24", "villa 21-24"]
+      },
+      {
+        "nombre": "NHT Zavaleta (Barracas)",
+        "dataset": ["NHT Zavaleta"],
+        "variantes": ["zavaleta", "nht zavaleta", "barrio zavaleta", "villa zavaleta"]
+      },
+      {
+        "nombre": "Villa 1-11-14 (Barrio Padre Ricciardelli, Bajo Flores)",
+        "dataset": ["Villa 1-11-14 - Barrio Padre Ricciardelli"],
+        "variantes": ["villa 1 11 14", "la 1 11 14", "1 11 14", "barrio 1 11 14", "once catorce", "uno once catorce",
+                      "barrio padre ricciardelli", "barrio ricciardelli", "villa del bajo flores", "villa bajo flores"]
+      },
+      {
+        "nombre": "Villa 20 (Villa Lugano)",
+        "dataset": ["Villa 20", "CMV ex-Villa 20"],
+        "variantes": ["villa 20", "barrio 20", "la villa 20"]
+      },
+      {
+        "nombre": "Villa 15 - Ciudad Oculta (Villa Lugano)",
+        "dataset": ["Villa 15 - Ciudad Oculta"],
+        "variantes": ["villa 15", "ciudad oculta", "barrio 15", "la ciudad oculta"]
+      },
+      {
+        "nombre": "Villa 6 - Barrio Cildáñez",
+        "dataset": ["Villa 6 - Barrio Cildáñez"],
+        "variantes": ["villa 6", "cildañez", "cildanez", "barrio cildañez", "villa cildañez"]
+      },
+      {
+        "nombre": "Barrio INTA (ex Villa 19, Villa Lugano)",
+        "dataset": ["Barrio INTA (ex Villa 19)"],
+        "variantes": ["villa 19", "barrio inta", "villa inta", "inta"]
+      },
+      {
+        "nombre": "Barrio Rodrigo Bueno (Costanera Sur)",
+        "dataset": ["Asentamiento Rodrigo Bueno", "Barrio Rodrigo Bueno"],
+        "variantes": ["rodrigo bueno", "villa rodrigo bueno", "barrio rodrigo bueno"]
+      },
+      {
+        "nombre": "Playón de Chacarita - Barrio Fraga",
+        "dataset": ["Asentamiento Fraga", "Urbanización Barrio Fraga", "Asentamiento Paredón Lacroze"],
+        "variantes": ["villa fraga", "villa de fraga", "barrio fraga", "asentamiento fraga", "playon de chacarita",
+                      "playon chacarita", "el playon", "paredon lacroze"]
+      },
+      {
+        "nombre": "La Carbonilla (La Paternal)",
+        "dataset": ["Asentamiento La Carbonilla"],
+        "variantes": ["la carbonilla", "carbonilla", "villa carbonilla", "villa la carbonilla"]
+      },
+      {
+        "nombre": "Barrio Lamadrid (La Boca)",
+        "dataset": ["Asentamiento Lamadrid"],
+        "variantes": ["barrio lamadrid", "villa lamadrid", "asentamiento lamadrid"]
+      },
+      {
+        "nombre": "Los Piletones (Villa Soldati)",
+        "dataset": ["Villa Piletones", "Barrio Piletones"],
+        "variantes": ["villa piletones", "los piletones", "barrio piletones", "piletones"]
+      },
+      {
+        "nombre": "Villa 3 - Barrio Fátima (Villa Soldati)",
+        "dataset": ["Villa 3 - Barrio Fátima"],
+        "variantes": ["villa 3", "barrio fatima", "villa fatima"]
+      },
+      {
+        "nombre": "Villa 16 - Barrio Emaús",
+        "dataset": ["Villa 16 - Barrio Emaus"],
+        "variantes": ["villa 16", "barrio emaus"]
+      },
+      {
+        "nombre": "Villa 17 - Barrio Pirelli",
+        "dataset": ["Villa 17 - Barrio Pirelli", "Conjunto Habitacional Barrio Pirelli"],
+        "variantes": ["villa 17", "barrio pirelli"]
+      },
+      {
+        "nombre": "Villa Calacita (Villa Soldati)",
+        "dataset": ["Villa Calacita"],
+        "variantes": ["villa calacita", "calacita", "calaza"]
+      },
+      {
+        "nombre": "Asentamiento Saldías (Retiro)",
+        "dataset": ["Asentamiento Saldías"],
+        "variantes": ["villa saldias", "barrio saldias", "asentamiento saldias"]
+      },
+      {
+        "nombre": "Asentamiento Scapino (Villa Lugano)",
+        "dataset": ["Asentamiento Scapino"],
+        "variantes": ["villa scapino", "barrio scapino", "asentamiento scapino"]
+      },
+      {
+        "nombre": "Asentamiento Los Pinos (Villa Lugano)",
+        "dataset": ["Asentamiento Los Pinos"],
+        "variantes": ["villa los pinos", "barrio los pinos", "asentamiento los pinos"]
+      },
+      {
+        "nombre": "Barrio Papa Francisco (Villa Lugano)",
+        "dataset": ["Barrio Papa Francisco"],
+        "variantes": ["barrio papa francisco", "villa papa francisco"]
+      },
+      {
+        "nombre": "NHT Del Trabajo (Villa Lugano)",
+        "dataset": ["NHT Del Trabajo"],
+        "variantes": ["nht del trabajo", "barrio del trabajo"]
+      }
+    ]
+  },
+  "indicadores_de_lugar": [
+    "plaza", "plazoleta", "parque", "avenida", "av", "calle", "estacion",
+    "hospital", "club", "escuela", "polideportivo", "bar", "centro cultural",
+    "teatro", "museo", "biblioteca", "cine", "colegio", "jardin", "instituto",
+    "cancha", "estadio"
+  ],
+  "_comentario_indicadores_a_quitar": "Lo que se le saca al nombre de un lugar antes de buscarlo; se prueba con y sin. El más largo primero.",
+  "indicadores_a_quitar": [
+    "cruce peatonal de", "cruce peatonal", "paso a nivel de", "paso a nivel", "pasos de", "paso de",
+    "locales de", "local de", "esquina de", "la esquina de", "frente a la", "frente al", "frente a",
+    "cancha de", "la cancha de", "estadio de", "el estadio de",
+    "la plaza", "plaza", "plazoleta", "el parque", "parque", "la estacion de", "la estacion", "estacion de", "estacion",
+    "el hospital", "hospital", "el club", "club", "el bar", "bar", "la escuela", "escuela", "el colegio", "colegio"
+  ],
+  "entidades_lineales": [
+    "Gral. Paz", "Gral Paz", "General Paz", "Av. Gral. Paz", "Av. General Paz",
+    "Avenida General Paz", "Gral. Paz Av.", "General Paz Av.",
+    "9 de Julio", "Av. 9 de Julio", "9 de Julio Av.",
+    "Rivadavia", "Av. Rivadavia",
+    "Corrientes", "Av. Corrientes",
+    "Cabildo", "Av. Cabildo",
+    "Santa Fe", "Av. Santa Fe",
+    "Callao", "Av. Callao",
+    "Libertador", "Del Libertador", "Av. Del Libertador",
+    "Juan B. Justo", "Av. Juan B. Justo",
+    "Illia", "Autopista Illia", "Au. Illia",
+    "Dellepiane", "Autopista Dellepiane", "Au. Dellepiane",
+    "25 de Mayo", "Autopista 25 de Mayo", "Au. 25 de Mayo",
+    "Perito Moreno", "Autopista Perito Moreno", "Au. Perito Moreno",
+    "Río de la Plata", "Rio de la Plata", "Riachuelo",
+    "Arroyo Maldonado", "Arroyo Vega",
+    "Costanera Norte", "Costanera Sur Av."
+  ],
+  "lugares_fuera_de_caba": [
+    "San Martín", "General San Martín", "Gral. San Martín",
+    "La Matanza", "Quilmes", "Vicente López", "Tres de Febrero", "Lanús",
+    "Avellaneda", "Lomas de Zamora", "Morón", "San Isidro", "Tigre",
+    "Berazategui",
+    "Provincia de Buenos Aires", "Pcia de Buenos Aires", "Pcia. de Buenos Aires",
+    "PBA", "Conurbano", "AMBA",
+    "Zona Sur", "Zona Norte", "Zona Oeste",
+    "Panamericana", "Acceso Norte", "Riccheri", "Autopista Riccheri",
+    "Au. Riccheri"
+  ],
+  "barrios_y_comunas_excluidos": [
+    "Agronomia", "Almagro", "Balvanera", "Barracas", "Belgrano", "Boedo",
+    "Caballito", "Chacarita", "Coghlan", "Colegiales", "Constitucion",
+    "Flores", "Floresta", "La Boca", "Liniers", "Mataderos", "Monserrat",
+    "Monte Castro", "Nueva Pompeya", "Nuñez", "Palermo", "Palermo Viejo",
+    "Palermo Soho", "Palermo Hollywood", "Paternal",
+    "Puerto Madero", "Recoleta", "Retiro", "Saavedra", "San Cristobal",
+    "San Nicolas", "San Telmo", "Velez Sarsfield", "Versalles",
+    "Villa Crespo", "Villa Del Parque", "Villa Devoto", "Villa Gral. Mitre",
+    "Villa General Mitre",
+    "Villa Lugano", "Villa Luro", "Villa Ortuzar", "Villa Pueyrredon",
+    "Villa Real", "Villa Riachuelo", "Villa Santa Rita", "Villa Soldati",
+    "Villa Urquiza",
+    "Parque Avellaneda", "Parque Chacabuco", "Parque Chas", "Parque Patricios",
+    "Comuna 1", "Comuna 2", "Comuna 3", "Comuna 4", "Comuna 5", "Comuna 6",
+    "Comuna 7", "Comuna 8", "Comuna 9", "Comuna 10", "Comuna 11",
+    "Comuna 12", "Comuna 13", "Comuna 14", "Comuna 15",
+    "CABA", "Capital Federal", "Buenos Aires", "Ciudad de Buenos Aires"
+  ],
+  "_comentario_barrios_informales": "Nombre de uso → barrio oficial (el de barrios.geojson). Solo para una mención de barrio: no da un punto.",
+  "barrios_informales": {
+    "once": "Balvanera",
+    "abasto": "Balvanera",
+    "congreso": "Balvanera",
+    "tribunales": "San Nicolas",
+    "microcentro": "San Nicolas",
+    "macrocentro": "San Nicolas",
+    "primera junta": "Caballito",
+    "barrio chino": "Belgrano",
+    "bajo belgrano": "Belgrano",
+    "belgrano r": "Belgrano",
+    "belgrano c": "Belgrano",
+    "villa freud": "Palermo",
+    "palermo soho": "Palermo",
+    "palermo hollywood": "Palermo",
+    "palermo chico": "Palermo",
+    "palermo viejo": "Palermo",
+    "las canitas": "Palermo",
+    "canitas": "Palermo",
+    "barrio parque": "Palermo",
+    "barrio norte": "Recoleta",
+    "bajo flores": "Flores",
+    "catalinas": "Retiro",
+    "pompeya": "Nueva Pompeya",
+    "soldati": "Villa Soldati",
+    "lugano": "Villa Lugano",
+    "devoto": "Villa Devoto",
+    "urquiza": "Villa Urquiza",
+    "ortuzar": "Villa Ortuzar",
+    "santa rita": "Villa Santa Rita",
+    "general mitre": "Villa Gral. Mitre",
+    "villa general mitre": "Villa Gral. Mitre",
+    "la paternal": "Paternal",
+    "montserrat": "Monserrat",
+    "nunez": "Nuñez"
+  },
+  "_comentario_nombres_de_la_ciudad": "La Ciudad entera dicha de varias formas: como ubicación de un reclamo no es un lugar (queda sin dirección, no como no encontrada).",
+  "nombres_de_la_ciudad": ["la Ciudad", "Ciudad", "CABA", "C.A.B.A.", "Capital", "Capital Federal", "Buenos Aires", "Bs As", "Baires", "Ciudad de Buenos Aires", "Ciudad Autónoma de Buenos Aires"],
+  "_comentario_lugares_extra": "Lugares que ningún dataset trae con el nombre con el que se los nombra. Cada uno: nombre (el que se muestra), variantes (cómo lo escribe la gente), y una sola de estas: `club` (el nombre exacto de la entrada del dataset de clubes), `lugar` (el nombre exacto de una entrada de cualquier dataset; de ahí salen el punto y la dirección) o `direccion` (calle y altura o un cruce, que se ubica con USIG). `barrio`: donde tiene que caer; si el punto cae en otro, la entrada no se usa y se avisa por log.",
+  "lugares_extra": [
+    { "nombre": "Estadio Tomás A. Ducó (Huracán)", "club": "Atlético Huracán Estadio Tomás Adolfo Ducó", "barrio": "Parque Patricios",
+      "variantes": ["cancha de huracan", "estadio de huracan", "estadio tomas a duco", "estadio tomas duco", "palacio duco", "el duco", "huracan"] },
+    { "nombre": "La Bombonera (Boca Juniors)", "club": "Atletico Boca Juniors Estadio Alberto J. Armando", "barrio": "La Boca",
+      "variantes": ["la bombonera", "bombonera", "cancha de boca", "estadio de boca", "estadio alberto j armando"] },
+    { "nombre": "Estadio Monumental (River Plate)", "club": "Atletico River Plate Estadio Monumental Antonio Vespucio Liberti",
+      "variantes": ["el monumental", "monumental", "cancha de river", "estadio de river", "estadio monumental", "mas monumental"] },
+    { "nombre": "Nuevo Gasómetro (San Lorenzo)", "club": "Atletico San Lorenzo de Almagro Estadio Pedro Bidegain", "barrio": "Flores",
+      "variantes": ["nuevo gasometro", "el gasometro", "cancha de san lorenzo", "estadio de san lorenzo", "estadio pedro bidegain"] },
+    { "nombre": "Estadio José Amalfitani (Vélez)", "club": "Atletico Velez Sarsfield Estadio José Amalfitani",
+      "variantes": ["el fortin", "fortin de liniers", "cancha de velez", "estadio de velez", "estadio jose amalfitani", "amalfitani"] },
+    { "nombre": "Estadio Diego A. Maradona (Argentinos Juniors)", "club": "Asociacion Atletica Argentinos Juniors Estadio Diego Armando Maradona",
+      "variantes": ["cancha de argentinos", "estadio de argentinos", "estadio diego armando maradona", "estadio diego maradona", "el semillero"] },
+    { "nombre": "Estadio de Ferro Carril Oeste", "club": "Ferrocarril Oeste Estadio Arquitecto Ricardo Etcheverri", "barrio": "Caballito",
+      "variantes": ["cancha de ferro", "estadio de ferro", "estadio ricardo etcheverri"] },
+    { "nombre": "Estadio de Atlanta", "club": "Atlético Atlanta Estadio Don León Kolbowsky", "barrio": "Villa Crespo",
+      "variantes": ["cancha de atlanta", "estadio de atlanta", "estadio leon kolbowsky"] },
+    { "nombre": "Estadio de All Boys", "club": "Atletico All Boys Estadio Estadio Islas Malvinas", "barrio": "Monte Castro",
+      "variantes": ["cancha de all boys", "estadio de all boys", "estadio islas malvinas"] },
+    { "nombre": "Estadio de Nueva Chicago", "club": "Atlético Nueva Chicago Estadio República de Mataderos", "barrio": "Mataderos",
+      "variantes": ["cancha de chicago", "cancha de nueva chicago", "estadio de nueva chicago", "estadio republica de mataderos"] },
+    { "nombre": "Estadio de Excursionistas", "club": "Atlético Excursionistas Estadio Coliseo del Bajo Belgrano", "barrio": "Belgrano",
+      "variantes": ["cancha de excursionistas", "estadio de excursionistas", "coliseo del bajo belgrano"] },
+    { "nombre": "Estadio de Defensores de Belgrano", "club": "Atletico Defensores de Belgrano Estadio Juan Pasquale",
+      "variantes": ["cancha de defensores", "cancha de defensores de belgrano", "estadio juan pasquale"] },
+    { "nombre": "Estadio de Comunicaciones", "club": "Comunicaciones Estadio Alfredo Ramos",
+      "variantes": ["cancha de comunicaciones", "estadio de comunicaciones", "estadio alfredo ramos"] },
+    { "nombre": "Plaza de Mayo", "lugar": "Plaza 25 de Mayo", "barrio": "Monserrat",
+      "variantes": ["plaza de mayo", "la plaza de mayo"] },
+    { "nombre": "El Rosedal (Plaza Holanda)", "lugar": "El Rosedal (Plaza Holanda)", "barrio": "Palermo",
+      "variantes": ["rosedal", "el rosedal", "rosedal de palermo"] },
+    { "nombre": "Estación Villa Pueyrredón (Mitre)", "lugar": "Estación Pueyrredón", "barrio": "Villa Pueyrredon",
+      "variantes": ["estacion villa pueyrredon", "la estacion de villa pueyrredon", "estacion de tren de villa pueyrredon", "estacion pueyrredon del mitre"] },
+    { "nombre": "Obelisco", "direccion": "Corrientes Av. y Cerrito", "barrio": "San Nicolas",
+      "variantes": ["obelisco", "el obelisco"] },
+    { "nombre": "Palacio del Congreso", "direccion": "Entre Rios Av. y Rivadavia Av.", "barrio": "Balvanera",
+      "variantes": ["congreso nacional", "palacio del congreso", "el congreso", "plaza del congreso", "plaza congreso"] },
+    { "nombre": "Casa Rosada", "direccion": "Balcarce 50", "barrio": "Monserrat",
+      "variantes": ["casa rosada", "la rosada", "casa de gobierno"] },
+    { "nombre": "Luna Park", "direccion": "Corrientes Av. y Bouchard", "barrio": "San Nicolas",
+      "variantes": ["luna park", "el luna park", "el luna"] },
+    { "nombre": "Shopping Abasto", "direccion": "Corrientes Av. 3247", "barrio": "Balvanera",
+      "variantes": ["shopping abasto", "abasto shopping", "el shopping abasto", "mercado de abasto"] },
+    { "nombre": "Shopping Alto Palermo", "direccion": "Santa Fe Av. 3253", "barrio": "Palermo",
+      "variantes": ["alto palermo", "shopping alto palermo"] },
+    { "nombre": "Parque de la Ciudad", "direccion": "Escalada Av. y Fernandez de la Cruz, F., Gral. Av.", "barrio": "Villa Soldati",
+      "variantes": ["parque de la ciudad", "torre espacial"] },
+    { "nombre": "Reserva Ecológica Costanera Sur", "lugar": "Reserva Ecológica", "barrio": "Puerto Madero",
+      "variantes": ["costanera sur", "reserva ecologica", "reserva ecologica costanera sur", "la reserva"] },
+    { "nombre": "Ciudad Universitaria", "direccion": "Avenida Cantilo y Avenida Intendente Güiraldes", "barrio": "Belgrano",
+      "variantes": ["ciudad universitaria", "ciudad universitaria uba", "pabellon de exactas"] },
+    { "nombre": "Cabildo de Buenos Aires", "direccion": "Bolivar 65", "barrio": "Monserrat",
+      "variantes": ["el cabildo", "cabildo de buenos aires"] },
+    { "nombre": "Planetario Galileo Galilei", "direccion": "Sarmiento Av. y Roldan, Belisario", "barrio": "Palermo",
+      "variantes": ["planetario", "el planetario", "planetario galileo galilei"] },
+    { "nombre": "Ecoparque (ex Zoológico)", "direccion": "Avenida Sarmiento 2725", "barrio": "Palermo",
+      "variantes": ["ecoparque", "el ecoparque", "zoologico", "el zoologico", "zoo de palermo"] },
+    { "nombre": "Facultad de Derecho (UBA)", "direccion": "Figueroa Alcorta, Pres. Av. 2263", "barrio": "Recoleta",
+      "variantes": ["facultad de derecho", "la facultad de derecho"] },
+    { "nombre": "Floralis Genérica (Plaza de las Naciones Unidas)", "lugar": "Plaza de las Naciones Unidas", "barrio": "Recoleta",
+      "variantes": ["floralis generica", "la floralis", "la flor de metal"] },
+    { "nombre": "Terminal de Ómnibus de Retiro", "direccion": "Ramos Mejia, Jose Maria, Dr. Av. 1680", "barrio": "Retiro",
+      "variantes": ["terminal de omnibus", "terminal de retiro", "terminal de micros de retiro", "la terminal de retiro"] },
+    { "nombre": "Aeroparque Jorge Newbery", "direccion": "Sarmiento Av. y Costanera Rafael Obligado Av.", "barrio": "Palermo",
+      "variantes": ["aeroparque", "el aeroparque", "aeroparque jorge newbery"] },
+    { "nombre": "La Rural", "direccion": "Sarmiento Av. 2704", "barrio": "Palermo",
+      "variantes": ["la rural", "predio de la rural", "la rural de palermo"] },
+    { "nombre": "Hipódromo de Palermo", "direccion": "Libertador Av. 4101", "barrio": "Palermo",
+      "variantes": ["hipodromo de palermo", "el hipodromo"] },
+    { "nombre": "Cementerio de la Recoleta", "direccion": "Junin 1760", "barrio": "Recoleta",
+      "variantes": ["cementerio de la recoleta", "cementerio de recoleta"] },
+    { "nombre": "Cementerio de la Chacarita", "direccion": "Guzman 680", "barrio": "Chacarita",
+      "variantes": ["cementerio de la chacarita", "cementerio de chacarita"] },
+    { "nombre": "Centro Cultural Kirchner", "direccion": "Sarmiento 151", "barrio": "San Nicolas",
+      "variantes": ["centro cultural kirchner", "el cck", "cck", "palacio libertad"] },
+    { "nombre": "MALBA", "direccion": "Figueroa Alcorta, Pres. Av. 3415", "barrio": "Palermo",
+      "variantes": ["malba", "el malba", "museo de arte latinoamericano"] },
+    { "nombre": "Museo Nacional de Bellas Artes", "direccion": "Libertador Av. 1473", "barrio": "Recoleta",
+      "variantes": ["museo nacional de bellas artes", "bellas artes"] },
+    { "nombre": "Galerías Pacífico", "direccion": "Florida 737", "barrio": "San Nicolas",
+      "variantes": ["galerias pacifico", "las galerias pacifico"] },
+    { "nombre": "Movistar Arena", "direccion": "Humboldt 450", "barrio": "Villa Crespo",
+      "variantes": ["movistar arena", "el movistar arena"] },
+    { "nombre": "Estadio Obras", "direccion": "Libertador Av. 7395", "barrio": "Nuñez",
+      "variantes": ["estadio obras", "obras sanitarias", "el obras"] },
+    { "nombre": "Hospital Italiano", "direccion": "Peron, Juan Domingo, Tte. General 4190", "barrio": "Almagro",
+      "variantes": ["hospital italiano", "el italiano"] },
+    { "nombre": "Hospital Alemán", "direccion": "Pueyrredon Av. 1640", "barrio": "Recoleta",
+      "variantes": ["hospital aleman", "el aleman"] },
+    { "nombre": "Hospital Británico", "direccion": "Perdriel 74", "barrio": "Barracas",
+      "variantes": ["hospital britanico", "el britanico"] },
+    { "nombre": "Palacio de Justicia (Tribunales)", "direccion": "Talcahuano 550", "barrio": "San Nicolas",
+      "variantes": ["palacio de justicia", "palacio de tribunales", "plaza lavalle tribunales"] },
+    { "nombre": "Plaza Serrano (Plazoleta Julio Cortázar)", "lugar": "Julio Cortázar", "barrio": "Palermo",
+      "variantes": ["plaza serrano", "plazoleta serrano"] },
+    { "nombre": "Autódromo Oscar y Juan Gálvez", "direccion": "Roca, Cnel. Av. 6902", "barrio": "Villa Riachuelo",
+      "variantes": ["autodromo", "el autodromo", "autodromo oscar galvez", "autodromo de la ciudad"] },
+    { "nombre": "Feria de Mataderos", "direccion": "De la Torre, Lisandro Av. y De los Corrales Av.", "barrio": "Mataderos",
+      "variantes": ["feria de mataderos", "la feria de mataderos"] }
+  ],
+  "altura_minima_direccion": 10,
+  "usig": {
+    "opciones_maximas": 2
+  },
+  "patrones_direccion_invalida": [
+    "ruta nacional \\d+", "ruta provincial \\d+", "autopista \\d+", "km \\d+",
+    "articulo \\d+", "art \\d+", "ley \\d+", "decreto \\d+", "expediente \\d+",
+    "au nacional \\d+", "au \\d+", "rn \\d+", "rp \\d+", "ruta nac \\d+",
+    "distrito nacional y [a-z ]+",
+    "\\d+ ?(?:mm|cm|hs|hrs|h|horas?|minutos?|min|dias?|semanas?|meses|años?|anios?|carriles?|cuadras?|metros?|kilometros?|litros?|personas?|vecinos?|veces|casas?|arboles?|autos?|secciones?)\\b",
+    "\\d+(?:era?|da|do|ra|ro|ta|to|va|vo)\\b",
+    "(?:lunes|martes|miercoles|jueves|viernes|sabado|domingo) \\d+",
+    "de \\d+ a \\d+",
+    "(?:las|los) \\d+\\b",
+    "(?:\\d{1,2} )?(?:de )?(?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre|ene|feb|abr|jun|jul|ago|sep|set|oct|nov|dic) (?:de )?\\d+"
+  ]
+}

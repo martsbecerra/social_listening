@@ -600,6 +600,9 @@ function normalizePost(postItems, commentItems, postUrl) {
     postedAt: hasPost ? pick(raw.timestamp, null) : null,
     postType: hasPost ? derivePostType(raw) : null,
     imageUrl: hasPost ? pickImageUrl(raw) : null,
+    // El lugar que la cuenta le puso a la publicación (fase H): el modelo lo
+    // usa para "acá en la plaza". El actor lo trae solo si lo tiene.
+    locationName: hasPost && typeof raw.locationName === 'string' && raw.locationName.trim() ? raw.locationName.trim() : null,
   };
 }
 

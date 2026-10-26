@@ -33,8 +33,12 @@ App web que:
    sigue en la base. Se alimenta de dos
    fuentes: el análisis de una publicación (`/api/analyze` e `/api/x/analyze`
    guardan reclamos con ubicación en `geo_status = 'pendiente'`; un worker los
-   geocodifica con USIG después, sin bloquear la respuesta) y el importador
-   genérico de Excel/CSV (`scripts/import-reclamos.js`).
+   ubica después, sin bloquear la respuesta) y el importador genérico de
+   Excel/CSV (`scripts/import-reclamos.js`). Desde la fase H
+   (georreferenciación, ver "Georreferenciación de reclamos" más abajo) cada
+   pin dice qué tan preciso es (dirección exacta, cruce, lugar con nombre o
+   villa), hay una vista "Por comunas" y una lista "Sin ubicar" con el motivo
+   de cada uno, donde el equipo corrige la dirección o lo descarta.
 5. Muestra la solapa **Estadísticas** de Instagram: para un período (7, 30
    o 90 días, o Desde → Hasta) y contra el anterior del mismo largo, las
    publicaciones relevantes, cuántas se despegaron de lo habitual de su
@@ -74,9 +78,13 @@ social_listening_app/
 │   ├── clasificarReclamo.js  # Paso 2: subcategoría (1 llamada por análisis).
 │   ├── importers/            # Lectura de tablas, fechas y extracción de ubicación.
 │   ├── addressClean.js       # Limpieza de direcciones antes de geocodificar (USIG).
-│   ├── geocode.js            # USIG + geocode_cache (lo usa geoWorker.js).
-│   ├── territorios.js        # Comuna/barrio por punto-en-polígono (GeoJSON GCBA).
-│   ├── geoWorker.js          # Geocodifica reclamos 'pendiente' (cron + post-análisis).
+│   ├── geocode.js            # Envoltorio de geo/usig.js (texto libre) con geocode_cache, para el importador.
+│   ├── territorios.js        # Comuna/barrio por punto-en-polígono y por nombre (GeoJSON GCBA).
+│   ├── geoWorker.js          # Ubica los reclamos 'pendiente' con el resolver (cron + post-análisis).
+│   ├── reclamosRoutes.js     # GET /api/reclamos, corregir, descartar y GET /api/geo/comunas (fase H).
+│   ├── geo/                  # Fase H: texto, proyecciones, config, datasets del GCBA, villas,
+│   │                         #   índice de lugares (gazetteer), USIG, el resolver, las etiquetas,
+│   │                         #   la extracción del reproceso y su aplicación.
 │   ├── reclamosFromAnalysis.js # reclamosGeo de Claude -> filas para la tabla reclamos.
 │   ├── monitor.js            # Orquestador del monitoreo (todas las redes) + config.
 │   ├── accountStats.js       # Benchmark por cuenta (solo redes con esa capability).
@@ -106,12 +114,13 @@ social_listening_app/
 ├── config/
 │   ├── monitoring.json       # Cuentas, palabras clave/hashtags y búsquedas por palabra clave, una sección por red (instagram, x).
 │   ├── categorias-reclamos.json # Categorías y subcategorías del cliente (26/85).
+│   ├── geo-config.json       # Listas de la georreferenciación (fase H); data/geo/geo-config.json las pisa.
 │   ├── x-influencers/        # CSV ANTIK-PRO (padrón de actores de X).
 │   └── allowed-emails.example.txt  # Plantilla de emails que pueden entrar.
 ├── data/
 │   ├── monitoring.db         # Base SQLite (se crea sola, no se versiona).
 │   ├── media/                # Fotos de los posteos: dos JPEG por posteo (se crea sola, no se versiona).
-│   └── geo/                  # Cache en disco de comunas.geojson y barrios.geojson (GCBA).
+│   └── geo/                  # Cachés del GCBA (comunas, barrios, villas, lugares; 30 días) y el JSON del reproceso.
 ├── public/
 │   ├── index.html            # Login: la visual (temas y contadores) y el link mágico en dos pasos.
 │   ├── login-verify.html     # Último paso del link: clic en "Entrar" (POST, un solo uso).
@@ -149,6 +158,7 @@ social_listening_app/
 │   ├── costo-apify.js           # Gasto en Apify por ventana, fase y actor (npm run costo).
 │   ├── gastos.js                # Gasto por corrida, fase y término de búsqueda (npm run gastos).
 │   ├── cargar-fotos.js          # Carga única de las fotos de los posteos ya guardados (sin --si solo informa).
+│   ├── geo-reprocesar.js        # Fase H: ubicación de los reclamos sin punto, una vez y sobre una copia (--costo, --simulado, --si, --aplicar).
 │   ├── stop-server.js           # Mata el proceso que ocupa el puerto (npm run stop).
 │   ├── iniciar-con-reinicio.bat # Arranca la app en bucle (reinicio solo) con log a archivo.
 │   ├── quickedit-off.ps1        # Apaga QuickEdit en la consola del .bat (un clic no congela).
@@ -812,8 +822,9 @@ Abrí `.env` y pegá:
   se arma con esto, no con el header Host)
 - `ALLOWED_EMAILS` → opcional; emails extra separados por coma
 
-El geocoding del mapa de reclamos usa USIG (servicio del GCBA) y no necesita
-ninguna clave.
+El geocoding del mapa de reclamos usa USIG (servicio del GCBA) y los datos
+abiertos del GCBA (villas, plazas, estaciones, hospitales, clubes,
+espacios culturales, escuelas), y no necesita ninguna clave.
 
 ### 4. Arrancar la app
 
@@ -902,11 +913,12 @@ Get-Content (Get-ChildItem logs\server.*.log | Sort-Object LastWriteTime | Selec
 ### 5. Reclamos del mapa
 
 El mapa se alimenta solo: cada vez que analizás una publicación
-("Análisis de publicación"), los comentarios con una dirección concreta
-quedan guardados como reclamos en `geo_status = 'pendiente'`, y se
-geocodifican con USIG poco después (sin bloquear la respuesta del análisis).
-También corren en cada corrida del cron de monitoreo, por si algo quedó
-pendiente por una falla transitoria de USIG.
+("Análisis de publicación"), los comentarios que reportan un problema en un
+lugar quedan guardados como reclamos en `geo_status = 'pendiente'` (en
+Instagram, con la ubicación ya separada en campos por el modelo), y se
+ubican poco después (sin bloquear la respuesta del análisis). También corren
+en cada corrida del cron de monitoreo, por si algo quedó pendiente por una
+falla transitoria de USIG.
 
 Para cargar un lote desde un Excel o CSV está el **importador genérico**, que
 detecta las columnas solo y no depende del formato de un archivo puntual:
@@ -1926,42 +1938,59 @@ el link: un mismo tuit puede citar varias direcciones, y también aparecer dos
 veces con categorías distintas (un texto puede tocar higiene y seguridad a la
 vez). Correr el importador dos veces hace upsert, no duplica.
 
-### Qué ubicación es "accionable"
+### Georreferenciación de reclamos (fase H)
 
-Un reclamo entra al mapa sólo si el comentario menciona un lugar al que se
-podría mandar una cuadrilla. El LLM devuelve el tipo en `tipoUbicacion`, y de
-ahí sale la `precision` con la que se guarda:
+Un reclamo es un **problema en algún lugar con nombre**: una calle con
+altura, un cruce, una plaza, una estación, una villa, un barrio. Sin ningún
+lugar no hay reclamo (el comentario sigue contando como pedido en el
+análisis). El modelo **solo extrae** el lugar; las coordenadas las resuelve
+el servidor, nunca el modelo. Metodología de
+`martsbecerra/georreferenciacion`, portada a Node; el registro completo está
+en `openspec/changes/geo-pro/`.
 
-| `tipoUbicacion` | Ejemplo | `precision` |
-|---|---|---|
-| `calle_altura` | "Juramento 3109" | `exacta` |
-| `cruce` | "Nazca y Rivadavia" | `exacta` |
-| `tramo` | "Cabildo entre Juramento y Mendoza" | `exacta` |
-| `lugar_nombrado` | "Plaza Italia", "Hospital Durand" | **`aproximada`** |
+En Instagram el modelo devuelve la `ubicacion` ya separada en campos
+(`tipo`: `calle_altura` | `cruce` | `lugar` | `villa` | `barrio` | `lineal`
+| `ninguna`, con `calle`, `altura`, `calle2`, `nombre_lugar`,
+`barrio_o_comuna`, `texto_original`, `confianza` y `fuera_de_caba`). X y el
+importador siguen mandando el texto de siempre (`tipoUbicacion`), que pasa
+por el mismo resolver como texto libre.
 
-**No** son accionables y no generan reclamo: un barrio solo ("vivo en
-Palermo"), una comuna, la ciudad, una provincia o un país, referencias vagas
-("por mi casa", "toda la zona") y números que no son altura (horarios, precios,
-cantidades). Las reglas están en el system prompt con ejemplos de cada caso.
+El resolver (`src/geo/resolver.js`) prueba en este orden:
 
-Un `tramo` se geocodifica por su **primera esquina** (`addressClean.js` lo
-convierte a un cruce): un tramo de cuadra no tiene punto propio, y su esquina
-inicial cae dentro del tramo mencionado.
+| Qué nombra | Cómo se ubica | `precision` | En el mapa |
+|---|---|---|---|
+| Una villa o barrio popular ("la 1-11-14", "la 31") | Centroide del área (datos abiertos del GCBA) | `area` | Pin con halo grande |
+| Calle y altura ("Juramento 3109") | USIG | `puntual` | Pin sólido |
+| Un cruce ("Nazca y Rivadavia"; un tramo, por su primera esquina) | USIG | `cruce` | Pin sólido |
+| Un lugar ("plaza Constitución", "la cancha de Huracán") | Índice de lugares: plazas, estaciones de subte y tren de la Ciudad, hospitales, clubes, espacios culturales, escuelas (solo con "escuela", "colegio"…) y `lugares_extra` (estadios, hitos) | `lugar` | Pin con halo |
+| Solo un barrio o una comuna ("los locales de Once") | Barrio oficial (con los nombres de uso: Once → Balvanera) | `ninguna` | Sin pin; cuenta en "Por comunas" |
 
-> **Pendiente — los lugares con nombre propio no llegan al mapa.**
-> `precision: 'aproximada'` ya se asigna bien, pero el servicio de USIG que
-> usamos (`/normalizar/`) es un normalizador de **direcciones**, no un
-> buscador de lugares: "Plaza Italia" devuelve la calle *Calzada Circular Plaza
-> Italia* sin coordenadas, y "Hospital Durand" o "Parque Centenario" no
-> devuelven nada. Esos reclamos quedan en `sin_direccion`: se guardan y se ven
-> en la lista, pero sin pin.
->
-> Para resolverlo harían falta dos piezas: una fuente de coordenadas de lugares
-> (los GeoJSON públicos de Buenos Aires Data — espacios verdes, hospitales,
-> escuelas — cargados igual que los polígonos de `data/geo`), y después el
-> reverse geocoding de USIG
-> (`ws.usig.buenosaires.gob.ar/geocoder/2.2/reversegeocoding`), que dado un
-> punto devuelve la puerta y la esquina más cercanas con calle y altura.
+Lo que no se ubica queda con su motivo (`motivo_sin_ubicar`): `lineal` (una
+avenida sola, sin altura ni cruce), `fuera_de_caba`, `ambigua` (USIG dio
+más de dos opciones distintas: no se elige al azar), `no_encontrada`,
+`sin_direccion` (no nombra un lugar) o `descartado` (por el equipo). Un
+número que es fecha, horario, ley o cantidad no es una altura
+(`patrones_direccion_invalida`), y una altura menor a 10 vale solo pegada a
+su calle.
+
+Las listas (fuentes, indicadores, exclusiones, nombres de uso de los
+barrios, `lugares_extra`) están en `config/geo-config.json`, versionado; un
+`data/geo/geo-config.json` pisa las claves que traiga, sin commit. Los
+datasets se bajan una vez y quedan en `data/geo/` 30 días; una falla de USIG
+(un 502, un corte) nunca se cachea: el reclamo queda pendiente y lo
+reintenta el worker.
+
+En el Mapa: el filtro **Precisión**, la vista **Puntos / Por comunas** y la
+lista **Sin ubicar** agrupada por motivo, con **Corregir dirección** (lo
+escrito pasa por el mismo resolver) y **Descartar** (con el motivo). Un
+reclamo corregido o descartado a mano no lo pisa un análisis nuevo.
+
+**El reproceso** (`scripts/geo-reprocesar.js`, una sola vez, sobre una
+COPIA de la base): el modelo extrae la ubicación de los reclamos guardados
+sin punto y la deja en `data/geo/reproceso-ubicaciones.json`; el piloto lo
+aplica al arrancar, una vez. `--costo` informa sin llamar a nada; `--si`
+gasta (con `--tope`); `--aplicar` muestra sobre la copia lo que va a hacer
+el piloto.
 
 ### Colores del mapa
 
@@ -1994,9 +2023,10 @@ distintas. Se pinta con la **más frecuente de ese punto**, y el popup muestra e
 desglose completo — si no, un punto con tres categorías se leería como si fuera
 de una sola.
 
-**Pin de borde punteado**: todos los reclamos de ese punto tienen
-`precision = 'aproximada'` (un lugar con nombre, no una altura). Con uno solo
-exacto el pin va sólido, porque ahí sí hay una ubicación precisa.
+**El pin dice su precisión** (fase H): sólido para una dirección o un cruce,
+con halo para un lugar con nombre, con halo grande para una villa. Un pin
+que junta varios va con la mejor precisión de ese punto, y el tooltip y el
+popup la dicen en una línea ("Lugar con nombre · ubicación aproximada").
 
 El filtro de **subcategoría depende del de categoría**: se puebla sólo con las
 subcategorías de las categorías seleccionadas. Con las 26 marcadas serían 85
@@ -2010,15 +2040,18 @@ Cada reclamo guarda en qué terminó su geocodificación:
 |---|---|---|
 | `pendiente` | Detectado, todavía sin geocodificar | No (hasta que corra el worker) |
 | `ok` | Resuelto dentro de CABA, con comuna y barrio | **Sí**, con pin |
-| `sin_direccion` | El texto no menciona un lugar accionable | No (queda en la lista, sin pin) |
-| `no_encontrada` | Había dirección, pero USIG no le pudo dar un punto | No (queda en la lista, sin pin) |
-| `fuera_caba` | Dirección real, pero de otro partido | No — se excluye siempre |
+| `sin_direccion` | El texto no menciona un lugar accionable (o solo un barrio: mención territorial) | No (queda en "Sin ubicar"; el barrio cuenta en "Por comunas") |
+| `no_encontrada` | Había un lugar, pero no se le pudo dar un punto | No (queda en "Sin ubicar") |
+| `fuera_caba` | Dirección real, pero de otro partido | No: va en "Sin ubicar" con su motivo |
 | `invalida` | El texto no parece una dirección (`addressClean.js`) | No |
 
-`fuera_caba` **nunca se muestra ni se exporta**, pase el filtro que pase
-(`listReclamosFiltered`). Queda guardado sólo para poder auditar de dónde
-vienen las direcciones de afuera, con la dirección normalizada del partido que
-la reconoció.
+Desde la fase H el motivo fino va en `motivo_sin_ubicar` (ver
+"Georreferenciación de reclamos"); `geo_status` y su CHECK no cambiaron.
+
+`fuera_caba` **nunca tiene pin ni cuenta** en el mapa, en "Por comunas" ni
+en los contadores (`listReclamosFiltered` lo deja afuera por defecto); desde
+la fase H se lista en "Sin ubicar", con el motivo "Fuera de la Ciudad", para
+que el equipo lo vea.
 
 Cómo se distingue `fuera_caba` de `sin_direccion`: USIG es un servicio
 exclusivo de CABA y `geocode.js` le agrega `, CABA` a la consulta para evitar
