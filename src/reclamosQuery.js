@@ -18,6 +18,8 @@ function parseReclamosFilters(query) {
     categoria: toList(query.categoria),
     subcategoria: toList(query.subcategoria),
     estado: toList(query.estado),
+    // Fase H: puntual | cruce | lugar | area | ninguna.
+    precision: toList(query.precision),
     barrio: query.barrio || undefined,
     comuna: query.comuna || undefined,
     desde: query.desde || undefined,

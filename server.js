@@ -40,6 +40,7 @@ const { confirmarDesde } = require('./src/analysisCost');
 const { resolveXMaxItems } = require('./src/x/sample');
 const analysisRoutes = require('./src/analysisRoutes');
 const figurasRoutes = require('./src/figurasRoutes');
+const reclamosRoutes = require('./src/reclamosRoutes');
 const { checkAnalyzeUrl } = require('./src/platforms/urlPlatform');
 const { fetchXThread, getModel: getXaiModel, getFetchBackend } = require('./src/x/grokFetch');
 const { analyzeXThread } = require('./src/x/analyze');
@@ -74,9 +75,8 @@ const { buildLastRun } = require('./src/lastRun');
 const statsRoutes = require('./src/statsRoutes');
 const publicResumen = require('./src/publicResumen');
 const inicioRoutes = require('./src/inicioRoutes');
-const { CATEGORIAS_RECLAMO, ESTADOS_RECLAMO, isValidEstado } = require('./src/categoriaReclamo');
-const { subcategoriasDe, CATEGORIAS: TEMAS_POSTEO, CATEGORIA_FALLBACK } = require('./src/categoriasConfig');
-const { parseReclamosFilters, isValidReclamosPlataforma } = require('./src/reclamosQuery');
+const { CATEGORIAS_RECLAMO, isValidEstado } = require('./src/categoriaReclamo');
+const { CATEGORIAS: TEMAS_POSTEO, CATEGORIA_FALLBACK } = require('./src/categoriasConfig');
 const { normalizeEmail, isEmailAllowed } = require('./src/auth/allowlist');
 const { issueMagicLink, redeemMagicLink } = require('./src/auth/magicLink');
 const { sendMagicLinkEmail } = require('./src/mailer');
@@ -261,6 +261,7 @@ app.post('/api/auth/logout', (req, res) => {
 // --------------------------------------------------------------------------
 analysisRoutes.register(app);
 figurasRoutes.register(app);
+reclamosRoutes.register(app);
 
 function logXTask(phase, detail = {}) {
   const payload = Object.keys(detail).length ? ` ${JSON.stringify(detail)}` : '';
@@ -654,27 +655,7 @@ app.post('/api/monitoring/backfill-classification', async (req, res) => {
 // plataforma es obligatorio (instagram | x): cada solapa ve solo la suya.
 // --------------------------------------------------------------------------
 
-app.get('/api/reclamos', (req, res) => {
-  const filters = parseReclamosFilters(req.query);
-  if (!isValidReclamosPlataforma(filters.plataforma)) {
-    return res.status(400).json({ error: 'Indicá plataforma=instagram o plataforma=x.' });
-  }
-  const reclamos = db.listReclamosFiltered(filters);
-  res.json({
-    categorias: CATEGORIAS_RECLAMO,
-    estados: ESTADOS_RECLAMO,
-    // Árbol categoría -> subcategorías, para poblar el filtro dependiente.
-    subcategoriasPorCategoria: Object.fromEntries(
-      CATEGORIAS_RECLAMO.map((c) => [c, subcategoriasDe(c)])
-    ),
-    // Conteo por categoría sobre ESA plataforma, no sobre lo filtrado: el mapa
-    // asigna sus 12 colores a las categorías más frecuentes, y ese ranking no
-    // puede cambiar cada vez que el usuario toca un filtro — los pines
-    // cambiarían de color solos.
-    conteoPorCategoria: db.contarReclamosPorCategoria(filters.plataforma),
-    reclamos,
-  });
-});
+// GET /api/reclamos, corregir, descartar y las comunas: src/reclamosRoutes.js.
 
 // Edita solo el estado del reclamo (Pendiente | En tratamiento | Resuelto | Desestimado).
 app.patch('/api/reclamos/:id', (req, res) => {
