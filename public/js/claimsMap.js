@@ -4,6 +4,13 @@
 // Desde la fase G el estado de los reclamos (Pendiente, En tratamiento…) no
 // se muestra ni se edita acá (decisión del dueño); la columna y la API
 // (PATCH /api/reclamos/:id) siguen como estaban.
+// Fase H (openspec/changes/geo-pro): el pin según la precisión (dirección o
+// cruce, sólido; lugar con nombre, con halo; villa, con halo grande), la
+// vista "Por comunas" (GET /api/geo/comunas: los ubicados más las menciones
+// de solo un barrio), el filtro "Precisión" y la tarjeta "Sin ubicar" por
+// motivo, con "Corregir dirección" (POST /api/reclamos/:id/corregir) y
+// "Descartar". Todo dato entra por textContent; los textos de la precisión
+// y los motivos vienen del servidor (src/geo/etiquetas.js), los mismos del CSV.
 
 const CABA_CENTER = [-34.6083, -58.4386];
 const CABA_ZOOM = 12;
@@ -34,6 +41,19 @@ let conteoPorCategoria = {};
 let allSubcategorias = [];
 let selectedSubcategorias = new Set();
 let subcategoriaMultiSelect = null;
+// Fase H: la precisión, sus textos y la vista.
+const PRECISIONES = ['puntual', 'cruce', 'lugar', 'area', 'ninguna'];
+let selectedPrecisiones = new Set(PRECISIONES);
+let precisionMultiSelect = null;
+let etiquetas = {
+  PRECISION: { puntual: 'Dirección exacta', cruce: 'Cruce de calles', lugar: 'Lugar con nombre · ubicación aproximada', area: 'Villa o asentamiento · ubicación del área', ninguna: 'Sin punto' },
+  MOTIVO: {},
+  TIPO: {},
+};
+let vistaMapa = 'puntos'; // 'puntos' | 'comunas'
+let comunasGeo = null; // el GeoJSON de las comunas (se pide una vez)
+let comunasLayer = null;
+let comunaElegida = null;
 
 // -------------------------------------------------------------------------
 // Colores por categoría
@@ -248,6 +268,8 @@ function currentFilters() {
       selectedSubcategorias.size > 0 && selectedSubcategorias.size < allSubcategorias.length
         ? [...selectedSubcategorias]
         : [],
+    // Con todas tildadas no se manda (y así entran también los pendientes).
+    precision: selectedPrecisiones.size < PRECISIONES.length ? [...selectedPrecisiones] : [],
     barrio: document.getElementById('claimsBarrio')?.value || '',
     comuna: document.getElementById('claimsComuna')?.value || '',
     desde: document.getElementById('claimsDesde')?.value || '',
@@ -260,6 +282,7 @@ function isDefaultFilters(f) {
   return (
     f.categoria.length === allCategorias.length &&
     f.subcategoria.length === 0 &&
+    f.precision.length === 0 &&
     !f.barrio &&
     !f.comuna &&
     !f.desde &&
@@ -278,6 +301,7 @@ function buildQueryString(f) {
   if (f.subcategoria.length > 0) {
     params.set('subcategoria', f.subcategoria.join(','));
   }
+  if (f.precision.length > 0) params.set('precision', f.precision.join(','));
   if (f.barrio) params.set('barrio', f.barrio);
   if (f.comuna) params.set('comuna', f.comuna);
   if (f.desde) params.set('desde', f.desde);
@@ -381,10 +405,12 @@ document.addEventListener('keydown', (e) => {
 });
 
 /**
- * @param {{ containerId: string, label: string, options: string[], selectedSet: Set<string> }} config
+ * @param {{ containerId: string, label: string, options: string[], selectedSet: Set<string>,
+ *   labelOf?: (value: string) => string }} config labelOf: el texto de cada
+ *   opción, si no es el valor (la precisión).
  * @returns {{ selectAll: () => void, selectNone: () => void }}
  */
-function createFilterMultiSelect({ containerId, label, options, selectedSet }) {
+function createFilterMultiSelect({ containerId, label, options, selectedSet, labelOf = (v) => v }) {
   const host = document.getElementById(containerId);
   if (!host) return { selectAll() {}, selectNone() {} };
   host.innerHTML = '';
@@ -425,7 +451,7 @@ function createFilterMultiSelect({ containerId, label, options, selectedSet }) {
       if (containerId === 'claimsCategoriaSelect') rebuildSubcategoriaFilter();
       applyFiltersAndReload();
     });
-    optLabel.append(checkbox, document.createTextNode(value));
+    optLabel.append(checkbox, document.createTextNode(labelOf(value)));
     panel.appendChild(optLabel);
     checkboxes.set(value, checkbox);
   }
@@ -485,8 +511,36 @@ function createFilterMultiSelect({ containerId, label, options, selectedSet }) {
 // El (0,0) no es una ubicación: lo deja una respuesta de USIG sin
 // coordenadas, y el pin quedaría en el golfo de Guinea, fuera del AMBA. La
 // misma regla cuenta "reclamos en el mapa" del login (db.countReclamosEnMapa).
+// Desde la fase H los de fuera de la Ciudad y los descartados también llegan
+// (para "Sin ubicar"), y nunca tienen pin.
 function hasMapLocation(row) {
-  return row.x != null && row.y != null && !(row.x === 0 && row.y === 0) && Boolean(row.direccionNormalizada);
+  return (
+    row.x != null &&
+    row.y != null &&
+    !(row.x === 0 && row.y === 0) &&
+    Boolean(row.direccionNormalizada) &&
+    row.geoStatus !== 'fuera_caba' &&
+    row.motivoSinUbicar !== 'descartado'
+  );
+}
+
+// La precisión de antes de la fase H (exacta | aproximada), por si queda
+// alguna fila sin migrar.
+const precisionDe = (r) => (r.precision === 'aproximada' ? 'lugar' : r.precision === 'exacta' ? 'puntual' : r.precision);
+
+// La precisión de un pin: con un reclamo de dirección o cruce ahí, el punto
+// es preciso; si no, la del lugar o la del área.
+function precisionDelGrupo(reclamos) {
+  const ps = reclamos.map(precisionDe);
+  if (ps.some((p) => p === 'puntual' || p === 'cruce')) return 'puntual';
+  if (ps.includes('lugar')) return 'lugar';
+  if (ps.includes('area')) return 'area';
+  return 'puntual';
+}
+
+function textoPrecision(reclamos) {
+  const ps = [...new Set(reclamos.map(precisionDe).filter((p) => p && p !== 'ninguna'))];
+  return ps.map((p) => etiquetas.PRECISION[p] || p).join(' · ');
 }
 
 function clusterVisible() {
@@ -500,6 +554,7 @@ function clusterVisible() {
     groups.get(key).reclamos.push(row);
   }
   const lista = [...groups.values()];
+  for (const g of lista) g.precision = precisionDelGrupo(g.reclamos);
   // Categoría con la que se pinta el pin: la más frecuente del punto. El
   // desempate por nombre mantiene el color estable entre renders. Si el punto
   // mezcla categorías distintas, el pin va negro (esMixto): el color dice "de
@@ -597,7 +652,9 @@ function tooltipHtml(group) {
   const lines = categoriaCounts(group.reclamos)
     .map(([name, n]) => `${escapeHtml(name)} (${n})`)
     .join('<br>');
-  return `<strong>${escapeHtml(group.address)}</strong><br>${group.reclamos.length} reclamo(s)<br>${lines}`;
+  const lugar = group.reclamos.find((r) => r.nombreLugar);
+  const titulo = lugar && lugar.nombreLugar !== group.address ? `${escapeHtml(lugar.nombreLugar)}<br>${escapeHtml(group.address)}` : escapeHtml(group.address);
+  return `<strong>${titulo}</strong><br><span class="claims-tip-prec">${escapeHtml(textoPrecision(group.reclamos))}</span><br>${group.reclamos.length} reclamo(s)<br>${lines}`;
 }
 
 function popupHtml(group) {
@@ -617,10 +674,10 @@ function popupHtml(group) {
           .join('')}</div>`
       : '';
 
-  const aproximado = group.reclamos.every((r) => r.precision === 'aproximada');
-  const avisoPrecision = aproximado
-    ? '<div class="claims-popup-nota">Ubicación aproximada: es un lugar con nombre, no una altura exacta.</div>'
-    : '';
+  // La precisión en una línea ("Lugar con nombre · ubicación aproximada").
+  const avisoPrecision = `<div class="claims-popup-nota">${escapeHtml(textoPrecision(group.reclamos))}</div>`;
+  const lugar = group.reclamos.find((r) => r.nombreLugar && r.nombreLugar !== group.address);
+  const subtitulo = lugar ? `<div class="claims-popup-sub">${escapeHtml(lugar.nombreLugar)}</div>` : '';
 
   const items = group.reclamos
     .map((r) => {
@@ -640,7 +697,7 @@ function popupHtml(group) {
       </div>`;
     })
     .join('');
-  return `<div class="claims-popup"><h2>${escapeHtml(group.address)}</h2>${desglose}${avisoPrecision}${items}</div>`;
+  return `<div class="claims-popup"><h2>${escapeHtml(group.address)}</h2>${subtitulo}${desglose}${avisoPrecision}${items}</div>`;
 }
 
 function pinDiameter(count) {
@@ -649,7 +706,7 @@ function pinDiameter(count) {
   return Math.min(80, Math.round(26 + 10 * Math.sqrt(n - 1) + 6 * (n - 1)));
 }
 
-function setEmptyState(isEmpty, filtered) {
+function setEmptyState(isEmpty, filtered, sinUbicar = 0) {
   const empty = document.getElementById('claimsMapEmpty');
   const mapEl = document.getElementById('claims-map');
   const title = document.getElementById('claimsMapEmptyTitle');
@@ -657,7 +714,11 @@ function setEmptyState(isEmpty, filtered) {
   if (empty) empty.classList.toggle('hidden', !isEmpty);
   if (mapEl) mapEl.classList.toggle('is-empty', isEmpty);
   if (!isEmpty || !title || !text) return;
-  if (filtered) {
+  if (sinUbicar > 0) {
+    // Hay reclamos, pero ninguno con punto: no es "todavía no hay".
+    title.textContent = filtered ? 'Ningún reclamo con punto coincide con los filtros' : 'Ningún reclamo tiene punto todavía';
+    text.textContent = `${sinUbicar === 1 ? 'Hay 1 sin ubicar' : `Hay ${sinUbicar} sin ubicar`}: están en la lista de abajo, donde se pueden corregir.`;
+  } else if (filtered) {
     title.textContent = 'Ningún reclamo coincide con los filtros';
     text.textContent = 'Probá ampliar el rango de fechas o tildar más categorías.';
   } else {
@@ -678,8 +739,16 @@ function renderMarkers() {
   claimsLayer.clearLayers();
   const groups = clusterVisible();
   const filtered = !isDefaultFilters(currentFilters());
-  setEmptyState(groups.length === 0, filtered);
+  const sinUbicar = renderSinUbicar();
   updateClearButtonState();
+  if (vistaMapa === 'comunas') {
+    setEmptyState(false, filtered);
+    renderLeyenda(groups);
+    renderComunas();
+    return;
+  }
+  if (comunasLayer) claimsMap.removeLayer(comunasLayer);
+  setEmptyState(groups.length === 0, filtered, sinUbicar);
 
   for (const group of groups) {
     const count = group.reclamos.length;
@@ -693,17 +762,17 @@ function renderMarkers() {
     const color = group.esMixto ? COLOR_VARIAS : colorDeCategoria(group.categoriaDominante);
     // Blanco sobre estos tonos: todos son medios u oscuros, ninguno claro.
     const texto = '#ffffff';
-    // Si TODOS los reclamos del punto son aproximados, el pin va punteado. Con
-    // uno solo exacto ya hay una ubicación precisa ahí y el pin va sólido.
-    const aproximado = group.reclamos.every((r) => r.precision === 'aproximada');
-
+    // La precisión (fase H): dirección o cruce, sólido; un lugar con nombre,
+    // con halo y borde punteado (el centroide del lugar, no una altura); una
+    // villa, con un halo grande (es un área). Con un reclamo preciso en el
+    // punto, el pin va sólido.
     const icon = L.divIcon({
       className: 'claims-pin-wrap',
       iconSize: [diameter, diameter],
       iconAnchor: [radius, radius],
       html:
-        `<div class="claims-pin${aproximado ? ' is-aproximada' : ''}" ` +
-        `style="width:${diameter}px;height:${diameter}px;background:${color};color:${texto};` +
+        `<div class="claims-pin p-${group.precision}" ` +
+        `style="width:${diameter}px;height:${diameter}px;--pin:${color};background:${color};color:${texto};` +
         `font-size:${diameter >= 48 ? 15 : diameter >= 36 ? 13 : 11}px">${count}</div>`,
     });
     const marker = L.marker([group.lat, group.lng], { icon });
@@ -721,6 +790,369 @@ function renderMarkers() {
     claimsMap.setView(CABA_CENTER, CABA_ZOOM);
   }
 }
+
+function mostrarError(mensaje) {
+  const errorEl = document.getElementById('claimsMapError');
+  if (!errorEl) return;
+  errorEl.textContent = mensaje;
+  errorEl.classList.remove('hidden');
+}
+
+// dd/mm/aaaa en hora de Argentina (a mano: Intl es-AR da "25/9").
+function fechaCorta(iso) {
+  const d = iso ? new Date(iso) : null;
+  if (!d || Number.isNaN(d.getTime())) return '';
+  const p = Object.fromEntries(
+    new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Argentina/Buenos_Aires', day: '2-digit', month: '2-digit', year: 'numeric' })
+      .formatToParts(d)
+      .map((x) => [x.type, x.value])
+  );
+  return `${p.day}/${p.month}/${p.year}`;
+}
+
+function el(tag, clase, texto) {
+  const e = document.createElement(tag);
+  if (clase) e.className = clase;
+  if (texto != null) e.textContent = texto;
+  return e;
+}
+
+const RECORTE_TEXTO = 240;
+
+/** Un reclamo en una lista (la comuna elegida o "Sin ubicar"), todo por textContent. */
+function itemReclamo(r, { acciones = false } = {}) {
+  const item = el('article', 'claims-su-item');
+  const cab = el('div', 'claims-su-cab');
+  const pill = el('span', 'claims-tema-pill', r.categoria);
+  pill.style.background = colorDeCategoria(r.categoria);
+  pill.style.color = '#fff';
+  const meta = [r.autor ? `@${r.autor}` : null, fechaCorta(r.fecha || r.detectedAt)].filter(Boolean).join(' · ');
+  cab.append(pill, el('span', 'claims-su-meta', meta));
+  const textoCompleto = String(r.textoOriginal || '').replace(/\s+/g, ' ').trim();
+  const texto = el('p', 'claims-su-texto', textoCompleto.length > RECORTE_TEXTO ? `${textoCompleto.slice(0, RECORTE_TEXTO - 1).trimEnd()}…` : textoCompleto);
+  if (textoCompleto.length > RECORTE_TEXTO) texto.title = textoCompleto;
+  const leido = el('p', 'claims-su-leido');
+  if (hasMapLocation(r)) {
+    leido.textContent = `${r.nombreLugar ? `${r.nombreLugar} · ` : ''}${r.direccionNormalizada} · ${etiquetas.PRECISION[r.precision] || ''}`;
+  } else if (r.motivoSinUbicar === 'descartado') {
+    leido.textContent = `Descartado${r.descarteMotivo ? `: ${r.descarteMotivo}` : ''}`;
+  } else if (r.ubicacionTipo === 'barrio' && r.barrio) {
+    leido.textContent = `Solo el barrio: ${r.barrio}${r.comuna != null ? ` · comuna ${r.comuna}` : ''}`;
+  } else if (r.ubicacionTipo === 'barrio' && r.comuna != null) {
+    leido.textContent = `Solo la comuna ${r.comuna}`;
+  } else {
+    leido.textContent = r.direccionDetectada ? `Se leyó: «${r.direccionDetectada}»` : 'Sin un lugar escrito';
+  }
+  if (r.corregida) leido.append(el('span', 'claims-su-corregida', ' · corregido a mano'));
+  item.append(cab, texto, leido);
+  if (acciones) agregarAcciones(item, r);
+  return item;
+}
+
+// -------------------------------------------------------------------------
+// Sin ubicar (fase H): por motivo; corregir y descartar en el mismo renglón.
+// -------------------------------------------------------------------------
+
+const ORDEN_GRUPOS = ['pendiente', 'barrio', 'lineal', 'ambigua', 'no_encontrada', 'sin_direccion', 'fuera_de_caba', 'descartado'];
+const TITULO_GRUPO = { pendiente: 'Todavía sin resolver', barrio: 'Solo el barrio' };
+const MAX_POR_GRUPO = 20;
+const gruposCompletos = new Set();
+
+function grupoDe(r) {
+  if (r.motivoSinUbicar === 'descartado') return 'descartado';
+  if (r.geoStatus === 'pendiente') return 'pendiente';
+  if (r.ubicacionTipo === 'barrio' && !r.motivoSinUbicar) return 'barrio';
+  return r.motivoSinUbicar || 'no_encontrada';
+}
+
+function avisoSinUbicar(texto) {
+  const aviso = document.getElementById('claimsSinUbicarAviso');
+  if (aviso) aviso.textContent = texto;
+}
+
+function formulario({ etiqueta, placeholder, accion, alEnviar }) {
+  const form = el('form', 'claims-su-form');
+  const id = `su-${Math.random().toString(36).slice(2, 9)}`;
+  const label = el('label', 'sr', etiqueta);
+  label.htmlFor = id;
+  const input = el('input');
+  input.type = 'text';
+  input.id = id;
+  input.maxLength = 200;
+  input.placeholder = placeholder;
+  input.autocomplete = 'off';
+  const enviar = el('button', 'btn-small primary', accion);
+  enviar.type = 'submit';
+  const cancelar = el('button', 'btn-small btn-ghost', 'Cancelar');
+  cancelar.type = 'button';
+  const error = el('p', 'claims-su-error');
+  error.setAttribute('role', 'alert');
+  form.append(label, input, enviar, cancelar, error);
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const valor = input.value.trim();
+    if (!valor) {
+      error.textContent = 'Escribí algo antes de seguir.';
+      input.focus();
+      return;
+    }
+    enviar.disabled = true;
+    error.textContent = '';
+    try {
+      await alEnviar(valor);
+    } catch (err) {
+      error.textContent = err.message || 'No se pudo.';
+      enviar.disabled = false;
+      input.focus();
+    }
+  });
+  return { form, input, cancelar };
+}
+
+async function postReclamo(r, accion, cuerpo) {
+  const resp = await fetch(`/api/reclamos/${encodeURIComponent(r.id)}/${accion}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(cuerpo),
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(data.error || 'No se pudo.');
+  return data.reclamo;
+}
+
+function agregarAcciones(item, r) {
+  const botones = el('div', 'claims-su-acciones');
+  const corregir = el('button', 'btn-small', r.motivoSinUbicar === 'descartado' ? 'Ubicar igual' : 'Corregir dirección');
+  corregir.type = 'button';
+  botones.append(corregir);
+  let descartar = null;
+  if (r.motivoSinUbicar !== 'descartado') {
+    descartar = el('button', 'btn-small btn-ghost', 'Descartar');
+    descartar.type = 'button';
+    botones.append(descartar);
+  }
+  item.append(botones);
+  const abrir = ({ form, input, cancelar }, boton) => {
+    botones.hidden = true;
+    item.append(form);
+    input.focus();
+    cancelar.addEventListener('click', () => {
+      form.remove();
+      botones.hidden = false;
+      boton.focus();
+    });
+  };
+  corregir.addEventListener('click', () =>
+    abrir(
+      formulario({
+        etiqueta: 'Dirección, cruce o lugar',
+        placeholder: 'Ej.: Corrientes 1200 · Nazca y Rivadavia · Plaza Irlanda',
+        accion: 'Ubicar',
+        alEnviar: async (texto) => {
+          const nuevo = await postReclamo(r, 'corregir', { texto });
+          avisoSinUbicar(
+            nuevo && nuevo.direccionNormalizada
+              ? `Ubicado: ${nuevo.nombreLugar ? `${nuevo.nombreLugar}, ` : ''}${nuevo.direccionNormalizada} (${etiquetas.PRECISION[nuevo.precision] || nuevo.precision}).`
+              : `Quedó como mención de ${nuevo && nuevo.barrio ? nuevo.barrio : 'un barrio'}.`
+          );
+          await applyFiltersAndReload();
+        },
+      }),
+      corregir
+    )
+  );
+  if (descartar) {
+    descartar.addEventListener('click', () =>
+      abrir(
+        formulario({
+          etiqueta: 'Por qué no es un reclamo ubicable',
+          placeholder: 'Ej.: es una opinión, no un reclamo',
+          accion: 'Descartar',
+          alEnviar: async (motivo) => {
+            await postReclamo(r, 'descartar', { motivo });
+            avisoSinUbicar('Descartado: queda en la lista de descartados.');
+            await applyFiltersAndReload();
+          },
+        }),
+        descartar
+      )
+    );
+  }
+}
+
+/** Dibuja la tarjeta "Sin ubicar". Devuelve cuántos hay (sin los descartados). */
+function renderSinUbicar() {
+  const cont = document.getElementById('claimsSinUbicarLista');
+  const nEl = document.getElementById('claimsSinUbicarN');
+  if (!cont) return 0;
+  const sin = rawReclamos.filter((r) => !hasMapLocation(r));
+  const grupos = new Map();
+  for (const r of sin) {
+    const g = grupoDe(r);
+    if (!grupos.has(g)) grupos.set(g, []);
+    grupos.get(g).push(r);
+  }
+  const vigentes = sin.length - (grupos.get('descartado') || []).length;
+  if (nEl) nEl.textContent = String(vigentes);
+  cont.replaceChildren();
+  if (!sin.length) {
+    cont.append(el('p', 'claims-su-vacio', 'Todos los reclamos de esta vista tienen un punto en el mapa.'));
+    return 0;
+  }
+  for (const g of ORDEN_GRUPOS) {
+    const lista = grupos.get(g);
+    if (!lista || !lista.length) continue;
+    const bloque = el('section', `claims-su-grupo g-${g}`);
+    const titulo = el('h3', '', TITULO_GRUPO[g] || etiquetas.MOTIVO[g] || g);
+    titulo.append(el('span', 'num', ` ${lista.length}`));
+    bloque.append(titulo);
+    const visibles = gruposCompletos.has(g) ? lista : lista.slice(0, MAX_POR_GRUPO);
+    for (const r of visibles) bloque.append(itemReclamo(r, { acciones: g !== 'pendiente' }));
+    if (visibles.length < lista.length) {
+      const mas = el('button', 'btn-small btn-ghost claims-su-mas', `Ver los ${lista.length}`);
+      mas.type = 'button';
+      mas.addEventListener('click', () => {
+        gruposCompletos.add(g);
+        renderSinUbicar();
+      });
+      bloque.append(mas);
+    }
+    cont.append(bloque);
+  }
+  return vigentes;
+}
+
+// -------------------------------------------------------------------------
+// Por comunas (fase H): los ubicados más las menciones de solo un barrio;
+// nunca los de afuera ni los descartados.
+// -------------------------------------------------------------------------
+
+function cuentaEnComuna(row) {
+  if (row.comuna == null || row.geoStatus === 'fuera_caba' || row.motivoSinUbicar === 'descartado') return false;
+  return hasMapLocation(row) || row.ubicacionTipo === 'barrio';
+}
+
+function reclamosPorComuna() {
+  const m = new Map();
+  for (const r of rawReclamos) {
+    if (!cuentaEnComuna(r)) continue;
+    const c = Number(r.comuna);
+    if (!m.has(c)) m.set(c, []);
+    m.get(c).push(r);
+  }
+  return m;
+}
+
+async function cargarComunas() {
+  if (comunasGeo) return comunasGeo;
+  const resp = await fetch('/api/geo/comunas');
+  if (!resp.ok) throw new Error('No se pudieron cargar las comunas.');
+  comunasGeo = await resp.json();
+  return comunasGeo;
+}
+
+const plural = (n, uno, varios) => (n === 1 ? `1 ${uno}` : `${n} ${varios}`);
+
+function renderBotonesComunas(porComuna) {
+  let cont = document.getElementById('claimsComunaBotones');
+  if (!cont) {
+    cont = el('div', 'claims-comuna-botones');
+    cont.id = 'claimsComunaBotones';
+    cont.setAttribute('role', 'group');
+    cont.setAttribute('aria-label', 'Comunas');
+    document.getElementById('claimsComunasNota')?.after(cont);
+  }
+  cont.replaceChildren();
+  for (let c = 1; c <= 15; c++) {
+    const n = (porComuna.get(c) || []).length;
+    const b = el('button', `btn-small${c === comunaElegida ? ' on' : ''}`, `C${c}`);
+    b.type = 'button';
+    b.append(el('span', 'num', ` · ${n}`));
+    b.setAttribute('aria-label', `Comuna ${c}: ${plural(n, 'reclamo', 'reclamos')}`);
+    b.setAttribute('aria-pressed', String(c === comunaElegida));
+    b.addEventListener('click', () => elegirComuna(c));
+    cont.append(b);
+  }
+}
+
+async function renderComunas() {
+  let geo;
+  try {
+    geo = await cargarComunas();
+  } catch (err) {
+    mostrarError(err.message);
+    return;
+  }
+  if (vistaMapa !== 'comunas') return;
+  const porComuna = reclamosPorComuna();
+  const max = Math.max(1, ...[...porComuna.values()].map((l) => l.length));
+  const acento = cssVar('--accent') || '#2a78d6';
+  if (comunasLayer) claimsMap.removeLayer(comunasLayer);
+  comunasLayer = L.geoJSON(geo, {
+    style: (f) => {
+      const c = Number(f.properties && f.properties.comuna);
+      const n = (porComuna.get(c) || []).length;
+      return { color: acento, weight: c === comunaElegida ? 3 : 1.2, fillColor: acento, fillOpacity: n ? 0.1 + 0.38 * (n / max) : 0.03 };
+    },
+    onEachFeature: (f, layer) => {
+      const c = Number(f.properties && f.properties.comuna);
+      layer.bindTooltip(`Comuna ${c} · ${plural((porComuna.get(c) || []).length, 'reclamo', 'reclamos')}`, { sticky: true });
+      layer.on('click', () => elegirComuna(c));
+    },
+  }).addTo(claimsMap);
+  claimsMap.fitBounds(comunasLayer.getBounds(), { padding: [12, 12] });
+  renderBotonesComunas(porComuna);
+  if (comunaElegida != null) renderComunaCard(comunaElegida, porComuna.get(comunaElegida) || []);
+}
+
+function renderComunaCard(c, lista) {
+  const card = document.getElementById('claimsComunaCard');
+  if (!card) return;
+  card.classList.remove('hidden');
+  document.getElementById('claimsComunaTitulo').textContent = `Comuna ${c}`;
+  const conPunto = lista.filter(hasMapLocation).length;
+  const menciones = lista.length - conPunto;
+  const barrios = [...new Set(lista.map((r) => r.barrio).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
+  const partes = [conPunto ? `${conPunto} con punto en el mapa` : null, menciones ? `${menciones} que ${menciones === 1 ? 'nombra' : 'nombran'} solo el barrio` : null].filter(Boolean);
+  document.getElementById('claimsComunaResumen').textContent = lista.length
+    ? `${plural(lista.length, 'reclamo', 'reclamos')}: ${partes.join(' y ')}.${barrios.length ? ` Barrios: ${barrios.join(', ')}.` : ''}`
+    : 'Ningún reclamo en esta comuna con estos filtros.';
+  const cont = document.getElementById('claimsComunaLista');
+  cont.replaceChildren(...lista.map((r) => itemReclamo(r)));
+}
+
+function elegirComuna(c) {
+  comunaElegida = c;
+  renderComunas().then(() => document.getElementById('claimsComunaTitulo')?.focus());
+}
+
+function cambiarVista(v) {
+  if (v === vistaMapa) return;
+  vistaMapa = v;
+  document.querySelectorAll('#claimsVistaSeg button[data-v]').forEach((b) => {
+    const on = b.dataset.v === v;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', String(on));
+  });
+  document.getElementById('claimsPrecLeyenda')?.classList.toggle('hidden', v === 'comunas');
+  document.getElementById('claimsComunasNota')?.classList.toggle('hidden', v !== 'comunas');
+  document.getElementById('claimsComunaBotones')?.classList.toggle('hidden', v !== 'comunas');
+  if (v === 'puntos') {
+    comunaElegida = null;
+    document.getElementById('claimsComunaCard')?.classList.add('hidden');
+  }
+  renderMarkers();
+}
+
+document.getElementById('claimsVistaSeg')?.addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-v]');
+  if (b) cambiarVista(b.dataset.v);
+});
+document.getElementById('claimsComunaCerrar')?.addEventListener('click', () => {
+  comunaElegida = null;
+  document.getElementById('claimsComunaCard')?.classList.add('hidden');
+  renderComunas();
+});
 
 // -------------------------------------------------------------------------
 // Carga inicial
@@ -773,6 +1205,8 @@ async function refreshClaimsMap() {
     conteoPorCategoria = data.conteoPorCategoria || {};
     selectedCategorias = new Set(allCategorias);
     rawReclamos = Array.isArray(data.reclamos) ? data.reclamos : [];
+    if (data.etiquetas && data.etiquetas.PRECISION) etiquetas = data.etiquetas;
+    selectedPrecisiones = new Set(PRECISIONES);
 
     recalcularPaleta();
 
@@ -784,7 +1218,14 @@ async function refreshClaimsMap() {
       selectedSet: selectedCategorias,
     });
     rebuildSubcategoriaFilter();
-    populateBarrioComunaOptions(rawReclamos);
+    precisionMultiSelect = createFilterMultiSelect({
+      containerId: 'claimsPrecisionSelect',
+      label: 'Precisión',
+      options: PRECISIONES,
+      selectedSet: selectedPrecisiones,
+      labelOf: (p) => etiquetas.PRECISION[p] || p,
+    });
+    populateBarrioComunaOptions(rawReclamos.filter((r) => r.geoStatus !== 'fuera_caba'));
     resetOtherFilters();
 
     ensureClaimsMap();
@@ -813,6 +1254,7 @@ document.getElementById('claimsClearBtn')?.addEventListener('click', () => {
   categoriaMultiSelect?.selectAll();
   rebuildSubcategoriaFilter();
   subcategoriaMultiSelect?.selectAll();
+  precisionMultiSelect?.selectAll();
   resetOtherFilters();
   applyFiltersAndReload();
 });

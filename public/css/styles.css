@@ -7576,8 +7576,8 @@ html.feed-pop-lock body {
   border: none;
 }
 /* Borde negro fino en todos los pines: los colores claros sobre calles
-   claras se funden sin él. Aproximada (centroide de un lugar con nombre):
-   punteado. */
+   claras se funden sin él. La precisión (fase H: .p-lugar, .p-area) va más
+   abajo, con el resto del Mapa nuevo. */
 .claims-pin {
   display: flex;
   align-items: center;
@@ -7589,9 +7589,6 @@ html.feed-pop-lock body {
   font-weight: 700;
   line-height: 1;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
-}
-.claims-pin.is-aproximada {
-  border-style: dashed;
 }
 /* Colores por categoría: doce y el resto en gris (con 26 categorías no hay
    26 colores que el ojo separe). Salen de la paleta de la maqueta (sus
@@ -7767,6 +7764,230 @@ html.feed-pop-lock body {
   color: var(--muted);
   font-size: 11.5px;
   margin: 2px 0 0;
+}
+
+/* ---------- Mapa de reclamos, fase H (openspec/changes/geo-pro) ----------
+   La precisión del pin (dirección o cruce, sólido; un lugar con nombre, con
+   halo y borde punteado; una villa, con un halo grande), la barra de la
+   vista ("Puntos / Por comunas") con su leyenda, la lista de la comuna
+   elegida y "Sin ubicar". El color del pin llega en --pin. */
+.claims-pin.p-lugar {
+  border-style: dashed;
+  box-shadow:
+    0 0 0 6px color-mix(in oklab, var(--pin) 28%, transparent),
+    0 2px 6px rgba(0, 0, 0, 0.2);
+}
+.claims-pin.p-area {
+  box-shadow:
+    0 0 0 16px color-mix(in oklab, var(--pin) 20%, transparent),
+    0 2px 6px rgba(0, 0, 0, 0.2);
+}
+.claims-tip-prec {
+  color: var(--muted);
+}
+.claims-map-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+.claims-prec-leyenda {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  font-size: 12px;
+  color: var(--fg2);
+}
+.claims-prec-leyenda span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.claims-prec-muestra {
+  --pin: var(--accent);
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  border: 1.5px solid #000;
+  background: var(--pin);
+}
+.claims-prec-muestra.p-lugar {
+  border-style: dashed;
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--pin) 30%, transparent);
+}
+.claims-prec-muestra.p-area {
+  margin: 0 3px;
+  box-shadow: 0 0 0 6px color-mix(in oklab, var(--pin) 22%, transparent);
+}
+.claims-comunas-nota {
+  flex: 1 1 260px;
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.claims-comuna-botones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  width: 100%;
+}
+.claims-comuna-botones .num {
+  color: var(--muted);
+  font-family: var(--mono);
+}
+.claims-comuna-botones .btn-small.on {
+  border-color: var(--accent);
+  color: var(--accent-text);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 16%, transparent);
+}
+.claims-comuna-card,
+.claims-sin-ubicar {
+  margin-top: 14px;
+}
+.claims-comuna-card .ct h2:focus {
+  outline: none;
+}
+.claims-comuna-resumen {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--fg2);
+}
+.claims-lista,
+.claims-su-grupo {
+  display: grid;
+  gap: 8px;
+}
+.claims-su-grupo + .claims-su-grupo {
+  margin-top: 16px;
+}
+.claims-su-grupo h3 {
+  margin: 0;
+  font-size: 14px;
+  color: var(--fg);
+}
+.claims-su-grupo h3 .num {
+  font-family: var(--mono);
+  font-weight: 500;
+  color: var(--muted);
+}
+.claims-su-aviso {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--pos-text);
+  background: color-mix(in oklab, var(--pos) 12%, var(--surface));
+}
+.claims-su-aviso:empty {
+  display: none;
+}
+/* En escritorio los botones van a la derecha del texto (un renglón menos
+   por reclamo); el formulario, abajo, a todo el ancho. */
+.claims-su-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface2);
+}
+.claims-su-item > * {
+  grid-column: 1;
+}
+.claims-su-item > .claims-su-acciones {
+  grid-column: 2;
+  grid-row: 1 / span 3;
+  align-self: center;
+}
+.claims-su-item > .claims-su-form {
+  grid-column: 1 / -1;
+}
+@media (max-width: 640px) {
+  .claims-su-item {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .claims-su-item > .claims-su-acciones {
+    grid-column: 1;
+    grid-row: auto;
+  }
+}
+.claims-su-cab {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+.claims-su-meta {
+  font-size: 12px;
+  color: var(--muted);
+}
+.claims-su-texto {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--fg);
+  overflow-wrap: anywhere;
+}
+.claims-su-leido {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--fg2);
+  overflow-wrap: anywhere;
+}
+.claims-su-corregida {
+  color: var(--accent-text);
+}
+.claims-su-acciones,
+.claims-su-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.claims-su-form input {
+  flex: 1 1 220px;
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--line2);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--fg);
+  font-size: 13px;
+}
+.claims-su-form input::placeholder {
+  color: var(--muted);
+}
+.claims-su-form input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 18%, transparent);
+}
+.claims-su-form button.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.claims-su-error {
+  width: 100%;
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--neg-text);
+}
+.claims-su-error:empty {
+  display: none;
+}
+.claims-su-vacio {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.claims-su-mas {
+  justify-self: start;
 }
 
 /* ---------- Inicio (dashboard.html) ----------

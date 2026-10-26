@@ -125,7 +125,7 @@ describe('las filas y el CSV', () => {
     );
     const [encabezado, uno, dos] = csv.trim().split('\n');
     assert.match(encabezado, /^"Nombre de usuario","Direccion detectada","Direccion normalizada","Tematica detectada","Categoria",.*"Motivo sin ubicar"$/);
-    assert.equal(uno, '"vecina","cruce peatonal de Ruiz de los Llanos y Bacacay","RUIZ DE LOS LLANOS y BACACAY","cruce peligroso","Tránsito","Cruces","Cruce de calles","Cruce","","Velez Sarsfield","10",""');
+    assert.equal(uno, '"vecina","cruce peatonal de Ruiz de los Llanos y Bacacay","RUIZ DE LOS LLANOS y BACACAY","cruce peligroso","Tránsito","Cruces","Cruce de calles","Cruce de calles","","Velez Sarsfield","10",""');
     assert.match(dos, /^"'=otra","la General Paz","N\/D","N\/D",.*"Una calle o avenida sin altura ni cruce"$/);
   });
 });

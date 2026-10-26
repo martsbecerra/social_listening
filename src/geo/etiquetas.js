@@ -2,8 +2,9 @@
 // geo/etiquetas.js
 // --------------------------------------------------------------------------
 // Cómo se dicen, para una persona, el tipo de ubicación, la precisión y el
-// motivo de un reclamo sin ubicar (fase H): el CSV de reclamos los usa, y
-// la pantalla (public/js/claimsMap.js) repite los mismos textos.
+// motivo de un reclamo sin ubicar (fase H): el CSV de reclamos los usa y
+// GET /api/reclamos se los pasa a la pantalla (public/js/claimsMap.js), así
+// el mapa y el CSV dicen lo mismo.
 // ==========================================================================
 
 const TIPO = {
@@ -17,10 +18,10 @@ const TIPO = {
 };
 
 const PRECISION = {
-  puntual: 'Puntual',
-  cruce: 'Cruce',
+  puntual: 'Dirección exacta',
+  cruce: 'Cruce de calles',
   lugar: 'Lugar con nombre · ubicación aproximada',
-  area: 'Área (villa o asentamiento)',
+  area: 'Villa o asentamiento · ubicación del área',
   ninguna: 'Sin punto',
 };
 
