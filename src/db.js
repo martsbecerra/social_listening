@@ -383,6 +383,44 @@ if (sobraCheckCategoria || faltaNoEncontrada) {
     db.exec('PRAGMA foreign_keys = ON');
   }
 }
+// Fase H (openspec/changes/geo-pro): la ubicación que devolvió el modelo y
+// lo que resolvió el servidor. Van DESPUÉS de la reconstrucción de arriba,
+// que no las conoce. ubicacion_tipo: calle_altura | cruce | lugar | villa |
+// barrio | lineal | ninguna (el que quedó al resolver). motivo_sin_ubicar:
+// lineal | fuera_de_caba | ambigua | no_encontrada | sin_direccion |
+// descartado. ubicacion_json: la `ubicacion` del modelo, tal cual (y la
+// corrección del equipo, si la hubo). corregida_por: el correo de quien la
+// corrigió a mano; nunca sale a la API.
+const reclamosColumnsGeo = db.prepare('PRAGMA table_info(reclamos)').all().map((c) => c.name);
+for (const col of ['ubicacion_tipo', 'nombre_lugar', 'motivo_sin_ubicar', 'ubicacion_json', 'corregida_por', 'descarte_motivo']) {
+  if (!reclamosColumnsGeo.includes(col)) db.exec(`ALTER TABLE reclamos ADD COLUMN ${col} TEXT`);
+}
+// `precision` era exacta | aproximada; pasa a puntual | cruce | lugar | area |
+// ninguna. Solo toca los valores viejos (y los vacíos), así que correrla de
+// nuevo no cambia nada. Lo que ya tenía punto recibe también el tipo de
+// ubicación, y lo que no, su motivo.
+db.exec(`
+  UPDATE reclamos SET precision = CASE
+      WHEN x IS NULL OR y IS NULL OR (x = 0 AND y = 0) THEN 'ninguna'
+      WHEN precision = 'aproximada' THEN 'lugar'
+      WHEN COALESCE(cruce, '') <> '' THEN 'cruce'
+      ELSE 'puntual' END
+  WHERE precision IS NULL OR precision IN ('exacta', 'aproximada')
+`);
+db.exec(`
+  UPDATE reclamos SET ubicacion_tipo = CASE
+      WHEN precision = 'lugar' THEN 'lugar'
+      WHEN precision = 'cruce' THEN 'cruce'
+      ELSE 'calle_altura' END
+  WHERE ubicacion_tipo IS NULL AND precision IN ('puntual', 'cruce', 'lugar')
+`);
+db.exec(`
+  UPDATE reclamos SET motivo_sin_ubicar = CASE geo_status
+      WHEN 'fuera_caba' THEN 'fuera_de_caba'
+      WHEN 'no_encontrada' THEN 'no_encontrada'
+      ELSE 'sin_direccion' END
+  WHERE motivo_sin_ubicar IS NULL AND precision = 'ninguna' AND geo_status IN ('fuera_caba', 'no_encontrada', 'sin_direccion', 'invalida')
+`);
 db.exec('CREATE INDEX IF NOT EXISTS idx_reclamos_direccion_normalizada ON reclamos(direccion_normalizada)');
 db.exec('CREATE INDEX IF NOT EXISTS idx_reclamos_categoria ON reclamos(categoria)');
 db.exec('CREATE INDEX IF NOT EXISTS idx_reclamos_subcategoria ON reclamos(subcategoria)');
@@ -485,6 +523,20 @@ for (const col of ['calle', 'altura', 'cruce', 'comuna', 'barrio']) {
     db.exec(`ALTER TABLE geocode_cache ADD COLUMN ${col} ${type}`);
   }
 }
+// Los lugares con nombre ya resueltos (src/geo/gazetteer.js): la dirección
+// para mostrar (la del dataset o la geocodificación inversa de USIG) y el
+// punto, por nombre normalizado. Los lugares no se mueven: no vence.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS lugar_cache (
+    clave TEXT PRIMARY KEY,
+    nombre TEXT,
+    x REAL,
+    y REAL,
+    direccion TEXT,
+    fuente TEXT,
+    fetched_at TEXT NOT NULL
+  )
+`);
 
 // Mediana de likes/comentarios por cuenta (y por tipo de posteo, si se pudo
 // determinar) — la referencia contra la que se clasifica un posteo detectado
@@ -968,18 +1020,21 @@ const getRefreshMissStmt = db.prepare(
   'SELECT account, url, refresh_misses AS misses, refresh_stopped_at AS stoppedAt FROM detected_posts WHERE id = ?'
 );
 
-const upsertReclamoStmt = db.prepare(`
+const INSERT_RECLAMO = `
   INSERT INTO reclamos (
     id, comentario_id, plataforma, post_url, comment_url, autor, fecha,
     detected_at, texto_original, categoria, subcategoria, precision_fecha, import_origen, direccion_detectada,
     direccion_normalizada, calle, altura, cruce, x, y, comuna, barrio,
-    precision, geo_status, estado
+    precision, geo_status, estado, ubicacion_tipo, nombre_lugar, motivo_sin_ubicar, ubicacion_json,
+    corregida_por, descarte_motivo
   ) VALUES (
     @id, @comentarioId, @plataforma, @postUrl, @commentUrl, @autor, @fecha,
     @detectedAt, @textoOriginal, @categoria, @subcategoria, @precisionFecha, @importOrigen, @direccionDetectada,
     @direccionNormalizada, @calle, @altura, @cruce, @x, @y, @comuna, @barrio,
-    @precision, @geoStatus, @estado
-  )
+    @precision, @geoStatus, @estado, @ubicacionTipo, @nombreLugar, @motivoSinUbicar, @ubicacionJson,
+    NULL, NULL
+  )`;
+const upsertReclamoStmt = db.prepare(`${INSERT_RECLAMO}
   ON CONFLICT(id) DO UPDATE SET
     comentario_id = excluded.comentario_id,
     plataforma = excluded.plataforma,
@@ -1004,7 +1059,13 @@ const upsertReclamoStmt = db.prepare(`
     barrio = excluded.barrio,
     precision = excluded.precision,
     geo_status = excluded.geo_status,
-    estado = excluded.estado
+    estado = excluded.estado,
+    ubicacion_tipo = excluded.ubicacion_tipo,
+    nombre_lugar = excluded.nombre_lugar,
+    motivo_sin_ubicar = excluded.motivo_sin_ubicar,
+    ubicacion_json = excluded.ubicacion_json,
+    corregida_por = NULL,
+    descarte_motivo = NULL
 `);
 // La misma fila, para un análisis que vuelve a pasar por una publicación ya
 // analizada (upsertReclamo con conservarGestion): el reclamo ya existe y
@@ -1013,22 +1074,20 @@ const upsertReclamoStmt = db.prepare(`
 // y, si la dirección detectada no cambió, todo el geocodificado; con la
 // misma categoría, una subcategoría vacía (la llamada falló o el modelo dijo
 // "ninguna") no borra la que había. El resto (texto, categoría) es lo que
-// dijo el análisis nuevo.
-const GEO_SI_MISMA_DIRECCION = ['direccion_normalizada', 'calle', 'altura', 'cruce', 'x', 'y', 'comuna', 'barrio', 'precision', 'geo_status']
-  .map((col) => `${col} = CASE WHEN reclamos.direccion_detectada IS excluded.direccion_detectada THEN reclamos.${col} ELSE excluded.${col} END`)
-  .join(',\n    ');
-const upsertReclamoConservandoStmt = db.prepare(`
-  INSERT INTO reclamos (
-    id, comentario_id, plataforma, post_url, comment_url, autor, fecha,
-    detected_at, texto_original, categoria, subcategoria, precision_fecha, import_origen, direccion_detectada,
-    direccion_normalizada, calle, altura, cruce, x, y, comuna, barrio,
-    precision, geo_status, estado
-  ) VALUES (
-    @id, @comentarioId, @plataforma, @postUrl, @commentUrl, @autor, @fecha,
-    @detectedAt, @textoOriginal, @categoria, @subcategoria, @precisionFecha, @importOrigen, @direccionDetectada,
-    @direccionNormalizada, @calle, @altura, @cruce, @x, @y, @comuna, @barrio,
-    @precision, @geoStatus, @estado
+// dijo el análisis nuevo. Desde la fase H, un reclamo corregido o descartado
+// a mano conserva todo lo de su ubicación aunque la dirección detectada
+// cambie: lo que decidió el equipo no lo pisa un análisis nuevo.
+const GEO_SI_MISMA_DIRECCION = [
+  'direccion_normalizada', 'calle', 'altura', 'cruce', 'x', 'y', 'comuna', 'barrio', 'precision', 'geo_status',
+  'ubicacion_tipo', 'nombre_lugar', 'motivo_sin_ubicar', 'ubicacion_json', 'corregida_por', 'descarte_motivo',
+]
+  .map(
+    (col) =>
+      `${col} = CASE WHEN reclamos.corregida_por IS NOT NULL OR reclamos.motivo_sin_ubicar IS 'descartado'` +
+      ` OR reclamos.direccion_detectada IS excluded.direccion_detectada THEN reclamos.${col} ELSE excluded.${col} END`
   )
+  .join(',\n    ');
+const upsertReclamoConservandoStmt = db.prepare(`${INSERT_RECLAMO}
   ON CONFLICT(id) DO UPDATE SET
     comentario_id = excluded.comentario_id,
     plataforma = excluded.plataforma,
@@ -1074,8 +1133,35 @@ const updateReclamoGeoStmt = db.prepare(`
       comuna = @comuna,
       barrio = @barrio,
       precision = @precision,
-      geo_status = @geoStatus
+      geo_status = @geoStatus,
+      ubicacion_tipo = COALESCE(@ubicacionTipo, ubicacion_tipo),
+      nombre_lugar = @nombreLugar,
+      motivo_sin_ubicar = @motivoSinUbicar
   WHERE id = @id
+`);
+// Lo que se escribe al corregir o descartar a mano (Mapa, fase H) y al
+// aplicar el reproceso: la ubicación del modelo (o la corrección) y quién.
+const setReclamoUbicacionStmt = db.prepare(`
+  UPDATE reclamos SET ubicacion_tipo = @ubicacionTipo, ubicacion_json = @ubicacionJson WHERE id = @id
+`);
+const marcarReclamoCorregidoStmt = db.prepare(`
+  UPDATE reclamos SET corregida_por = @corregidaPor, descarte_motivo = NULL, ubicacion_json = @ubicacionJson WHERE id = @id
+`);
+const descartarReclamoStmt = db.prepare(`
+  UPDATE reclamos
+  SET motivo_sin_ubicar = 'descartado', descarte_motivo = @motivo, corregida_por = @corregidaPor,
+      x = NULL, y = NULL, comuna = NULL, barrio = NULL, precision = 'ninguna', nombre_lugar = NULL,
+      direccion_normalizada = NULL, geo_status = 'sin_direccion'
+  WHERE id = @id
+`);
+const getReclamoStmt = db.prepare('SELECT * FROM reclamos WHERE id = ?');
+const getLugarCacheStmt = db.prepare('SELECT * FROM lugar_cache WHERE clave = ?');
+const setLugarCacheStmt = db.prepare(`
+  INSERT INTO lugar_cache (clave, nombre, x, y, direccion, fuente, fetched_at)
+  VALUES (@clave, @nombre, @x, @y, @direccion, @fuente, @fetchedAt)
+  ON CONFLICT(clave) DO UPDATE SET
+    nombre = excluded.nombre, x = excluded.x, y = excluded.y, direccion = excluded.direccion,
+    fuente = excluded.fuente, fetched_at = excluded.fetched_at
 `);
 const getGeocodeCacheStmt = db.prepare('SELECT * FROM geocode_cache WHERE query_key = ?');
 const setGeocodeCacheStmt = db.prepare(`
@@ -1269,7 +1355,7 @@ const listAnterioresDeCuentaStmt = db.prepare(`
 // con la regla del pin del mapa (ver countReclamosEnMapaStmt).
 const listReclamosDePostStmt = db.prepare(`
   SELECT id, autor, categoria, subcategoria, direccion_detectada, direccion_normalizada, barrio, comuna, x, y,
-    geo_status, estado, precision,
+    geo_status, estado, precision, ubicacion_tipo, nombre_lugar, motivo_sin_ubicar, texto_original, fecha,
     CASE WHEN geo_status IS NOT 'fuera_caba' AND x IS NOT NULL AND y IS NOT NULL AND NOT (x = 0 AND y = 0)
       AND COALESCE(direccion_normalizada, '') <> '' THEN 1 ELSE 0 END AS en_mapa
   FROM reclamos WHERE plataforma = ? AND post_url = ? ORDER BY detected_at, id
@@ -1548,7 +1634,25 @@ function mapReclamoRow(row) {
     precision: row.precision,
     geoStatus: row.geo_status,
     estado: row.estado,
+    ubicacionTipo: row.ubicacion_tipo || null,
+    nombreLugar: row.nombre_lugar || null,
+    motivoSinUbicar: row.motivo_sin_ubicar || null,
+    ubicacion: parseUbicacionJson(row.ubicacion_json),
+    // El correo no sale de acá hacia la API (server.js lo saca); la ruta
+    // solo dice si se corrigió.
+    corregidaPor: row.corregida_por || null,
+    descarteMotivo: row.descarte_motivo || null,
   };
+}
+
+function parseUbicacionJson(texto) {
+  if (!texto) return null;
+  try {
+    const valor = JSON.parse(texto);
+    return valor && typeof valor === 'object' ? valor : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -1602,6 +1706,10 @@ function upsertReclamo(reclamo, { conservarGestion = false } = {}) {
     precision: reclamo.precision || null,
     geoStatus: reclamo.geoStatus || 'pendiente',
     estado: reclamo.estado || 'Pendiente',
+    ubicacionTipo: reclamo.ubicacionTipo || null,
+    nombreLugar: reclamo.nombreLugar || null,
+    motivoSinUbicar: reclamo.motivoSinUbicar || null,
+    ubicacionJson: reclamo.ubicacion ? JSON.stringify(reclamo.ubicacion) : null,
   });
 }
 
@@ -1611,12 +1719,20 @@ function upsertReclamo(reclamo, { conservarGestion = false } = {}) {
  * @param {{ categoria?: string[], subcategoria?: string[], estado?: string[], barrio?: string,
  *   comuna?: number, desde?: string, hasta?: string, q?: string }} filters
  */
-function listReclamosFiltered(filters = {}) {
-  const { plataforma, categoria, subcategoria, estado, barrio, comuna, desde, hasta, q } = filters;
-  // Siempre afuera, pasen los filtros que pasen: quedan marcados en la DB
-  // para poder auditar el geocoding, pero nunca se muestran ni se exportan.
-  const clauses = [`geo_status IS NOT 'fuera_caba'`];
+function listReclamosFiltered(filters = {}, { incluirFueraDeCaba = false } = {}) {
+  const { plataforma, categoria, subcategoria, estado, precision, barrio, comuna, desde, hasta, q } = filters;
+  // Afuera, pasen los filtros que pasen: quedan marcados en la DB para poder
+  // auditar el geocoding. Desde la fase H el Mapa los pide igual
+  // (incluirFueraDeCaba) para listarlos en "Sin ubicar" con su motivo; nunca
+  // tienen pin ni cuentan en las comunas.
+  const clauses = incluirFueraDeCaba ? [] : [`geo_status IS NOT 'fuera_caba'`];
   const params = {};
+  if (Array.isArray(precision) && precision.length > 0) {
+    precision.forEach((p, i) => {
+      params[`precision${i}`] = p;
+    });
+    clauses.push(`precision IN (${precision.map((_, i) => `@precision${i}`).join(',')})`);
+  }
 
   if (plataforma) {
     clauses.push('plataforma = @plataforma');
@@ -1749,6 +1865,56 @@ function updateReclamoGeo(id, fields) {
     barrio: fields.barrio ?? null,
     precision: fields.precision ?? null,
     geoStatus: fields.geoStatus,
+    // ubicacionTipo sin dato no pisa el que había (el worker viejo no lo manda).
+    ubicacionTipo: fields.ubicacionTipo ?? null,
+    nombreLugar: fields.nombreLugar ?? null,
+    motivoSinUbicar: fields.motivoSinUbicar ?? null,
+  });
+}
+
+/** Un reclamo por id (o null), con la forma de mapReclamoRow. */
+function getReclamo(id) {
+  const row = getReclamoStmt.get(String(id));
+  return row ? mapReclamoRow(row) : null;
+}
+
+/** Guarda la ubicación estructurada (la del modelo, o la del reproceso). */
+function setReclamoUbicacion(id, { ubicacionTipo = null, ubicacion = null } = {}) {
+  setReclamoUbicacionStmt.run({ id, ubicacionTipo, ubicacionJson: ubicacion ? JSON.stringify(ubicacion) : null });
+}
+
+/**
+ * Marca un reclamo como corregido a mano (Mapa): quién y lo que escribió,
+ * dentro de ubicacion_json junto a lo que había dicho el modelo. La
+ * ubicación nueva la escribe updateReclamoGeo con lo que resolvió el resolver.
+ */
+function marcarReclamoCorregido(id, { corregidaPor, texto, ahora = new Date().toISOString() }) {
+  const actual = getReclamoStmt.get(String(id));
+  const previa = actual ? parseUbicacionJson(actual.ubicacion_json) : null;
+  const ubicacion = { ...(previa || {}), correccion: { texto: String(texto || ''), fecha: ahora } };
+  marcarReclamoCorregidoStmt.run({ id: String(id), corregidaPor: corregidaPor || 'equipo', ubicacionJson: JSON.stringify(ubicacion) });
+}
+
+/** "Descartar" del Mapa: no es un reclamo ubicable; queda sin punto, con el motivo. */
+function descartarReclamo(id, { motivo, corregidaPor }) {
+  descartarReclamoStmt.run({ id: String(id), motivo: String(motivo || '').trim() || null, corregidaPor: corregidaPor || 'equipo' });
+}
+
+function getLugarCache(clave) {
+  const row = getLugarCacheStmt.get(clave);
+  if (!row) return null;
+  return { clave: row.clave, nombre: row.nombre, x: row.x, y: row.y, direccion: row.direccion, fuente: row.fuente, fetchedAt: row.fetched_at };
+}
+
+function setLugarCache(entry) {
+  setLugarCacheStmt.run({
+    clave: entry.clave,
+    nombre: entry.nombre || null,
+    x: entry.x ?? null,
+    y: entry.y ?? null,
+    direccion: entry.direccion || null,
+    fuente: entry.fuente || null,
+    fetchedAt: entry.fetchedAt || new Date().toISOString(),
   });
 }
 
@@ -2777,6 +2943,11 @@ function listReclamosDePost({ plataforma, postUrl }) {
     geoStatus: r.geo_status || null,
     estado: r.estado,
     precision: r.precision || null,
+    ubicacionTipo: r.ubicacion_tipo || null,
+    nombreLugar: r.nombre_lugar || null,
+    motivoSinUbicar: r.motivo_sin_ubicar || null,
+    texto: r.texto_original || null,
+    fecha: r.fecha || null,
     enMapa: Number(r.en_mapa) === 1,
   }));
 }
@@ -3002,6 +3173,12 @@ module.exports = {
   reabrirSinCoordenadas,
   contarUbicados,
   updateReclamoGeo,
+  getReclamo,
+  setReclamoUbicacion,
+  marcarReclamoCorregido,
+  descartarReclamo,
+  getLugarCache,
+  setLugarCache,
   countReclamos,
   getGeocodeCache,
   setGeocodeCache,
