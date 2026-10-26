@@ -30,6 +30,7 @@ function currentPlatform() {
 let claimsMap = null;
 let claimsLayer = null;
 let rawReclamos = [];
+let claimsPedido = 0; // el número del último pedido de /api/reclamos
 let allCategorias = [];
 let selectedCategorias = new Set();
 let categoriaMultiSelect = null;
@@ -317,9 +318,14 @@ async function applyFiltersAndReload() {
   // categorías, cada una pasa a tener color propio.
   recalcularPaleta();
 
-  // "Ninguna" categoría tildada: no hay nada que mostrar, no hace falta
-  // pegarle al servidor.
-  if (selectedCategorias.size === 0) {
+  // Solo vale la respuesta del último pedido: dos cambios seguidos de un
+  // filtro ("Ninguna" y después una casilla) mandan dos, y el primero puede
+  // volver último.
+  const pedido = ++claimsPedido;
+
+  // "Ninguna" categoría o precisión tildada: no hay nada que mostrar, no
+  // hace falta pegarle al servidor.
+  if (selectedCategorias.size === 0 || selectedPrecisiones.size === 0) {
     rawReclamos = [];
     renderMarkers();
     return;
@@ -330,6 +336,7 @@ async function applyFiltersAndReload() {
     const resp = await fetch(`/api/reclamos?${qs}`);
     if (!resp.ok) throw new Error('No se pudieron cargar los reclamos.');
     const data = await resp.json();
+    if (pedido !== claimsPedido) return;
     rawReclamos = Array.isArray(data.reclamos) ? data.reclamos : [];
     if (errorEl) {
       errorEl.classList.add('hidden');
@@ -337,6 +344,7 @@ async function applyFiltersAndReload() {
     }
     renderMarkers();
   } catch (err) {
+    if (pedido !== claimsPedido) return;
     rawReclamos = [];
     renderMarkers();
     if (errorEl) {
