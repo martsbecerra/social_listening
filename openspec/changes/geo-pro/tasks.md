@@ -36,6 +36,6 @@ autorizada del reproceso, con el costo exacto y el OK del dueño antes.
 
 ## Phase 6: cierre
 
-- [ ] 6.1 Suite con `IG_ACTOR=apidojo` y `apify`; capturas a 1366 y 375 px en claro y oscuro
+- [x] 6.1 Suite con `IG_ACTOR=apidojo` y `apify` (774 y 774, en modo liviano); capturas a 1366 y 375 px en claro y oscuro (29: puntos, Por comunas, una comuna, Sin ubicar, el pop-up, el filtro de precisión, corregir, descartar, el Mapa de X y el mapita del análisis; sin errores de JavaScript ni desborde)
 - [x] 6.2 CLAUDE.md ("Georreferenciación"), README
 - [ ] 6.3 PR sin mergear
