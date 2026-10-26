@@ -68,7 +68,8 @@ const {
 } = require('./src/scheduler');
 const monitoringProgress = require('./src/monitoringProgress');
 const { startKeepAwake, stopKeepAwake } = require('./src/keepAwake');
-const { processPendingReclamosInBackground, reintentarSinCoordenadas } = require('./src/geoWorker');
+const { processPendingReclamos, processPendingReclamosInBackground, reintentarSinCoordenadas } = require('./src/geoWorker');
+const geoReproceso = require('./src/geo/reproceso');
 const accountStats = require('./src/accountStats');
 const postImageRoutes = require('./src/postImageRoutes');
 const { buildLastRun } = require('./src/lastRun');
@@ -723,7 +724,13 @@ const server = app.listen(PORT, () => {
   startKeepAwake();
   // Una sola vez (marca en refresh_state): los reclamos sin coordenadas o en
   // el (0,0) vuelven a USIG, sin esperar. Loguea "N de M ubicados".
-  reintentarSinCoordenadas().catch((err) => console.warn('[geo] el reintento de los reclamos sin coordenadas falló:', err.message));
+  // Fase H: después, una sola vez (otra marca), el reproceso de los sin
+  // punto si el dueño dejó data/geo/reproceso-ubicaciones.json (lo arma
+  // scripts/geo-reprocesar.js). Loguea "N de M ubicados" por red.
+  reintentarSinCoordenadas()
+    .catch((err) => console.warn('[geo] el reintento de los reclamos sin coordenadas falló:', err.message))
+    .then(() => geoReproceso.aplicarSiHay({ procesar: () => processPendingReclamos() }))
+    .catch((err) => console.warn('[geo] el reproceso de los reclamos sin punto falló:', err.message));
 });
 
 server.on('error', (err) => {
