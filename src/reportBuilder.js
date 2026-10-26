@@ -308,4 +308,4 @@ function buildComentariosCsv(vista) {
   return `${rows.join('\n')}\n`;
 }
 
-module.exports = { buildReclamosCsv, buildReclamosCsvDeBase, buildInforme, buildComentariosCsv };
+module.exports = { buildReclamosCsv, buildReclamosCsvDeBase, buildInforme, buildComentariosCsv, ubicacionEnUnaLinea };

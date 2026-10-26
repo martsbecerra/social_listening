@@ -24,13 +24,29 @@ const { CATEGORIAS_RECLAMO, ESTADOS_RECLAMO } = require('./categoriaReclamo');
 const { subcategoriasDe } = require('./categoriasConfig');
 const { parseReclamosFilters, isValidReclamosPlataforma } = require('./reclamosQuery');
 const ETIQUETA = require('./geo/etiquetas');
+const { ubicacionEnUnaLinea } = require('./reportBuilder');
 
 const MAX_TEXTO = 200;
+
+/**
+ * Lo que se leyó como lugar ("Se leyó: «…»" de Sin ubicar): lo que extrajo
+ * el modelo y, si no hay, la dirección detectada de antes. Después del
+ * reproceso, la del Excel de X ("24 DE NOVIEMBRE 11, CABA") ya no es lo que
+ * se leyó: el modelo dijo "escuela 24 de 11", o ningún lugar.
+ */
+function leidoDe(r) {
+  const u = r.ubicacion;
+  if (!u || typeof u !== 'object') return r.direccionDetectada || null;
+  if (u.tipo === 'texto') return u.texto || r.direccionDetectada || null;
+  if (u.texto_original) return u.texto_original;
+  if (!u.tipo || u.tipo === 'ninguna') return null;
+  return ubicacionEnUnaLinea(u) || r.direccionDetectada || null;
+}
 
 /** Un reclamo como va al navegador: sin el correo ni la respuesta cruda del modelo. */
 function paraNavegador(r) {
   const { corregidaPor, ubicacion, ...resto } = r;
-  return { ...resto, corregida: Boolean(corregidaPor) && r.motivoSinUbicar !== 'descartado' };
+  return { ...resto, leido: leidoDe(r), corregida: Boolean(corregidaPor) && r.motivoSinUbicar !== 'descartado' };
 }
 
 const textoDe = (v) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : '');

@@ -97,6 +97,18 @@ describe('el listado', { concurrency: false }, () => {
     assert.equal(r.etiquetas.PRECISION.lugar, 'Lugar con nombre · ubicación aproximada');
   });
 
+  test('"se leyó": lo que extrajo el modelo, no la dirección de antes', async () => {
+    const leido = async (id, extra) => {
+      db.upsertReclamo(reclamo(id, { direccionDetectada: '24 DE NOVIEMBRE 11, CABA', ...extra }));
+      db.updateReclamoGeo(id, { geoStatus: 'no_encontrada', precision: 'ninguna', motivoSinUbicar: 'no_encontrada' });
+      const r = await (await pedir('/api/reclamos?plataforma=instagram')).json();
+      return r.reclamos.find((x) => x.id === id).leido;
+    };
+    assert.equal(await leido('ig:l1', { ubicacionTipo: 'lugar', ubicacion: { tipo: 'lugar', nombre_lugar: 'escuela 24 de 11', texto_original: '' } }), 'escuela 24 de 11');
+    assert.equal(await leido('ig:l2', { ubicacionTipo: 'ninguna', ubicacion: { tipo: 'ninguna', texto_original: '' } }), null, 'el modelo no leyó ningún lugar');
+    assert.equal(await leido('ig:l3', {}), '24 DE NOVIEMBRE 11, CABA', 'sin la ubicación del modelo, la de antes');
+  });
+
   test('el filtro de precisión', async () => {
     const r = await (await pedir('/api/reclamos?plataforma=instagram&precision=puntual')).json();
     assert.deepEqual(r.reclamos.map((x) => x.id), ['ig:1']);

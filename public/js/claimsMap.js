@@ -849,7 +849,9 @@ function itemReclamo(r, { acciones = false } = {}) {
   } else if (r.ubicacionTipo === 'barrio' && r.comuna != null) {
     leido.textContent = `Solo la comuna ${r.comuna}`;
   } else {
-    leido.textContent = r.direccionDetectada ? `Se leyó: «${r.direccionDetectada}»` : 'Sin un lugar escrito';
+    // `leido`: lo que extrajo el modelo (o la dirección de antes); lo arma el servidor.
+    const loLeido = r.leido !== undefined ? r.leido : r.direccionDetectada;
+    leido.textContent = loLeido ? `Se leyó: «${loLeido}»` : 'Sin un lugar escrito';
   }
   if (r.corregida) leido.append(el('span', 'claims-su-corregida', ' · corregido a mano'));
   item.append(cab, texto, leido);
