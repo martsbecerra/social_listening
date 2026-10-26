@@ -398,7 +398,8 @@ for (const col of ['ubicacion_tipo', 'nombre_lugar', 'motivo_sin_ubicar', 'ubica
 // `precision` era exacta | aproximada; pasa a puntual | cruce | lugar | area |
 // ninguna. Solo toca los valores viejos (y los vacíos), así que correrla de
 // nuevo no cambia nada. Lo que ya tenía punto recibe también el tipo de
-// ubicación, y lo que no, su motivo.
+// ubicación, y lo que no, su motivo; una mención de solo el barrio no lleva
+// motivo (no es un "sin ubicar"): el siguiente arranque no se lo puede poner.
 db.exec(`
   UPDATE reclamos SET precision = CASE
       WHEN x IS NULL OR y IS NULL OR (x = 0 AND y = 0) THEN 'ninguna'
@@ -420,6 +421,7 @@ db.exec(`
       WHEN 'no_encontrada' THEN 'no_encontrada'
       ELSE 'sin_direccion' END
   WHERE motivo_sin_ubicar IS NULL AND precision = 'ninguna' AND geo_status IN ('fuera_caba', 'no_encontrada', 'sin_direccion', 'invalida')
+    AND COALESCE(ubicacion_tipo, '') <> 'barrio'
 `);
 db.exec('CREATE INDEX IF NOT EXISTS idx_reclamos_direccion_normalizada ON reclamos(direccion_normalizada)');
 db.exec('CREATE INDEX IF NOT EXISTS idx_reclamos_categoria ON reclamos(categoria)');

@@ -74,6 +74,17 @@ describe('la migración de la fase H', () => {
     assert.deepEqual([r.g.precision, r.g.motivoSinUbicar], ['ninguna', 'sin_direccion']);
     assert.equal(r.a.corregidaPor, null);
   });
+
+  test('una mención de solo el barrio sigue siéndolo al arrancar de nuevo', () => {
+    db.upsertReclamo({ id: 'h', comentarioId: 'h', plataforma: 'instagram', detectedAt: '2026-10-25T10:00:00.000Z', textoOriginal: 'los locales de Once', categoria: 'Higiene urbana', ubicacionTipo: 'barrio' });
+    db.updateReclamoGeo('h', { geoStatus: 'sin_direccion', precision: 'ninguna', ubicacionTipo: 'barrio', comuna: 3, barrio: 'Balvanera', motivoSinUbicar: null });
+    // Otro arranque: db.js corre sus migraciones de nuevo sobre la misma base.
+    delete require.cache[require.resolve('../src/db')];
+    require('../src/db');
+    const h = db.getReclamo('h');
+    assert.deepEqual([h.ubicacionTipo, h.barrio, h.motivoSinUbicar], ['barrio', 'Balvanera', null]);
+    assert.equal(db.getReclamo('g').motivoSinUbicar, 'sin_direccion');
+  });
 });
 
 describe('reclamos de la fase H', { concurrency: false }, () => {
