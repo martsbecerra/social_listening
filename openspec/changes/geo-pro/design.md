@@ -26,7 +26,7 @@ criterio.
 | Barrios populares | 966 manzanas, 136 nombres | Gauss-Krüger BA, sin CRS declarado | `NOMBRE`, `NOM_MAP` | — |
 | Espacios verdes (CSV) | — | WGS84, polígono en WKT | `nombre` (+ `clasificac`) | — |
 | Estaciones de subte | 90 | WGS84 | "Estación " + `estacion` | — |
-| Estaciones de tren | 230 (71 en la Ciudad: `partido` vacío) | WGS84 | "Estación " + `nombre` | — |
+| Estaciones de tren | 230 (29 en la Ciudad, por polígono: `partido` vacío no quiere decir la Ciudad) | WGS84 | "Estación " + `nombre` | — |
 | Hospitales | 36 | EPSG:9498 | "Hospital " + `nam` | `dir` |
 | Clubes | 310 | WGS84 | `nombre` | `direccion` |
 | Espacios culturales | 3.031 | WGS84 | `ESTABLECIM` | `DIRECCION` |
@@ -113,9 +113,11 @@ Caché crudo `data/geo/villas.json`. Precisión `area`.
   pedazo del texto. Se prueba con y sin los `indicadores_a_quitar`; gana el
   nombre más largo. Un barrio o comuna suelto no es un lugar.
 - La dirección para mostrar: la del dataset si la trae; si no, la
-  geocodificación inversa de USIG (`normalizar` con `lat`/`lng` y
-  `tipoResultado=calle_altura_calle_y_calle`), cacheada para siempre en
-  `lugar_cache`. Precisión `lugar`.
+  geocodificación inversa de USIG (`ws…/geocoder/2.2/reversegeocoding`, la
+  puerta o la esquina), cacheada para siempre en `lugar_cache`; con USIG
+  caído, el nombre del lugar (sin caché). Precisión `lugar`.
+- Las variantes de los `lugares_extra` se buscan también sin el artículo
+  de adelante ("la estación Villa Pueyrredón").
 
 ## USIG (`src/geo/usig.js`, sale de `src/geocode.js`)
 
@@ -255,3 +257,26 @@ se niega si ya hay una hecha). Lo extraído queda en
 piloto lo aplica una sola vez (marca en `refresh_state`): guarda la
 `ubicacion` de cada reclamo y los pasa por el resolver; los que ya tienen
 punto lo conservan.
+
+## Lo que salió de la corrida y las capturas (25/10/2026)
+
+La corrida autorizada (136 reclamos, 10 llamadas, US$ 0,262) y su
+aplicación sobre la copia mostraron siete cosas, cada una con su commit y
+su test:
+
+- La migración de la precisión le ponía "sin dirección" a una mención de
+  solo el barrio ya resuelta en el arranque siguiente: ahora la salta.
+- "Barrio Norte" se buscaba como "Norte" (se sacaba "barrio" antes de mirar
+  los nombres de uso); "la Ciudad" o "CABA" quedaban como "no encontrada":
+  ahora sin dirección (`nombres_de_la_ciudad`).
+- "la estación Villa Pueyrredón" no llegaba a la variante "estacion villa
+  pueyrredon" de su lugar extra: se busca también sin el artículo.
+- Corregir con "Plaza Irlanda" tardaba 37 s: un texto sin altura ni dos
+  calles va primero al índice de lugares.
+- Un 502 de USIG al armar los lugares extra tiraba el índice entero (5
+  quedaron pendientes): esos extras se saltean y el índice se rearma a los
+  10 min; un lugar sin su puerta queda ubicado con su nombre.
+- El filtro de precisión mostraba todo si la primera respuesta volvía
+  última: vale solo la del último pedido; "Ninguna" no muestra nada.
+- "Se leyó" mostraba la dirección del Excel de X: `GET /api/reclamos` suma
+  `leido`, lo que extrajo el modelo.

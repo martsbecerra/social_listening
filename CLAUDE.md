@@ -487,15 +487,17 @@ por campo, con lecturas de `db.js` que solo cuentan
 (`countPostedSinceAllPlatforms`, `countTemasSinceAllPlatforms`,
 `getFirstDetectedAtAny`, `countReclamosEnMapa`): `publicacionesHoy` y
 `publicaciones30Dias` (todas las redes), `reclamosEnMapa` (los que tienen
-pin, con la regla del mapa, `hasMapLocation`: no de fuera de CABA, con x, y
-y dirección normalizada, y no en el (0,0) que dejaba una respuesta de USIG sin
-coordenadas; los sin dirección, no encontrados o pendientes no cuentan). Desde
-octubre 2026 `geocode.js` ya no lo produce: una coordenada vacía o en 0 es
-"no encontrada" (nunca "ok"), y una entrada "ok" de la caché en el (0,0) se
-vuelve a consultar. Al arrancar, UNA vez (marca `geo_reintento_sin_coordenadas`
-en `refresh_state`), `geoWorker.reintentarSinCoordenadas` manda de nuevo a
-USIG, con el worker de siempre y sin la caché de "no encontrada", todos los
-reclamos con dirección escrita y sin punto, y loguea "N de M ubicados";
+pin, con la regla del mapa, `hasMapLocation`: no de fuera de CABA ni
+descartados, con x, y y dirección normalizada, y no en el (0,0) que dejaba
+una respuesta de USIG sin coordenadas; los sin dirección, no encontrados,
+las menciones de solo un barrio o pendientes no cuentan). Desde
+octubre 2026 USIG ya no lo produce (`src/geo/usig.js`, fase H): una
+coordenada vacía o en 0 no es un punto, y una entrada "ok" de la caché en
+el (0,0) se vuelve a consultar. Al arrancar, UNA vez (marca `geo_reintento_sin_coordenadas`
+en `refresh_state`), `geoWorker.reintentarSinCoordenadas` manda de nuevo al
+resolver, con el worker de siempre y sin la caché de "no encontrada", todos los
+reclamos con dirección escrita y sin punto, y loguea "N de M ubicados"
+(después, si hay, se aplica el reproceso de la fase H);
 `primerDia` y `diasEscuchando` (desde la primera DETECCIÓN, contando los dos
 extremos: la primera fecha de publicación puede ser de días antes),
 `runHours`, `corridasPorDia` y `temas` (los 8 de 7 días, con `n` y
@@ -521,7 +523,9 @@ páginas), B `monitoreo-v4`, C `estadisticas`, D `inicio-y-login`, E
 pantalla, el inicio y las figuras), y la G `respuestas-tope-mapa` (las
 respuestas, el tope con confirmación del costo, "Abrir Gmail", los
 mosaicos de Google y el estado de los reclamos fuera de la pantalla; SDD
-en `openspec/changes/respuestas-tope-mapa/`). El estado anterior (riel, radar y las maquetas viejas) quedó
+en `openspec/changes/respuestas-tope-mapa/`), y la H `geo-pro` (la
+georreferenciación de los reclamos; ver "Georreferenciación de
+reclamos"). El estado anterior (riel, radar y las maquetas viejas) quedó
 en el tag `v3-riel-radar`. SDD de la fase A en
 `openspec/changes/sistema-visual-v4/`; de la B, en
 `openspec/changes/monitoreo-v4/`; de la C, en `openspec/changes/estadisticas/`.
@@ -796,7 +800,9 @@ La D va sin SDD (decisión del dueño). De la E, en
   en oscuro; controles, leyenda, popups y tooltips de Leaflet con los
   tokens. El estado de los reclamos (Pendiente, En tratamiento…) no se
   muestra ni se edita desde la G: no hay filtro "Estado" ni selector en el
-  pop-up; la columna y `PATCH /api/reclamos/:id` quedan. Los colores de
+  pop-up; la columna y `PATCH /api/reclamos/:id` quedan. Desde la H, el pin
+  según la precisión, el filtro "Precisión", "Puntos / Por comunas" y
+  "Sin ubicar" (ver "Georreferenciación de reclamos"). Los colores de
   categoría (`--cat-1` … `--cat-12`) salen de la paleta de la maqueta, en su
   tono oscuro (el número del pin va en blanco). La tarjeta de filtros lleva
   `z-index: 3`: las dos tarjetas tienen `.rv`, cuya animación les da su
@@ -1347,9 +1353,12 @@ públicas). La F va en dos PR: F1 (modelo y servidor, tag `v4-fase-f1`) y F2
   ocupando su nombre.
 - **Reclamos**: `db.upsertReclamo(r, { conservarGestion: true })` en
   Instagram y X: re-analizar conserva el estado y, si la dirección detectada
-  no cambió, el geocodificado; con la misma categoría, una subcategoría
+  no cambió, el geocodificado (y siempre, si el equipo lo corrigió o lo
+  descartó a mano: fase H); con la misma categoría, una subcategoría
   vacía (la llamada falló o el modelo dijo "ninguna") no borra la que había.
-  El importador sigue como antes.
+  El importador sigue como antes. Desde la fase H la tanda de Instagram
+  devuelve cada reclamo con su `ubicacion` en campos y un reclamo sin
+  ningún lugar no se guarda (ver "Georreferenciación de reclamos").
 - **Progreso** (`src/analysisProgress.js`,
   `GET /api/analyze/progress?plataforma=&id=`): turno (solo si alguna
   corrida esperó cupo), publicación, confirmar el costo (fase G: solo si
@@ -1568,6 +1577,134 @@ públicas). La F va en dos PR: F1 (modelo y servidor, tag `v4-fase-f1`) y F2
   la misma forma), `musicInfo`, `alt`, `isPinned`, `videoDuration`. La pantalla se
   prueba con el servidor de prueba aparte (análisis sembrados y
   `/api/analyze` simulado con el progreso real).
+
+## Georreferenciación de reclamos (fase H)
+
+Desde octubre 2026 (rama `geo-pro`, SDD en `openspec/changes/geo-pro/`) los
+reclamos se ubican con la metodología de `martsbecerra/georreferenciacion`,
+portada a Node sin librerías nuevas. Un reclamo es un problema más algún
+lugar nombrado; sin lugar no hay reclamo (el comentario sigue contando como
+pedido). El modelo SOLO extrae; las coordenadas las resuelve el servidor.
+
+- **El modelo** (solo Instagram; `REGLAS_UBICACION` de `src/prompt.js`,
+  `UBICACION_SCHEMA` de `src/analysisSchema.js`,
+  `validateAnalysis.sanitizeUbicacion`): cada reclamo de la tanda trae
+  `ubicacion` { `tipo` (calle_altura | cruce | lugar | villa | barrio |
+  lineal | ninguna), `calle`, `altura` (0 sin altura), `calle2`,
+  `nombre_lugar`, `barrio_o_comuna`, `texto_original`, `confianza`,
+  `fuera_de_caba` }, sin null (modo estricto: "" y 0). La validación baja lo
+  que no cierra y vacía los campos que el tipo no usa; un reclamo sin lugar
+  se descarta, salvo fuera de la Ciudad. El mensaje suma "LUGAR DE LA
+  PUBLICACIÓN" (`locationName` de la corrida) si lo hay. Una respuesta con
+  la forma vieja (`reclamosGeo` de la F) entra como `{ tipo: 'texto' }`. X
+  no cambió su prompt: su `direccionDetectada` y su `tipoUbicacion` pasan
+  por el resolver como texto libre (`desdeTextoLibre`).
+- **El resolver** (`src/geo/resolver.js`, `resolver(ubicacion, { texto })`),
+  en orden: villa (`src/geo/villas.js`: la ubicación o el texto la nombra;
+  "1 11 14" nunca llega a USIG como altura) → calle y altura o cruce por
+  USIG (antes, `patrones_direccion_invalida` sobre el texto entero y
+  `altura_minima_direccion` 10: una menor vale solo pegada a su calle; una
+  avenida sola es `lineal`) → lugar (`src/geo/gazetteer.js` y
+  `lugares_extra`) → barrio (`territorios.barrioPorNombre`, con
+  `barrios_informales`; el nombre de uso se busca entero antes de sacar
+  "barrio": "Barrio Norte" es Recoleta) → sin ubicar, con su motivo. Texto
+  libre (X, el importador, una corrección): con una altura o dos calles,
+  USIG primero; sin eso ("Plaza Irlanda"), primero el índice de lugares (el
+  normalizador de USIG tarda 16 s o más en decir "calle inexistente"). "la
+  Ciudad" o "CABA" (`nombres_de_la_ciudad`) es sin dirección, no "no
+  encontrada". Todo punto lleva comuna y barrio por polígono; uno fuera de
+  la Ciudad es `fuera_de_caba`.
+- **Columnas** (`reclamos`): `precision` `puntual` | `cruce` | `lugar` |
+  `area` | `ninguna` (la migración pasó `exacta` / `aproximada`, y es
+  idempotente; X, en `src/x/reclamosFromAnalysis.js`, sigue guardando
+  `exacta` / `aproximada` mientras está pendiente: el worker lo lee como el
+  tipo de antes y el resolver lo pisa); `ubicacion_tipo`, `nombre_lugar`,
+  `motivo_sin_ubicar` (lineal | fuera_de_caba | ambigua | no_encontrada |
+  sin_direccion | descartado), `ubicacion_json` (lo del modelo, y la
+  `correccion` del equipo), `corregida_por` (un correo: nunca sale a la API)
+  y `descarte_motivo`. Una mención de solo el barrio es `ubicacion_tipo`
+  barrio, `geo_status` sin_direccion, SIN motivo, con barrio y comuna: sin
+  pin, cuenta en "Por comunas"; la migración del arranque no le pone motivo.
+  Los textos para una persona, en `src/geo/etiquetas.js` (los mismos en el
+  Mapa y el CSV). `geo_status` y su CHECK no cambiaron.
+- **USIG** (`src/geo/usig.js`): calle y altura por
+  `ws…/rest/normalizar_y_geocodificar_direcciones` (`desambiguar=0`); cruce
+  y texto libre por el normalizador de `servicios…` SIN `geocodificar` (con
+  él se colgaba, 25/10/2026) y el punto por `geocoder/2.2` con los códigos;
+  la puerta de un lugar por `geocoder/2.2/reversegeocoding`. Las coordenadas
+  de ws son Gauss-Krüger (`src/geo/proyecciones.js`, verificado contra
+  `convertir_coordenadas` en tres puntos, a menos de 1 m). Más de
+  `usig.opciones_maximas` (2) candidatos distintos: `ambigua`, sin elegir;
+  con 2, el del nombre buscado. Reintentos, tope de tiempo y `geoLimiter`
+  (2, propio; nunca el de Apify). Cachés: `geocode_cache` con claves
+  `usig2:` (las `usig:` del 25/10 cachearon "no encontrada" por una caída) y
+  `lugar_cache` (`lugar:` las puertas, `extra:` los lugares extra). Una falla
+  pasajera (no 200, corte, tiempo) nunca se cachea: el reclamo queda
+  `pendiente` para el worker. Con USIG caído, los lugares extra con
+  dirección se saltean (después del primer fallo ni se preguntan) y el
+  índice se rearma a los 10 min; un lugar queda ubicado igual, con su nombre
+  como dirección, si no llega la puerta. `src/geocode.js` es solo el
+  envoltorio del importador.
+- **Datasets** (`src/geo/datasets.js`, CDN de datos abiertos del GCBA):
+  barrios populares, espacios verdes, subte, tren (solo los de la Ciudad,
+  por polígono: 29; `partido` vacío no quiere decir la Ciudad), hospitales y
+  escuelas (EPSG:9498), clubes, espacios culturales; caché crudo en
+  `data/geo/` (`villas.json`, `gazetteer.json`) de 30 días; una bajada que
+  falla deja la caché buena. Los filtros se aplican al cargar: cambiar una
+  lista no vuelve a bajar nada. Escuelas y frases comunes ("La Ventana")
+  valen solo con su indicador delante.
+- **Configuración** (`config/geo-config.json`, versionado; un
+  `data/geo/geo-config.json` pisa las claves que traiga, sin commit;
+  `src/geo/config.js`): fuentes, indicadores, exclusiones,
+  `entidades_lineales`, `lugares_fuera_de_caba`, `barrios_informales`,
+  `nombres_de_la_ciudad`, `patrones_direccion_invalida` y `lugares_extra`
+  (49: estadios por `club`, hitos por `lugar` o `direccion`, cada uno con el
+  barrio donde tiene que caer: si no cae ahí, no se usa y se avisa). Las
+  variantes de un extra se buscan también sin el artículo de adelante.
+- **API** (`src/reclamosRoutes.js`): `GET /api/reclamos` con el filtro
+  `precision`, los de fuera de la Ciudad (para "Sin ubicar"; nunca pin ni
+  conteo), `etiquetas` y, por reclamo, `leido` (lo que extrajo el modelo o,
+  si no hay, la dirección de antes: después del reproceso, la del Excel de X
+  ya no es "lo que se leyó") y `corregida`; sin el correo ni `ubicacion`.
+  `POST /api/reclamos/:id/corregir { texto }` (el mismo resolver; 422 si no
+  se resuelve, 503 con USIG caído), `POST /api/reclamos/:id/descartar {
+  motivo }` y `GET /api/geo/comunas`. Un corregido o descartado no lo pisa
+  un análisis nuevo (`conservarGestion`); el importador sí.
+- **Mapa** (`public/js/claimsMap.js`, Instagram y X): pin sólido (dirección
+  o cruce), con halo (lugar), con halo grande (villa); el de un grupo, con
+  la mejor precisión. Tooltip y pop-up con la línea de precisión. Filtro
+  "Precisión" ("Ninguna" no muestra nada). "Puntos / Por comunas" (las 15
+  por cantidad: ubicados más menciones; un clic lista los de esa comuna).
+  "Sin ubicar (N)" por grupos (pendientes, solo el barrio, lineal, ambigua,
+  no encontrada, sin dirección, fuera de la Ciudad, descartados) con
+  "Corregir dirección" y "Descartar" en el lugar. Solo vale la respuesta del
+  último pedido de `/api/reclamos`. El mapita del análisis
+  (`analysisBlocks.anaRenderRecl`): halos según la precisión, el motivo a la
+  vista y "Corregir los N sin punto en el Mapa →". El CSV de reclamos sale
+  de la base (`buildReclamosCsvDeBase`) con tipo, precisión, lugar, barrio,
+  comuna y motivo.
+- **Reproceso** (`scripts/geo-reprocesar.js`, `src/geo/extraccion.js`,
+  `src/geo/reproceso.js`): sobre una COPIA (con `data/monitoring.db` no
+  arranca), los reclamos sin punto, ni corregidos ni descartados, de a 15
+  por llamada, solo la ubicación (las mismas reglas y validación; la pista
+  vieja va solo si no es del Excel). `--costo` sin red; `--simulado`; `--si`
+  gasta, una sola vez (se niega si ya existe el JSON), con `--tope`;
+  `--aplicar` hace sobre la copia lo que va a hacer el piloto;
+  `MONITORING_ENV_PATH`, el `.env` de otra carpeta. El JSON
+  (`data/geo/reproceso-ubicaciones.json`: id → ubicación y el hash del
+  texto) lo aplica `server.js` al arrancar, después de
+  `reintentarSinCoordenadas`, una vez (marca `geo_reproceso_aplicado`):
+  guarda cada ubicación, la deja pendiente y la pasa por el resolver; salta
+  los que ya tienen punto, los corregidos, los descartados y los que
+  cambiaron de texto. La corrida autorizada del 25/10/2026: 136 reclamos (5
+  de Instagram, 131 de X), 10 llamadas, US$ 0,262 (estimado 0,20 a 0,39,
+  tope 0,40); quedaron Instagram 3 de 5 con punto y X 131 de 257 (antes
+  126).
+- Tests: `test/geoBase.test.js`, `geoPiezas`, `geoDatasets` (con recortes
+  de los datasets reales en `test/fixtures/geo/`), `geoResolver` (USIG
+  simulado), `geoModelo`, `reclamosRutas` y `geoReproceso`; `geocodeCero`,
+  `analisisTrabajo` y `analisisModelo` adaptados. Nada llama a USIG ni al
+  CDN de verdad.
 
 ## Fotos de los posteos (solo Instagram)
 
