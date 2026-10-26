@@ -155,6 +155,13 @@ async function conPunto(base) {
   return { calle: null, altura: null, cruce: null, nombreLugar: null, ...base, comuna: t.comuna, barrio: t.barrio, motivoSinUbicar: null, geoStatus: 'ok' };
 }
 
+// "la Ciudad", "CABA": nombra la Ciudad entera, no un lugar de ella (sin
+// dirección, no "no encontrada"). La lista, en nombres_de_la_ciudad.
+const esLaCiudad = (nombre) => {
+  const n = normalizarLugar(nombre);
+  return Boolean(n) && (geoConfig().nombres_de_la_ciudad || []).some((c) => normalizarLugar(c) === n);
+};
+
 async function mencionDeBarrio(nombre) {
   const b = nombre ? await territorios.barrioPorNombre(nombre) : null;
   if (!b) return null;
@@ -200,6 +207,7 @@ async function resolverLugar(nombre, { textoCompleto, ubicacionTipo = 'lugar' })
     const m = await mencionDeBarrio(v.texto);
     if (m) return m;
   }
+  if (esLaCiudad(nombre)) return sinUbicar('sin_direccion', { ubicacionTipo: 'ninguna' });
   return sinUbicar('no_encontrada', { ubicacionTipo });
 }
 
@@ -248,8 +256,10 @@ async function resolver(ubicacion, { texto = '' } = {}) {
 
   // 4. barrio.
   if (u.tipo === 'barrio') {
-    const m = await mencionDeBarrio(u.barrio_o_comuna || u.nombre_lugar || tramo);
-    return m || sinUbicar('no_encontrada', { ubicacionTipo: 'barrio' });
+    const nombre = u.barrio_o_comuna || u.nombre_lugar || tramo;
+    const m = await mencionDeBarrio(nombre);
+    if (m) return m;
+    return esLaCiudad(nombre) ? sinUbicar('sin_direccion', { ubicacionTipo: 'ninguna' }) : sinUbicar('no_encontrada', { ubicacionTipo: 'barrio' });
   }
 
   // Texto libre (X, el importador, una corrección): USIG, y si no, el índice.

@@ -252,6 +252,8 @@
     "montserrat": "Monserrat",
     "nunez": "Nuñez"
   },
+  "_comentario_nombres_de_la_ciudad": "La Ciudad entera dicha de varias formas: como ubicación de un reclamo no es un lugar (queda sin dirección, no como no encontrada).",
+  "nombres_de_la_ciudad": ["la Ciudad", "Ciudad", "CABA", "C.A.B.A.", "Capital", "Capital Federal", "Buenos Aires", "Bs As", "Baires", "Ciudad de Buenos Aires", "Ciudad Autónoma de Buenos Aires"],
   "_comentario_lugares_extra": "Lugares que ningún dataset trae con el nombre con el que se los nombra. Cada uno: nombre (el que se muestra), variantes (cómo lo escribe la gente), y una sola de estas: `club` (el nombre exacto de la entrada del dataset de clubes), `lugar` (el nombre exacto de una entrada de cualquier dataset; de ahí salen el punto y la dirección) o `direccion` (calle y altura o un cruce, que se ubica con USIG). `barrio`: donde tiene que caer; si el punto cae en otro, la entrada no se usa y se avisa por log.",
   "lugares_extra": [
     { "nombre": "Estadio Tomás A. Ducó (Huracán)", "club": "Atlético Huracán Estadio Tomás Adolfo Ducó", "barrio": "Parque Patricios",

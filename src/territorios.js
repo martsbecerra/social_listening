@@ -88,7 +88,10 @@ async function ubicarPunto(x, y) {
  * @returns {Promise<{ barrio: string|null, comuna: number } | null>}
  */
 async function barrioPorNombre(nombre) {
-  const clave = normalizarLugar(nombre).replace(/^(?:barrio de|barrio|el barrio de|el barrio)\s+/, '');
+  // El nombre de uso se busca entero ANTES de sacar "barrio" de adelante:
+  // "Barrio Norte" es Recoleta, no "Norte".
+  const entero = normalizarLugar(nombre);
+  const clave = entero.replace(/^(?:barrio de|barrio|el barrio de|el barrio)\s+/, '');
   if (!clave) return null;
   await ensureLoaded();
   const comunaSola = clave.match(/^comuna (\d{1,2})$/);
@@ -97,7 +100,8 @@ async function barrioPorNombre(nombre) {
     return comunasFeatures.some((f) => Number(f.properties && f.properties.comuna) === n) ? { barrio: null, comuna: n } : null;
   }
   const informales = geoConfig().barrios_informales || {};
-  const alias = Object.entries(informales).find(([k]) => normalizarLugar(k) === clave);
+  const alias =
+    Object.entries(informales).find(([k]) => normalizarLugar(k) === entero) || Object.entries(informales).find(([k]) => normalizarLugar(k) === clave);
   const buscado = normalizarLugar(alias ? alias[1] : clave);
   const f = barriosFeatures.find((b) => normalizarLugar(b.properties && b.properties.nombre) === buscado);
   if (!f) return null;

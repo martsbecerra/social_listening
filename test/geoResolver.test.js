@@ -214,6 +214,14 @@ describe('lugares, barrios y villas', { concurrency: false }, () => {
     assert.deepEqual([c7.barrio, c7.comuna], [null, 7]);
     const nada = await resolver.resolver({ tipo: 'barrio', barrio_o_comuna: 'Springfield' });
     assert.equal(nada.motivoSinUbicar, 'no_encontrada');
+    // Un nombre de uso que empieza con "barrio" se busca entero.
+    const norte = await resolver.resolver({ tipo: 'barrio', barrio_o_comuna: 'Barrio Norte' });
+    assert.deepEqual([norte.barrio, norte.comuna], ['Recoleta', 2]);
+    // La Ciudad entera no es un lugar: sin dirección.
+    for (const ciudad of [{ tipo: 'barrio', barrio_o_comuna: 'la Ciudad' }, { tipo: 'lugar', nombre_lugar: 'CABA' }]) {
+      const r = await resolver.resolver(ciudad);
+      assert.deepEqual([r.motivoSinUbicar, r.ubicacionTipo, r.geoStatus], ['sin_direccion', 'ninguna', 'sin_direccion']);
+    }
   });
 
   test('una villa: precisión de área; "1 11 14" no llega a USIG como una altura', async () => {
