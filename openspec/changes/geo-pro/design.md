@@ -119,18 +119,36 @@ Caché crudo `data/geo/villas.json`. Precisión `area`.
 
 ## USIG (`src/geo/usig.js`, sale de `src/geocode.js`)
 
-- `normalizar` con `geocodificar=true` y la dirección armada por el
-  servidor ("CALLE ALTURA" o "CALLE y CALLE2"), con ", CABA" una sola vez
-  (si el texto ya lo trae, no se repite) y las abreviaturas expandidas
-  antes (`texto.py`: gral → general, av/avda → avenida, pza → plaza, sta,
-  sto, bo → barrio).
-- Más de 2 candidatos en la Ciudad: `ambigua`, sin elegir. Un candidato
-  sin punto o en el (0,0): no es un punto.
+Lo que se vio el 25/10/2026: `servicios.usig…/normalizar` con
+`geocodificar=true` (y la geocodificación inversa por lat/lng) se colgaba
+sin responder en 30 s; sin `geocodificar` respondía (de 0,1 a 30 s) con los
+candidatos y sus códigos de calle, y un cruce traía su punto.
+`ws.usig.buenosaires.gob.ar` respondía en menos de medio segundo. El
+reintento del PR #31 corrió esa mañana con el `geocode.js` de antes: los
+"0 de 135 ubicados" y las 54 "no encontrada" que quedaron en la caché
+fueron por la falla, no por las direcciones ("Estados Unidos 75", "Portela
+200" o "Copahue 2019" sí existen). Entonces:
+
+- Calle y altura: `ws…/rest/normalizar_y_geocodificar_direcciones`
+  (`calle`, `altura`, `desambiguar=0`): un resultado con su punto, o la
+  ambigüedad con las opciones; la elegida se ubica con
+  `ws…/geocoder/2.2/geocoding` (código de calle y altura).
+- Cruce y texto libre: el normalizador SIN `geocodificar` para los
+  candidatos (", CABA" una sola vez, abreviaturas expandidas como en
+  `texto.py`); el punto, el de la respuesta o el de `geocoder/2.2` con los
+  dos códigos.
+- Inversa: `ws…/geocoder/2.2/reversegeocoding` (la puerta o la esquina).
+- Las coordenadas de ws son Gauss-Krüger: `proyecciones.js`.
+- Más de 2 candidatos distintos (dos con los mismos códigos son uno): 
+  `ambigua`, sin elegir; con 2, el del nombre buscado ("SAN MARTIN" antes
+  que "ESCALADA DE SAN MARTIN, R."). Un candidato sin punto o en el (0,0)
+  no es un punto.
 - Reintentos con backoff, tope de tiempo y limitador propio (`geoLimiter`;
-  nunca el de Apify). Una falla pasajera (red, tiempo, 5xx, 429) no se
-  cachea; el reclamo queda `pendiente`.
-- `geocode_cache` sigue siendo la caché por dirección; `geocode.js` queda
-  como envoltorio para el importador y sus tests.
+  nunca el de Apify). Una respuesta que no es 200, un corte o un tiempo
+  agotado es pasajero: no se cachea; el reclamo queda `pendiente`.
+- `geocode_cache` sigue siendo la caché por consulta, con claves `usig2:`
+  (las `usig:` de antes no se reusan). `geocode.js` queda como envoltorio
+  de `textoLibre` para el importador.
 
 ## El resolver (`src/geo/resolver.js`)
 

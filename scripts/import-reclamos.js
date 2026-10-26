@@ -560,8 +560,18 @@ async function main() {
       y: g && g.geoStatus === 'ok' ? g.y : null,
       comuna: g && g.geoStatus === 'ok' ? (g.comuna ?? (Number.isFinite(p.comuna) ? p.comuna : null)) : null,
       barrio: g && g.geoStatus === 'ok' ? g.barrio : null,
+      // Fase H: la precisión nueva (puntual | cruce | lugar | ninguna) y la
+      // ubicación que extrajo el modelo (no la pista del archivo): si la fila
+      // queda pendiente, el worker la resuelve con esto (src/geo/resolver.js).
       precision:
-        p.ubicacion.tipo === 'lugar_nombrado' ? 'aproximada' : p.ubicacion.direccion ? 'exacta' : null,
+        g && g.geoStatus === 'ok' ? (p.ubicacion.tipo === 'lugar_nombrado' ? 'lugar' : g.precision || 'puntual') : 'ninguna',
+      ubicacionTipo: p.ubicacion.tipo === 'lugar_nombrado' ? 'lugar' : null,
+      ubicacion: p.ubicacion.direccion ? { tipo: 'texto', texto: p.ubicacion.direccion, tipoUbicacion: p.ubicacion.tipo || null } : null,
+      motivoSinUbicar:
+        g && g.geoStatus === 'ok' ? null
+          : g && g.geoStatus === 'fuera_caba' ? 'fuera_de_caba'
+            : g && g.geoStatus === 'no_encontrada' ? (g.motivo === 'ambigua' ? 'ambigua' : 'no_encontrada')
+              : g && g.geoStatus === 'pendiente' ? null : 'sin_direccion',
       // Ninguna fila se pierde: la que no llega al mapa igual se guarda, con el
       // geo_status que explica por qué.
       // sin_direccion = el texto no traia lugar accionable.

@@ -166,7 +166,7 @@ function armarFilas() {
         y: p.lat,
         comuna: p.comuna,
         barrio: p.barrio,
-        precision: p.lugar ? 'aproximada' : 'exacta',
+        precision: p.lugar ? 'lugar' : 'puntual',
         geoStatus: 'ok',
         estado: ESTADOS[i % ESTADOS.length],
       });

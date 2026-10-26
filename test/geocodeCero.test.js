@@ -6,7 +6,10 @@
 // (0,0). Ahora es "no encontrada", y al arrancar la app (una sola vez) todos
 // los reclamos con dirección y sin punto vuelven a USIG sin la caché de "no
 // encontrada". Base temporal, USIG simulado con global.fetch y la comuna y
-// el barrio simulados (territorios.js baja los polígonos de la red).
+// el barrio simulados (territorios.js baja los polígonos de la red). Desde
+// la fase H el worker resuelve con src/geo/resolver.js: las villas y el
+// índice de lugares van vacíos (cachés armadas a mano en una carpeta
+// temporal), así acá solo se prueba USIG; y la caché usa "usig2:".
 
 const fs = require('fs');
 const os = require('os');
@@ -16,6 +19,12 @@ const { DatabaseSync } = require('node:sqlite');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sl-geocode-cero-'));
 const DB_PATH = path.join(tmp, 'monitoring.db');
 process.env.MONITORING_DB_PATH = DB_PATH; // ANTES de cargar db.js
+process.env.MONITORING_GEO_DIR = tmp;
+for (const f of ['barrios.geojson', 'comunas.geojson']) fs.copyFileSync(path.join(__dirname, 'fixtures', 'geo', f), path.join(tmp, f));
+for (const nombre of ['villas', 'gazetteer']) {
+  fs.writeFileSync(path.join(tmp, `${nombre}.json`), JSON.stringify({ version: 1, fetchedAt: new Date().toISOString(), filas: [] }));
+}
+fs.writeFileSync(path.join(tmp, 'geo-config.json'), JSON.stringify({ lugares_extra: [] }));
 
 const { describe, test, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
@@ -29,14 +38,15 @@ const geoWorker = require('../src/geoWorker');
 let respuestas;
 let pedidos;
 global.fetch = async (url) => {
-  const direccion = new URL(String(url)).searchParams.get('direccion').replace(/, CABA$/, '');
+  const consulta = new URL(String(url)).searchParams.get('direccion');
+  if (consulta === null) return new Response('no', { status: 404 });
+  const direccion = consulta.replace(/, CABA$/, '');
   pedidos.push(direccion);
-  const r = respuestas[direccion];
-  const body = r || { direccionesNormalizadas: [] };
-  return { ok: true, status: 200, json: async () => body };
+  const body = respuestas[direccion] || { direccionesNormalizadas: [] };
+  return new Response(JSON.stringify(body), { status: 200 });
 };
 const usig = (x, y, direccion = 'CALLE 123') => ({
-  direccionesNormalizadas: [{ cod_partido: 'caba', direccion, nombre_calle: 'CALLE', altura: 123, coordenadas: { x, y, srid: 4326 } }],
+  direccionesNormalizadas: [{ cod_partido: 'caba', tipo: 'calle_altura', direccion, nombre_calle: 'CALLE', altura: 123, coordenadas: { x, y, srid: 4326 } }],
 });
 
 beforeEach(() => {
@@ -51,7 +61,7 @@ describe('el (0,0) de USIG', { concurrency: false }, () => {
     assert.equal(geo.geoStatus, 'no_encontrada');
     assert.equal(geo.x, null);
     assert.equal(geo.y, null);
-    const cache = db.getGeocodeCache('usig:corrientes 1000');
+    const cache = db.getGeocodeCache('usig2:corrientes 1000');
     assert.notEqual(cache.status, 'ok');
   });
 
@@ -67,7 +77,7 @@ describe('el (0,0) de USIG', { concurrency: false }, () => {
   });
 
   test('una entrada vieja "ok" en el (0,0) de la caché no sirve: se pregunta de nuevo', async () => {
-    db.setGeocodeCache({ queryKey: 'usig:santa fe 3000', lat: 0, lng: 0, displayName: 'SANTA FE 3000', status: 'ok' });
+    db.setGeocodeCache({ queryKey: 'usig2:santa fe 3000', lat: 0, lng: 0, displayName: 'SANTA FE 3000', status: 'ok' });
     respuestas['Santa Fe 3000'] = usig('-58.41', '-34.588', 'SANTA FE 3000');
     const geo = await geocodeAddress('Santa Fe 3000');
     assert.deepEqual(pedidos, ['Santa Fe 3000']);
@@ -76,7 +86,7 @@ describe('el (0,0) de USIG', { concurrency: false }, () => {
   });
 
   test('sinCacheFallida: una "no encontrada" de la caché se vuelve a consultar; sin la opción, no', async () => {
-    db.setGeocodeCache({ queryKey: 'usig:cabildo 500', status: 'not_found' });
+    db.setGeocodeCache({ queryKey: 'usig2:cabildo 500', status: 'not_found' });
     respuestas['Cabildo 500'] = usig('-58.43', '-34.57');
     assert.equal((await geocodeAddress('Cabildo 500')).geoStatus, 'no_encontrada');
     assert.deepEqual(pedidos, [], 'sin la opción, vale la caché');
@@ -97,6 +107,7 @@ describe('el reintento al arrancar', { concurrency: false }, () => {
     insertar.run('r-noenc', 'Bolivar 1', null, null, 'no_encontrada');
     insertar.run('r-vacio', '', null, null, 'sin_direccion'); // sin dirección: no se puede
     insertar.run('r-bien', 'Tacuari 10', -58.38, -34.61, 'ok'); // ya ubicado: no se toca
+    // Una "no encontrada" de las claves viejas (las del 25/10/2026, cuando USIG falló) no frena nada.
     db.setGeocodeCache({ queryKey: 'usig:bolivar 1', status: 'not_found' });
     raw.close();
 
