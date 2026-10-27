@@ -1362,6 +1362,16 @@ const listReclamosDePostStmt = db.prepare(`
       AND COALESCE(direccion_normalizada, '') <> '' THEN 1 ELSE 0 END AS en_mapa
   FROM reclamos WHERE plataforma = ? AND post_url = ? ORDER BY detected_at, id
 `);
+// "Eliminar análisis" de la galería (deleteAnalisis). Las llamadas a Apify
+// del análisis quedan: lo gastado sigue en los gastos (AUTOINCREMENT no
+// reusa el número, así que su analisis_id no se confunde con otro).
+const deleteAnalisisStmt = db.prepare('DELETE FROM analisis WHERE id = ? AND plataforma = ?');
+const countOtrosAnalisisDeUrlStmt = db.prepare('SELECT COUNT(*) AS n FROM analisis WHERE plataforma = ? AND url = ? AND id <> ?');
+const countOtrosAnalisisDePostIdStmt = db.prepare('SELECT COUNT(*) AS n FROM analisis WHERE plataforma = ? AND post_id = ? AND id <> ?');
+const deleteReclamosDePostStmt = db.prepare('DELETE FROM reclamos WHERE plataforma = ? AND post_url = ? AND import_origen IS NULL');
+const isDetectedPostStmt = db.prepare('SELECT 1 FROM detected_posts WHERE id = ? AND plataforma = ?');
+// "Ver posteo" del Mapa: la publicación del Monitoreo (no ignorada: el pop-up abre solo las de la tabla).
+const findMonitoredPostByUrlStmt = db.prepare('SELECT id FROM detected_posts WHERE plataforma = ? AND url = ? AND ignored = 0 LIMIT 1');
 
 // Figuras públicas.
 const listFigurasStmt = db.prepare('SELECT * FROM figuras_publicas ORDER BY username');
@@ -2956,6 +2966,48 @@ function listReclamosDePost({ plataforma, postUrl }) {
   }));
 }
 
+/**
+ * Borra un análisis ("Eliminar análisis" de la galería); uno en curso no (lo
+ * está escribiendo el trabajo: tira con code ANALISIS_EN_CURSO). Los reclamos
+ * de la publicación son de todos sus análisis (cada uno los muestra): se van
+ * solo con el último, y nunca los importados de un Excel. La foto la borra
+ * quien llama si `fotoLibre` (el post_id): ningún otro análisis ni el
+ * Monitoreo la usan.
+ * @returns {{ reclamos: number, fotoLibre: string|null } | null} null si no existe en esa plataforma.
+ */
+function deleteAnalisis(id, plataforma) {
+  requirePlataforma(plataforma, 'deleteAnalisis');
+  const row = getAnalisisStmt.get(Number(id), plataforma);
+  if (!row) return null;
+  if (row.estado === 'en curso') {
+    const err = new Error('Ese análisis todavía está en curso.');
+    err.code = 'ANALISIS_EN_CURSO';
+    throw err;
+  }
+  db.exec('BEGIN');
+  try {
+    const ultimo = countOtrosAnalisisDeUrlStmt.get(plataforma, row.url, row.id).n === 0;
+    const reclamos = ultimo ? Number(deleteReclamosDePostStmt.run(plataforma, row.url).changes) : 0;
+    const fotoLibre =
+      row.post_id && countOtrosAnalisisDePostIdStmt.get(plataforma, row.post_id, row.id).n === 0 && !isDetectedPostStmt.get(row.post_id, plataforma)
+        ? String(row.post_id)
+        : null;
+    deleteAnalisisStmt.run(row.id, plataforma);
+    db.exec('COMMIT');
+    return { reclamos, fotoLibre };
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+}
+
+/** El id de la publicación del Monitoreo con ese link (no ignorada), o null. */
+function findMonitoredPostIdByUrl({ plataforma, url }) {
+  requirePlataforma(plataforma, 'findMonitoredPostIdByUrl');
+  const row = url ? findMonitoredPostByUrlStmt.get(plataforma, url) : null;
+  return row ? String(row.id) : null;
+}
+
 // --------------------------------------------------------------------
 // Figuras públicas (src/figuras.js valida). creado_por es un correo: las
 // rutas no lo mandan al navegador.
@@ -3097,6 +3149,8 @@ module.exports = {
   listAnalisisGaleria,
   listAnterioresDeCuenta,
   listReclamosDePost,
+  deleteAnalisis,
+  findMonitoredPostIdByUrl,
   listFiguras,
   getFigura,
   getFigurasPorUsernames,
