@@ -665,6 +665,32 @@ function tooltipHtml(group) {
   return `<strong>${titulo}</strong><br><span class="claims-tip-prec">${escapeHtml(textoPrecision(group.reclamos))}</span><br>${group.reclamos.length} reclamo(s)<br>${lines}`;
 }
 
+// "Ver posteo" de un reclamo: adónde lleva lo dice el servidor (verPosteo,
+// reclamosRoutes.js). El análisis se abre en esta pestaña por su hash
+// (analysis.js lo atiende); el del Monitoreo abre el pop-up de la
+// publicación encima del Mapa (claimsVerPosteoClick; si no está en la
+// tabla, el link sigue y abre la red); la red, en otra pestaña. Sin link
+// (el panel El Niño), no hay nada que ver.
+function linkVerPosteo(v) {
+  if (!v || !v.url) return '';
+  if (v.tipo === 'analisis' && Number.isFinite(v.analisisId)) {
+    return `<a href="#analisis-${v.analisisId}">Ver el análisis</a>`;
+  }
+  const postId = v.tipo === 'monitoreo' && /^\d{1,30}$/.test(String(v.postId)) ? ` data-post-id="${v.postId}"` : '';
+  return `<a href="${escapeHtml(v.url)}" target="_blank" rel="noopener noreferrer"${postId}>Ver posteo</a>`;
+}
+
+// En captura: el pop-up de Leaflet no tiene que ver el clic antes.
+document.addEventListener(
+  'click',
+  function claimsVerPosteoClick(e) {
+    const a = e.target.closest && e.target.closest('.claims-popup a[data-post-id]');
+    if (!a || typeof openFeedPopList !== 'function') return;
+    if (openFeedPopList([a.dataset.postId], a.dataset.postId, a)) e.preventDefault();
+  },
+  true
+);
+
 function popupHtml(group) {
   // Desglose por categoría del punto. El pin sólo puede mostrar un color (el de
   // la categoría dominante), así que acá va la composición completa — si no, un
@@ -689,19 +715,19 @@ function popupHtml(group) {
 
   const items = group.reclamos
     .map((r) => {
-      const user = escapeHtml(r.autor || 'desconocido');
+      // Uno importado sin autor (el panel El Niño) dice de dónde vino.
+      const user = r.autor ? `@${escapeHtml(r.autor)}` : escapeHtml(r.importOrigen || '@desconocido');
       const comment = escapeHtml(r.textoOriginal || '');
-      const url = r.postUrl || r.commentUrl || '#';
       const sub = r.subcategoria
         ? `<div class="claims-popup-sub">${escapeHtml(r.subcategoria)}</div>`
         : '';
       return `<div class="claims-popup-item">
-        <div class="claims-popup-user">@${user} · <span class="claims-tema-pill" style="background:${colorDeCategoria(
+        <div class="claims-popup-user">${user} · <span class="claims-tema-pill" style="background:${colorDeCategoria(
           r.categoria
         )};color:#fff">${escapeHtml(r.categoria)}</span></div>
         ${sub}
         <div class="claims-popup-comment">${comment}</div>
-        <a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">Ver posteo</a>
+        ${linkVerPosteo(r.verPosteo)}
       </div>`;
     })
     .join('');

@@ -802,7 +802,17 @@ La D va sin SDD (decisión del dueño). De la E, en
   muestra ni se edita desde la G: no hay filtro "Estado" ni selector en el
   pop-up; la columna y `PATCH /api/reclamos/:id` quedan. Desde la H, el pin
   según la precisión, el filtro "Precisión", "Puntos / Por comunas" y
-  "Sin ubicar" (ver "Georreferenciación de reclamos"). Los colores de
+  "Sin ubicar" (ver "Georreferenciación de reclamos"). "Ver posteo" del
+  pop-up de un reclamo va adonde dice `verPosteo` (lo arma
+  `reclamosRoutes.js`, `verPosteoDe`): el último análisis terminado de esa
+  publicación ("Ver el análisis", `#analisis-<id>` en la misma pestaña);
+  si no hay, la publicación del Monitoreo (no ignorada), cuyo pop-up se abre
+  encima del Mapa (`openFeedPopList`; si no está en la tabla, el link sigue
+  y abre la red); si no, la publicación en la red, en otra pestaña. En X va
+  siempre a la red (el tuit, que el Excel guarda como `comment_url`). Sin
+  link (el panel El Niño) no hay "Ver posteo", y el pop-up dice el origen
+  (`import_origen`) en vez del @autor. Antes, sin link, quedaba `href="#"`
+  con `target=_blank`: abría otra pestaña en el Monitoreo. Los colores de
   categoría (`--cat-1` … `--cat-12`) salen de la paleta de la maqueta, en su
   tono oscuro (el número del pin va en blanco). La tarjeta de filtros lleva
   `z-index: 3`: las dos tarjetas tienen `.rv`, cuya animación les da su
@@ -1403,6 +1413,16 @@ públicas). La F va en dos PR: F1 (modelo y servidor, tag `v4-fase-f1`) y F2
   los agregados a mano y los números de sus comentarios; `reporteAntes` es
   el informe y `reporteDespues` va vacío) y los dos CSV. Al navegador no
   va el link original de la foto ni quién lo corrió (`paraNavegador`).
+- **Eliminar** (`DELETE /api/analisis/:id?plataforma=`, `db.deleteAnalisis`;
+  "Eliminar análisis" debajo de cada tarjeta de la galería, con "¿Eliminarlo?
+  Sí, eliminar / No" en el mismo lugar): cualquiera con sesión; uno en curso
+  no (409). Se va la fila. Las llamadas a Apify quedan, con su
+  `analisis_id`: lo gastado sigue en los gastos (AUTOINCREMENT no reusa el
+  número). Los reclamos de la publicación son de todos sus análisis (cada
+  uno los muestra): se borran solo con el último, y nunca los importados
+  (`import_origen`). La foto (`<post_id>_*.jpg`), solo si ningún otro
+  análisis ni el Monitoreo tienen ese id. Responde `{ id, reclamos, foto }`.
+  Test: `test/analisisEliminar.test.js` (también el "Ver posteo" del Mapa).
 - **Pantalla** (fase F2: la solapa 3 de la maqueta nueva; solo
   `instagram.html`, después de `postView.js`; CSS bajo `.ana4`, así X no
   cambia). Tres scripts clásicos con prefijo `ana`: `analysis.js` (el
