@@ -6270,6 +6270,59 @@ svg.line {
 .ana4 .an-gc .ft .neg {
   color: var(--neg-text);
 }
+/* "Eliminar análisis", debajo de la tarjeta (que es un botón). */
+.ana4 .an-gc-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.ana4 .an-gc-item > .an-gc {
+  flex: 1 0 auto;
+}
+.ana4 .an-gc-del {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 30px;
+}
+.ana4 .an-gc-cuando {
+  margin-right: auto;
+  font: 500 11.5px/1.2 var(--mono);
+  color: var(--muted);
+}
+.ana4 .an-gc-del [hidden] {
+  display: none;
+}
+.ana4 .an-gc-del-btn {
+  color: var(--fg2);
+}
+.ana4 .an-gc-del-btn:hover:not(:disabled),
+.ana4 .an-gc-si:hover:not(:disabled) {
+  border-color: var(--neg);
+  color: var(--neg-text);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--neg) 16%, transparent);
+}
+.ana4 .an-gc-ask {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  flex-basis: 100%;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--fg2);
+}
+.ana4 .an-gc-ask > span {
+  flex-basis: 100%;
+  text-align: right;
+}
+.ana4 .an-gc-si {
+  border-color: var(--neg);
+  color: var(--neg-text);
+}
 .ana4 .an-gal .empty {
   grid-column: 1 / -1;
 }
