@@ -93,7 +93,12 @@ const {
   RESEND_COOLDOWN_MS,
 } = require('./src/auth/rateLimit');
 const { createAuthGate } = require('./src/auth/gate');
-const { securityHeaders } = require('./src/httpSecurity');
+const { securityHeaders, errorHandler, installProcessHandlers } = require('./src/httpSecurity');
+
+// Una promesa rechazada o una excepción sin manejar: log y exit(1), y quien
+// supervisa el proceso (Railway, scripts/iniciar-con-reinicio.bat) lo
+// levanta de nuevo. Node 22 ya terminaba en los dos casos; ahora queda el log.
+installProcessHandlers();
 
 const app = express();
 // Sin el encabezado "X-Powered-By: Express": no anunciar qué corre atrás.
@@ -673,6 +678,13 @@ app.patch('/api/reclamos/:id', (req, res) => {
   db.updateEstado(req.params.id, estado);
   res.json({ ok: true });
 });
+
+// Manejador de errores: DESPUÉS de todas las rutas. Al cliente, solo
+// { error: 'Error interno.' } (o 'Pedido inválido.' en un 4xx de Express,
+// como un JSON mal formado), nunca un stack; el error completo, al log. Ojo:
+// Express 4 no le pasa los rechazos de una ruta async; esos terminan en
+// unhandledRejection (installProcessHandlers, arriba). Ver src/httpSecurity.js.
+app.use(errorHandler);
 
 // --------------------------------------------------------------------------
 // Arrancamos el servidor.
