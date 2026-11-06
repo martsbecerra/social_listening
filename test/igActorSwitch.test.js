@@ -171,10 +171,14 @@ describe('IG_ACTOR=apify: el proveedor oficial detrás de la fachada', { concurr
         warned.some((w) => /1 búsqueda\(s\) por palabra clave configuradas/.test(w) && /IG_ACTOR=apidojo/.test(w)),
         warned.join('\n')
       );
+      warned.length = 0;
       assert.throws(() => monitor.addSearch('otra', 'instagram'), (err) => {
-        assert.match(err.userMessage, /IG_ACTOR=apidojo/);
+        // Al navegador, sin nombrar la variable; el nombre queda en el log.
+        assert.match(err.userMessage, /no busca por palabra clave\. Falta configuración del servidor/);
+        assert.doesNotMatch(err.userMessage, /IG_ACTOR|\.env/);
         return true;
       });
+      assert.ok(warned.some((w) => /IG_ACTOR=apidojo/.test(w)), warned.join('\n'));
       assert.deepEqual(monitor.loadConfig('instagram').searches, ['jorge macri'], 'lo configurado se conserva');
     } finally {
       console.warn = originalWarn;

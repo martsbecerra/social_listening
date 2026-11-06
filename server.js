@@ -199,11 +199,10 @@ app.post('/api/auth/magic-link', async (req, res) => {
     return res.status(429).json({ error: 'Demasiados intentos. Probá en unos minutos.' });
   }
 
+  // Las variables que faltan, solo en el log: al cliente, el genérico.
   if (!isAuthConfigured()) {
     logAuth('config incompleta', { falta: 'SESSION_SECRET o APP_BASE_URL' });
-    return res.status(503).json({
-      error: 'El login no está configurado. Revisá SESSION_SECRET y APP_BASE_URL.',
-    });
+    return res.status(503).json({ error: 'Falta configuración del servidor.' });
   }
 
   if (!email || !isEmailAllowed(email)) {

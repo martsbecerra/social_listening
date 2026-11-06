@@ -98,7 +98,9 @@ describe('OpenRouter: timeout y reintento ante fallos transitorios', { concurren
 
     llamadas = stubFetch([respuesta(401, { error: { message: 'bad key' } })]);
     await assert.rejects(pedir(), (err) => {
-      assert.match(err.userMessage, /OPENROUTER_API_KEY/);
+      // La variable va al log, nunca al mensaje que llega al navegador.
+      assert.match(err.userMessage, /La clave de OpenRouter del servidor es inválida/);
+      assert.doesNotMatch(err.userMessage, /OPENROUTER_API_KEY|\.env/);
       return true;
     });
     assert.equal(llamadas.length, 1, 'la clave no va a cambiar en tres segundos');

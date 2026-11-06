@@ -75,6 +75,8 @@ describe('platforms', { concurrency: false }, () => {
         await assert.rejects(runActorSync({}, { actorId: 'apify~instagram-scraper', plataforma: 'instagram' }), (err) => {
           assert.equal(err.code, code, `${status} ${text}`);
           assert.match(err.userMessage, messageRe);
+          // El userMessage va al navegador: nunca nombra una variable del .env.
+          assert.doesNotMatch(err.userMessage, /APIFY_|\.env/);
           return true;
         });
       }

@@ -57,10 +57,11 @@ function getFetchConfig() {
     };
   }
 
-  const e = new Error('Falta clave para Grok (OPENROUTER_API_KEY o XAI_API_KEY)');
+  // Las variables van en el message (al log, lo escribe quien atrapa el
+  // error); el userMessage va al navegador y no nombra ninguna.
+  const e = new Error('Falta clave para Grok (OPENROUTER_API_KEY o XAI_API_KEY en el .env)');
   e.code = 'NOT_CONFIGURED';
-  e.userMessage =
-    'Para analizar X hace falta OPENROUTER_API_KEY (Grok vía OpenRouter) o XAI_API_KEY. Completá el .env e intentá de nuevo.';
+  e.userMessage = 'Falta configuración del servidor para analizar X.';
   throw e;
 }
 
@@ -211,10 +212,12 @@ function mapFetchError(backend, err, status, body) {
         : 'La cuenta de xAI no tiene créditos suficientes (cuota agotada). Cargá créditos e intentá de nuevo.';
   } else if (status === 401 || status === 403) {
     e.code = 'AUTH_INVALID';
+    // El nombre de la variable, solo en el log: el userMessage va al navegador.
+    console.error(`[grok] ${label} rechazó la clave: revisá ${backend === 'openrouter' ? 'OPENROUTER_API_KEY' : 'XAI_API_KEY'} en el .env.`);
     e.userMessage =
       backend === 'openrouter'
-        ? 'La clave de OpenRouter (OPENROUTER_API_KEY) es inválida. Revisá el archivo .env.'
-        : 'La clave de xAI (XAI_API_KEY) es inválida. Revisá el archivo .env.';
+        ? 'La clave de OpenRouter del servidor es inválida. Falta configuración del servidor.'
+        : 'La clave de xAI del servidor es inválida. Falta configuración del servidor.';
   } else if (status === 429) {
     e.code = 'RATE_LIMITED';
     e.userMessage = `${label} rechazó el pedido por rate limit. Esperá un momento e intentá de nuevo.`;
