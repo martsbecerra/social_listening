@@ -269,6 +269,24 @@ describe('los HTML de public/ cumplen la CSP', () => {
     });
   }
 
+  // Un style="…" dentro de un HTML armado como texto (innerHTML, el html de
+  // un divIcon o de un pop-up de Leaflet) tampoco se aplica: los estilos
+  // dinámicos van por element.style. Pasó con los pines del Mapa.
+  test('public/js no arma style="…" ni <script> en HTML como texto', () => {
+    const dir = path.join(REAL_PUBLIC, 'js');
+    for (const archivo of fs.readdirSync(dir).filter((f) => f.endsWith('.js'))) {
+      // Sin las líneas de comentario (que pueden nombrar lo que no se hace).
+      const js = fs
+        .readFileSync(path.join(dir, archivo), 'utf8')
+        .split('\n')
+        .filter((linea) => !/^\s*(\/\/|\/\*|\*)/.test(linea))
+        .join('\n');
+      assert.ok(!/\bstyle\s*=\s*\\?["'`$]/.test(js), `${archivo}: style= en un HTML armado como texto`);
+      assert.ok(!/setAttribute\(\s*["']style["']/.test(js), `${archivo}: setAttribute('style', …)`);
+      assert.ok(!/<script\b/i.test(js), `${archivo}: <script> en un HTML armado como texto`);
+    }
+  });
+
   test('lo que cargan de public/vendor existe', () => {
     for (const pagina of ['instagram.html', 'x.html']) {
       const html = fs.readFileSync(path.join(REAL_PUBLIC, pagina), 'utf8');
