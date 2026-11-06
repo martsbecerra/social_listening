@@ -15,8 +15,9 @@
     href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
     rel="stylesheet"
   />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <link href="https://unpkg.com/tabulator-tables@6.3.0/dist/css/tabulator.min.css" rel="stylesheet" />
+  <!-- Leaflet y Tabulator, copiados en public/vendor (nunca desde un CDN). -->
+  <link rel="stylesheet" href="vendor/leaflet/leaflet.css" />
+  <link rel="stylesheet" href="vendor/tabulator/tabulator.min.css" />
   <!-- Tema: clara de origen, oscura con el botón (antes de pintar nada). -->
   <script src="js/theme.js"></script>
   <link rel="stylesheet" href="css/styles.css" />
@@ -183,7 +184,7 @@
       <div class="cards" id="cards"></div>
     </div>
 
-    <div class="filters" style="margin-top:20px">
+    <div class="filters gap-t20">
       <div class="frow">
         <span class="frow-lbl tag">Filtrar</span>
 
@@ -339,12 +340,12 @@
   <script src="js/tip.js"></script>
   <script src="js/temasEditor.js"></script>
   <script src="js/x-analysis.js"></script>
-  <script src="https://unpkg.com/tabulator-tables@6.3.0/dist/js/tabulator.min.js"></script>
-  <script>window.SL_PLATFORM = 'x';</script>
+  <script src="vendor/tabulator/tabulator.min.js"></script>
+  <script src="js/platform.js"></script>
   <script src="js/postView.js"></script>
   <script src="js/monitoring.js?v=plat"></script>
   <script src="js/topbar.js"></script>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="vendor/leaflet/leaflet.js"></script>
   <script src="js/claimsMap.js"></script>
   <script src="js/footer.js"></script>
 </body>

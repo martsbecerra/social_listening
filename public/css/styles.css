@@ -451,6 +451,32 @@ select.field {
 .bg-neu {
   background: var(--neu);
 }
+.bg-line2 {
+  background: var(--line2);
+}
+.bg-c1 {
+  background: var(--c1);
+}
+/* Márgenes que antes iban en un style="…" del HTML: la CSP (sin
+   'unsafe-inline', ver src/httpSecurity.js) no aplica estilos en línea. */
+.note.gap-b12 {
+  margin: 0 0 12px;
+}
+.note.gap-t12 {
+  margin: 12px 0 0;
+}
+.note.gap-t10 {
+  margin: 10px 0 0;
+}
+.note.gap-t8 {
+  margin: 8px 0 0;
+}
+.card .legend.gap-t12 {
+  margin-top: 12px;
+}
+.filters.gap-t20 {
+  margin-top: 20px;
+}
 
 /* ---------- tooltip global (public/js/tip.js, todo por textContent) ---------- */
 .tip {

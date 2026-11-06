@@ -1,3 +1,6 @@
 # Los .bat los lee cmd.exe: con finales de línea LF, goto/labels pueden
 # fallar de forma intermitente. Siempre CRLF en el working tree.
 *.bat text eol=crlf
+# Tabulator y Leaflet, copiados del paquete de npm tal cual: sin conversión
+# de finales de línea, así quedan byte a byte iguales al original.
+public/vendor/** -text

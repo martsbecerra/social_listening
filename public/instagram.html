@@ -15,11 +15,11 @@
     href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
     rel="stylesheet"
   />
-  <!-- Tabulator: tabla de "Publicaciones detectadas" (orden/filtro/paginación
-       del lado del cliente). Por CDN a propósito, sin build step ni
-       dependencia nueva en package.json. -->
-  <link href="https://unpkg.com/tabulator-tables@6.3.0/dist/css/tabulator.min.css" rel="stylesheet" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <!-- Tabulator 6.3.0 (la tabla de publicaciones) y Leaflet 1.9.4 (el mapa),
+       copiados en public/vendor: nunca desde un CDN, así la CSP queda en
+       'self' (ver src/httpSecurity.js). -->
+  <link rel="stylesheet" href="vendor/tabulator/tabulator.min.css" />
+  <link rel="stylesheet" href="vendor/leaflet/leaflet.css" />
   <!-- Tema: clara de origen, oscura con el botón (antes de pintar nada). -->
   <script src="js/theme.js"></script>
   <link rel="stylesheet" href="css/styles.css" />
@@ -731,14 +731,14 @@
       <div class="grid two rv">
         <div class="card">
           <div class="ct"><h2>Qué menciones trajeron positivos reales</h2></div>
-          <p class="note" style="margin: 0 0 12px">“Macri” junta muchísimo, pero no todo habla de Jorge. La barra azul es lo que el modelo confirmó que sí refiere a Jorge Macri o a la Ciudad; la verde, lo que además fue positivo.</p>
+          <p class="note gap-b12">“Macri” junta muchísimo, pero no todo habla de Jorge. La barra azul es lo que el modelo confirmó que sí refiere a Jorge Macri o a la Ciudad; la verde, lo que además fue positivo.</p>
           <div class="rows" id="statsRows"></div>
-          <div class="legend" style="margin-top: 12px"><span><i style="background: var(--line2)"></i>Menciones totales</span><span><i style="background: var(--c1)"></i>Refieren a Jorge o la Ciudad</span><span><i class="bg-pos"></i>Positivas reales</span></div>
+          <div class="legend gap-t12"><span><i class="bg-line2"></i>Menciones totales</span><span><i class="bg-c1"></i>Refieren a Jorge o la Ciudad</span><span><i class="bg-pos"></i>Positivas reales</span></div>
         </div>
         <div class="card">
           <div class="ct"><h2>Qué parte de la conversación se lleva cada búsqueda</h2><span class="hint">share of voice</span></div>
           <div class="donut"><svg id="statsDonut" viewBox="0 0 150 150" role="img" aria-label="Participación de cada búsqueda en las publicaciones relevantes"></svg><div class="lg" id="statsDonutLg"></div></div>
-          <p class="note" style="margin: 12px 0 0">Si una búsqueda crece de golpe acá, casi siempre es un tema nuevo: conviene mirarlo en “De qué se habla”.</p>
+          <p class="note gap-t12">Si una búsqueda crece de golpe acá, casi siempre es un tema nuevo: conviene mirarlo en “De qué se habla”.</p>
         </div>
       </div>
 
@@ -754,12 +754,12 @@
         <div class="card wide">
           <div class="ct"><h2>Cuándo se habla</h2><span class="hint">publicaciones por día y hora · hora de Argentina</span></div>
           <div class="heat" id="statsHeat" role="img"></div>
-          <p class="note" style="margin: 10px 0 0">Más oscuro = más publicaciones. Sirve para saber a qué hora mirar el monitoreo y cuándo conviene publicar.</p>
+          <p class="note gap-t10">Más oscuro = más publicaciones. Sirve para saber a qué hora mirar el monitoreo y cuándo conviene publicar.</p>
         </div>
         <div class="card">
           <div class="ct"><h2 id="statsNetTitle">Tono neto por semana</h2><span class="hint">positivos − negativos</span></div>
           <svg class="line" id="statsNet" viewBox="0 0 320 180" preserveAspectRatio="none" role="img" aria-label="Tono neto por semana"></svg>
-          <p class="note" id="statsNetNote" style="margin: 8px 0 0">Arriba de cero, la semana cerró con más elogios que críticas.</p>
+          <p class="note gap-t8" id="statsNetNote">Arriba de cero, la semana cerró con más elogios que críticas.</p>
         </div>
       </div>
 
@@ -832,8 +832,8 @@
   <script src="js/main.js"></script>
   <script src="js/tip.js"></script>
   <script src="js/temasEditor.js"></script>
-  <script src="https://unpkg.com/tabulator-tables@6.3.0/dist/js/tabulator.min.js"></script>
-  <script>window.SL_PLATFORM = 'instagram';</script>
+  <script src="vendor/tabulator/tabulator.min.js"></script>
+  <script src="js/platform.js"></script>
   <script src="js/postView.js"></script>
   <script src="js/monitoring.js?v=plat"></script>
   <script src="js/monitoringFeed.js"></script>
@@ -846,7 +846,7 @@
   <script src="js/monitoringFlow.js"></script>
   <script src="js/stats.js"></script>
   <script src="js/topbar.js"></script>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="vendor/leaflet/leaflet.js"></script>
   <script src="js/claimsMap.js"></script>
   <script src="js/footer.js"></script>
 </body>
