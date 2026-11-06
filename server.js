@@ -93,6 +93,7 @@ const {
   RESEND_COOLDOWN_MS,
 } = require('./src/auth/rateLimit');
 const { createAuthGate } = require('./src/auth/gate');
+const { securityHeaders } = require('./src/httpSecurity');
 
 const app = express();
 // Sin el encabezado "X-Powered-By: Express": no anunciar qué corre atrás.
@@ -120,6 +121,11 @@ if (
 ) {
   app.set('trust proxy', 1);
 }
+
+// Headers de seguridad (helmet, CSP, HSTS con https): lo primero, antes del
+// gate, así también los llevan los 401 y las redirecciones al login. Ver
+// src/httpSecurity.js.
+app.use(securityHeaders());
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
