@@ -7,7 +7,8 @@
 //   GET  /api/reclamos?plataforma=&categoria=&subcategoria=&precision=&…
 //        los reclamos (también los de fuera de la Ciudad, para "Sin
 //        ubicar": nunca tienen pin) con la precisión, el tipo de ubicación,
-//        el lugar y el motivo (fase H, openspec/changes/geo-pro)
+//        el lugar y el motivo (fase H, openspec/changes/geo-pro), y adónde
+//        lleva su "Ver posteo" (`verPosteo`)
 //   POST /api/reclamos/:id/corregir  { texto }   el equipo escribe la
 //        dirección o el lugar; se vuelve a resolver con el mismo resolver
 //   POST /api/reclamos/:id/descartar { motivo }  no es un reclamo ubicable
@@ -43,10 +44,41 @@ function leidoDe(r) {
   return ubicacionEnUnaLinea(u) || r.direccionDetectada || null;
 }
 
+/**
+ * Adónde lleva "Ver posteo" del pop-up del Mapa: al análisis de la
+ * publicación ({ tipo: 'analisis', analisisId }, #analisis-<id>); si no
+ * tiene, a su pop-up del Monitoreo ({ tipo: 'monitoreo', postId }); si no
+ * está en ninguno, a la publicación en la red, en otra pestaña ({ tipo:
+ * 'red' }). Todos llevan `url`, el link de la red. Sin link (el panel El
+ * Niño), null. La solapa del análisis y el pop-up en la misma página son
+ * solo de Instagram: en X va siempre a la red (el link del tuit, que el
+ * Excel guarda como comment_url). `cache`: cada publicación se busca una
+ * vez por pedido.
+ */
+function verPosteoDe(r, cache) {
+  const url = r.postUrl || r.commentUrl || null;
+  if (!url) return null;
+  if (r.plataforma !== 'instagram' || !r.postUrl) return { tipo: 'red', url };
+  if (!cache.has(r.postUrl)) {
+    const analisis = db.findAnalisisByUrl({ plataforma: 'instagram', url: r.postUrl });
+    const postId = analisis ? null : db.findMonitoredPostIdByUrl({ plataforma: 'instagram', url: r.postUrl });
+    cache.set(
+      r.postUrl,
+      analisis ? { tipo: 'analisis', analisisId: analisis.id, url } : postId ? { tipo: 'monitoreo', postId, url } : { tipo: 'red', url }
+    );
+  }
+  return cache.get(r.postUrl);
+}
+
 /** Un reclamo como va al navegador: sin el correo ni la respuesta cruda del modelo. */
-function paraNavegador(r) {
+function paraNavegador(r, cache = new Map()) {
   const { corregidaPor, ubicacion, ...resto } = r;
-  return { ...resto, leido: leidoDe(r), corregida: Boolean(corregidaPor) && r.motivoSinUbicar !== 'descartado' };
+  return {
+    ...resto,
+    leido: leidoDe(r),
+    corregida: Boolean(corregidaPor) && r.motivoSinUbicar !== 'descartado',
+    verPosteo: verPosteoDe(r, cache),
+  };
 }
 
 const textoDe = (v) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : '');
@@ -57,7 +89,8 @@ function register(app) {
     if (!isValidReclamosPlataforma(filters.plataforma)) {
       return res.status(400).json({ error: 'Indicá plataforma=instagram o plataforma=x.' });
     }
-    const reclamos = db.listReclamosFiltered(filters, { incluirFueraDeCaba: true }).map(paraNavegador);
+    const cache = new Map();
+    const reclamos = db.listReclamosFiltered(filters, { incluirFueraDeCaba: true }).map((r) => paraNavegador(r, cache));
     res.json({
       categorias: CATEGORIAS_RECLAMO,
       estados: ESTADOS_RECLAMO,

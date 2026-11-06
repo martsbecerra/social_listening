@@ -811,7 +811,64 @@ function anaGalCard(a, k) {
       window.scrollTo({ top: 0, behavior: anaReducedMotion() ? 'auto' : 'smooth' });
     });
   });
-  return card;
+  // La tarjeta es un botón: "Eliminar análisis" va debajo, no adentro.
+  const item = anaEl('div', 'an-gc-item');
+  item.append(card, anaGalDelete(a, cuenta, fecha));
+  return item;
+}
+
+// "Eliminar análisis", con la confirmación en el mismo lugar: DELETE
+// /api/analisis/:id. Con el último análisis de la publicación se van sus
+// reclamos; lo gastado queda en los gastos (analysisRoutes.js).
+function anaGalDelete(a, cuenta, fecha) {
+  const box = anaEl('div', 'an-gc-del');
+  // Dos análisis de la misma publicación se distinguen por cuándo se hicieron.
+  const hecho = anaDateParts(a.finishedAt);
+  const cuando = hecho ? `analizado ${hecho.corta} · ${hecho.hora}` : '';
+  if (cuando) box.append(anaEl('span', 'an-gc-cuando', cuando));
+  const del = anaEl('button', 'btn-small an-gc-del-btn', 'Eliminar análisis');
+  del.type = 'button';
+  del.setAttribute('aria-label', `Eliminar el análisis de ${cuenta}${fecha ? ` del ${fecha.fecha}` : ''}${cuando ? `, ${cuando}` : ''}`);
+  const ask = anaEl('div', 'an-gc-ask');
+  ask.hidden = true;
+  const msg = anaEl('span', '', '¿Eliminarlo? No se puede deshacer.');
+  const si = anaEl('button', 'btn-small an-gc-si', 'Sí, eliminar');
+  si.type = 'button';
+  const no = anaEl('button', 'btn-small', 'No');
+  no.type = 'button';
+  ask.append(msg, si, no);
+  box.append(del, ask);
+  del.addEventListener('click', () => {
+    del.hidden = true;
+    ask.hidden = false;
+    no.focus();
+  });
+  no.addEventListener('click', () => {
+    ask.hidden = true;
+    del.hidden = false;
+    msg.textContent = '¿Eliminarlo? No se puede deshacer.';
+    del.focus();
+  });
+  si.addEventListener('click', async () => {
+    si.disabled = true;
+    no.disabled = true;
+    msg.textContent = 'Eliminando…';
+    try {
+      const r = await anaApi(`/api/analisis/${a.id}?plataforma=${ANA_PLATAFORMA}`, { method: 'DELETE' });
+      if (anaShown && anaShown.id === a.id) anaClearShown();
+      anaToast(r && r.reclamos ? `Análisis eliminado, con ${anaPlural(r.reclamos, 'reclamo', 'reclamos')}` : 'Análisis eliminado');
+      // La tarjeta se va con el redibujo: el foco pasa a la línea de la galería.
+      anaEls.galN.tabIndex = -1;
+      anaEls.galN.focus({ preventScroll: true });
+      anaLoadRecientes();
+      anaLoadGaleria();
+    } catch (err) {
+      msg.textContent = err.message;
+      si.disabled = false;
+      no.disabled = false;
+    }
+  });
+  return box;
 }
 
 anaEls.galQ.addEventListener('input', () => {

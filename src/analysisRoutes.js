@@ -11,6 +11,7 @@
 //   GET   /api/analisis?plataforma=&url=             ¿ya se analizó ese link?
 //   GET   /api/analisis/:id?plataforma=              el análisis entero (con `vista`)
 //   PATCH /api/analisis/:id/temas?plataforma=        editar los temas
+//   DELETE /api/analisis/:id?plataforma=             eliminarlo (la galería)
 //   GET   /api/analisis/:id/comentarios.csv?plataforma=  el CSV de comentarios
 //   GET   /api/analisis/:id/reclamos.csv?plataforma=     el CSV de reclamos
 //   GET   /api/analisis/:id/image?plataforma=&size=  la foto
@@ -35,6 +36,7 @@
 // la app.
 // ==========================================================================
 
+const fs = require('fs');
 const path = require('path');
 const db = require('./db');
 const analysisJob = require('./analysisJob');
@@ -306,6 +308,36 @@ function register(app) {
       console.error(`Error editando los temas del análisis #${id}:`, err);
       return res.status(500).json({ error: 'No se pudieron guardar los temas.' });
     }
+  });
+
+  // "Eliminar análisis" de la galería: la fila, los reclamos de la
+  // publicación si era su último análisis y la foto si no la usa nadie más
+  // (db.deleteAnalisis). Lo gastado queda en los gastos. Uno en curso, 409.
+  app.delete('/api/analisis/:id', async (req, res) => {
+    const plataforma = plataformaDe(req, res);
+    if (!plataforma) return undefined;
+    const id = idDe(req);
+    let borrado;
+    try {
+      borrado = id ? db.deleteAnalisis(id, plataforma) : null;
+    } catch (err) {
+      if (err && err.code === 'ANALISIS_EN_CURSO') return res.status(409).json({ error: 'Ese análisis todavía está en curso: se puede eliminar cuando termine.' });
+      console.error(`Error eliminando el análisis #${id}:`, err);
+      return res.status(500).json({ error: 'No se pudo eliminar el análisis.' });
+    }
+    if (!borrado) return res.status(404).json({ error: 'No existe ese análisis.' });
+    let foto = false;
+    const paths = borrado.fotoLibre ? postImages.imagePaths(plataforma, borrado.fotoLibre) : null;
+    if (paths) {
+      try {
+        await Promise.all(postImages.SIZES.map((size) => fs.promises.rm(paths[size], { force: true })));
+        foto = true;
+      } catch (err) {
+        console.warn(`[analisis] #${id} eliminado; su foto no se pudo borrar (${err.code || err.message})`);
+      }
+    }
+    console.log(`[analisis] #${id} (${plataforma}) eliminado · ${borrado.reclamos} reclamos · foto ${foto ? 'borrada' : 'queda'}`);
+    return res.json({ id, reclamos: borrado.reclamos, foto });
   });
 
   app.get('/api/analisis/:id/comentarios.csv', (req, res) => {
