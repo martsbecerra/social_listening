@@ -106,6 +106,7 @@ social_listening_app/
 │   ├── publicResumen.js      # GET /api/public/resumen (sin sesión): solo cantidades y temas, para el login.
 │   ├── stopwords.js          # Palabras vacías que no cuentan en la nube de Estadísticas.
 │   ├── keepAwake.js          # Windows: lanza scripts/keep-awake.ps1 para que la máquina no se suspenda.
+│   ├── httpSecurity.js       # Seguridad HTTP: helmet con la CSP, el manejador de errores y los handlers del proceso.
 │   ├── concurrencyLimiter.js # Cola FIFO para los runs simultáneos de Apify.
 │   ├── usageContext.js       # En qué ciclo y fase estamos (AsyncLocalStorage), para medir Apify.
 │   ├── apifyCost.js          # Tarifas de los dos actores, registro de cada llamada a Apify (estimado y real) y reporte de gasto.
@@ -128,8 +129,10 @@ social_listening_app/
 │   ├── instagram.html        # App Instagram: monitoreo + mapa de reclamos + análisis + estadísticas (píldora de solapas).
 │   ├── x.html                # App X: análisis (Grok) + monitoreo + mapa de reclamos.
 │   ├── css/styles.css        # Estilos del diseño v4 (tokens claro / oscuro de design/social-listening-v4.html).
+│   ├── vendor/               # Tabulator 6.3.0 y Leaflet 1.9.4, copiados del paquete de npm (nunca desde un CDN).
 │   └── js/
 │       ├── theme.js          # Tema: clara de origen, botón para pasar a oscura (va en el <head>).
+│       ├── platform.js       # window.SL_PLATFORM desde el data-platform del <body> (instagram.html, x.html).
 │       ├── main.js           # Píldora de solapas (teclas 1-4, hash) + menú del usuario (sesión / logout).
 │       ├── topbar.js         # "escuchando · HH:MM" de la barra superior (última corrida terminada).
 │       ├── tip.js            # Tooltip global ([data-tip], siempre por textContent).
@@ -2075,6 +2078,62 @@ cacheada, así que no agrega tráfico al caso normal.
 > Ya se corrió sobre `data/monitoring.db`. Sólo hace falta repetirlo en otra
 > copia de la base que venga de antes del cambio.
 
+### Seguridad HTTP (noviembre 2026)
+
+Rama `hardening-http`: cierra los hallazgos de dependencias, headers y
+manejo de errores del diagnóstico de seguridad (OWASP ASVS V3, V15 y V16),
+sin tocar la lógica de negocio. Todo vive en `src/httpSecurity.js`; el test
+es `test/securityHeaders.test.js`.
+
+- **Dependencias.** `npm run audit` (`npm audit --omit=dev`) tiene que dar
+  0 vulnerabilidades. express 4.22.3 (proxy-addr y qs arreglados) y
+  nodemailer 10 (pide Node 20 o más; `src/mailer.js` no cambió, lo cubre
+  `test/mailer.test.js` sin mandar ningún mail).
+- **Headers (helmet).** `securityHeaders()` va primero en `server.js`, antes
+  del gate: también llevan los headers los 401 y las redirecciones al
+  login. La CSP es explícita:
+
+  | Directiva | Valor |
+  |---|---|
+  | `default-src`, `script-src`, `connect-src` | `'self'` |
+  | `script-src-attr`, `object-src`, `frame-ancestors` | `'none'` |
+  | `style-src` | `'self'` y `https://fonts.googleapis.com` |
+  | `font-src` | `'self'` y `https://fonts.gstatic.com` |
+  | `img-src` | `'self'`, `data:` y los mosaicos del mapa (`mt0` a `mt3.google.com`, `*.tile.openstreetmap.org`) |
+  | `base-uri`, `form-action` | `'self'` |
+
+  Las fotos de los posteos y de los análisis se sirven desde la app
+  (`/api/monitoring/posts/:id/image`, `/api/analisis/:id/image`): el link
+  original nunca llega al navegador, así que `img-src` no abre todo
+  `https:`. Sin `'unsafe-inline'` ni `'unsafe-eval'`. Con `APP_BASE_URL`
+  en https se suman HSTS (180 días, sin subdominios) y
+  `upgrade-insecure-requests`. `Referrer-Policy` es
+  `strict-origin-when-cross-origin` y no el `no-referrer` que trae helmet:
+  los mosaicos de OpenStreetMap (el respaldo del mapa) rechazan pedidos
+  sin Referer. `login-verify.html` pone el suyo, `no-referrer`, porque
+  lleva el token. `X-Frame-Options: DENY`.
+- **Nada de afuera ni en línea.** Tabulator 6.3.0 y Leaflet 1.9.4 están en
+  `public/vendor/`, copiados del paquete de npm (js, css, las imágenes de
+  Leaflet y sus licencias, byte a byte: `.gitattributes` los deja sin
+  conversión de finales de línea). Ningún HTML tiene `<script>` en línea
+  (`window.SL_PLATFORM` sale de `public/js/platform.js`), `style="…"` ni
+  `on…=`, y ningún js arma `style="…"` en HTML como texto: los estilos
+  dinámicos van por `element.style` (los pines y el pop-up del Mapa, por
+  ejemplo). El test lo verifica sobre los archivos reales.
+- **Errores.** `errorHandler` es el último middleware: al cliente,
+  `{ error: 'Error interno.' }` (o `'Pedido inválido.'` en un 4xx que arma
+  Express, como un JSON mal formado), nunca un stack; al log, el error
+  completo (el 4xx en una línea, sin el cuerpo del pedido). Una promesa
+  rechazada o una excepción sin manejar se loguean y el proceso termina con
+  1 (`installProcessHandlers`): lo levanta Railway o
+  `scripts/iniciar-con-reinicio.bat`. Node 22 ya terminaba en los dos
+  casos; lo nuevo es el log. Express 4 no le pasa al manejador los rechazos
+  de una ruta `async`: esos van por `unhandledRejection`.
+- **Mensajes.** Ningún mensaje al navegador nombra una variable del `.env`
+  ni el `.env`: dicen "Falta configuración del servidor" o qué servicio
+  rechazó la clave. El nombre de la variable queda en el log.
+- **Producción:** `NODE_ENV=production` (ver `.env.example`).
+
 ---
 
 ## 🛟 Manejo de errores
@@ -2082,7 +2141,9 @@ cacheada, así que no agrega tráfico al caso normal.
 La app muestra mensajes claros cuando:
 
 - El link no es una publicación válida de Instagram.
-- Falta o es inválida alguna clave (Apify o el proveedor LLM activo).
+- Falta o es inválida alguna clave (Apify o el proveedor LLM activo): la
+  pantalla dice "Falta configuración del servidor" o qué servicio rechazó
+  la clave, sin nombrar la variable; cuál es, lo dice el log.
 - Apify falla, se demora demasiado o alcanzó su límite de uso (incluido el
   402 por runs simultáneos, que primero se reintenta una vez; ver "Runs
   simultáneos de Apify" más arriba).

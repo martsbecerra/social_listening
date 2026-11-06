@@ -511,6 +511,39 @@ diría "publicaciones hoy" de ayer); si no, 503 genérico.
 Test: `test/resumenPublico.test.js`. Un campo nuevo acá tiene que ser una
 cantidad o un nombre de tema, y su test lo tiene que fijar.
 
+## Seguridad HTTP
+
+Desde noviembre 2026 (rama `hardening-http`; README, "Seguridad HTTP"), en
+`src/httpSecurity.js`, con `test/securityHeaders.test.js`:
+
+- `securityHeaders()` (helmet) va PRIMERO en `server.js`, antes del gate.
+  CSP explícita: todo `'self'`, salvo los estilos y las fuentes de Google
+  Fonts y, en `img-src`, `data:` y los mosaicos del mapa (Google mt0-mt3,
+  OpenStreetMap); `script-src-attr`, `object-src` y `frame-ancestors`
+  `'none'`; sin `'unsafe-inline'` ni `'unsafe-eval'`. Las fotos se sirven
+  desde la app: `img-src` no abre `https:`. HSTS (180 días) y
+  `upgrade-insecure-requests` solo con `APP_BASE_URL` https.
+  `Referrer-Policy: strict-origin-when-cross-origin` (OpenStreetMap pide
+  Referer). Un host nuevo de afuera es un cambio de la CSP y de su test.
+- `errorHandler`, el último middleware: al cliente `{ error: 'Error
+  interno.' }` (`'Pedido inválido.'` en un 4xx de Express), nunca un
+  stack; al log, el error completo. `installProcessHandlers()`:
+  `unhandledRejection` y `uncaughtException` se loguean y `exit(1)`.
+  Express 4 no pasa al manejador los rechazos de una ruta `async`.
+- En producción, `NODE_ENV=production` (`.env.example`). `npm run audit`
+  (`npm audit --omit=dev`) tiene que dar 0 vulnerabilidades.
+- **Los assets de terceros van en `public/vendor`, nunca desde un CDN**
+  (Tabulator 6.3.0 y Leaflet 1.9.4, copiados del paquete de npm, sin
+  conversión de finales de línea). Ni `<script>` en línea, ni `style="…"`,
+  ni `on…=` en los HTML, ni `style="…"` en HTML armado como texto en el
+  js (innerHTML, divIcon y pop-ups de Leaflet): los estilos dinámicos van
+  por `element.style`. El test lo mira sobre los archivos reales.
+- **Ningún mensaje al cliente nombra variables del `.env`** (ni el
+  `.env`): "Falta configuración del servidor" o qué servicio rechazó la
+  clave; el nombre de la variable, solo en el log (en el `message` del
+  error o una línea al armarlo). Vale para `userMessage`, el `error` de una
+  respuesta y lo que quede guardado para la pantalla.
+
 ## Diseño v4
 
 Desde octubre 2026 el frontend se rehace sobre UNA maqueta,
@@ -863,8 +896,9 @@ La D va sin SDD (decisión del dueño). De la E, en
     `localStorage` (la clave vieja `sl-login-cooldown-until` se borra). La
     respuesta es la misma esté o no habilitado el correo: la pantalla nunca
     dice "no autorizado". Errores, solo los reales, con textos propios:
-    correo mal escrito (se mira acá), 429, 503 (no muestra el del backend,
-    que nombra variables del `.env`) y sin conexión. Abajo: "Sin
+    correo mal escrito (se mira acá), 429, 503 (con texto propio; el del
+    backend es el genérico "Falta configuración del servidor.") y sin
+    conexión. Abajo: "Sin
     contraseña · La sesión dura 7 días · Solo correos habilitados".
   - **login-verify** (`public/js/loginVerify.js`, prefijo `verify`; sin
     script en línea): "Último paso"; entra recién con el clic en "Entrar"
