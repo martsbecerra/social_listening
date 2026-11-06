@@ -64,10 +64,13 @@ function getChatCompletionsUrl() {
 function requireApiKey() {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
+    // El nombre de la variable, solo en el log: el userMessage va al navegador.
     const e = new Error('OPENROUTER_API_KEY no configurada');
+    console.error(
+      '[llm] Falta OPENROUTER_API_KEY en el .env (https://openrouter.ai/settings/keys) o usá LLM_PROVIDER=anthropic.'
+    );
     e.isApiFailure = true;
-    e.userMessage =
-      'Falta OPENROUTER_API_KEY en .env. Obtené una en https://openrouter.ai/settings/keys o usá LLM_PROVIDER=anthropic.';
+    e.userMessage = 'Falta configuración del servidor para el servicio de análisis.';
     throw e;
   }
   return apiKey;
@@ -317,16 +320,22 @@ function mapOpenRouterHttpError(status, data) {
   e.isApiFailure = true;
   e.status = status;
 
+  // Ningún userMessage nombra una variable del .env (va al navegador): el
+  // nombre de la variable queda en el log.
   if (status === 401) {
-    e.userMessage = 'La clave de OpenRouter (OPENROUTER_API_KEY) es inválida. Revisá el archivo .env.';
+    console.error('[llm] OpenRouter rechazó la clave: revisá OPENROUTER_API_KEY en el .env.');
+    e.userMessage = 'La clave de OpenRouter del servidor es inválida. Falta configuración del servidor.';
   } else if (status === 402 || /insufficient|credits|balance/i.test(msg)) {
     e.userMessage =
       'Tu cuenta de OpenRouter no tiene crédito suficiente. Cargá saldo en https://openrouter.ai/settings/credits e intentá de nuevo.';
   } else if (status === 429) {
     e.userMessage = 'Se alcanzó el límite de uso del modelo por el momento. Esperá unos minutos e intentá de nuevo.';
   } else if (/structured|json_schema|response_format/i.test(msg)) {
+    console.error(
+      '[llm] El modelo de OPENROUTER_MODEL no soporta salida JSON con schema: elegí uno que liste "structured_outputs" en https://openrouter.ai/models.'
+    );
     e.userMessage =
-      'El modelo configurado en OPENROUTER_MODEL no soporta salida JSON con schema. Verificá en https://openrouter.ai/models que liste "structured_outputs".';
+      'El modelo configurado en el servidor no soporta salida JSON con schema. Falta configuración del servidor.';
   } else {
     e.userMessage = 'El servicio de análisis (OpenRouter) falló. Intentá de nuevo en unos minutos.';
   }

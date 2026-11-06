@@ -93,6 +93,12 @@ const {
   RESEND_COOLDOWN_MS,
 } = require('./src/auth/rateLimit');
 const { createAuthGate } = require('./src/auth/gate');
+const { securityHeaders, errorHandler, installProcessHandlers } = require('./src/httpSecurity');
+
+// Una promesa rechazada o una excepción sin manejar: log y exit(1), y quien
+// supervisa el proceso (Railway, scripts/iniciar-con-reinicio.bat) lo
+// levanta de nuevo. Node 22 ya terminaba en los dos casos; ahora queda el log.
+installProcessHandlers();
 
 const app = express();
 // Sin el encabezado "X-Powered-By: Express": no anunciar qué corre atrás.
@@ -120,6 +126,11 @@ if (
 ) {
   app.set('trust proxy', 1);
 }
+
+// Headers de seguridad (helmet, CSP, HSTS con https): lo primero, antes del
+// gate, así también los llevan los 401 y las redirecciones al login. Ver
+// src/httpSecurity.js.
+app.use(securityHeaders());
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
@@ -188,11 +199,10 @@ app.post('/api/auth/magic-link', async (req, res) => {
     return res.status(429).json({ error: 'Demasiados intentos. Probá en unos minutos.' });
   }
 
+  // Las variables que faltan, solo en el log: al cliente, el genérico.
   if (!isAuthConfigured()) {
     logAuth('config incompleta', { falta: 'SESSION_SECRET o APP_BASE_URL' });
-    return res.status(503).json({
-      error: 'El login no está configurado. Revisá SESSION_SECRET y APP_BASE_URL.',
-    });
+    return res.status(503).json({ error: 'Falta configuración del servidor.' });
   }
 
   if (!email || !isEmailAllowed(email)) {
@@ -667,6 +677,13 @@ app.patch('/api/reclamos/:id', (req, res) => {
   db.updateEstado(req.params.id, estado);
   res.json({ ok: true });
 });
+
+// Manejador de errores: DESPUÉS de todas las rutas. Al cliente, solo
+// { error: 'Error interno.' } (o 'Pedido inválido.' en un 4xx de Express,
+// como un JSON mal formado), nunca un stack; el error completo, al log. Ojo:
+// Express 4 no le pasa los rechazos de una ruta async; esos terminan en
+// unhandledRejection (installProcessHandlers, arriba). Ver src/httpSecurity.js.
+app.use(errorHandler);
 
 // --------------------------------------------------------------------------
 // Arrancamos el servidor.

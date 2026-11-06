@@ -294,7 +294,7 @@ describe('adapter X', { concurrency: false }, () => {
       // Solo Instagram, sin credenciales: el error llega (botón de esa solapa).
       await assert.rejects(monitor.runMonitoringCycle({ plataformas: ['instagram'] }), (err) => {
         assert.equal(err.code, 'NOT_CONFIGURED');
-        assert.match(err.userMessage, /Falta configurar Instagram/);
+        assert.equal(err.userMessage, 'Falta configuración del servidor para Instagram.');
         return true;
       });
 
@@ -351,12 +351,12 @@ describe('adapter X', { concurrency: false }, () => {
       // de la clave, pero lo que trajeron las otras dos fuentes queda guardado
       // y el mensaje lo aclara.
       const llamadasBefore = classifierCalls.llamadas;
-      keywordFailure = typed('AUTH_INVALID', 'La clave de OpenRouter (OPENROUTER_API_KEY) es inválida. Revisá el archivo .env.');
+      keywordFailure = typed('AUTH_INVALID', 'La clave de OpenRouter del servidor es inválida. Falta configuración del servidor.');
       await assert.rejects(monitor.runMonitoringCycle({ plataformas: ['x'] }), (err) => {
         assert.equal(err.code, 'AUTH_INVALID');
         assert.equal(
           err.userMessage,
-          'La clave de OpenRouter (OPENROUTER_API_KEY) es inválida. Revisá el archivo .env. Igual se guardaron 2 posteo(s) nuevo(s) de las fuentes que sí respondieron.'
+          'La clave de OpenRouter del servidor es inválida. Falta configuración del servidor. Igual se guardaron 2 posteo(s) nuevo(s) de las fuentes que sí respondieron.'
         );
         return true;
       });

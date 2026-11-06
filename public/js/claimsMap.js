@@ -701,8 +701,8 @@ function popupHtml(group) {
       ? `<div class="claims-popup-desglose">${cuentas
           .map(
             ([cat, n]) =>
-              `<span class="claims-leyenda-item"><span class="claims-leyenda-punto" style="background:${colorDeCategoria(
-                cat
+              `<span class="claims-leyenda-item"><span class="claims-leyenda-punto" data-bg="${escapeHtml(
+                colorDeCategoria(cat)
               )}"></span>${escapeHtml(cat)} <span class="claims-leyenda-n">(${n})</span></span>`
           )
           .join('')}</div>`
@@ -722,9 +722,9 @@ function popupHtml(group) {
         ? `<div class="claims-popup-sub">${escapeHtml(r.subcategoria)}</div>`
         : '';
       return `<div class="claims-popup-item">
-        <div class="claims-popup-user">${user} · <span class="claims-tema-pill" style="background:${colorDeCategoria(
-          r.categoria
-        )};color:#fff">${escapeHtml(r.categoria)}</span></div>
+        <div class="claims-popup-user">${user} · <span class="claims-tema-pill" data-bg="${escapeHtml(
+          colorDeCategoria(r.categoria)
+        )}" data-fg="#fff">${escapeHtml(r.categoria)}</span></div>
         ${sub}
         <div class="claims-popup-comment">${comment}</div>
         ${linkVerPosteo(r.verPosteo)}
@@ -732,6 +732,32 @@ function popupHtml(group) {
     })
     .join('');
   return `<div class="claims-popup"><h2>${escapeHtml(group.address)}</h2>${subtitulo}${desglose}${avisoPrecision}${items}</div>`;
+}
+
+// La CSP (style-src sin 'unsafe-inline', ver src/httpSecurity.js) no aplica
+// un style="…" que llega en HTML armado como texto. Los colores del pop-up
+// van en data-bg / data-fg y se ponen por element.style, que sí vale.
+function popupElement(group) {
+  const box = document.createElement('div');
+  box.innerHTML = popupHtml(group);
+  for (const el of box.querySelectorAll('[data-bg]')) el.style.background = el.dataset.bg;
+  for (const el of box.querySelectorAll('[data-fg]')) el.style.color = el.dataset.fg;
+  return box.firstElementChild;
+}
+
+// El pin, como elemento (Leaflet acepta un HTMLElement en divIcon.html) y
+// con sus medidas y colores por element.style, por la misma razón.
+function pinElement(group, diameter, color, texto) {
+  const pin = document.createElement('div');
+  pin.className = `claims-pin p-${group.precision}`;
+  pin.style.width = `${diameter}px`;
+  pin.style.height = `${diameter}px`;
+  pin.style.setProperty('--pin', color);
+  pin.style.background = color;
+  pin.style.color = texto;
+  pin.style.fontSize = `${diameter >= 48 ? 15 : diameter >= 36 ? 13 : 11}px`;
+  pin.textContent = String(group.reclamos.length);
+  return pin;
 }
 
 function pinDiameter(count) {
@@ -804,14 +830,11 @@ function renderMarkers() {
       className: 'claims-pin-wrap',
       iconSize: [diameter, diameter],
       iconAnchor: [radius, radius],
-      html:
-        `<div class="claims-pin p-${group.precision}" ` +
-        `style="width:${diameter}px;height:${diameter}px;--pin:${color};background:${color};color:${texto};` +
-        `font-size:${diameter >= 48 ? 15 : diameter >= 36 ? 13 : 11}px">${count}</div>`,
+      html: pinElement(group, diameter, color, texto),
     });
     const marker = L.marker([group.lat, group.lng], { icon });
     marker.bindTooltip(tooltipHtml(group), { sticky: true, opacity: 0.95 });
-    marker.bindPopup(popupHtml(group), { maxWidth: 360, maxHeight: 340 });
+    marker.bindPopup(() => popupElement(group), { maxWidth: 360, maxHeight: 340 });
     claimsLayer.addLayer(marker);
   }
 

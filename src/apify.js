@@ -391,21 +391,25 @@ async function apifyRequest(url, { method = 'GET', body, timeoutMs = REQUEST_TIM
     // agotada viene como 403 con un texto fijo (isQuotaExceededError, abajo),
     // así que se mira antes que el status para no confundirla con una clave
     // inválida.
+    // Ningún userMessage nombra una variable del .env (va al navegador): el
+    // nombre de la variable queda en el log.
     if (isQuotaExceededError(e)) {
       e.code = 'QUOTA_EXCEEDED';
-      e.userMessage = 'Se agotó la cuota mensual de Apify (APIFY_API_TOKEN). Esperá al próximo período o ampliá el plan.';
+      e.userMessage = 'Se agotó la cuota mensual de Apify. Esperá al próximo período o ampliá el plan.';
     } else if (text.includes(CONCURRENT_RUNS_ERROR)) {
       // Demasiados runs a la vez para el plan: runActorSync lo reintenta una
-      // vez (ver arriba). Si el usuario llega a ver este error es porque el
-      // reintento también falló.
+      // vez (ver arriba, el aviso del log nombra APIFY_MAX_CONCURRENT). Si el
+      // usuario llega a ver este error es porque el reintento también falló.
       e.code = 'RATE_LIMITED';
       e.concurrentRunsLimit = true;
       e.userMessage =
         'Apify no acepta más runs simultáneos (límite del plan). Se reintentó una vez sin suerte: ' +
-        'esperá unos segundos y volvé a probar, o bajá APIFY_MAX_CONCURRENT en el .env.';
+        'esperá unos segundos y volvé a probar.';
     } else {
-      if (resp.status === 401 || resp.status === 403) e.code = 'AUTH_INVALID';
-      else if (resp.status === 429) e.code = 'RATE_LIMITED';
+      if (resp.status === 401 || resp.status === 403) {
+        e.code = 'AUTH_INVALID';
+        console.error(`[apify] Apify respondió ${resp.status}: revisá APIFY_API_TOKEN en el .env.`);
+      } else if (resp.status === 429) e.code = 'RATE_LIMITED';
       e.userMessage = mapApifyError(resp.status);
     }
     throw e;
@@ -419,7 +423,7 @@ async function apifyRequest(url, { method = 'GET', body, timeoutMs = REQUEST_TIM
  */
 function mapApifyError(status) {
   if (status === 401 || status === 403) {
-    return 'La clave de Apify (APIFY_API_TOKEN) es inválida o no tiene permisos. Revisá el archivo .env.';
+    return 'La clave de Apify del servidor es inválida o no tiene permisos. Falta configuración del servidor.';
   }
   if (status === 402) {
     return 'Apify rechazó la corrida por límites del plan (402). Revisá el uso y los límites en la consola de Apify.';

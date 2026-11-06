@@ -481,10 +481,14 @@ function addSearch(term, platformId) {
   const platform = getPlatform(platformId);
   if (typeof platform.scrapeSearch !== 'function') {
     const e = new Error(`La plataforma ${platformId} no busca por palabra clave`);
-    e.userMessage =
-      platformId === DEFAULT_PLATFORM_ID
-        ? 'El actor activo de Instagram no busca por palabra clave. Poné IG_ACTOR=apidojo en el .env y reiniciá el servidor.'
-        : `${platform.label || platformId} no tiene búsqueda por palabra clave aparte: usá las palabras clave.`;
+    if (platformId === DEFAULT_PLATFORM_ID) {
+      // El nombre de la variable, solo en el log: el userMessage va al navegador.
+      console.warn('[monitor] búsqueda rechazada: el actor activo de Instagram no busca por palabra clave; IG_ACTOR=apidojo en el .env (y reiniciar) lo habilita.');
+      e.userMessage =
+        'El actor de Instagram configurado no busca por palabra clave. Falta configuración del servidor.';
+    } else {
+      e.userMessage = `${platform.label || platformId} no tiene búsqueda por palabra clave aparte: usá las palabras clave.`;
+    }
     throw e;
   }
   const all = loadConfigAll();
@@ -912,9 +916,10 @@ async function enrichSearchResults(platform, platformId, postsById) {
 }
 
 function notConfiguredError(platform) {
-  const e = new Error(`La plataforma ${platform.id} no tiene credenciales configuradas`);
+  // El message (con el .env) va al log; el userMessage, al navegador.
+  const e = new Error(`La plataforma ${platform.id} no tiene credenciales configuradas (revisá sus claves en el .env)`);
   e.code = 'NOT_CONFIGURED';
-  e.userMessage = `Falta configurar ${platform.label || platform.id}: revisá las claves en el .env.`;
+  e.userMessage = `Falta configuración del servidor para ${platform.label || platform.id}.`;
   return e;
 }
 
