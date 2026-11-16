@@ -653,6 +653,7 @@ const server = app.listen(PORT, () => {
       resolveRefreshMode() === 'url' ? 'por URL con apify~instagram-scraper, 0,0023 usd por posteo' : 'por perfil con el actor del monitoreo'
     })`
   );
+  console.log(`   Tarifas de apidojo (APIDOJO_*, usd estimado hasta conciliar el real): ${require('./src/apifyCost').describeApidojoRates()}`);
   console.log(`   Alcance (REACH_*): ${describeReachRule(resolveReachRule())}`);
   console.log(
     `   Límites del análisis: COMMENTS_LIMIT (Apify, comentarios y respuestas)=${resolveCommentsLimit()}, COMMENTS_ANALYSIS_LIMIT (modelo)=${resolveMaxCommentsLimit()}, en tandas de ${BATCH_SIZE}; pide confirmación con más de ${confirmarDesde()} comentarios · X: X_COMMENTS_ANALYSIS_LIMIT=${resolveXMaxItems()}`

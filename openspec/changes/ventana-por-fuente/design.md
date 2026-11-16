@@ -106,8 +106,8 @@ minutos: sin la espera larga de esta rama se cortaría a los 300 s.
   `ok`. Al recuperar una fila pasa a `ok = 1` con sus resultados: todas las
   sumas de siempre (fallidas, resultados, usd) siguen valiendo sin cambios;
   la historia de que se cortó vive en `monitoring_run_sources`.
-- La conciliación del costo real toma también las filas con run conocido
-  que no terminaron bien (`esperando`, `error` con run), hasta 30 días.
+- La conciliación del costo real no cambia: ya toma toda fila con run
+  conocido y sin costo real. Alcanza con que la fila cortada tenga su run.
 
 ### 3. El id del run nunca se pierde (`src/apify.js`)
 

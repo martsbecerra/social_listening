@@ -19,10 +19,10 @@ recuperado de las corridas cortadas) quedó afuera por decisión del dueño.
 
 ## Phase 3: costo medido y `apify_calls` con estado
 
-- [ ] 3.1 `apifyCost.js`: búsqueda sin posteos incluidos; `maxUsdForSearch`; `describeInput` con `maxItems` y `until` (REQ-VPF-03)
-- [ ] 3.2 `apify_calls`: columnas `estado`, `max_items`, `until`; `openApifyCall` / `closeApifyCall`; conciliación de filas con run conocido que no terminaron bien
-- [ ] 3.3 `server.js`: línea de arranque con las tarifas de apidojo en uso
-- [ ] 3.4 Tests: `apifyCosts.test.js`
+- [x] 3.1 `apifyCost.js`: búsqueda sin posteos incluidos; `maxUsdForSearch`; `describeInput` con `maxItems` y `until` (REQ-VPF-03)
+- [x] 3.2 `apify_calls`: columnas `estado`, `max_items`, `until`; `openApifyCall` / `closeApifyCall`; conciliación de filas con run conocido que no terminaron bien
+- [x] 3.3 `server.js`: línea de arranque con las tarifas de apidojo en uso
+- [x] 3.4 Tests: `apifyCosts.test.js`
 
 ## Phase 4: el id del run nunca se pierde
 

@@ -8,8 +8,11 @@
 //     tarifa por 1000 que depende del plan (APIFY_PLAN, APIFY_RATE_*).
 //   - apidojo/instagram-scraper-api (el monitoreo por defecto): cobra POR
 //     CONSULTA con posteos incluidos (perfil 0,005 usd con 10; hashtag 0,015
-//     con 30; búsqueda 0,015 con 20; posteo suelto 0,005) más 0,0005 usd
-//     por cada posteo de más (APIDOJO_RATE_*, APIDOJO_INCLUDED_*). Además,
+//     con 30; posteo suelto 0,005) más 0,0005 usd por cada posteo de más
+//     (APIDOJO_RATE_*, APIDOJO_INCLUDED_*). La búsqueda es 0,015 SIN posteos
+//     incluidos: cada resultado se cobra desde el primero (medido en
+//     noviembre 2026 sobre 388 búsquedas conciliadas: con los 20 "incluidos"
+//     de la pestaña de precios el estimado daba 6 % menos que lo real). Además,
 //     como estas llamadas van por el flujo asincrónico (src/apify.js), la
 //     fila guarda el id del run y, minutos después (reconcileRealCosts),
 //     lo que Apify cobró de verdad (usd_real).
@@ -52,7 +55,7 @@ const APIDOJO_DEFAULTS = {
   item: 0.0005,
   includedUser: 10,
   includedHashtag: 30,
-  includedSearch: 20,
+  includedSearch: 0,
 };
 const QUERY_TYPES = ['user', 'hashtag', 'search', 'post', 'details'];
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -92,6 +95,18 @@ function getApidojoRates() {
       search: parseCount(process.env.APIDOJO_INCLUDED_SEARCH, APIDOJO_DEFAULTS.includedSearch),
     },
   };
+}
+
+/**
+ * Las tarifas de apidojo en uso, en una línea, para el arranque del server:
+ * deja a la vista si el .env pisa algún valor por defecto.
+ */
+function describeApidojoRates(rates = getApidojoRates()) {
+  const usd = (n) => String(n).replace('.', ',');
+  return (
+    `perfil ${usd(rates.user)} con ${rates.included.user} posteos incluidos · hashtag ${usd(rates.hashtag)} con ${rates.included.hashtag} · ` +
+    `búsqueda ${usd(rates.search)} con ${rates.included.search} · posteo de más ${usd(rates.item)}`
+  );
 }
 
 let warnedPlan = null;
@@ -141,6 +156,15 @@ function usdForApidojo(queryType, items, rates = getApidojoRates()) {
   if (type === 'details') return rates.user;
   const included = rates.included[type] ?? 0;
   return rates[type] + Math.max(0, count - included) * rates.item;
+}
+
+/**
+ * Lo máximo que puede costar una búsqueda de apidojo con ese tope
+ * (`maxItems`): la consulta más todos los posteos por encima de los
+ * incluidos. Es el techo para decidir si entra una consulta más.
+ */
+function maxUsdForSearch(maxItems, rates = getApidojoRates()) {
+  return usdForApidojo('search', Math.max(0, Math.floor(Number(maxItems)) || 0), rates);
 }
 
 /** true para los actores que cobran por resultado: el oficial y el de comentarios. */
@@ -194,9 +218,45 @@ function describeInput(input) {
   else if (typeof i.username === 'string') target = i.username;
   else if (Array.isArray(i.usernames) && i.usernames.length > 0) target = i.usernames.join(', ');
   else if (typeof i.search === 'string') target = i.search;
+  const maxItems = Number(i.maxItems);
   return {
     target: target ? String(target).slice(0, 300) : null,
     resultsType: i.resultsType ? String(i.resultsType) : null,
+    // Lo que se le pidió a apidojo: el tope de la consulta y desde qué día.
+    maxItems: i.maxItems !== undefined && i.maxItems !== null && Number.isFinite(maxItems) && maxItems > 0 ? Math.floor(maxItems) : null,
+    until: typeof i.until === 'string' && i.until ? i.until : null,
+  };
+}
+
+/** La fila de apify_calls de una llamada (ver recordApifyCall). */
+function rowFor(call) {
+  const { target, resultsType, maxItems, until } = describeInput(call.input);
+  const items = Number(call.items) || 0;
+  const actor = call.actor || OFFICIAL_ACTOR;
+  const queryType = call.queryType || queryTypeFor(actor, call.input);
+  return {
+    at: call.at,
+    runId: call.runId ?? null,
+    phase: call.phase || 'desconocida',
+    plataforma: call.plataforma || 'instagram',
+    actor,
+    queryType,
+    target,
+    resultsType,
+    items,
+    ok: Boolean(call.ok),
+    error: call.error ?? null,
+    durationMs: call.durationMs,
+    // Una llamada fallida no cobró la consulta (o no sabemos): usd 0; si
+    // igual hubo run, usd_real dice la verdad. Con resultados (un run que
+    // Apify cortó y dejó algo) se estima por lo que trajo.
+    usd: call.ok || items > 0 ? usdForCall({ actor, queryType, items }) : 0,
+    usdReal: call.usdReal ?? null,
+    apifyRunId: call.apifyRunId ?? null,
+    analisisId: call.analisisId ?? null,
+    estado: call.estado ?? (call.ok ? 'ok' : 'error'),
+    maxItems,
+    until,
   };
 }
 
@@ -205,36 +265,51 @@ function describeInput(input) {
  * registrar se loguea y la llamada real sigue su curso.
  * @param {{ runId?: number|null, phase?: string, plataforma?: string, actor?: string, input?: object,
  *   items?: number, ok: boolean, error?: string|null, durationMs?: number, at?: string,
- *   queryType?: string|null, usdReal?: number|null, apifyRunId?: string|null }} call
+ *   queryType?: string|null, usdReal?: number|null, apifyRunId?: string|null, estado?: string|null }} call
+ *   estado: cómo quedó la llamada (ver la columna en src/db.js); sin él, ok o error.
+ * @returns {number|null} id de la fila, o null si no se pudo registrar
  */
 function recordApifyCall(call) {
   try {
-    const { target, resultsType } = describeInput(call.input);
-    const items = Number(call.items) || 0;
-    const actor = call.actor || OFFICIAL_ACTOR;
-    const queryType = call.queryType || queryTypeFor(actor, call.input);
-    db.insertApifyCall({
-      at: call.at,
-      runId: call.runId ?? null,
-      phase: call.phase || 'desconocida',
-      plataforma: call.plataforma || 'instagram',
-      actor,
-      queryType,
-      target,
-      resultsType,
-      items,
-      ok: Boolean(call.ok),
-      error: call.error ?? null,
-      durationMs: call.durationMs,
-      // Una llamada fallida no cobró la consulta (o no sabemos): usd 0; si
-      // igual hubo run, usd_real dice la verdad.
-      usd: call.ok ? usdForCall({ actor, queryType, items }) : 0,
-      usdReal: call.usdReal ?? null,
-      apifyRunId: call.apifyRunId ?? null,
-      analisisId: call.analisisId ?? null,
-    });
+    return db.insertApifyCall(rowFor(call));
   } catch (err) {
     console.error('[costo] No se pudo registrar la llamada a Apify:', err.message);
+    return null;
+  }
+}
+
+/**
+ * Abre la fila de una llamada cuyo run YA existe en Apify y todavía no
+ * terminó (flujo asincrónico de src/apify.js): queda `en_curso` con el id
+ * del run. Si el proceso se cae antes de cerrarla, el gasto igual quedó
+ * anotado y la conciliación lo encuentra. NUNCA tira.
+ * @returns {number|null} id de la fila para closeApifyCall
+ */
+function openApifyCall(call) {
+  return recordApifyCall({ ...call, items: 0, ok: false, error: null, estado: 'en_curso' });
+}
+
+/**
+ * Cierra una fila abierta con openApifyCall: resultados, cómo terminó y el
+ * usd estimado. NUNCA tira. Sin id (no se pudo abrir) registra una fila
+ * nueva, para no perder la llamada.
+ */
+function closeApifyCall(id, call) {
+  try {
+    if (id == null) return recordApifyCall(call);
+    const row = rowFor(call);
+    const changed = db.closeApifyCall(id, {
+      items: row.items,
+      ok: row.ok,
+      error: row.error,
+      durationMs: row.durationMs,
+      usd: row.usd,
+      estado: row.estado,
+    });
+    return changed > 0 ? id : recordApifyCall(call);
+  } catch (err) {
+    console.error('[costo] No se pudo cerrar la llamada a Apify:', err.message);
+    return null;
   }
 }
 
@@ -410,6 +485,7 @@ module.exports = {
   QUERY_TYPES,
   getRates,
   getApidojoRates,
+  describeApidojoRates,
   getActivePlan,
   isOfficialActor,
   actorLabel,
@@ -417,9 +493,12 @@ module.exports = {
   usdByPlan,
   usdForApidojo,
   usdForCall,
+  maxUsdForSearch,
   queryTypeFor,
   describeInput,
   recordApifyCall,
+  openApifyCall,
+  closeApifyCall,
   reconcileRealCosts,
   summarizeCosts,
   formatCycleCostLine,

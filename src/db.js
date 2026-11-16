@@ -791,6 +791,16 @@ for (const [col, type] of [['actor', 'TEXT'], ['query_type', 'TEXT'], ['usd_real
 // así el gasto de Apify de cada análisis es la suma de sus filas. null en
 // todo lo demás (monitoreo, validación, scripts).
 if (!apifyCallsColumns.includes('analisis_id')) db.exec('ALTER TABLE apify_calls ADD COLUMN analisis_id INTEGER');
+// Desde noviembre 2026 (openspec/changes/ventana-por-fuente): cómo quedó la
+// llamada (`estado`: en_curso | ok | error | esperando | parcial |
+// recuperada | perdida; NULL en las filas anteriores, que se leen por `ok`),
+// y lo que se le pidió al actor (`max_items`, `until`). `esperando`: la app
+// dejó de esperar el run, que sigue en Apify con su id guardado, y alguien
+// lo va a levantar; al levantarlo la fila pasa a `recuperada` con ok = 1 y
+// sus resultados, así las sumas de siempre siguen valiendo.
+for (const [col, type] of [['estado', 'TEXT'], ['max_items', 'INTEGER'], ['until', 'TEXT']]) {
+  if (!apifyCallsColumns.includes(col)) db.exec(`ALTER TABLE apify_calls ADD COLUMN ${col} ${type}`);
+}
 db.exec('CREATE INDEX IF NOT EXISTS idx_apify_calls_analisis_id ON apify_calls(analisis_id)');
 // Una fila por ciclo (cron o "Actualizar ahora"); los totales se completan
 // al terminar sumando las filas de apify_calls con ese run_id.
@@ -816,9 +826,16 @@ if (!monitoringRunsColumns.includes('new_candidates')) {
   db.exec('ALTER TABLE monitoring_runs ADD COLUMN new_candidates INTEGER');
 }
 const insertApifyCallStmt = db.prepare(`
-  INSERT INTO apify_calls (at, run_id, phase, plataforma, actor, query_type, target, results_type, items, ok, error, duration_ms, usd, usd_real, apify_run_id, analisis_id)
-  VALUES (@at, @runId, @phase, @plataforma, @actor, @queryType, @target, @resultsType, @items, @ok, @error, @durationMs, @usd, @usdReal, @apifyRunId, @analisisId)
+  INSERT INTO apify_calls (at, run_id, phase, plataforma, actor, query_type, target, results_type, items, ok, error, duration_ms, usd, usd_real, apify_run_id, analisis_id, estado, max_items, until)
+  VALUES (@at, @runId, @phase, @plataforma, @actor, @queryType, @target, @resultsType, @items, @ok, @error, @durationMs, @usd, @usdReal, @apifyRunId, @analisisId, @estado, @maxItems, @until)
 `);
+// Cierre de una fila abierta al arrancar el run (apifyCost.openApifyCall).
+const closeApifyCallStmt = db.prepare(`
+  UPDATE apify_calls
+  SET items = @items, ok = @ok, error = @error, duration_ms = @durationMs, usd = @usd, estado = @estado
+  WHERE id = @id
+`);
+const getApifyCallStmt = db.prepare('SELECT * FROM apify_calls WHERE id = ?');
 // Las sumas van por fase Y por actor: el actor oficial se valúa por
 // resultados (tres tarifas), apidojo por consulta. usdBest = lo que cobró
 // Apify si se sabe (usd_real), si no el estimado (usd).
@@ -2171,8 +2188,33 @@ function insertApifyCall(row) {
     usdReal: row.usdReal == null || !Number.isFinite(Number(row.usdReal)) ? null : Number(row.usdReal),
     apifyRunId: row.apifyRunId ?? null,
     analisisId: row.analisisId ?? null,
+    estado: row.estado ?? null,
+    maxItems: row.maxItems == null || !Number.isFinite(Number(row.maxItems)) ? null : Math.floor(Number(row.maxItems)),
+    until: row.until ?? null,
   });
   return Number(result.lastInsertRowid);
+}
+
+/**
+ * Cierra una fila de apify_calls que se abrió al arrancar el run: lo que
+ * trajo, cómo terminó y el usd estimado. No toca el run, la fase ni usd_real.
+ * @returns {number} filas cambiadas (0 si el id no existe)
+ */
+function closeApifyCall(id, { items = 0, ok = false, error = null, durationMs = null, usd = 0, estado = null } = {}) {
+  return closeApifyCallStmt.run({
+    id,
+    items: Number(items) || 0,
+    ok: ok ? 1 : 0,
+    error: error ?? null,
+    durationMs: durationMs == null ? null : Math.round(durationMs),
+    usd: Number(usd) || 0,
+    estado: estado ?? null,
+  }).changes;
+}
+
+/** Una fila de apify_calls tal cual, o null. Para los tests y los scripts. */
+function getApifyCall(id) {
+  return getApifyCallStmt.get(id) || null;
 }
 
 /** Abre la fila del ciclo en monitoring_runs. @returns {number} id (el run_id de sus apify_calls). */
@@ -3346,6 +3388,8 @@ module.exports = {
   addSearchSeenTerms,
   purgeSearchSeen,
   insertApifyCall,
+  closeApifyCall,
+  getApifyCall,
   startMonitoringRun,
   finishMonitoringRun,
   getMonitoringRun,
