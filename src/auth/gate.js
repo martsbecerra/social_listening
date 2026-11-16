@@ -40,6 +40,20 @@ const CONFIRMAR_BAJA_MS = 300;
 const SIN_VERIFICAR_BODY = Object.freeze({ error: 'No se pudo verificar el acceso. Probá de nuevo en unos segundos.' });
 const OTRO_SITIO_BODY = Object.freeze({ error: 'Pedido rechazado: no salió de esta app.' });
 
+// Las páginas a las que el login puede volver (?volver=). La cookie es
+// sameSite strict: un link a /instagram.html#analisis-57 abierto desde Gmail
+// o WhatsApp llega sin ella aunque haya sesión, y el gate lo manda al login.
+// Con ?volver=, el login (public/js/login.js, con la misma lista) confirma
+// la sesión con /api/auth/me y vuelve a esa página; el navegador conserva el
+// # en las redirecciones. Solo estas: nunca un camino escrito por otro
+// (revisión de noviembre 2026).
+const PAGINAS_VOLVER = new Set(['/dashboard.html', '/instagram.html', '/x.html']);
+
+function destinoVolver(req) {
+  const volver = req.query ? req.query.volver : null;
+  return typeof volver === 'string' && PAGINAS_VOLVER.has(volver) ? volver : null;
+}
+
 /**
  * ¿El pedido salió de una página de esta app? Para todo lo que no es GET,
  * HEAD u OPTIONS bajo /api (revisión de noviembre 2026): la cookie es
@@ -154,7 +168,7 @@ function decidir(req, res, next, session, cookieLimpia) {
   };
 
   if (req.method === 'GET' && (urlPath === '/' || urlPath === '/index.html') && session) {
-    return res.redirect('/dashboard.html');
+    return res.redirect(destinoVolver(req) || '/dashboard.html');
   }
 
   if (PUBLIC_EXACT.has(urlPath)) return next();
@@ -177,7 +191,7 @@ function decidir(req, res, next, session, cookieLimpia) {
   if (isPagePath(canonical)) {
     if (!session) {
       limpiarCookieVieja();
-      return res.redirect('/');
+      return res.redirect(PAGINAS_VOLVER.has(canonical) ? `/?volver=${encodeURIComponent(canonical)}` : '/');
     }
     return next();
   }

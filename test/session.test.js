@@ -319,7 +319,7 @@ describe('allowlist: un correo que sale pierde el acceso', { concurrency: false 
     // Una página tampoco: al login.
     const pag = await pedir('GET', '/dashboard.html', { cookie: b.cookie });
     assert.equal(pag.status, 302);
-    assert.equal(pag.location, '/');
+    assert.equal(pag.location, '/?volver=%2Fdashboard.html');
   });
 
   test('una lectura que no lo ve (el archivo a medio guardar) no revoca: se confirma con otra', async () => {
