@@ -122,7 +122,8 @@ minutos: sin la espera larga de esta rama se cortaría a los 300 s.
   aborta el run.
 - Un run que termina `FAILED`, `ABORTED` o `TIMED-OUT` entrega lo que dejó en
   el dataset (`err.partialItems`).
-- El dataset se baja paginado (1000 por página) y con el mismo reintento.
+- El dataset se baja con el mismo reintento; si igual no se puede, el run
+  terminado queda pendiente como uno que no se llegó a esperar.
 - El `POST` nunca se reintenta por su cuenta (crearía otro run pago); el
   único reintento es el del 402 por runs simultáneos, que no creó nada.
 - `withTimeout` queda como guarda contra un cuelgue, 30 s después del plazo,

@@ -144,7 +144,7 @@ código anterior la usa como siempre.
 ## Dependencies
 
 Ninguna librería nueva. La API de Apify: `POST /acts/{id}/runs` (con
-`timeout`), `GET /actor-runs/{id}`, `GET /datasets/{id}/items` (paginado).
+`timeout`), `GET /actor-runs/{id}`, `GET /datasets/{id}/items`.
 
 ## Success Criteria
 

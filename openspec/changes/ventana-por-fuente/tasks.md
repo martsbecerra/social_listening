@@ -26,9 +26,9 @@ recuperado de las corridas cortadas) quedó afuera por decisión del dueño.
 
 ## Phase 4: el id del run nunca se pierde
 
-- [ ] 4.1 `apify.js`: arranque sin espera, fila abierta al volver el run, `onRunStarted`, plazo propio, reintentos del seguimiento, `TIMEOUT` con `runPending`, parciales, dataset paginado (REQ-VPF-04)
-- [ ] 4.2 `fetchRun`, `fetchDatasetItems`
-- [ ] 4.3 Tests: `apifyCorridaCortada.test.js`; `test/helpers/apifySimulado.js` ampliado
+- [x] 4.1 `apify.js`: arranque sin espera, fila abierta al volver el run, `onRunStarted`, plazo propio, reintentos del seguimiento, `TIMEOUT` con `runPending`, parciales, dataset con reintento (REQ-VPF-04)
+- [x] 4.2 `fetchRun`, `fetchDatasetItems`
+- [x] 4.3 Tests: `apifyCorridaCortada.test.js`; `apifyCosts.test.js` adaptado
 
 ## Phase 5: registro por fuente y estado de la corrida
 

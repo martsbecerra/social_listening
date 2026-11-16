@@ -211,7 +211,8 @@ describe('costo de Apify', { concurrency: false }, () => {
     const runObject = (status, extra = {}) => ({ data: { id: 'run-1', status, defaultDatasetId: 'ds-1', ...extra } });
     global.fetch = async (url, options = {}) => {
       requests.push({ method: options.method || 'GET', url });
-      if (/\/acts\/apidojo~instagram-scraper-api\/runs\?token=token-de-test&waitForFinish=60$/.test(url)) {
+      // El arranque no espera (sin waitForFinish): vuelve enseguida con el id del run.
+      if (/\/acts\/apidojo~instagram-scraper-api\/runs\?token=token-de-test$/.test(url)) {
         assert.equal(options.method, 'POST');
         assert.deepEqual(JSON.parse(options.body), { startUrls: ['https://www.instagram.com/clavescom/'], maxItems: 15 });
         if (firstPostStatus === 402) {
@@ -234,7 +235,7 @@ describe('costo de Apify', { concurrency: false }, () => {
       assert.deepEqual(
         requests.map((r) => `${r.method} ${r.url.replace(/token=[^&]+/, 'token=***')}`),
         [
-          'POST https://api.apify.com/v2/acts/apidojo~instagram-scraper-api/runs?token=***&waitForFinish=60',
+          'POST https://api.apify.com/v2/acts/apidojo~instagram-scraper-api/runs?token=***',
           'GET https://api.apify.com/v2/actor-runs/run-1?token=***&waitForFinish=60',
           'GET https://api.apify.com/v2/datasets/ds-1/items?token=***',
         ]
@@ -253,19 +254,24 @@ describe('costo de Apify', { concurrency: false }, () => {
       assert.equal(row.apify_run_id, 'run-1');
 
       // El run termina en FAILED: rechaza con el estado y el mensaje de Apify; la fila queda fallida con el run id.
+      // Lo que alcanzó a dejar en el dataset se lee igual (se cobró): viaja en el error y la fila lo cuenta.
       requests.length = 0;
       statusAfterWait = 'FAILED';
       await assert.rejects(runActorSync(input, { actorId: APIDOJO, plataforma: 'instagram' }), (err) => {
         assert.match(err.message, /run run-1 de Apify terminó en FAILED: Actor crashed/);
         assert.match(err.userMessage, /terminó en FAILED/);
+        assert.equal(err.runStatus, 'FAILED');
+        assert.equal(err.partialItems.length, 12);
         return true;
       });
       row = lastCall();
       assert.equal(row.ok, 0);
-      assert.equal(row.usd, 0);
+      assert.equal(row.estado, 'error', 'quien llamó no dijo que usa lo parcial');
+      assert.equal(row.items, 12);
+      near(row.usd, 0.005 + 2 * 0.0005, 'lo que dejó se cobró');
       assert.equal(row.usd_real, null);
       assert.equal(row.apify_run_id, 'run-1');
-      assert.equal(requests.length, 2, 'sin lectura de items');
+      assert.equal(requests.length, 3, 'arranque, seguimiento y lo que dejó el dataset');
       statusAfterWait = 'SUCCEEDED';
 
       // 402 por runs simultáneos al arrancar el run: mismo reintento único que el sincrónico.
