@@ -408,6 +408,39 @@ describe('escrituras de otra página: 403 aunque haya sesión de operador', { co
     assert.equal(llegadas.length, 4);
   });
 
+  test('detrás de un proxy https (Railway): con Sec-Fetch-Site no importa el Host ni APP_BASE_URL', async () => {
+    const original = process.env.APP_BASE_URL;
+    const publico = 'https://escucha.ejemplo.gob.ar';
+    const run = (headers) => pedir('POST', '/api/monitoring/run-now', { cookie: OPERADOR, headers });
+    try {
+      // Un navegador actual manda Sec-Fetch-Site: same-origin. Pasa aunque el
+      // Host que ve la app sea el interno y APP_BASE_URL esté mal escrita.
+      process.env.APP_BASE_URL = 'https://otra-direccion.ejemplo';
+      assert.equal((await run({ Host: 'app-interna:8080', Origin: publico, 'Sec-Fetch-Site': 'same-origin' })).status, 200);
+      // Sin Sec-Fetch-Site (un navegador viejo): Origin contra el Host...
+      assert.equal((await run({ Host: 'escucha.ejemplo.gob.ar', Origin: publico })).status, 200);
+      // ...y si el proxy cambió el Host, contra APP_BASE_URL: tiene que ser
+      // exactamente la dirección pública (esquema y host).
+      assert.equal((await run({ Host: 'app-interna:8080', Origin: publico })).status, 403);
+      process.env.APP_BASE_URL = publico;
+      assert.equal((await run({ Host: 'app-interna:8080', Origin: publico })).status, 200);
+      process.env.APP_BASE_URL = `${publico}/`;
+      assert.equal((await run({ Host: 'app-interna:8080', Origin: publico })).status, 200);
+      process.env.APP_BASE_URL = 'http://escucha.ejemplo.gob.ar';
+      assert.equal((await run({ Host: 'app-interna:8080', Origin: publico })).status, 403);
+    } finally {
+      process.env.APP_BASE_URL = original;
+    }
+  });
+
+  test('un script (fetch de Node: sin Origin ni Sec-Fetch-Site) pasa la regla de origen; la sesión sigue haciendo falta', async () => {
+    const url = `http://127.0.0.1:${port}/api/monitoring/run-now`;
+    const json = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' };
+    assert.equal((await fetch(url, json)).status, 401);
+    assert.equal((await fetch(url, { ...json, headers: { ...json.headers, Cookie: OPERADOR } })).status, 200);
+    assert.equal((await fetch(url, { ...json, headers: { ...json.headers, Cookie: LECTOR } })).status, 403);
+  });
+
   test('una lectura de otro sitio no se toca (un link desde el correo es un GET)', async () => {
     const res = await pedir('GET', '/api/monitoring/posts', { cookie: LECTOR, headers: { 'Sec-Fetch-Site': 'cross-site', Origin: 'http://otro.test' } });
     assert.equal(res.status, 200);

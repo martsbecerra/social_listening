@@ -573,8 +573,11 @@ revocable"). Tests: `test/requireRole.test.js`, `test/session.test.js` y
   `/api/`, también `/api/auth/*`, necesita `Sec-Fetch-Site` `same-origin` o
   `none`; sin ese header, `Origin` igual al del Host o al de `APP_BASE_URL`;
   si no, 403 `{ error: 'Pedido rechazado: no salió de esta app.' }`. Sin
-  ninguno de los dos pasa (curl, los tests: la sesión sigue siendo
-  obligatoria). La cookie strict no frena a una página del MISMO sitio (otro
+  ninguno de los dos pasa (el `fetch` de Node no los manda: un script, curl,
+  los tests; la sesión sigue siendo obligatoria). Detrás de un proxy
+  (Railway), un navegador sin `Sec-Fetch-Site` depende de `APP_BASE_URL`
+  si el proxy cambia el Host: tiene que ser EXACTAMENTE la dirección
+  pública, con `https://` (si no, el login da 403). La cookie strict no frena a una página del MISMO sitio (otro
   puerto de localhost), y run-now, el backfill e ignorar toman la plataforma
   de la query: un formulario sin cuerpo JSON les llegaba. No exigir
   `Content-Type: application/json` en su lugar: ignorar va sin cuerpo.
@@ -604,8 +607,11 @@ revocable"). Tests: `test/requireRole.test.js`, `test/session.test.js` y
   confirmar, 503 y no se revoca nada. Con `strict`, un link desde Gmail o
   WhatsApp llega sin la cookie: el gate manda la página a `/?volver=<página>`
   (solo `PAGINAS_VOLVER`: inicio, instagram y x) y `login.js`, con
-  `/api/auth/me` ok, vuelve ahí con el `#` (misma lista, `LOGIN_VOLVER`; una
-  página nueva con sesión va en las dos). Purga de revocadas
+  `/api/auth/me` ok, vuelve ahí con el `#` (`loginDestino` de
+  `public/js/loginDestino.js`: un solo `volver`, igual a uno de
+  `LOGIN_VOLVER`, y el `#` solo `[A-Za-z0-9_-]`; cualquier otra cosa, al
+  inicio). Una página nueva con sesión va en las dos listas
+  (`test/loginDestino.test.js` las compara). Purga de revocadas
   y vencidas al arrancar y a las 4:17 (`scheduler.js`). Los topes se validan
   al arrancar (`src/auth/sessionConfig.js`). `SESSION_SECRET` ya no existe.
 - **`X-SL-Auto: 1`**: lo mandan las consultas automáticas del frontend

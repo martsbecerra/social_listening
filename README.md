@@ -141,6 +141,7 @@ social_listening_app/
 │       ├── tip.js            # Tooltip global ([data-tip], siempre por textContent).
 │       ├── footer.js         # Arma el pie de las páginas con sesión.
 │       ├── login.js          # Tarjeta del login: link mágico en dos pasos (pedir, revisar el correo, reenviar).
+│       ├── loginDestino.js   # Adónde vuelve el login con sesión (?volver=): solo las páginas de la app.
 │       ├── loginScene.js     # Visual del login: constelación, ticker y contadores (GET /api/public/resumen).
 │       ├── loginVerify.js    # Último paso del login: verify por fetch y el aviso del link vencido.
 │       ├── dashboard.js      # El inicio (GET /api/inicio, las últimas publicaciones y los análisis recientes).
@@ -830,8 +831,15 @@ Abrí `.env` y pegá:
   ["contraseña de aplicación"](https://myaccount.google.com/apppasswords)
   (alertas del monitoreo y magic link de login)
 - `ALERT_EMAIL_TO` → a quién avisar cuando aparezca un posteo relevante
-- `APP_BASE_URL` → URL pública de la app, sin barra final (el link del mail
-  se arma con esto, no con el header Host)
+- `APP_BASE_URL` → **exactamente** la dirección pública de la app, la que
+  se escribe en el navegador, con su esquema (en Railway, `https://…`) y sin
+  barra final. El link del mail se arma con esto (no con el header Host);
+  con `https://` la cookie va `secure`, la app confía en el proxy y manda
+  HSTS; y es contra lo que el gate compara el `Origin` de un login o de una
+  escritura cuando el navegador no manda `Sec-Fetch-Site` y el proxy cambió
+  el Host. Mal escrita (otro dominio, `http://` en vez de `https://`), el
+  link del mail lleva a otro lado y, en esos navegadores, nadie puede
+  iniciar sesión (403 "Pedido rechazado: no salió de esta app.").
 - `ALLOWED_EMAILS` → opcional; emails extra separados por coma, con el mismo
   formato que el archivo (`ana@x.gob.ar;operador,juan@x.gob.ar`)
 - `SESSION_IDLE_MIN` → opcional; minutos sin actividad que cortan la sesión
@@ -2224,8 +2232,14 @@ y `test/session.test.js`.
   `/api/auth/*`), que el pedido salga de una página de la app:
   `Sec-Fetch-Site` `same-origin` (o `none`) o, sin ese header, un `Origin`
   igual al del Host o al de `APP_BASE_URL`; si no, 403 "Pedido rechazado: no
-  salió de esta app.". Sin ninguno de los dos headers no hay navegador de
-  por medio (curl, los tests) y pasa: la sesión sigue siendo obligatoria.
+  salió de esta app.". Detrás de un proxy https (Railway), un navegador
+  actual manda `Sec-Fetch-Site` y no depende ni del Host ni de
+  `APP_BASE_URL`; uno que no lo manda depende del Host que reenvía el proxy
+  o, si lo cambia, de que `APP_BASE_URL` sea exactamente la dirección
+  pública (ver "3. Configurar las claves"). Sin ninguno de los dos headers
+  no hay navegador de por medio y pasa: el `fetch` de Node no los manda, así
+  que un script, curl o los tests siguen necesitando la cookie de sesión (y
+  el rol). `npm run stop` no hace pedidos HTTP (mata el proceso del puerto).
 - **Solo JSON.** `server.js` ya no monta `express.urlencoded`. Ojo: eso solo
   no frena un formulario (varias rutas toman la plataforma de la query y no
   necesitan cuerpo); lo frena la regla de arriba. El login
