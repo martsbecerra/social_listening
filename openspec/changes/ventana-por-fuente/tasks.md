@@ -67,10 +67,10 @@ recuperado de las corridas cortadas) quedó afuera por decisión del dueño.
 
 ## Phase 10: pantalla
 
-- [ ] 10.1 `monitoringProgress.js`: estado `wait`, `updateItem`, nota de cierre, estado de la corrida en la vista (REQ-VPF-13)
-- [ ] 10.2 Recuadro de "Actualizar ahora": ventana de la fuente, tope lleno, "sigue en Apify", fase "Recuperando búsquedas pendientes", cierre "Corrida incompleta"
-- [ ] 10.3 Barra superior, inicio y Pipeline: estado `incompleta` / `cortada` y qué falló
-- [ ] 10.4 Tests: `monitoringProgress.test.js`; capturas a 1366 y 375 px, claro, oscuro y movimiento reducido
+- [x] 10.1 `monitoringProgress.js`: estado `wait`, `updateItem`, nota de cierre, estado de la corrida en la vista (REQ-VPF-13)
+- [x] 10.2 Recuadro de "Actualizar ahora": ventana de la fuente, tope lleno, "sigue en Apify", fase "Recuperando búsquedas pendientes", cierre "Corrida incompleta"
+- [x] 10.3 Barra superior, inicio y Pipeline: estado `incompleta` / `cortada` y qué falló
+- [x] 10.4 Tests: `monitoringProgress.test.js`; capturas a 1366 y 375 px, claro, oscuro y movimiento reducido
 
 ## Phase 11: estadísticas
 

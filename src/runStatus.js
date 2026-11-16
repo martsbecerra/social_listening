@@ -170,69 +170,179 @@ function estadoCorrida(run, fuentes = [], { runIdEnCurso = null } = {}) {
 const plural = (n, uno, muchos) => (n === 1 ? uno : muchos);
 
 /**
- * Lo que falló en una corrida, en textos para una persona. `titulo` es la
- * frase principal ("Fallaron 6 de 8 búsquedas"); `nota`, qué pasa con eso
- * ("se retoman solas"); `lineas`, una por fuente con su motivo. null si no
- * hay nada que contar (corrida ok o sin filas).
- * @returns {null | { titulo: string, nota: string, nombres: string, lineas: string[],
- *   fallidas: number, esperando: number, topeLleno: number, total: number }}
+ * Lo que falló en una corrida, en textos para una persona, ya armados para
+ * cada lugar de la pantalla (el frontend no arma ni cuenta nada):
+ *   titulo    la frase principal ("Fallaron 6 de 8 búsquedas")
+ *   corto     para el cierre del recuadro de progreso y los rótulos chicos
+ *             ("1 búsqueda llegó al tope")
+ *   chip      para el chip de "Última corrida" ("6 de 8 búsquedas fallaron")
+ *   frase     en minúscula, para seguir una oración o un aria-label
+ *             ("fallaron 6 de 8 búsquedas")
+ *   nota      qué pasa con eso ("se retoman solas")
+ *   tooltip   las líneas del tooltip del estado de la escucha
+ *   pipeline  el párrafo que va debajo de las etapas del Pipeline
+ *   nombres   las fuentes, en una lista corta
+ *   lineas    una por fuente, con su motivo
+ * null si no hay nada que contar (corrida ok o sin filas).
+ * @param {Array<object>} fuentes filas de monitoring_run_sources de esa corrida y esa red
+ * @param {{ estado?: string }} [options] `cortada`: la corrida se cortó por la cuota (se dice aunque no haya filas)
+ * @returns {null | { titulo: string, corto: string, chip: string, frase: string, nota: string, tooltip: string, pipeline: string,
+ *   nombres: string, lineas: string[], fallidas: number, esperando: number, topeLleno: number, respondieron: number, total: number }}
  */
-function resumenFallidas(fuentes) {
+function resumenFallidas(fuentes, { estado = null } = {}) {
   const c = contar(fuentes);
-  const base = { fallidas: c.fallidas.length + c.perdidas.length, esperando: c.esperando.length, topeLleno: c.topeLleno.length, total: c.total };
-  if (c.sinBuscar != null) {
-    return { ...base, titulo: `No se buscó nada: ${motivoTexto(c.sinBuscar)}`, nota: '', nombres: '', lineas: [] };
-  }
-  const caidas = [...c.fallidas, ...c.perdidas, ...c.parciales];
+  const s = (n) => sustantivo(fuentes, n);
+  const base = {
+    fallidas: c.fallidas.length + c.perdidas.length,
+    esperando: c.esperando.length,
+    topeLleno: c.topeLleno.length,
+    respondieron: c.respondieron,
+    total: c.total,
+    // "de las 2 búsquedas que respondieron": para aclarar de qué son los
+    // números de una corrida a la que le faltaron fuentes. '' si no aplica.
+    deLasQueRespondieron:
+      c.respondieron > 0 && c.respondieron < c.total
+        ? `de ${plural(c.respondieron, 'la', 'las')} ${c.respondieron} ${s(c.respondieron)} que ${plural(c.respondieron, 'respondió', 'respondieron')}`
+        : '',
+  };
+  // No respondieron: fallaron, o su corrida se perdió. Una que Apify cortó
+  // y dejó algo (parcial) SÍ respondió, a medias: va aparte.
+  const caidas = [...c.fallidas, ...c.perdidas];
+  const cortadas = c.parciales;
   const levantadas = c.recuperadas;
   const lineas = [];
   for (const f of caidas) lineas.push(`${nombreFuente(f)} · ${f.estado === 'perdida' ? 'su corrida ya no está en Apify' : motivoTexto(f.motivo)}`);
+  for (const f of cortadas) lineas.push(`${nombreFuente(f)} · Apify cortó la corrida`);
   for (const f of c.esperando) lineas.push(`${nombreFuente(f)} · sigue en Apify, se levanta en la próxima corrida`);
   for (const f of levantadas) lineas.push(`${nombreFuente(f)} · ${motivoTexto(f.motivo)} · se levantó después`);
   for (const f of c.topeLleno) lineas.push(`${nombreFuente(f)} · llegó al tope${f.tope ? ` de ${f.tope} resultados` : ''}: puede faltar algo`);
   for (const f of c.huecos) lineas.push(`${nombreFuente(f)} · estuvo demasiado tiempo sin responder: lo anterior a la ventana máxima no se pidió`);
   if (c.detalleFallo) lineas.push('No se pudo pedir el texto de los resultados nuevos');
 
-  const s = (n) => sustantivo(fuentes, n);
-  const afectadas = caidas.length + levantadas.length;
-  if (afectadas > 0) {
-    const todas = [...caidas, ...levantadas];
-    return {
-      ...base,
-      titulo: `${plural(afectadas, 'Falló', 'Fallaron')} ${afectadas} de ${c.total} ${s(c.total)}`,
-      nota: levantadas.length === afectadas ? plural(afectadas, 'se levantó después', 'se levantaron después') : plural(afectadas, 'se retoma sola', 'se retoman solas'),
-      nombres: listar(todas.map(nombreFuente)),
-      lineas,
+  let r = null;
+  if (c.sinBuscar != null) {
+    const motivo = motivoTexto(c.sinBuscar);
+    r = {
+      titulo: `No se buscó nada: ${motivo}`,
+      corto: 'No se buscó nada',
+      chip: 'no se buscó nada',
+      frase: 'no se buscó nada',
+      nota: motivo,
+      tooltip: `No se buscó nada: ${motivo}.`,
+      pipeline: `No se buscó nada en esta corrida: ${motivo}.`,
+      nombres: '',
     };
-  }
-  if (c.esperando.length > 0) {
+  } else if (caidas.length + levantadas.length > 0) {
+    const n = caidas.length + levantadas.length;
+    const todasLevantadas = levantadas.length === n;
+    const nombres = listar([...caidas, ...levantadas].map(nombreFuente));
+    const titulo = `${plural(n, 'Falló', 'Fallaron')} ${n} de ${c.total} ${s(c.total)}`;
+    const respondieron = c.respondieron;
+    r = {
+      titulo,
+      corto: titulo,
+      chip: `${n} de ${c.total} ${s(c.total)} ${plural(n, 'falló', 'fallaron')}`,
+      frase: `${plural(n, 'falló', 'fallaron')} ${n} de ${c.total} ${s(c.total)}`,
+      nota: todasLevantadas ? plural(n, 'se levantó después', 'se levantaron después') : plural(n, 'se retoma sola', 'se retoman solas'),
+      tooltip:
+        `${titulo}: ${nombres}.\n` +
+        (todasLevantadas
+          ? plural(n, 'Su resultado se levantó en una corrida posterior.', 'Sus resultados se levantaron en una corrida posterior.')
+          : plural(n, 'Retoma desde la última vez que anduvo.', 'Cada una retoma desde la última vez que anduvo.')),
+      pipeline:
+        respondieron > 0
+          ? `${titulo}: traídas, nuevas y relevantes son de ${plural(respondieron, 'la', 'las')} ${respondieron} que ${plural(respondieron, 'respondió', 'respondieron')}.`
+          : `${titulo}: no respondió ninguna.`,
+      nombres,
+    };
+  } else if (c.esperando.length > 0) {
     const n = c.esperando.length;
-    return {
-      ...base,
-      titulo: `${n} de ${c.total} ${s(c.total)} ${plural(n, 'sigue', 'siguen')} en Apify`,
+    const sigue = plural(n, 'sigue', 'siguen');
+    r = {
+      titulo: `${n} de ${c.total} ${s(c.total)} ${sigue} en Apify`,
+      corto: `${n} de ${c.total} ${s(c.total)} ${sigue} en Apify`,
+      chip: `${n} ${s(n)} ${sigue} en Apify`,
+      frase: `${n} de ${c.total} ${s(c.total)} ${sigue} en Apify`,
       nota: plural(n, 'se levanta sola', 'se levantan solas'),
+      tooltip: `${n} ${s(n)} ${sigue} en Apify: ${plural(n, 'se levanta', 'se levantan')} en la próxima corrida.`,
+      pipeline: `${n} de ${c.total} ${s(c.total)} ${sigue} en Apify: ${plural(n, 'se levanta', 'se levantan')} en la próxima corrida.`,
       nombres: listar(c.esperando.map(nombreFuente)),
-      lineas,
+    };
+  } else if (cortadas.length > 0) {
+    const n = cortadas.length;
+    const titulo = `Apify cortó ${n} de ${c.total} ${s(c.total)}`;
+    const dejaron = plural(n, 'entró lo que dejó', 'entró lo que dejaron');
+    r = {
+      titulo,
+      corto: titulo,
+      chip: `Apify cortó ${n} ${s(n)}`,
+      frase: `Apify cortó ${n} de ${c.total} ${s(c.total)}`,
+      nota: dejaron,
+      tooltip: `${titulo}: ${listar(cortadas.map(nombreFuente))}.\n${dejaron.charAt(0).toUpperCase()}${dejaron.slice(1)}; ${plural(n, 'se vuelve', 'se vuelven')} a pedir en la próxima corrida.`,
+      pipeline: `${titulo}: ${dejaron}.`,
+      nombres: listar(cortadas.map(nombreFuente)),
+    };
+  } else if (c.topeLleno.length > 0) {
+    const n = c.topeLleno.length;
+    const una = c.topeLleno[0];
+    const corto = `${n} ${s(n)} ${plural(n, 'llegó', 'llegaron')} al tope`;
+    const titulo = n === 1 ? `${nombreFuente(una)} llegó al tope${una.tope ? ` de ${una.tope} resultados` : ''}` : corto;
+    r = {
+      titulo,
+      corto,
+      chip: corto,
+      frase: corto,
+      nota: 'puede faltar algo',
+      tooltip: `${titulo}: puede faltar algo.`,
+      pipeline: `${titulo}: puede faltar algo.`,
+      nombres: listar(c.topeLleno.map(nombreFuente)),
+    };
+  } else if (c.huecos.length > 0) {
+    const n = c.huecos.length;
+    const corto = `${n} ${s(n)} ${plural(n, 'pidió', 'pidieron')} la ventana máxima`;
+    r = {
+      titulo: corto,
+      corto,
+      chip: corto,
+      frase: corto,
+      nota: 'quedó un hueco anterior',
+      tooltip: `${corto}: lo anterior no se pidió.`,
+      pipeline: `${corto}: lo anterior no se pidió.`,
+      nombres: listar(c.huecos.map(nombreFuente)),
+    };
+  } else if (c.detalleFallo) {
+    const cuantos = Number(c.detalleFallo.tope) > 0 ? `de ${c.detalleFallo.tope} ${plural(Number(c.detalleFallo.tope), 'resultado nuevo', 'resultados nuevos')}` : 'de los resultados nuevos';
+    const titulo = `No se pudo pedir el texto ${cuantos}`;
+    r = {
+      titulo,
+      corto: 'No se pudo pedir el texto de los nuevos',
+      chip: 'no se pudo pedir el texto de los nuevos',
+      frase: 'no se pudo pedir el texto de los nuevos',
+      nota: 'se reintenta en la próxima corrida',
+      tooltip: `${titulo}: se reintenta en la próxima corrida.`,
+      pipeline: `${titulo}.`,
+      nombres: '',
     };
   }
-  if (c.topeLleno.length > 0) {
-    const n = c.topeLleno.length;
+
+  // Cortada por la cuota de Apify: se dice siempre, con o sin lo demás.
+  if (estado === 'cortada') {
+    const cuota = 'Se cortó por la cuota de Apify';
+    const hayCaidas = Boolean(r) && caidas.length + levantadas.length > 0;
     return {
       ...base,
-      titulo: n === 1 ? `${nombreFuente(c.topeLleno[0])} llegó al tope${c.topeLleno[0].tope ? ` de ${c.topeLleno[0].tope} resultados` : ''}` : `${n} ${s(n)} llegaron al tope`,
-      nota: 'puede faltar algo',
-      nombres: listar(c.topeLleno.map(nombreFuente)),
+      titulo: cuota,
+      corto: cuota,
+      chip: 'se cortó por la cuota de Apify',
+      frase: hayCaidas ? `se cortó por la cuota de Apify: ${r.frase}` : 'se cortó por la cuota de Apify',
+      nota: 'se retoma sola',
+      tooltip: r ? `${r.tooltip}\n${cuota}.` : `${cuota}.`,
+      pipeline: hayCaidas ? `${cuota}: ${r.frase}.` : `${cuota}.`,
+      nombres: r ? r.nombres : '',
       lineas,
     };
   }
-  if (c.huecos.length > 0) {
-    const n = c.huecos.length;
-    return { ...base, titulo: `${n} ${s(n)} ${plural(n, 'pidió', 'pidieron')} la ventana máxima`, nota: 'quedó un hueco anterior', nombres: listar(c.huecos.map(nombreFuente)), lineas };
-  }
-  if (c.detalleFallo) {
-    return { ...base, titulo: 'No se pudo pedir el texto de los resultados nuevos', nota: 'se reintenta en la próxima corrida', nombres: '', lineas };
-  }
-  return null;
+  return r ? { ...base, ...r, lineas } : null;
 }
 
 /**
@@ -243,13 +353,15 @@ function resumenParaLog(fuentes) {
   const c = contar(fuentes);
   if (c.sinBuscar != null) return `no se buscó nada (${c.sinBuscar})`;
   const partes = [];
-  const caidas = [...c.fallidas, ...c.perdidas, ...c.parciales];
+  const caidas = [...c.fallidas, ...c.perdidas];
   if (caidas.length > 0) {
     partes.push(
       `${plural(caidas.length, 'falló', 'fallaron')} ${caidas.length} de ${c.total} ${c.sustantivo}: ` +
-        caidas.map((f) => `${nombreFuente(f)} ${f.estado === 'perdida' ? 'PERDIDA' : f.estado === 'parcial' ? `PARCIAL(${f.motivo || '?'})` : f.motivo || 'ERROR'}`).join(', ')
+        caidas.map((f) => `${nombreFuente(f)} ${f.estado === 'perdida' ? 'PERDIDA' : f.motivo || 'ERROR'}`).join(', ')
     );
   }
+  if (c.parciales.length > 0) partes.push(`Apify cortó ${c.parciales.length}: ${c.parciales.map((f) => `${nombreFuente(f)} ${f.motivo || ''}`.trim()).join(', ')}`);
+  if (c.recuperadas.length > 0) partes.push(`${c.recuperadas.length} se ${plural(c.recuperadas.length, 'levantó', 'levantaron')} después: ${c.recuperadas.map(nombreFuente).join(', ')}`);
   if (c.esperando.length > 0) partes.push(`${c.esperando.length} ${plural(c.esperando.length, 'sigue', 'siguen')} en Apify: ${c.esperando.map(nombreFuente).join(', ')}`);
   if (c.topeLleno.length > 0) partes.push(`tope lleno: ${c.topeLleno.map(nombreFuente).join(', ')}`);
   if (c.huecos.length > 0) partes.push(`hueco por el techo de la ventana: ${c.huecos.map(nombreFuente).join(', ')}`);

@@ -200,7 +200,7 @@ describe('cada consulta de detección deja su fila', { concurrency: false }, () 
       assert.equal(detalle.motivo, 'HTTP_502');
       assert.equal(detalle.tope, 1);
       assert.equal(rs.estadoCorrida({ id: runId, finishedAt: 'x' }, filas), 'incompleta');
-      assert.equal(rs.resumenFallidas(filas).titulo, 'No se pudo pedir el texto de los resultados nuevos');
+      assert.equal(rs.resumenFallidas(filas).titulo, 'No se pudo pedir el texto de 1 resultado nuevo');
     } finally {
       restore();
     }

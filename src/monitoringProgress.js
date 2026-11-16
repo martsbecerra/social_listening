@@ -54,7 +54,11 @@
 const VIEW_MAX_LINES = 6;
 const VIEW_MAX_RUNNING = 3;
 
-let current = null; // { phase, totalDone, totalWork, percent, lines, ended }
+// Desde cuántos minutos una línea en curso dice cuánto lleva ("buscando… · 6
+// min"): una búsqueda que se pone al día tarda de 7 a 13 minutos.
+const RUNNING_MINUTES_FROM = 2;
+
+let current = null; // { phase, totalDone, totalWork, percent, lines, ended, note }
 let lastActivityAt = null;
 // Las líneas del último ciclo terminado (ver getView). null con uno en curso.
 let lastFinished = null;
@@ -78,17 +82,35 @@ function closePhase(phase) {
 }
 
 function startCycle() {
-  current = { phase: null, totalDone: 0, totalWork: 0, percent: 0, lines: [], ended: 0 };
+  current = { phase: null, totalDone: 0, totalWork: 0, percent: 0, lines: [], ended: 0, note: null };
   lastFinished = null;
   lastActivityAt = Date.now();
 }
 
-function endCycle() {
+/**
+ * Cierra el ciclo. `estado` es cómo salió la corrida (`ok` | `incompleta` |
+ * `cortada`, src/runStatus.js): la pantalla lo usa para el título del cierre
+ * ("Corrida incompleta"). La nota del ciclo (addCycleNote), si hay, queda
+ * ÚLTIMA entre las líneas.
+ */
+function endCycle({ estado = null } = {}) {
   if (!current) return;
   if (current.phase) closePhase(current.phase);
   // Lo que quedó "en curso" no terminó nunca: no va al cierre.
-  lastFinished = { lines: current.lines.filter((line) => line.state !== 'run') };
+  const lines = current.lines.filter((line) => line.state !== 'run');
+  if (current.note) lines.push({ key: null, state: current.note.state, label: current.note.label, detail: current.note.detail, ended: current.ended + 1 });
+  lastFinished = { lines, estado: estado || null };
   current = null;
+}
+
+/**
+ * La línea que resume lo que no salió bien en el ciclo ("Fallaron 2 de 8
+ * búsquedas · se retoman solas"). Va última en el cierre. Sin ciclo, o sin
+ * texto, no hace nada.
+ */
+function addCycleNote({ label, detail = '', state = 'wait' } = {}) {
+  if (!current || !label) return;
+  current.note = { label, detail, state: LINE_STATES.includes(state) ? state : 'wait' };
 }
 
 function recompute() {
@@ -150,7 +172,7 @@ function tick(n = 1, { ok = true } = {}) {
  */
 function startItem(key, label, detail = '') {
   if (!current) return;
-  current.lines.push({ key, state: 'run', label, detail, ended: 0 });
+  current.lines.push({ key, state: 'run', label, detail, ended: 0, startedAt: Date.now() });
 }
 
 /** Cambia el texto de una fuente que sigue en curso ("tope lleno · se pide más…"). Sin esa línea en curso, no hace nada. */
@@ -160,13 +182,23 @@ function updateItem(key, detail = '') {
   if (line) line.detail = detail;
 }
 
-/** La fuente terminó: su línea pasa a bien o a falló, con el texto final. */
-function finishItem(key, { ok = true, detail = '' } = {}) {
+// Estados de una línea terminada: bien, con error, o "pendiente" (ámbar):
+// ni bien ni mal, algo que queda por resolver (la búsqueda sigue en Apify,
+// llenó su tope, Apify la cortó).
+const LINE_STATES = ['ok', 'err', 'wait'];
+
+/**
+ * La fuente terminó: su línea pasa a bien o a falló, con el texto final.
+ * `state: 'wait'` la deja pendiente (ámbar); `label` cambia además el rótulo
+ * ("«macri» · Apify la cortó").
+ */
+function finishItem(key, { ok = true, state = null, detail = '', label = null } = {}) {
   if (!current) return;
   const line = current.lines.find((l) => l.key === key && l.state === 'run');
   if (!line) return;
   current.ended += 1;
-  Object.assign(line, { state: ok ? 'ok' : 'err', detail, ended: current.ended });
+  Object.assign(line, { state: LINE_STATES.includes(state) ? state : ok ? 'ok' : 'err', detail, ended: current.ended });
+  if (label) line.label = label;
 }
 
 /**
@@ -190,12 +222,18 @@ function getProgress() {
 // Las líneas que ve la pantalla: primero lo que terminó, en el orden en que
 // terminó; abajo, lo que sigue en curso (como mucho VIEW_MAX_RUNNING líneas:
 // las primeras y "y N más"). El lugar que sobra es para lo último terminado.
-function viewLines(lines) {
+function viewLines(lines, now = Date.now()) {
   const finished = lines.filter((line) => line.state !== 'run').sort((a, b) => a.ended - b.ended);
-  let running = lines.filter((line) => line.state === 'run');
+  // Lo que sigue en curso dice cuánto lleva recién a los 2 minutos.
+  let running = lines
+    .filter((line) => line.state === 'run')
+    .map((line) => {
+      const minutes = line.startedAt ? Math.floor((now - line.startedAt) / 60000) : 0;
+      return minutes >= RUNNING_MINUTES_FROM ? { ...line, detail: `${line.detail} · ${minutes} min` } : line;
+    });
   if (running.length > VIEW_MAX_RUNNING) {
     const shown = running.slice(0, VIEW_MAX_RUNNING - 1);
-    running = [...shown, { state: 'run', label: `y ${running.length - shown.length} más`, detail: running[0].detail }];
+    running = [...shown, { state: 'run', label: `y ${running.length - shown.length} más`, detail: 'buscando…' }];
   }
   return [...finished.slice(-(VIEW_MAX_LINES - running.length)), ...running].map(({ state, label, detail }) => ({ state, label, detail }));
 }
@@ -211,7 +249,7 @@ function viewLines(lines) {
  *     ninguna fase.
  */
 function getView() {
-  if (!current) return lastFinished ? { finished: true, lines: viewLines(lastFinished.lines) } : null;
+  if (!current) return lastFinished ? { finished: true, estado: lastFinished.estado || null, lines: viewLines(lastFinished.lines) } : null;
   if (!current.phase) return null;
   const { label, done, total, suffix } = current.phase;
   return { phase: label, done, total, suffix, percent: current.percent, lines: viewLines(current.lines) };
@@ -232,6 +270,7 @@ module.exports = {
   startItem,
   updateItem,
   finishItem,
+  addCycleNote,
   setPhaseSummary,
   getProgress,
   getView,

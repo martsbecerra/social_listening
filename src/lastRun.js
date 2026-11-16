@@ -56,17 +56,38 @@ function buildLastRun(plataforma, { hasBenchmark = false } = {}) {
     }).length;
   }
 
+  // Lo que esta corrida levantó de búsquedas que habían quedado en Apify:
+  // esas publicaciones pasaron por ESTA corrida (se clasificaron y guardaron
+  // acá), así que cuentan entre las traídas, y la pantalla lo aclara.
+  const levantadas = db.listRunSourcesRecoveredIn({ runId: run.id, plataforma });
+  const recuperadas = levantadas.reduce((sum, f) => sum + (Number(f.items) || 0), 0);
+  const estado = estadoCorrida(run, run.fuentes);
   return {
     finishedAt: run.finishedAt,
     durationSec,
-    fetched: run.fetched,
+    fetched: run.fetched == null && levantadas.length === 0 ? null : (Number(run.fetched) || 0) + recuperadas,
     newCandidates: run.newCandidates,
     saved: Number(run.newPosts) || 0,
     highlighted,
     usd: Number(run.usd) || 0,
-    estado: estadoCorrida(run, run.fuentes),
-    fallidas: resumenFallidas(run.fuentes),
+    estado,
+    fallidas: resumenFallidas(run.fuentes, { estado }),
+    recuperadas: levantadas.length > 0 ? recuperadasTexto(recuperadas, levantadas) : null,
   };
+}
+
+/** "12:00": la hora de Argentina (UTC-3 fija). */
+function horaArgentina(iso) {
+  const ms = Date.parse(iso || '');
+  return Number.isFinite(ms) ? new Date(ms - 3 * 60 * 60 * 1000).toISOString().slice(11, 16) : '—';
+}
+
+/** "Incluye 500 publicaciones recuperadas de la corrida de las 12:00." (o "de corridas anteriores" si son de varias). */
+function recuperadasTexto(total, filas) {
+  const horas = [...new Set(filas.map((f) => horaArgentina(f.startedAt)))];
+  const miles = String(total).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  const de = horas.length === 1 ? `de la corrida de las ${horas[0]}` : 'de corridas anteriores';
+  return `Incluye ${miles} ${total === 1 ? 'publicación recuperada' : 'publicaciones recuperadas'} ${de}.`;
 }
 
 /**
@@ -82,7 +103,8 @@ function estadoUltimaCorrida(redes) {
   for (const red of redes || []) {
     const run = db.getLastFinishedRun(red);
     if (!run) continue;
-    const propia = { finishedAt: run.finishedAt, id: run.id, estado: estadoCorrida(run, run.fuentes), fallidas: resumenFallidas(run.fuentes) };
+    const estado = estadoCorrida(run, run.fuentes);
+    const propia = { finishedAt: run.finishedAt, id: run.id, estado, fallidas: resumenFallidas(run.fuentes, { estado }) };
     if (!ultima || propia.finishedAt > ultima.finishedAt) ultima = propia;
     else if (propia.id === ultima.id && ORDEN_ESTADO.indexOf(propia.estado) > ORDEN_ESTADO.indexOf(ultima.estado)) ultima = propia;
   }

@@ -74,6 +74,7 @@ function armarInicio({ listPlatformIds, getPlatform, cronPlatforms, nextRunAt, r
         // Los números son de esta red solo si la fila es de esta red, y solo
         // al cerrar: una fila abierta tiene new_posts en 0 por defecto.
         const deEstaRed = run.plataforma === id && Boolean(run.finishedAt);
+        const estado = estadoCorrida(run, run.fuentes, { runIdEnCurso: enCurso });
         return {
           startedAt: run.startedAt,
           finishedAt: run.finishedAt,
@@ -82,8 +83,8 @@ function armarInicio({ listPlatformIds, getPlatform, cronPlatforms, nextRunAt, r
           guardadas: deEstaRed ? run.newPosts : null,
           // ok | incompleta | cortada | en curso | interrumpida, y qué falló
           // (src/runStatus.js), con las consultas de ESTA red en esa corrida.
-          estado: estadoCorrida(run, run.fuentes, { runIdEnCurso: enCurso }),
-          fallidas: run.finishedAt ? resumenFallidas(run.fuentes) : null,
+          estado,
+          fallidas: run.finishedAt ? resumenFallidas(run.fuentes, { estado }) : null,
         };
       }),
     };

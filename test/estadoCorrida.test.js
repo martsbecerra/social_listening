@@ -120,6 +120,102 @@ describe('lo que falló, en textos', () => {
     assert.equal(rs.resumenFallidas(undefined), null);
   });
 
+  test('los textos de cada lugar de la pantalla ya vienen armados: cierre del recuadro, chip, tooltip de la escucha y párrafo del Pipeline', () => {
+    // Seis de ocho caídas (la #56).
+    let r = rs.resumenFallidas(corrida56);
+    assert.equal(r.corto, 'Fallaron 6 de 8 búsquedas');
+    assert.equal(r.chip, '6 de 8 búsquedas fallaron');
+    assert.equal(r.frase, 'fallaron 6 de 8 búsquedas');
+    assert.equal(r.tooltip, 'Fallaron 6 de 8 búsquedas: «gobierno porteño», «macri», «GCBA», «PDLC» y 2 más.\nCada una retoma desde la última vez que anduvo.');
+    assert.equal(r.pipeline, 'Fallaron 6 de 8 búsquedas: traídas, nuevas y relevantes son de las 2 que respondieron.');
+    assert.equal(r.deLasQueRespondieron, 'de las 2 búsquedas que respondieron');
+    assert.equal(r.respondieron, 2);
+
+    // Una sola caída, y ninguna que respondiera.
+    r = rs.resumenFallidas([fila('macri', 'fallo', { motivo: 'RED' })]);
+    assert.equal(r.chip, '1 de 1 búsqueda falló');
+    assert.equal(r.nota, 'se retoma sola');
+    assert.equal(r.tooltip, 'Falló 1 de 1 búsqueda: «macri».\nRetoma desde la última vez que anduvo.');
+    assert.equal(r.pipeline, 'Falló 1 de 1 búsqueda: no respondió ninguna.');
+    assert.equal(r.deLasQueRespondieron, '');
+
+    // Siguen en Apify.
+    r = rs.resumenFallidas([fila('macri', 'esperando'), fila('gcba', 'esperando'), fila('blacri', 'ok')]);
+    assert.equal(r.corto, '2 de 3 búsquedas siguen en Apify');
+    assert.equal(r.chip, '2 búsquedas siguen en Apify');
+    assert.equal(r.tooltip, '2 búsquedas siguen en Apify: se levantan en la próxima corrida.');
+    r = rs.resumenFallidas([fila('macri', 'esperando'), fila('blacri', 'ok')]);
+    assert.equal(r.chip, '1 búsqueda sigue en Apify');
+    assert.equal(r.nota, 'se levanta sola');
+
+    // Tope lleno: el título nombra la búsqueda; el rótulo corto, no.
+    r = rs.resumenFallidas([fila('gobierno porteño', 'ok', { topeLleno: true, tope: 50 }), fila('macri', 'ok')]);
+    assert.equal(r.corto, '1 búsqueda llegó al tope');
+    assert.equal(r.chip, '1 búsqueda llegó al tope');
+    assert.equal(r.tooltip, '«gobierno porteño» llegó al tope de 50 resultados: puede faltar algo.');
+    assert.equal(r.pipeline, '«gobierno porteño» llegó al tope de 50 resultados: puede faltar algo.');
+    r = rs.resumenFallidas([fila('a', 'ok', { topeLleno: true }), fila('b', 'ok', { topeLleno: true })]);
+    assert.equal(r.titulo, '2 búsquedas llegaron al tope');
+
+    // No se pudo pedir el detalle de los nuevos.
+    r = rs.resumenFallidas([fila('macri', 'ok'), { tipo: 'detalle', estado: 'fallo', motivo: 'TIMEOUT', tope: 37 }]);
+    assert.equal(r.pipeline, 'No se pudo pedir el texto de 37 resultados nuevos.');
+
+    // No se buscó nada.
+    r = rs.resumenFallidas([{ tipo: 'plataforma', estado: 'fallo', motivo: 'NOT_CONFIGURED' }]);
+    assert.equal(r.tooltip, 'No se buscó nada: falta configuración del servidor.');
+    assert.equal(r.pipeline, 'No se buscó nada en esta corrida: falta configuración del servidor.');
+  });
+
+  test('una búsqueda que Apify cortó y dejó algo no cuenta como "falló": respondió a medias', () => {
+    // Sola: su propio título.
+    let r = rs.resumenFallidas([fila('macri', 'parcial', { motivo: 'RUN_TIMED_OUT' }), fila('gcba', 'ok')]);
+    assert.equal(r.titulo, 'Apify cortó 1 de 2 búsquedas');
+    assert.equal(r.chip, 'Apify cortó 1 búsqueda');
+    assert.equal(r.nota, 'entró lo que dejó');
+    assert.equal(r.tooltip, 'Apify cortó 1 de 2 búsquedas: «macri».\nEntró lo que dejó; se vuelve a pedir en la próxima corrida.');
+    assert.equal(r.pipeline, 'Apify cortó 1 de 2 búsquedas: entró lo que dejó.');
+    assert.deepEqual(r.lineas, ['«macri» · Apify cortó la corrida']);
+    assert.equal(r.fallidas, 0);
+    assert.equal(r.respondieron, 2);
+
+    // Con una caída de verdad: el título cuenta solo la que no respondió, y
+    // los números son de las que sí (la cortada incluida).
+    r = rs.resumenFallidas([
+      fila('GCBA', 'fallo', { motivo: 'HTTP_502' }),
+      fila('jorgemacri', 'parcial', { motivo: 'RUN_TIMED_OUT' }),
+      fila('gobierno de la ciudad', 'esperando', { motivo: 'TIMEOUT' }),
+      fila('gobierno porteño', 'ok', { topeLleno: true, tope: 120 }),
+      fila('macri', 'ok'),
+    ]);
+    assert.equal(r.titulo, 'Falló 1 de 5 búsquedas');
+    assert.equal(r.pipeline, 'Falló 1 de 5 búsquedas: traídas, nuevas y relevantes son de las 3 que respondieron.');
+    assert.deepEqual(r.lineas, [
+      '«GCBA» · Apify respondió con un error (502)',
+      '«jorgemacri» · Apify cortó la corrida',
+      '«gobierno de la ciudad» · sigue en Apify, se levanta en la próxima corrida',
+      '«gobierno porteño» · llegó al tope de 120 resultados: puede faltar algo',
+    ]);
+    assert.equal(
+      rs.resumenParaLog([fila('GCBA', 'fallo', { motivo: 'HTTP_502' }), fila('jorgemacri', 'parcial', { motivo: 'RUN_TIMED_OUT' }), fila('macri', 'recuperada', { motivo: 'TIMEOUT' })]),
+      'falló 1 de 3 búsquedas: «GCBA» HTTP_502; Apify cortó 1: «jorgemacri» RUN_TIMED_OUT; 1 se levantó después: «macri»'
+    );
+  });
+
+  test('cortada por la cuota: se dice siempre, con lo que falló si se sabe', () => {
+    const conCaidas = rs.resumenFallidas([fila('macri', 'fallo', { motivo: 'QUOTA_EXCEEDED' }), fila('gcba', 'ok')], { estado: 'cortada' });
+    assert.equal(conCaidas.corto, 'Se cortó por la cuota de Apify');
+    assert.equal(conCaidas.pipeline, 'Se cortó por la cuota de Apify: falló 1 de 2 búsquedas.');
+    assert.equal(conCaidas.tooltip, 'Falló 1 de 2 búsquedas: «macri».\nRetoma desde la última vez que anduvo.\nSe cortó por la cuota de Apify.');
+    assert.deepEqual(conCaidas.lineas, ['«macri» · se agotó la cuota de Apify']);
+    // Una corrida anterior a la tabla (sin filas) que cortó por cuota.
+    const sinFilas = rs.resumenFallidas([], { estado: 'cortada' });
+    assert.equal(sinFilas.tooltip, 'Se cortó por la cuota de Apify.');
+    assert.equal(sinFilas.pipeline, 'Se cortó por la cuota de Apify.');
+    assert.equal(sinFilas.frase, 'se cortó por la cuota de Apify');
+    assert.equal(rs.resumenFallidas([], { estado: 'ok' }), null);
+  });
+
   test('una segunda consulta (intento 2) no cuenta como otra fuente; en X dice "fuentes" y nombra @cuenta y #hashtag', () => {
     const conRelanzamiento = [fila('macri', 'ok'), fila('macri', 'ok', { intento: 2 }), fila('gcba', 'fallo', { motivo: 'TIMEOUT' })];
     assert.equal(rs.resumenFallidas(conRelanzamiento).titulo, 'Falló 1 de 2 búsquedas');

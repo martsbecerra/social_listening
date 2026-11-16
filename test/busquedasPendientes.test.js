@@ -45,6 +45,7 @@ const monitor = require('../src/monitor');
 const apifyCost = require('../src/apifyCost');
 const rs = require('../src/runStatus');
 const { resolveSearchWait, searchWait, describeSearchWait } = require('../src/searchWait');
+const { buildLastRun } = require('../src/lastRun');
 const { runWithContext } = require('../src/usageContext');
 const { getPlatform } = require('../src/platforms');
 const provider = require('../src/platforms/instagramApidojo');
@@ -189,12 +190,19 @@ describe('una búsqueda que no termina a tiempo queda esperando y el ciclo sigui
       assert.ok(Math.abs(call.usd - (0.015 + 7 * 0.0005)) < 1e-9);
       assert.equal(db.getMonitoringRun(primero.runId).results, 7, 'los totales del ciclo que la lanzó se recalculan');
 
+      // El Pipeline de esta corrida cuenta lo levantado entre las traídas y lo aclara.
+      const lastRun = buildLastRun('instagram', { hasBenchmark: false });
+      assert.equal(lastRun.fetched, 7);
+      assert.match(lastRun.recuperadas, /^Incluye 7 publicaciones recuperadas de la corrida de las \d\d:\d\d\.$/);
+      assert.equal(lastRun.estado, 'ok');
+
       // Un tercer ciclo no vuelve a levantar nada.
       llamadas.recuperar.length = 0;
       clasificados.length = 0;
       await ciclo();
       assert.equal(llamadas.recuperar.length, 0);
       assert.equal(clasificados.length, 0);
+      assert.equal(buildLastRun('instagram', { hasBenchmark: false }).recuperadas, null);
     } finally {
       restore();
     }

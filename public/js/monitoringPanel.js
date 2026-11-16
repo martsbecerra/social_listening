@@ -570,7 +570,10 @@ function panelRenderPulse(all, now) {
 // Pipeline: la última corrida terminada (lastRun de /api/monitoring/status,
 // src/lastRun.js): traídas por las búsquedas, nuevas que clasificó el modelo
 // y relevantes guardadas; abajo, cuántas se despegaron y el costo. Sin
-// corridas: "todavía no corrió".
+// corridas: "todavía no corrió". Si esa corrida no salió del todo bien
+// (run.estado: incompleta o cortada), el hint lo dice y debajo de las etapas
+// va qué faltó (run.fallidas, ya escrito por el backend: src/runStatus.js),
+// con la lista de fuentes en el tooltip y para el lector de pantalla.
 // -------------------------------------------------------------------------
 const panelPipe = {
   root: document.querySelector('.pipe'),
@@ -580,7 +583,29 @@ const panelPipe = {
   saved: document.getElementById('pipeSaved'),
   model: document.getElementById('pipeModel'),
   note: document.getElementById('pipeNote'),
+  warn: document.getElementById('pipeWarn'),
+  warnText: document.getElementById('pipeWarnText'),
+  warnList: document.getElementById('pipeWarnList'),
 };
+const PANEL_WARN_STATES = ['incompleta', 'cortada'];
+
+// Qué faltó en la última corrida, debajo de las etapas. Todo por textContent.
+function panelRenderPipeWarn(run) {
+  if (!panelPipe.warn) return;
+  const fallidas = run && PANEL_WARN_STATES.includes(run.estado) ? run.fallidas : null;
+  const texto = fallidas ? fallidas.pipeline : run && PANEL_WARN_STATES.includes(run.estado) ? `La corrida quedó ${run.estado}.` : '';
+  panelPipe.warn.hidden = !texto;
+  panelPipe.warnText.textContent = texto;
+  const lineas = fallidas && Array.isArray(fallidas.lineas) ? fallidas.lineas : [];
+  panelPipe.warnList.textContent = lineas.length ? ` ${lineas.join('. ')}.` : '';
+  if (lineas.length) {
+    panelPipe.warn.dataset.tipTitle = /búsqueda/.test(texto) ? 'Búsquedas que fallaron' : 'Qué faltó en esa corrida';
+    panelPipe.warn.dataset.tip = lineas.join('\n');
+  } else {
+    delete panelPipe.warn.dataset.tipTitle;
+    delete panelPipe.warn.dataset.tip;
+  }
+}
 // undefined: todavía no se leyó; null: no hay respuesta del servidor.
 let panelStatus;
 
@@ -625,17 +650,21 @@ function panelRenderPipeline() {
     panelPipe.hint.textContent = status === undefined ? '—' : status === null ? 'sin respuesta del servidor' : 'todavía no corrió';
     for (const el of [panelPipe.fetched, panelPipe.fresh, panelPipe.saved]) el.textContent = '—';
     panelPipe.note.textContent = '';
+    panelRenderPipeWarn(null);
     return;
   }
   const finished = new Date(run.finishedAt);
   const today = AR_DAY.format(finished) === AR_DAY.format(new Date());
   const when = Number.isFinite(finished.getTime()) ? (today ? PANEL_TIME.format(finished) : `${PANEL_DATE.format(finished)} ${PANEL_TIME.format(finished)}`) : '—';
   const duration = panelDuration(run.durationSec);
-  panelPipe.hint.textContent = `última corrida ${when}${duration ? ` · ${duration}` : ''}`;
+  const estado = PANEL_WARN_STATES.includes(run.estado) ? ` · ${run.estado}` : '';
+  panelPipe.hint.textContent = `última corrida ${when}${duration ? ` · ${duration}` : ''}${estado}`;
+  panelRenderPipeWarn(run);
   panelPipe.fetched.textContent = panelCountOrDash(run.fetched);
   panelPipe.fresh.textContent = panelCountOrDash(run.newCandidates);
   panelPipe.saved.textContent = panelCountOrDash(run.saved);
-  panelPipe.fetched.closest('.st').dataset.tip = 'Resultados de las búsquedas de esa corrida.';
+  // Si esa corrida levantó búsquedas que habían quedado en Apify, lo aclara.
+  panelPipe.fetched.closest('.st').dataset.tip = `Resultados de las búsquedas de esa corrida.${run.recuperadas ? `\n${run.recuperadas}` : ''}`;
   panelPipe.fresh.closest('.st').dataset.tip =
     run.newCandidates === null ? 'Esta corrida es anterior al conteo de nuevas.' : 'Las que no estaban guardadas ni evaluadas: las clasificó el modelo.';
   panelPipe.saved.closest('.st').dataset.tip = 'Las relevantes, guardadas en la base.';

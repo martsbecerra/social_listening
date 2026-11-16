@@ -890,6 +890,8 @@ const insertRunSourceStmt = db.prepare(`
 const getRunSourceStmt = db.prepare('SELECT * FROM monitoring_run_sources WHERE id = ?');
 const listRunSourcesStmt = db.prepare('SELECT * FROM monitoring_run_sources WHERE run_id = ? AND plataforma = ? ORDER BY id');
 const listRunSourcesAllStmt = db.prepare('SELECT * FROM monitoring_run_sources WHERE run_id = ? ORDER BY id');
+// Las búsquedas que una corrida levantó de corridas anteriores.
+const listRunSourcesRecoveredInStmt = db.prepare('SELECT * FROM monitoring_run_sources WHERE recuperada_en = ? AND plataforma = ? ORDER BY id');
 const listPendingRunSourcesStmt = db.prepare(
   "SELECT * FROM monitoring_run_sources WHERE plataforma = ? AND estado IN ('esperando', 'en curso') ORDER BY id"
 );
@@ -2608,6 +2610,13 @@ function listRunSourcesOfRun(runId) {
   return listRunSourcesAllStmt.all(Number(runId)).map(runSourceFromRow);
 }
 
+/** Las búsquedas de esa red que quedaron esperando en una corrida anterior y que ESTA corrida levantó. */
+function listRunSourcesRecoveredIn({ runId, plataforma }) {
+  requirePlataforma(plataforma, 'listRunSourcesRecoveredIn');
+  if (runId == null) return [];
+  return listRunSourcesRecoveredInStmt.all(Number(runId), plataforma).map(runSourceFromRow);
+}
+
 /** Las consultas de una red que quedaron esperando (o abiertas por un proceso que se cayó): la cola de lo que hay que levantar. */
 function listPendingRunSources(plataforma) {
   requirePlataforma(plataforma, 'listPendingRunSources');
@@ -3798,6 +3807,7 @@ module.exports = {
   listRunSources,
   listRunSourcesOfRun,
   listPendingRunSources,
+  listRunSourcesRecoveredIn,
   lastRunSourcesForKey,
   getLastFinishedRunAt,
   getLastFinishedRunAtAny,

@@ -25,7 +25,7 @@ const { refreshStaleAccountStats, benchmarkLimiter } = require('./accountStats')
 const { refreshPostMetrics, refreshLimiter } = require('./metricsRefresh');
 const { runWithContext } = require('./usageContext');
 const { formatCycleCostLine, reconcileRealCosts } = require('./apifyCost');
-const { estadoCorrida, resumenParaLog } = require('./runStatus');
+const { estadoCorrida, resumenParaLog, resumenFallidas } = require('./runStatus');
 const { apifyLimiter } = require('./apify');
 const { imageLimiter } = require('./postImages');
 const postImageSync = require('./postImageSync');
@@ -267,10 +267,12 @@ const ORDEN_ESTADO = ['ok', 'incompleta', 'cortada'];
  * (monitoring_run_sources, src/runStatus.js): `ok`, `incompleta` (alguna
  * fuente falló, quedó esperando en Apify, llenó su tope…) o `cortada`
  * (cuota). `texto` es el detalle para el log, por red. Nunca tira.
- * @returns {{ estado: string, texto: string, porPlataforma: Object<string, string> }}
+ * `nota`: lo mismo para la pantalla (la línea que cierra el recuadro de
+ * progreso), de la red a la que peor le fue: { label, detail } o null.
+ * @returns {{ estado: string, texto: string, porPlataforma: Object<string, string>, nota: {label: string, detail: string}|null }}
  */
 function resumenDelCiclo(runId, { quotaExceeded = false, errorCode = null } = {}) {
-  const out = { estado: 'ok', texto: '', porPlataforma: {} };
+  const out = { estado: 'ok', texto: '', porPlataforma: {}, nota: null };
   try {
     const run = { id: runId, finishedAt: new Date().toISOString(), quotaExceeded, errorCode };
     const porRed = new Map();
@@ -286,7 +288,12 @@ function resumenDelCiclo(runId, { quotaExceeded = false, errorCode = null } = {}
     for (const [red, filas] of porRed) {
       const estado = estadoCorrida(run, filas);
       out.porPlataforma[red] = estado;
+      const antes = out.estado;
       peor(estado);
+      if (estado !== 'ok' && (!out.nota || out.estado !== antes)) {
+        const fallidas = resumenFallidas(filas, { estado });
+        if (fallidas) out.nota = { label: fallidas.corto, detail: fallidas.nota };
+      }
       const texto = resumenParaLog(filas);
       if (texto) textos.push(`${red}: ${texto}`);
     }
@@ -353,7 +360,10 @@ async function runCycleUnlocked(plataformas, trigger = 'manual') {
       result.estado = resumen.estado;
       result.estadoPorPlataforma = resumen.porPlataforma;
     }
-    progress.endCycle();
+    // La pantalla cierra el recuadro con cómo salió y, si no salió del todo
+    // bien, con qué pasó ("Fallaron 2 de 8 búsquedas · se retoman solas").
+    if (resumen.nota) progress.addCycleNote({ label: resumen.nota.label, detail: resumen.nota.detail });
+    progress.endCycle({ estado: cycleError ? null : resumen.estado });
     // "ok" solo si todas las fuentes respondieron: antes una corrida con
     // seis de ocho búsquedas caídas cerraba como resultado=ok.
     console.log(

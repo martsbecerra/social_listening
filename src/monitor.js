@@ -55,7 +55,7 @@ const { CATEGORIA_FALLBACK } = require('./categoriasConfig');
 const { checkAndLogJump } = require('./viralJumpDetector');
 const { getPlatform, listPlatformIds, DEFAULT_PLATFORM_ID } = require('./platforms');
 const { isPlatformError } = require('./platforms/errors');
-const { motivoDeFallo } = require('./runStatus');
+const { motivoDeFallo, motivoCorto } = require('./runStatus');
 const { searchWait } = require('./searchWait');
 const { usdForCall, maxUsdForSearch } = require('./apifyCost');
 const busquedaTope = require('./busquedaTope');
@@ -1143,6 +1143,14 @@ function contarNuevos(posts, platformId) {
   }
 }
 
+/** "04/11 16:00": día y hora de Argentina (UTC-3 fija) de un instante, para decir desde cuándo retoma una fuente. */
+function diaHoraArgentina(iso) {
+  const ms = Date.parse(iso || '');
+  if (!Number.isFinite(ms)) return '—';
+  const t = new Date(ms - 3 * 60 * 60 * 1000).toISOString();
+  return `${t.slice(8, 10)}/${t.slice(5, 7)} ${t.slice(11, 16)}`;
+}
+
 /** "12:00": la hora de Argentina (UTC-3 fija) de un instante, para decir de qué corrida es algo. */
 function horaArgentina(iso) {
   const ms = Date.parse(iso || '');
@@ -1236,7 +1244,7 @@ async function recoverPendingSearchRuns(platform, platformId, { searches = [] } 
         console.log(`[monitor] ${platformId}: se levantó la búsqueda «${row.fuente}» que había quedado en Apify (run ${row.apifyRunId}, ${r.runStatus || 'terminada'}): ${posts.length} posteo(s).`);
       } else if (r && r.estado === 'corriendo') {
         out.saltear.add(row.clave);
-        progress.finishItem(key, { ok: false, detail: 'sigue en Apify' });
+        progress.finishItem(key, { state: 'wait', detail: 'sigue en Apify' });
         progress.tick(1, { ok: null });
         console.log(`[monitor] ${platformId}: la búsqueda «${row.fuente}» sigue corriendo en Apify (run ${row.apifyRunId}): no se vuelve a lanzar en este ciclo.`);
       } else if ((r && r.estado === 'perdida') || edadMs > PENDING_LOST_AFTER_MS) {
@@ -1253,7 +1261,7 @@ async function recoverPendingSearchRuns(platform, platformId, { searches = [] } 
         // No se pudo leer ahora. Si todavía puede estar corriendo, el
         // término se saltea; si no, se busca normal y esta se reintenta.
         if (edadMs <= espera.runTimeoutSecs * 1000) out.saltear.add(row.clave);
-        progress.finishItem(key, { ok: false, detail: 'no se pudo leer' });
+        progress.finishItem(key, { state: 'wait', detail: 'no se pudo leer' });
         progress.tick(1, { ok: null });
         console.warn(`[monitor] ${platformId}: no se pudo leer la corrida ${row.apifyRunId} de «${row.fuente}» (se reintenta en el próximo ciclo): ${(r && r.error && r.error.message) || 'sin detalle'}`);
       }
@@ -1634,7 +1642,12 @@ async function runMonitoringCycle({ plataformas, trigger } = {}) {
         huecoDesde: source.window.huecoDesde,
         tope: source.limit,
       });
-      progress.startItem(key, source.label, 'buscando…');
+      // Una fuente que se pone al día dice desde cuándo retoma ("«macri» ·
+      // desde 04/11 16:00"); si el techo de la ventana recortó, "el máximo".
+      const linea = source.window.isDefault
+        ? source.label
+        : `${source.label} · desde ${diaHoraArgentina(source.window.sinceIso)}${source.window.origen === 'techo' ? ', el máximo' : ''}`;
+      progress.startItem(key, linea, 'buscando…');
       let apifyRunId = null;
       let meta = null;
       try {
@@ -1669,7 +1682,11 @@ async function runMonitoringCycle({ plataformas, trigger } = {}) {
           todos = segunda.posts.length > 0 ? unirPosteos(todos, segunda.posts) : todos;
           topeLleno = !segunda.cubierto;
         }
-        progress.finishItem(key, { ok: true, detail: describeFound(todos, platformId) });
+        // Bien, salvo dos casos que quedan pendientes (ámbar): Apify cortó
+        // la corrida y dejó algo, o la búsqueda llenó su tope y no se pudo
+        // pedir más.
+        const pendienteDe = parcial ? `${source.label} · Apify la cortó` : topeLleno ? `${source.label} · tope lleno: puede faltar algo` : null;
+        progress.finishItem(key, pendienteDe ? { state: 'wait', label: pendienteDe, detail: describeFound(todos, platformId) } : { ok: true, detail: describeFound(todos, platformId) });
         progress.tick(1, { ok: true });
         actualizarFuente(
           rowId,
@@ -1691,7 +1708,7 @@ async function runMonitoringCycle({ plataformas, trigger } = {}) {
         const runId = (err && err.apifyRunId) || apifyRunId;
         const pendiente = Boolean(err && err.runPending && runId);
         const motivo = motivoDeFallo(err);
-        progress.finishItem(key, { ok: false, detail: pendiente ? 'sigue en Apify' : 'falló' });
+        progress.finishItem(key, pendiente ? { state: 'wait', detail: 'sigue en Apify' } : { ok: false, detail: motivoCorto(motivo) });
         progress.tick(1, { ok: pendiente ? null : false });
         actualizarFuente(rowId, { estado: pendiente ? 'esperando' : 'fallo', motivo, detalle: err && err.message, apifyRunId: runId }, { startedMs });
         return { source, ok: false, err, posts: [], estado: pendiente ? 'esperando' : 'fallo', motivo };
@@ -1784,7 +1801,7 @@ async function runMonitoringCycle({ plataformas, trigger } = {}) {
           const key = `${platformId}:busqueda:«${term}»`;
           abrirFuente({ plataforma: platformId, tipo: 'busqueda', fuente: term, estado: 'fallo', motivo: 'SIGUE_EN_APIFY', finishedAt: new Date().toISOString() });
           progress.startItem(key, `«${term}»`, 'sigue en Apify');
-          progress.finishItem(key, { ok: false, detail: 'sigue en Apify' });
+          progress.finishItem(key, { state: 'wait', detail: 'sigue en Apify' });
           return { source: { tipo: 'busqueda', fuente: term }, ok: false, err: null, posts: [], estado: 'fallo', motivo: 'SIGUE_EN_APIFY' };
         })
       : [];
