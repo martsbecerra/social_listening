@@ -69,6 +69,8 @@ function motivoTexto(motivo) {
   if (m === 'RATE_LIMITED') return 'Apify no aceptó más corridas a la vez';
   if (/^RUN_/.test(m)) return 'Apify cortó la corrida';
   if (m === 'NO_LANZADA') return 'no se llegó a lanzar';
+  if (m === 'SIGUE_EN_APIFY') return 'su corrida anterior sigue en Apify';
+  if (m === 'INTERRUMPIDA') return 'el servidor se cortó en el medio';
   if (m === 'NOT_CONFIGURED') return 'falta configuración del servidor';
   if (m === 'SIN_BUSQUEDA') return 'el actor configurado no busca por palabra clave';
   if (m === 'SIN_FUENTES') return 'no hay nada configurado para buscar';
@@ -83,6 +85,7 @@ function motivoCorto(motivo) {
   if (m === 'AUTH_INVALID') return 'falló · clave rechazada';
   if (m === 'QUOTA_EXCEEDED') return 'falló · sin cuota';
   if (m === 'NO_LANZADA') return 'no se llegó a lanzar';
+  if (m === 'SIGUE_EN_APIFY') return 'sigue en Apify';
   return 'falló';
 }
 

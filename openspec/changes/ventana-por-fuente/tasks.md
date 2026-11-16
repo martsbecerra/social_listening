@@ -41,10 +41,10 @@ recuperado de las corridas cortadas) quedó afuera por decisión del dueño.
 
 ## Phase 6: búsquedas que esperan y se levantan después
 
-- [ ] 6.1 `instagramApidojo.scrapeSearch` por el asincrónico con vencimiento compartido; `recoverSearchRun`; fachada (REQ-VPF-07)
-- [ ] 6.2 `monitor.js`: `procesarCandidatos`; `recoverPendingSearchRuns` al empezar la detección (REQ-VPF-08)
-- [ ] 6.3 `server.js`: valida `SEARCH_WAIT_MS` y `SEARCH_RUN_TIMEOUT_SECS`
-- [ ] 6.4 Tests: `busquedasPendientes.test.js`; `apidojoProvider.test.js` y `searchSource.test.js` adaptados
+- [x] 6.1 `instagramApidojo.scrapeSearch` por el asincrónico con vencimiento compartido; `recoverSearchRun`; fachada (REQ-VPF-07)
+- [x] 6.2 `monitor.js`: `recoverPendingSearchRuns` al empezar la detección; lo levantado entra a la tubería del ciclo; `cerrarRecuperadas`; `src/searchWait.js` (REQ-VPF-08)
+- [x] 6.3 `server.js`: valida `SEARCH_WAIT_MS` y `SEARCH_RUN_TIMEOUT_SECS`
+- [x] 6.4 Tests: `busquedasPendientes.test.js`; `apidojoProvider.test.js` y `searchSource.test.js` adaptados
 
 ## Phase 7: ventana por fuente
 

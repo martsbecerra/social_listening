@@ -309,11 +309,17 @@ describe('proveedor apidojo del adapter de Instagram', { concurrency: false }, (
   test('scrapeHashtag y scrapeSearch: URL de hashtag o keywords, sourceType propio, mismo until y ventana', async () => {
     const originalFetch = global.fetch;
     try {
-      const calls = stubFetch((body) =>
+      // La búsqueda va siempre por el flujo asincrónico (arrancar el run y
+      // bajar su dataset), aunque APIFY_REAL_COST=0: necesita el id del run.
+      // El hashtag sigue por el sincrónico. apifySimulado atiende los dos.
+      const { apifySimulado } = require('./helpers/apifySimulado');
+      const sim = apifySimulado((body) =>
         body.keywords
           ? fixture('search').map((r, i) => ({ ...r, createdAt: new Date(Date.now() - (i + 1) * HOUR_MS).toISOString() }))
           : [rawPost({ id: 9, username: 'otra_cuenta', followerCount: null })]
       );
+      global.fetch = sim;
+      const calls = { get 0() { return { body: sim.inputs[0].input }; }, get 1() { return { body: sim.inputs[1].input }; }, get 2() { return { body: sim.inputs[2].input }; } };
       const hashtag = await instagram.scrapeHashtag('JorgeMacri', { resultsLimit: 30, lookback: '1 day' });
       assert.deepEqual(calls[0].body, {
         startUrls: ['https://www.instagram.com/explore/tags/JorgeMacri/'],
@@ -326,8 +332,17 @@ describe('proveedor apidojo del adapter de Instagram', { concurrency: false }, (
       assert.equal(hashtag[0].followers, null);
 
       assert.equal(typeof instagram.scrapeSearch, 'function', 'la fachada expone scrapeSearch con apidojo');
-      const search = await instagram.scrapeSearch('  jorge macri ', { resultsLimit: 50, lookback: '1 day' });
+      const avisos = { run: null, meta: null };
+      const search = await instagram.scrapeSearch('  jorge macri ', {
+        resultsLimit: 50,
+        lookback: '1 day',
+        onRunStarted: (run) => (avisos.run = run),
+        onMeta: (meta) => (avisos.meta = meta),
+      });
       assert.deepEqual(calls[1].body, { keywords: ['jorge macri'], maxItems: 50, until: provider.untilDateFor('1 day') });
+      assert.equal(sim.inputs[1].actor, 'apidojo~instagram-scraper-api');
+      assert.ok(avisos.run && avisos.run.id, 'avisa el id de la corrida de Apify');
+      assert.deepEqual(avisos.meta, { rawItems: 2, maxItems: 50, until: provider.untilDateFor('1 day'), parcial: false, runStatus: 'SUCCEEDED' });
       assert.equal(search.length, 2);
       assert.equal(search[0].sourceType, 'search');
       assert.equal(search[0].sourceQuery, 'jorge macri');

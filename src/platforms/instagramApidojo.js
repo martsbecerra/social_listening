@@ -58,7 +58,8 @@
 // no devuelve posteos se queda con el último valor conocido.
 // ==========================================================================
 
-const { runActorSync, isQuotaExceededError } = require('../apify');
+const { runActorSync, isQuotaExceededError, fetchRun, fetchDatasetItems } = require('../apify');
+const { searchWait } = require('../searchWait');
 
 const PROVIDER_ID = 'apidojo';
 const ACTOR_ID = 'apidojo~instagram-scraper-api';
@@ -77,9 +78,9 @@ function buildHashtagUrl(tag) {
 }
 
 /** Mismo runActorSync genérico (cola, reintento del 402, registro de costo); respaldo por texto para la cuota como en el otro proveedor. */
-async function runActor(input) {
+async function runActor(input, options = {}) {
   try {
-    return await runActorSync(input, { actorId: ACTOR_ID, plataforma: 'instagram' });
+    return await runActorSync(input, { ...options, actorId: ACTOR_ID, plataforma: 'instagram' });
   } catch (err) {
     if (err && !err.code && isQuotaExceededError(err)) err.code = 'QUOTA_EXCEEDED';
     throw err;
@@ -270,11 +271,59 @@ async function scrapeHashtag(tag, { resultsLimit, lookback } = {}) {
  * Una consulta de búsqueda (0,015 usd, 20 incluidos). Los resultados salen
  * con sourceType 'search' y el término en sourceQuery; la relevancia la
  * decide el orquestador igual que para un hashtag.
+ *
+ * Desde noviembre 2026 va SIEMPRE por el flujo asincrónico de src/apify.js
+ * (aunque APIFY_REAL_COST=0): la fila de apify_calls se abre con el id de la
+ * corrida apenas Apify lo devuelve, y si la corrida no termina dentro de la
+ * espera el error lleva `runPending` y `apifyRunId`: el orquestador la
+ * levanta en el ciclo siguiente con recoverSearchRun. Una búsqueda de una
+ * ventana de varios días tarda de 7 a 13 minutos; con el corte de 300 s de
+ * antes se cobraba y se perdía.
+ *
+ * @param {string} term
+ * @param {{ resultsLimit?: number, lookback?: string, deadlineAt?: number, runTimeoutSecs?: number,
+ *   onRunStarted?: (run: { id: string }) => void, onMeta?: (meta: object) => void }} [options]
+ *   deadlineAt: hasta cuándo se espera (ms; lo comparten todas las búsquedas
+ *   del ciclo); sin él, SEARCH_WAIT_MS desde ahora. runTimeoutSecs: el tope
+ *   de la corrida en Apify (SEARCH_RUN_TIMEOUT_SECS si no se pasa).
+ *   onRunStarted: aviso con el id de la corrida. onMeta: aviso con lo que
+ *   devolvió la consulta ({ rawItems, maxItems, until, parcial, runStatus }):
+ *   `parcial` cuando Apify cortó la corrida y se entrega lo que dejó.
  */
-async function scrapeSearch(term, { resultsLimit, lookback } = {}) {
+async function scrapeSearch(term, { resultsLimit, lookback, deadlineAt, runTimeoutSecs, onRunStarted, onMeta } = {}) {
   const clean = String(term || '').trim();
   const input = buildInput({ keywords: [clean] }, { resultsLimit, lookback });
-  const items = await runActor(input);
+  const espera = searchWait();
+  let items;
+  let parcial = null;
+  try {
+    items = await runActor(input, {
+      asincronico: true,
+      recuperable: true,
+      deadlineAt: deadlineAt != null ? deadlineAt : Date.now() + espera.waitMs,
+      runTimeoutSecs: runTimeoutSecs != null ? runTimeoutSecs : espera.runTimeoutSecs,
+      onRunStarted,
+    });
+  } catch (err) {
+    // Apify cortó la corrida (FAILED, ABORTED, TIMED-OUT) y dejó algo: se
+    // cobró igual, así que se usa. Sin nada, o si sigue corriendo, el error.
+    if (!err || err.runPending || !Array.isArray(err.partialItems) || err.partialItems.length === 0) throw err;
+    items = err.partialItems;
+    parcial = err;
+  }
+  if (typeof onMeta === 'function') {
+    try {
+      onMeta({
+        rawItems: Array.isArray(items) ? items.length : 0,
+        maxItems: input.maxItems,
+        until: input.until || null,
+        parcial: Boolean(parcial),
+        runStatus: parcial ? parcial.runStatus || null : 'SUCCEEDED',
+      });
+    } catch {
+      /* el aviso no frena la búsqueda */
+    }
+  }
   // Si la búsqueda llenó su tope, algo de la ventana puede haber quedado
   // afuera: que se vea en el log, porque el excedente sobre los 20 incluidos
   // se paga a 0,0005 y la intención es pagarlo, no cortar.
@@ -285,6 +334,55 @@ async function scrapeSearch(term, { resultsLimit, lookback } = {}) {
     );
   }
   return applyWindow(normalizeItems(items, { account: null, sourceType: 'search', sourceQuery: clean }), lookback);
+}
+
+const RUN_TERMINADO = ['SUCCEEDED', 'FAILED', 'ABORTED', 'TIMED-OUT'];
+
+/**
+ * Levanta el resultado de una búsqueda que se dejó de esperar (su corrida
+ * siguió en Apify con el id guardado). Son lecturas de la API: no cuestan ni
+ * pasan por la cola. Nunca tira.
+ *
+ * Los posteos se filtran por la ventana con la que se LANZÓ la corrida
+ * (`desdeIso`: se queda con lo publicado desde las 00:00 UTC de ese día, lo
+ * mismo que pidió `until`), nunca por la hora en que se levanta: horas
+ * después, "las últimas 24 h" tiraría casi todo.
+ *
+ * @param {{ apifyRunId: string, termino: string, desdeIso?: string|null }} row
+ * @returns {Promise<{ estado: 'ok'|'parcial'|'corriendo'|'perdida'|'desconocido', posts?: object[], rawItems?: number,
+ *   runStatus?: string|null, startedAt?: string|null, finishedAt?: string|null, error?: Error }>}
+ *   ok: terminó bien. parcial: Apify la cortó y dejó algo (o nada).
+ *   corriendo: todavía no terminó. perdida: ya no existe en Apify (404).
+ *   desconocido: no se pudo leer ahora (se reintenta después).
+ */
+async function recoverSearchRun({ apifyRunId, termino, desdeIso = null } = {}) {
+  let run;
+  try {
+    run = await fetchRun(apifyRunId);
+  } catch (err) {
+    return err && Number(err.status) === 404 ? { estado: 'perdida' } : { estado: 'desconocido', error: err };
+  }
+  if (!RUN_TERMINADO.includes(run.status)) return { estado: 'corriendo', runStatus: run.status, startedAt: run.startedAt };
+  let items = [];
+  if (run.datasetId) {
+    try {
+      items = await fetchDatasetItems(run.datasetId);
+    } catch (err) {
+      return err && Number(err.status) === 404 ? { estado: 'perdida' } : { estado: 'desconocido', error: err };
+    }
+  }
+  const clean = String(termino || '').trim();
+  let posts = normalizeItems(items, { account: null, sourceType: 'search', sourceQuery: clean });
+  const desdeMs = desdeIso ? Date.parse(`${String(desdeIso).slice(0, 10)}T00:00:00.000Z`) : NaN;
+  if (Number.isFinite(desdeMs)) posts = posts.filter((p) => p.postedAt && new Date(p.postedAt).getTime() >= desdeMs);
+  return {
+    estado: run.status === 'SUCCEEDED' ? 'ok' : 'parcial',
+    posts,
+    rawItems: Array.isArray(items) ? items.length : 0,
+    runStatus: run.status,
+    startedAt: run.startedAt,
+    finishedAt: run.finishedAt,
+  };
 }
 
 /**
@@ -335,6 +433,7 @@ module.exports = {
   scrapeAccount,
   scrapeHashtag,
   scrapeSearch,
+  recoverSearchRun,
   normalizePost,
   normalizeItems,
   derivePostType,

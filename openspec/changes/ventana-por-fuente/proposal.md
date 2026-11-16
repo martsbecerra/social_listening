@@ -108,7 +108,7 @@ cortarse otra vez a los 300 s), y al final la pantalla y los reportes.
 | Área | Impacto | Descripción |
 |------|---------|-------------|
 | `src/db.js` | Modificado | columnas de `search_seen` y `apify_calls`; tabla `monitoring_run_sources`; `error_code` en `monitoring_runs`; lecturas y escrituras nuevas, todas por plataforma |
-| `src/monitor.js` | Modificado | `guardarEvaluado`, `procesarCandidatos`, ventana y marca por fuente, recuperación de corridas pendientes, tope y segunda consulta, registro por fuente |
+| `src/monitor.js` | Modificado | `guardarEvaluado`, ventana y marca por fuente, recuperación de corridas pendientes, tope y segunda consulta, registro por fuente |
 | `src/apify.js` | Modificado | flujo asincrónico con id inmediato, reintentos del seguimiento, plazo propio, parciales, dataset paginado, lecturas de un run |
 | `src/apifyCost.js` | Modificado | búsqueda sin incluidos, `maxUsdForSearch`, fila abierta y cerrada, conciliación de filas viejas con run conocido |
 | `src/platforms/instagramApidojo.js` | Modificado | `scrapeSearch` por el asincrónico con espera, `recoverSearchRun`, `applyWindow` por `until`, meta de la consulta |

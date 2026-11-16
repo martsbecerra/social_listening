@@ -14,8 +14,9 @@ las dos cosas al nivel de la fuente:
 3. una corrida de Apify que no terminó a tiempo queda "esperando" con su id
    y se levanta al empezar el ciclo siguiente, como una fuente más;
 4. todo candidato, venga de la búsqueda del ciclo o de una corrida
-   levantada, pasa por la misma tubería (`procesarCandidatos`: dedupe →
-   detalle → clasificación → `guardarEvaluado`), que anota en `search_seen`
+   levantada, pasa por la misma tubería del ciclo (dedupe → detalle →
+   clasificación → `guardarEvaluado`): lo levantado se suma a los
+   candidatos antes del dedupe, y `guardarEvaluado` anota en `search_seen`
    lo que decidió el modelo.
 
 ## Evidencia (16/11/2026, sobre una copia de la base del piloto)
@@ -186,6 +187,12 @@ minutos: sin la espera larga de esta rama se cortaría a los 300 s.
   pide el mismo). La recuperación son lecturas, sin cola.
 - La recuperación elige el proveedor por el actor de la fila, no por
   `IG_ACTOR`.
+- La fila de una búsqueda levantada se cierra DESPUÉS de procesar sus
+  posteos (`cerrarRecuperadas`): si el ciclo se corta en el medio, el
+  siguiente la vuelve a levantar y el dedupe evita repetir.
+- Un término salteado porque su corrida anterior sigue en Apify deja en
+  este ciclo una fila `fallo` con motivo `SIGUE_EN_APIFY` (sin run): la
+  corrida no fue una detección completa.
 
 ### 6. Ventana y marca por fuente
 

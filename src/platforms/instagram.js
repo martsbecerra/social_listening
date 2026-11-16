@@ -90,4 +90,17 @@ if (typeof provider.scrapeSearch === 'function') {
   adapter.scrapeSearch = (term, options) => provider.scrapeSearch(term, options);
 }
 
+/**
+ * Levanta una búsqueda que quedó esperando en Apify (ver recoverSearchRun
+ * del proveedor). El proveedor se elige por el ACTOR que lanzó la corrida
+ * (la fila lo guarda), no por IG_ACTOR: una corrida lanzada con apidojo se
+ * tiene que poder levantar aunque después se haya cambiado el actor.
+ * @param {{ actor?: string|null, apifyRunId: string, termino: string, desdeIso?: string|null }} row
+ */
+adapter.recoverSearchRun = async (row) => {
+  const owner = Object.values(PROVIDERS).find((p) => p.ACTOR_ID === (row && row.actor) && typeof p.recoverSearchRun === 'function');
+  if (!owner) return { estado: 'desconocido', error: new Error(`no hay proveedor que levante corridas del actor ${(row && row.actor) || '(sin actor)'}`) };
+  return owner.recoverSearchRun(row);
+};
+
 module.exports = adapter;

@@ -56,6 +56,8 @@ const { checkAndLogJump } = require('./viralJumpDetector');
 const { getPlatform, listPlatformIds, DEFAULT_PLATFORM_ID } = require('./platforms');
 const { isPlatformError } = require('./platforms/errors');
 const { motivoDeFallo } = require('./runStatus');
+const { searchWait } = require('./searchWait');
+const { usdForCall } = require('./apifyCost');
 const { runWithContext, getContext } = require('./usageContext');
 const progress = require('./monitoringProgress');
 const { resolveBackfillMax } = require('./backfillConfig');
@@ -987,6 +989,152 @@ function contarNuevos(posts, platformId) {
   }
 }
 
+/** "12:00": la hora de Argentina (UTC-3 fija) de un instante, para decir de qué corrida es algo. */
+function horaArgentina(iso) {
+  const ms = Date.parse(iso || '');
+  return Number.isFinite(ms) ? new Date(ms - 3 * 60 * 60 * 1000).toISOString().slice(11, 16) : '—';
+}
+
+// Una corrida que quedó esperando y no se pudo leer en todo este tiempo se
+// da por perdida: Apify ya no la guarda.
+const PENDING_LOST_AFTER_MS = 7 * DAY_MS;
+
+/**
+ * Levanta las búsquedas que un ciclo anterior dejó esperando en Apify (la
+ * corrida no terminó dentro de SEARCH_WAIT_MS, o el proceso se cayó con la
+ * consulta abierta). Va al empezar la detección de la red, bajo el candado
+ * del ciclo. Solo lee de Apify: no cuesta ni pasa por la cola.
+ *
+ * Por cada fila pendiente de monitoring_run_sources:
+ *   - terminó: sus posteos van a `candidates` (pasan por la misma tubería
+ *     que cualquier resultado: dedupe, detalle, clasificación) y la fila se
+ *     cierra DESPUÉS de procesarlos (cerrarRecuperadas), así un corte en el
+ *     medio la vuelve a levantar en el ciclo siguiente;
+ *   - sigue corriendo (o no se pudo leer y todavía puede estar corriendo):
+ *     ese término no se busca en este ciclo (`saltear`): sería pagar dos
+ *     veces lo mismo;
+ *   - ya no existe en Apify: `perdida`, con su línea de log;
+ *   - el término ya no está configurado: `sin_fuente`, sin leer nada;
+ *   - no era una corrida de Apify (quedó abierta por una caída): `fallo`.
+ * Nunca tira.
+ * @returns {Promise<{ candidates: object[], recuperadas: object[], saltear: Set<string>, cubiertoHasta: Map<string, string> }>}
+ *   cubiertoHasta: por clave de término, cuándo se lanzó la corrida que se
+ *   levantó: hasta ahí ya está cubierto.
+ */
+async function recoverPendingSearchRuns(platform, platformId, { searches = [] } = {}) {
+  const out = { candidates: [], recuperadas: [], saltear: new Set(), cubiertoHasta: new Map() };
+  let pendientes = [];
+  try {
+    pendientes = db.listPendingRunSources(platformId);
+  } catch (err) {
+    console.error(`[monitor] (${platformId}) no se pudieron leer las búsquedas pendientes:`, err.message);
+    return out;
+  }
+  if (pendientes.length === 0) return out;
+
+  const configuradas = new Set(searches.map(sourceKey));
+  const espera = searchWait();
+  const now = Date.now();
+  const cierre = (row) => row.finishedAt || new Date(now).toISOString();
+  const aLeer = [];
+  for (const row of pendientes) {
+    if (row.tipo !== 'busqueda' || !row.apifyRunId || typeof platform.recoverSearchRun !== 'function') {
+      actualizarFuente(row.id, { estado: 'fallo', motivo: row.motivo || 'INTERRUMPIDA', finishedAt: cierre(row) });
+      continue;
+    }
+    if (!configuradas.has(row.clave)) {
+      actualizarFuente(row.id, { estado: 'sin_fuente', finishedAt: cierre(row) });
+      console.log(`[monitor] ${platformId}: la búsqueda «${row.fuente}» quedó esperando en Apify pero ya no está configurada: no se levanta.`);
+      continue;
+    }
+    aLeer.push(row);
+  }
+  if (aLeer.length === 0) return out;
+
+  progress.startPhase('Recuperando búsquedas pendientes', aLeer.length, { suffix: 'corridas' });
+  let levantadas = 0;
+  let encontrados = 0;
+  await Promise.all(
+    aLeer.map(async (row) => {
+      const key = `${platformId}:pendiente:${row.id}`;
+      progress.startItem(key, `«${row.fuente}» · de la corrida de las ${horaArgentina(row.startedAt)}`, 'leyendo…');
+      let r;
+      try {
+        r = await platform.recoverSearchRun({ actor: row.actor, apifyRunId: row.apifyRunId, termino: row.fuente, desdeIso: row.desdeIso });
+      } catch (err) {
+        r = { estado: 'desconocido', error: err };
+      }
+      const edadMs = now - Date.parse(row.startedAt);
+      if (r && (r.estado === 'ok' || r.estado === 'parcial')) {
+        const posts = Array.isArray(r.posts) ? r.posts : [];
+        out.candidates.push(...posts);
+        out.recuperadas.push({ row, estado: r.estado, rawItems: r.rawItems != null ? r.rawItems : posts.length, nuevos: contarNuevos(posts, platformId), runStatus: r.runStatus || null });
+        const previo = out.cubiertoHasta.get(row.clave);
+        if (!previo || row.startedAt > previo) out.cubiertoHasta.set(row.clave, row.startedAt);
+        levantadas += 1;
+        encontrados += posts.length;
+        progress.finishItem(key, { ok: true, detail: describeFound(posts, platformId) });
+        progress.tick(1, { ok: true });
+        console.log(`[monitor] ${platformId}: se levantó la búsqueda «${row.fuente}» que había quedado en Apify (run ${row.apifyRunId}, ${r.runStatus || 'terminada'}): ${posts.length} posteo(s).`);
+      } else if (r && r.estado === 'corriendo') {
+        out.saltear.add(row.clave);
+        progress.finishItem(key, { ok: false, detail: 'sigue en Apify' });
+        progress.tick(1, { ok: null });
+        console.log(`[monitor] ${platformId}: la búsqueda «${row.fuente}» sigue corriendo en Apify (run ${row.apifyRunId}): no se vuelve a lanzar en este ciclo.`);
+      } else if ((r && r.estado === 'perdida') || edadMs > PENDING_LOST_AFTER_MS) {
+        actualizarFuente(row.id, { estado: 'perdida', finishedAt: cierre(row), recuperadaAt: new Date(now).toISOString() });
+        try {
+          db.markApifyCallLost(row.apifyRunId);
+        } catch (err) {
+          console.error(`[monitor] (${platformId}) no se pudo marcar la llamada perdida:`, err.message);
+        }
+        progress.finishItem(key, { ok: false, detail: 'ya no está en Apify' });
+        progress.tick(1, { ok: false });
+        console.warn(`[monitor] ${platformId}: la corrida ${row.apifyRunId} de «${row.fuente}» ya no está en Apify: sus resultados se perdieron.`);
+      } else {
+        // No se pudo leer ahora. Si todavía puede estar corriendo, el
+        // término se saltea; si no, se busca normal y esta se reintenta.
+        if (edadMs <= espera.runTimeoutSecs * 1000) out.saltear.add(row.clave);
+        progress.finishItem(key, { ok: false, detail: 'no se pudo leer' });
+        progress.tick(1, { ok: null });
+        console.warn(`[monitor] ${platformId}: no se pudo leer la corrida ${row.apifyRunId} de «${row.fuente}» (se reintenta en el próximo ciclo): ${(r && r.error && r.error.message) || 'sin detalle'}`);
+      }
+    })
+  );
+  progress.setPhaseSummary('Recuperando búsquedas pendientes', {
+    label: 'Recuperadas',
+    detail: `${plural(levantadas, 'corrida', 'corridas')}, ${plural(encontrados, 'encontrado', 'encontrados')}`,
+    ok: levantadas > 0 || aLeer.length === 0,
+  });
+  return out;
+}
+
+/**
+ * Cierra las filas de las búsquedas que se levantaron en este ciclo, DESPUÉS
+ * de procesar sus posteos: la fila pasa a `recuperada` (o `parcial` si Apify
+ * había cortado la corrida) y su llamada en apify_calls a una llamada buena
+ * con lo que trajo. Nunca tira.
+ */
+function cerrarRecuperadas(recovery, { platformId, runId }) {
+  for (const { row, estado, rawItems, nuevos, runStatus } of recovery.recuperadas) {
+    const ahora = new Date().toISOString();
+    actualizarFuente(row.id, {
+      estado: estado === 'ok' ? 'recuperada' : 'parcial',
+      motivo: row.motivo || (estado === 'ok' ? 'TIMEOUT' : `RUN_${String(runStatus || 'FAILED').replace('-', '_')}`),
+      items: rawItems,
+      nuevos,
+      recuperadaEn: runId,
+      recuperadaAt: ahora,
+      finishedAt: row.finishedAt || ahora,
+    });
+    try {
+      db.markApifyCallRecovered(row.apifyRunId, { items: rawItems, usd: usdForCall({ actor: row.actor, queryType: 'search', items: rawItems }) });
+    } catch (err) {
+      console.error(`[monitor] (${platformId}) no se pudo actualizar la llamada recuperada ${row.apifyRunId}:`, err.message);
+    }
+  }
+}
+
 /** Suma a un resultado ya anotado los términos que lo trajeron en esta corrida. Nunca tira. */
 function addSearchTerms(post, platformId, termsById) {
   const terminos = termsById.get(String(post.id));
@@ -1203,8 +1351,15 @@ async function runMonitoringCycle({ plataformas, trigger } = {}) {
     // Las cuatro fuentes se lanzan juntas (no son fases secuenciales de
     // verdad): el progreso las junta en una sola fase visible, con un tick
     // por cada llamada que termina (bien o mal) — ver src/monitoringProgress.js.
+    // Antes de buscar: lo que un ciclo anterior dejó esperando en Apify. Sus
+    // posteos se suman a los candidatos de este ciclo; un término cuya
+    // corrida anterior sigue corriendo no se vuelve a lanzar.
+    const recovery = await recoverPendingSearchRuns(platform, platformId, { searches });
+    const searchesToRun = searches.filter((term) => !recovery.saltear.has(sourceKey(term)));
+    const searchesSkipped = searches.filter((term) => recovery.saltear.has(sourceKey(term)));
+
     const detectionTotal =
-      accountsToScrape.length + hashtagsToScrape.length + (canSearchKeywords ? textKeywords.length : 0) + (canSearch ? searches.length : 0);
+      accountsToScrape.length + hashtagsToScrape.length + (canSearchKeywords ? textKeywords.length : 0) + (canSearch ? searchesToRun.length : 0);
     // En pantalla: "Buscando posteos nuevos · 5 de 8 listas" (las fuentes
     // corren en paralelo, no hay "la búsqueda actual"). La fase no deja
     // resumen propio: sus líneas son las de cada fuente (lanzarFuente).
@@ -1252,7 +1407,7 @@ async function runMonitoringCycle({ plataformas, trigger } = {}) {
         : []),
       // Cada búsqueda va en la fase 'busqueda' del registro de gasto.
       ...(canSearch
-        ? searches.map((term) => ({
+        ? searchesToRun.map((term) => ({
             tipo: 'busqueda',
             fuente: term,
             label: `«${term}»`,
@@ -1281,37 +1436,83 @@ async function runMonitoringCycle({ plataformas, trigger } = {}) {
       });
       progress.startItem(key, source.label, 'buscando…');
       let apifyRunId = null;
+      let meta = null;
       try {
         const posts = await source.run({
           resultsLimit: source.limit,
           lookback: source.lookback,
+          // El vencimiento es UNO para todas las fuentes de la red (ver
+          // src/searchWait.js): la detección no dura más que eso.
+          deadlineAt,
           onRunStarted: (run) => {
             apifyRunId = run && run.id ? run.id : null;
             actualizarFuente(rowId, { apifyRunId });
           },
+          onMeta: (m) => {
+            meta = m || null;
+          },
         });
+        // Apify cortó la corrida y el adapter entregó lo que dejó: sirve,
+        // pero no es una respuesta completa.
+        const parcial = Boolean(meta && meta.parcial);
+        const motivo = parcial ? `RUN_${String(meta.runStatus || 'FAILED').replace('-', '_')}` : null;
         progress.finishItem(key, { ok: true, detail: describeFound(posts, platformId) });
         progress.tick(1, { ok: true });
-        actualizarFuente(rowId, { estado: 'ok', items: Array.isArray(posts) ? posts.length : 0, nuevos: contarNuevos(posts, platformId), apifyRunId }, { startedMs });
-        return { source, ok: true, posts: Array.isArray(posts) ? posts : [], estado: 'ok', motivo: null };
+        actualizarFuente(
+          rowId,
+          {
+            estado: parcial ? 'parcial' : 'ok',
+            ...(parcial ? { motivo } : {}),
+            items: meta && meta.rawItems != null ? meta.rawItems : Array.isArray(posts) ? posts.length : 0,
+            nuevos: contarNuevos(posts, platformId),
+            apifyRunId,
+            ...(meta && meta.until ? { until: meta.until } : {}),
+          },
+          { startedMs }
+        );
+        return { source, ok: true, posts: Array.isArray(posts) ? posts : [], estado: parcial ? 'parcial' : 'ok', motivo, meta };
       } catch (err) {
+        // La corrida no terminó dentro de la espera pero sigue en Apify con
+        // su id: queda esperando y el ciclo siguiente la levanta.
+        const runId = (err && err.apifyRunId) || apifyRunId;
+        const pendiente = Boolean(err && err.runPending && runId);
         const motivo = motivoDeFallo(err);
-        progress.finishItem(key, { ok: false, detail: 'falló' });
-        progress.tick(1, { ok: false });
-        actualizarFuente(rowId, { estado: 'fallo', motivo, detalle: err && err.message, apifyRunId: (err && err.apifyRunId) || apifyRunId }, { startedMs });
-        return { source, ok: false, err, posts: [], estado: 'fallo', motivo };
+        progress.finishItem(key, { ok: false, detail: pendiente ? 'sigue en Apify' : 'falló' });
+        progress.tick(1, { ok: pendiente ? null : false });
+        actualizarFuente(rowId, { estado: pendiente ? 'esperando' : 'fallo', motivo, detalle: err && err.message, apifyRunId: runId }, { startedMs });
+        return { source, ok: false, err, posts: [], estado: pendiente ? 'esperando' : 'fallo', motivo };
       }
     };
 
-    const outcomes = await Promise.all(sources.map(lanzarFuente));
+    // Los términos cuya corrida anterior sigue en Apify: no se buscan, pero
+    // quedan dichos en esta corrida (no fue una detección completa).
+    const skippedOutcomes = canSearch
+      ? searchesSkipped.map((term) => {
+          const key = `${platformId}:busqueda:«${term}»`;
+          abrirFuente({ plataforma: platformId, tipo: 'busqueda', fuente: term, estado: 'fallo', motivo: 'SIGUE_EN_APIFY', finishedAt: new Date().toISOString() });
+          progress.startItem(key, `«${term}»`, 'sigue en Apify');
+          progress.finishItem(key, { ok: false, detail: 'sigue en Apify' });
+          return { source: { tipo: 'busqueda', fuente: term }, ok: false, err: null, posts: [], estado: 'fallo', motivo: 'SIGUE_EN_APIFY' };
+        })
+      : [];
 
-    const allCandidates = [];
+    const deadlineAt = Date.now() + searchWait().waitMs;
+    const outcomes = [...(await Promise.all(sources.map(lanzarFuente))), ...skippedOutcomes];
+
+    // Lo que se levantó de corridas anteriores entra primero: son los más viejos.
+    const allCandidates = [...recovery.candidates];
     // Primer error de plataforma de esta corrida (clave inválida, rate limit,
     // cuota): se resuelve DESPUÉS de guardar lo que sí llegó (ver abajo).
     let platformError = null;
     for (const outcome of outcomes) {
       if (outcome.ok) {
         allCandidates.push(...outcome.posts);
+      } else if (outcome.estado === 'esperando') {
+        console.warn(
+          `Monitoreo (${platformId}): la búsqueda «${outcome.source.fuente}» no terminó a tiempo y sigue en Apify: se levanta en el próximo ciclo.`
+        );
+      } else if (!outcome.err) {
+        // Salteada: su corrida anterior sigue en Apify (ya se avisó arriba).
       } else if (isPlatformError(outcome.err)) {
         if (!platformError) platformError = outcome.err;
         console.error(
@@ -1457,6 +1658,10 @@ async function runMonitoringCycle({ plataformas, trigger } = {}) {
     // por URL). Nunca tira ni frena el ciclo; una plataforma sin fotos (X) o
     // POST_IMAGES=0 no hace nada.
     await syncPostImages(platformId, newPostImages);
+
+    // Los posteos de las búsquedas levantadas ya pasaron por la tubería:
+    // recién ahora sus filas dejan de estar pendientes.
+    cerrarRecuperadas(recovery, { platformId, runId: cycleRunId });
 
     // Cuentas trackeadas cuyo perfil se scrapeó de verdad en este ciclo (no
     // las de hashtag/keyword: ahí solo se pesca el posteo puntual que

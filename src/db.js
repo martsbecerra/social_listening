@@ -965,6 +965,16 @@ const closeApifyCallStmt = db.prepare(`
   WHERE id = @id
 `);
 const getApifyCallStmt = db.prepare('SELECT * FROM apify_calls WHERE id = ?');
+// Una llamada que quedó esperando (o abierta) y cuyo resultado se levantó
+// después: pasa a contar como una llamada buena, con lo que trajo.
+const markApifyCallRecoveredStmt = db.prepare(`
+  UPDATE apify_calls SET ok = 1, error = NULL, items = @items, usd = @usd, estado = 'recuperada'
+  WHERE apify_run_id = @apifyRunId AND estado IN ('esperando', 'en_curso')
+`);
+const markApifyCallLostStmt = db.prepare(`
+  UPDATE apify_calls SET estado = 'perdida' WHERE apify_run_id = @apifyRunId AND estado IN ('esperando', 'en_curso')
+`);
+const listApifyCallsByApifyRunStmt = db.prepare('SELECT * FROM apify_calls WHERE apify_run_id = ? ORDER BY id');
 // Las sumas van por fase Y por actor: el actor oficial se valúa por
 // resultados (tres tarifas), apidojo por consulta. usdBest = lo que cobró
 // Apify si se sabe (usd_real), si no el estimado (usd).
@@ -1127,6 +1137,13 @@ const listApifyCallsPendingRealCostStmt = db.prepare(`
   ORDER BY id LIMIT @limit
 `);
 const setApifyCallRealCostStmt = db.prepare('UPDATE apify_calls SET usd_real = @usdReal WHERE id = @id');
+// Después de levantar una llamada de un ciclo ya cerrado: sus totales.
+const recomputeMonitoringRunTotalsStmt = db.prepare(`
+  UPDATE monitoring_runs
+  SET usd = (SELECT COALESCE(SUM(COALESCE(usd_real, usd)), 0) FROM apify_calls WHERE run_id = @id),
+      results = (SELECT COALESCE(SUM(items), 0) FROM apify_calls WHERE run_id = @id)
+  WHERE id = @id
+`);
 const recomputeMonitoringRunUsdStmt = db.prepare(`
   UPDATE monitoring_runs
   SET usd = (SELECT COALESCE(SUM(COALESCE(usd_real, usd)), 0) FROM apify_calls WHERE run_id = @id)
@@ -2339,6 +2356,30 @@ function closeApifyCall(id, { items = 0, ok = false, error = null, durationMs = 
     usd: Number(usd) || 0,
     estado: estado ?? null,
   }).changes;
+}
+
+/**
+ * La llamada de esa corrida de Apify quedó esperando y su resultado se
+ * levantó después: pasa a ok con lo que trajo (`items`) y su usd estimado,
+ * estado `recuperada`, y se recalculan los totales del ciclo que la lanzó.
+ * Solo toca filas que estaban `esperando` o `en_curso`.
+ * @returns {number} filas cambiadas
+ */
+function markApifyCallRecovered(apifyRunId, { items = 0, usd = 0 } = {}) {
+  if (!apifyRunId) return 0;
+  const changed = markApifyCallRecoveredStmt.run({ apifyRunId: String(apifyRunId), items: Number(items) || 0, usd: Number(usd) || 0 }).changes;
+  if (changed > 0) {
+    for (const row of listApifyCallsByApifyRunStmt.all(String(apifyRunId))) {
+      if (row.run_id != null) recomputeMonitoringRunTotalsStmt.run({ id: row.run_id });
+    }
+  }
+  return changed;
+}
+
+/** La corrida de Apify de esa llamada ya no existe: la fila queda `perdida` (sigue fallida). @returns {number} filas cambiadas */
+function markApifyCallLost(apifyRunId) {
+  if (!apifyRunId) return 0;
+  return markApifyCallLostStmt.run({ apifyRunId: String(apifyRunId) }).changes;
 }
 
 /** Una fila de apify_calls tal cual, o null. Para los tests y los scripts. */
@@ -3670,6 +3711,8 @@ module.exports = {
   insertApifyCall,
   closeApifyCall,
   getApifyCall,
+  markApifyCallRecovered,
+  markApifyCallLost,
   startMonitoringRun,
   finishMonitoringRun,
   getMonitoringRun,

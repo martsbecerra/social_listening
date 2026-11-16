@@ -23,11 +23,13 @@ require('dotenv').config();
 const { resolveIgActor } = require('./src/platforms/igActor');
 const { resolveRefreshMode } = require('./src/refreshMode');
 const { resolveReachRule, describeReachRule } = require('./src/reachRule');
+const { resolveSearchWait, describeSearchWait } = require('./src/searchWait');
 const { resolveSessionConfig, describeSessionConfig } = require('./src/auth/sessionConfig');
 const { resolveBackfillMax } = require('./src/backfillConfig');
 try {
   resolveIgActor();
   resolveRefreshMode();
+  resolveSearchWait();
   resolveReachRule();
   resolveSessionConfig();
   resolveBackfillMax();
@@ -668,6 +670,7 @@ const server = app.listen(PORT, () => {
     })`
   );
   console.log(`   Tarifas de apidojo (APIDOJO_*, usd estimado hasta conciliar el real): ${require('./src/apifyCost').describeApidojoRates()}`);
+  console.log(`   Búsquedas (SEARCH_WAIT_MS, SEARCH_RUN_TIMEOUT_SECS): ${describeSearchWait(resolveSearchWait())}`);
   console.log(`   Alcance (REACH_*): ${describeReachRule(resolveReachRule())}`);
   console.log(
     `   Límites del análisis: COMMENTS_LIMIT (Apify, comentarios y respuestas)=${resolveCommentsLimit()}, COMMENTS_ANALYSIS_LIMIT (modelo)=${resolveMaxCommentsLimit()}, en tandas de ${BATCH_SIZE}; pide confirmación con más de ${confirmarDesde()} comentarios · X: X_COMMENTS_ANALYSIS_LIMIT=${resolveXMaxItems()}`
