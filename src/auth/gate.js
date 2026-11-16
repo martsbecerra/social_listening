@@ -22,8 +22,9 @@
 // pedido (req.auth.role); un correo que ya no está pierde la sesión (se
 // confirma con una segunda lectura: CONFIRMAR_BAJA_MS). En
 // /api/, todo lo que no sea GET, HEAD u OPTIONS exige `operador`, salvo
-// /api/auth/*: 403 { error: 'No tenés permiso para esta acción.' }. Tests:
-// test/requireRole.test.js y test/session.test.js.
+// /api/auth/*: 403 { error: 'No tenés permiso para esta acción.' }. Y esos
+// métodos tienen que venir de una página de la app (mismoOrigen), también en
+// /api/auth/*. Tests: test/requireRole.test.js y test/session.test.js.
 // ==========================================================================
 
 const { readSession, clearSessionCookie, sessionIdFromRequest, revokeSessionsForEmail } = require('./session');
@@ -37,6 +38,37 @@ const allowlist = require('./allowlist');
 // para siempre (revisión de noviembre 2026).
 const CONFIRMAR_BAJA_MS = 300;
 const SIN_VERIFICAR_BODY = Object.freeze({ error: 'No se pudo verificar el acceso. Probá de nuevo en unos segundos.' });
+const OTRO_SITIO_BODY = Object.freeze({ error: 'Pedido rechazado: no salió de esta app.' });
+
+/**
+ * ¿El pedido salió de una página de esta app? Para todo lo que no es GET,
+ * HEAD u OPTIONS bajo /api (revisión de noviembre 2026): la cookie es
+ * sameSite strict, pero eso no frena a otra página del MISMO sitio (otro
+ * puerto de localhost, otro subdominio), y un formulario text/plain con
+ * ?plataforma= en la URL llegaba a run-now, al backfill o a ignorar sin
+ * cuerpo JSON. Sec-Fetch-Site manda (el navegador lo pone y una página no lo
+ * puede cambiar): solo same-origin o none. Sin él, Origin tiene que ser el
+ * del Host o el de APP_BASE_URL. Sin ninguno de los dos no hay navegador de
+ * por medio (curl, los tests): pasa, y la sesión sigue siendo obligatoria.
+ */
+function mismoOrigen(req) {
+  const sitio = String(req.headers['sec-fetch-site'] || '').trim().toLowerCase();
+  if (sitio) return sitio === 'same-origin' || sitio === 'none';
+  const origin = req.headers.origin;
+  if (!origin) return true;
+  let url;
+  try {
+    url = new URL(origin);
+  } catch {
+    return false; // "null" (iframes con sandbox, algunas redirecciones) u otra cosa
+  }
+  if (url.host && url.host === String(req.headers.host || '').toLowerCase()) return true;
+  try {
+    return url.origin === new URL(process.env.APP_BASE_URL || '').origin;
+  } catch {
+    return false;
+  }
+}
 
 // Roles (noviembre 2026): en /api/, todo método que no sea uno de estos
 // exige `operador`, salvo /api/auth/* (un lector tiene que poder salir).
@@ -106,6 +138,14 @@ function isPagePath(canonical) {
 // gate ya mandó a borrar la cookie.
 function decidir(req, res, next, session, cookieLimpia) {
   const urlPath = req.path;
+  // Escrituras de otra página (también /api/auth/*: un sitio ajeno no pide
+  // links ni cierra sesiones). Va primero, con o sin sesión.
+  if (!SAFE_METHODS.has(req.method)) {
+    const canonicalEscritura = canonicalPath(urlPath);
+    if (canonicalEscritura !== null && isApiPath(canonicalEscritura) && !mismoOrigen(req)) {
+      return res.status(403).json(OTRO_SITIO_BODY);
+    }
+  }
   if (session) req.auth = session;
   // Una cookie que ya no es una sesión (vencida, revocada) se borra cuando
   // el pedido termina en el login o en un 401.

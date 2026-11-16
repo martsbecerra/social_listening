@@ -10,6 +10,8 @@
 //   en src/ (se leen del código: una ruta nueva entra sola al test): un
 //   lector recibe 403 y no llega al handler; un operador llega. /API/... en
 //   mayúsculas también da 403; /api/auth/* sigue abierto para un lector.
+// - Escrituras de otra página (Sec-Fetch-Site u Origin): 403 también para un
+//   operador y en /api/auth/*.
 //
 // App de prueba en un puerto local: el gate real y un handler que anota cada
 // llegada. Base temporal; no carga server.js.
@@ -93,7 +95,7 @@ let RARO;
 let DOBLE;
 const llegadas = [];
 
-function pedir(method, rawPath, { cookie = null } = {}) {
+function pedir(method, rawPath, { cookie = null, headers = {} } = {}) {
   const conCuerpo = method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS';
   return new Promise((resolve, reject) => {
     const req = http.request(
@@ -105,6 +107,7 @@ function pedir(method, rawPath, { cookie = null } = {}) {
         headers: {
           ...(cookie ? { Cookie: cookie } : {}),
           ...(conCuerpo ? { 'Content-Type': 'application/json', 'Content-Length': 2 } : {}),
+          ...headers,
         },
       },
       (res) => {
@@ -363,5 +366,50 @@ describe('regla general del gate: todo no-GET bajo /api exige operador', { concu
   test('un rol desconocido es lector; el repetido, el más alto', async () => {
     assert.equal((await pedir('POST', '/api/monitoring/run-now', { cookie: RARO })).status, 403);
     assert.equal((await pedir('POST', '/api/monitoring/run-now', { cookie: DOBLE })).status, 200);
+  });
+});
+
+describe('escrituras de otra página: 403 aunque haya sesión de operador', { concurrency: false }, () => {
+  const OTRO_SITIO = { error: 'Pedido rechazado: no salió de esta app.' };
+
+  test('Sec-Fetch-Site same-site o cross-site (otro puerto de localhost, otro dominio)', async () => {
+    for (const sitio of ['same-site', 'cross-site', 'Cross-Site']) {
+      const res = await pedir('POST', '/api/monitoring/run-now?plataforma=instagram', {
+        cookie: OPERADOR,
+        headers: { 'Sec-Fetch-Site': sitio, Origin: `http://127.0.0.1:${port}` },
+      });
+      assert.equal(res.status, 403, sitio);
+      assert.deepEqual(JSON.parse(res.body), OTRO_SITIO);
+    }
+    assert.deepEqual(llegadas, []);
+  });
+
+  test('sin Sec-Fetch-Site, un Origin que no es el del Host ni el de APP_BASE_URL', async () => {
+    for (const origin of ['http://localhost:5173', 'http://127.0.0.1', 'null', 'basura']) {
+      const res = await pedir('POST', '/api/monitoring/posts/1/ignore?plataforma=instagram', { cookie: OPERADOR, headers: { Origin: origin } });
+      assert.equal(res.status, 403, origin);
+    }
+    assert.deepEqual(llegadas, []);
+  });
+
+  test('también /api/auth/* y sin sesión: un sitio ajeno no pide links ni cierra sesiones', async () => {
+    assert.equal((await pedir('POST', '/api/auth/magic-link', { headers: { 'Sec-Fetch-Site': 'cross-site' } })).status, 403);
+    assert.equal((await pedir('POST', '/api/auth/logout', { cookie: LECTOR, headers: { 'Sec-Fetch-Site': 'same-site' } })).status, 403);
+    assert.equal((await pedir('POST', '/API/auth/verify', { headers: { Origin: 'http://localhost:5173' } })).status, 403);
+  });
+
+  test('desde la propia app pasa: same-origin, Origin del Host o de APP_BASE_URL, o sin navegador', async () => {
+    const run = (headers) => pedir('POST', '/api/monitoring/run-now', { cookie: OPERADOR, headers });
+    assert.equal((await run({ 'Sec-Fetch-Site': 'same-origin', Origin: `http://127.0.0.1:${port}` })).status, 200);
+    assert.equal((await run({ Origin: `http://127.0.0.1:${port}` })).status, 200);
+    // Detrás de un proxy el Host puede ser otro: vale el origen de APP_BASE_URL.
+    assert.equal((await run({ Origin: 'http://localhost' })).status, 200);
+    assert.equal((await run({})).status, 200);
+    assert.equal(llegadas.length, 4);
+  });
+
+  test('una lectura de otro sitio no se toca (un link desde el correo es un GET)', async () => {
+    const res = await pedir('GET', '/api/monitoring/posts', { cookie: LECTOR, headers: { 'Sec-Fetch-Site': 'cross-site', Origin: 'http://otro.test' } });
+    assert.equal(res.status, 200);
   });
 });
