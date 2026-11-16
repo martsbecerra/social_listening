@@ -55,8 +55,8 @@ recuperado de las corridas cortadas) quedó afuera por decisión del dueño.
 
 ## Phase 8: `applyWindow` por el día de `until`
 
-- [ ] 8.1 `instagramApidojo.js`: `until` desde `sinceIso`; `applyWindow(posts, until)`; meta de la consulta; aviso del tope corregido (REQ-VPF-11)
-- [ ] 8.2 Tests: `apidojoProvider.test.js`, `searchSource.test.js`
+- [x] 8.1 `instagramApidojo.js`: `until` desde `sinceIso`; `applyWindow(posts, until)`; meta de la consulta; aviso del tope corregido (REQ-VPF-11)
+- [x] 8.2 Tests: `apidojoProvider.test.js`; contrato en `platforms/index.js`
 
 ## Phase 9: tope por término y segunda consulta
 

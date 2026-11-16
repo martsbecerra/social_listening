@@ -239,7 +239,7 @@ describe('proveedor apidojo del adapter de Instagram', { concurrency: false }, (
     assert.equal(t({}), null);
   });
 
-  test('parseLookbackMs / untilDateFor / applyWindow: until es el día UTC en que arranca la ventana; lo anterior a la ventana real se descarta', () => {
+  test('parseLookbackMs / untilDateFor / applyWindow: until es el día UTC en que arranca la ventana; se conserva todo lo de ese día en adelante (lo que se pagó)', () => {
     const now = Date.UTC(2026, 8, 18, 3, 0, 0); // 2026-09-18 03:00 UTC
     assert.equal(provider.parseLookbackMs('1 day'), DAY_MS);
     assert.equal(provider.parseLookbackMs('6 hours'), 6 * HOUR_MS);
@@ -256,17 +256,25 @@ describe('proveedor apidojo del adapter de Instagram', { concurrency: false }, (
     assert.equal(provider.untilDateFor('2 weeks', now), '2026-09-04');
     assert.equal(provider.untilDateFor(undefined, now), undefined, 'sin lookback no hay until (benchmark, refresco)');
     assert.equal(provider.untilDateFor('ayer', now), undefined);
+    // Con el instante exacto de la ventana (la marca de esa fuente), until es su día UTC.
+    assert.equal(provider.untilDateFor('13 days', now, '2026-09-05T19:00:00.006Z'), '2026-09-05');
+    assert.equal(provider.untilDateFor(undefined, now, '2026-09-17T03:00:00.000Z'), '2026-09-17');
+    assert.equal(provider.untilDateFor('1 day', now, 'no es una fecha'), '2026-09-17', 'un sinceIso roto cae al lookback');
 
     const posts = [
       { id: 'a', postedAt: new Date(now - 2 * HOUR_MS).toISOString() },
       { id: 'b', postedAt: new Date(now - 23 * HOUR_MS).toISOString() },
-      { id: 'c', postedAt: new Date(now - 25 * HOUR_MS).toISOString() }, // mismo día UTC que until, fuera de la ventana real
+      // Mismo día UTC que until pero de hace más de 24 h: el actor lo devolvió y se cobró.
+      // Antes se tiraba (el corte era "ahora − 24 h"); ahora se conserva.
+      { id: 'c', postedAt: new Date(now - 25 * HOUR_MS).toISOString() },
       { id: 'd', postedAt: '2026-06-01T10:00:00.000Z' }, // fijado viejo
       { id: 'e', postedAt: null },
+      { id: 'f', postedAt: '2026-09-16T23:59:59.000Z' }, // un segundo antes del día de until
     ];
-    assert.deepEqual(provider.applyWindow(posts, '1 day', now).map((p) => p.id), ['a', 'b']);
-    assert.deepEqual(provider.applyWindow(posts, '3 hours', now).map((p) => p.id), ['a']);
-    assert.equal(provider.applyWindow(posts, undefined, now).length, 5, 'sin lookback pasa todo');
+    assert.deepEqual(provider.applyWindow(posts, '2026-09-17').map((p) => p.id), ['a', 'b', 'c']);
+    assert.deepEqual(provider.applyWindow(posts, '2026-09-18').map((p) => p.id), ['a']);
+    assert.equal(provider.applyWindow(posts, undefined).length, 6, 'sin until pasa todo (benchmark, refresco)');
+    assert.equal(provider.applyWindow(posts, 'ayer').length, 6, 'un until que no es una fecha no filtra');
   });
 
   test('scrapeAccount: una URL de perfil por run, maxItems = resultsLimit, until solo con lookback, ventana aplicada del lado nuestro', async () => {
@@ -301,6 +309,36 @@ describe('proveedor apidojo del adapter de Instagram', { concurrency: false }, (
       }
       assert.equal(calls[2].body.maxItems, 10);
       assert.ok(warned.some((w) => w.includes('maxItems=10')));
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  test('scrapeSearch con la ventana de la fuente (sinceIso): until es su día UTC, no se tira lo ya pagado de ese día y la lista lleva la meta de la consulta', async () => {
+    const originalFetch = global.fetch;
+    try {
+      const { apifySimulado } = require('./helpers/apifySimulado');
+      // Ventana de 1 día pedida a las HH:MM de hoy: until es el día UTC de ayer.
+      const sinceIso = new Date(Date.now() - DAY_MS).toISOString();
+      const until = sinceIso.slice(0, 10);
+      const inicioDelDia = Date.parse(`${until}T00:00:00.000Z`);
+      const sim = apifySimulado(() => [
+        rawPost({ id: 1, hoursAgo: 1 }),
+        // Publicado al empezar el día de until: más de 24 h atrás, pero dentro de lo que se pidió.
+        { ...rawPost({ id: 2 }), createdAt: new Date(inicioDelDia + 60 * 1000).toISOString() },
+        { ...rawPost({ id: 3 }), createdAt: new Date(inicioDelDia - 60 * 1000).toISOString() },
+      ]);
+      global.fetch = sim;
+      const posts = await instagram.scrapeSearch('macri', { resultsLimit: 50, lookback: '1 day', sinceIso });
+      assert.deepEqual(sim.inputs[0].input, { keywords: ['macri'], maxItems: 50, until });
+      assert.deepEqual(posts.map((p) => p.id), ['1', '2'], 'lo del día de until se conserva; lo anterior no');
+      assert.deepEqual(posts.meta, { rawItems: 3, maxItems: 50, until, parcial: false, runStatus: 'SUCCEEDED' });
+      assert.deepEqual(Object.keys(posts), ['0', '1'], 'la meta no aparece al recorrer la lista');
+      assert.equal(JSON.parse(JSON.stringify(posts)).length, 2);
+
+      // Una ventana de varios días (una búsqueda que retoma): until es el día de su marca.
+      await instagram.scrapeSearch('macri', { resultsLimit: 500, lookback: '13 days', sinceIso: '2026-11-04T19:00:00.006Z' });
+      assert.equal(sim.inputs[1].input.until, '2026-11-04');
     } finally {
       global.fetch = originalFetch;
     }
