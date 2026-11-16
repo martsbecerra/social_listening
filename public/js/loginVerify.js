@@ -75,11 +75,12 @@ verifyForm.addEventListener('submit', async (event) => {
   verifySetLabel('Entrando…');
   let res = null;
   try {
+    // JSON: la app no acepta formularios (server.js no monta urlencoded).
     res = await fetch('/api/auth/verify', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
-      body: new URLSearchParams({ token: verifyToken }),
+      body: JSON.stringify({ token: verifyToken }),
     });
   } catch {
     res = null;

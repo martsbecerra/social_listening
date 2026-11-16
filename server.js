@@ -108,8 +108,10 @@ if (
 // src/httpSecurity.js.
 app.use(securityHeaders());
 
+// La app solo recibe JSON: sin express.urlencoded, un formulario de otro
+// sitio no puede mandarle nada que llegue al cuerpo de una ruta (y el login,
+// public/js/loginVerify.js, manda el token en JSON).
 app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
 
 // El gate va ANTES de los estáticos: si no, dashboard.html se sirve sin cookie.
 app.use(createAuthGate());

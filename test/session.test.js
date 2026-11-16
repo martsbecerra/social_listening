@@ -308,6 +308,51 @@ describe('allowlist: un correo que sale pierde el acceso', { concurrency: false 
   });
 });
 
+describe('la app solo recibe JSON', { concurrency: false }, () => {
+  const ROOT = path.join(__dirname, '..');
+
+  test('un verify como formulario (urlencoded) no trae token: 400, sin sesión', async () => {
+    const { rawToken } = issueMagicLink('ana@test.local');
+    const res = await new Promise((resolve, reject) => {
+      const body = `token=${encodeURIComponent(rawToken)}`;
+      const req = http.request(
+        {
+          host: '127.0.0.1',
+          port,
+          method: 'POST',
+          path: '/api/auth/verify',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) },
+        },
+        (r) => {
+          r.resume();
+          r.on('end', () => resolve({ status: r.statusCode, setCookie: r.headers['set-cookie'] || [] }));
+        }
+      );
+      req.on('error', reject);
+      req.end(body);
+    });
+    assert.equal(res.status, 400);
+    assert.ok(!res.setCookie.some((c) => /^sl_session=[A-Za-z0-9_-]{43};/.test(c)));
+  });
+
+  test('server.js no monta express.urlencoded; ningún form ni script del frontend manda uno', () => {
+    const server = fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8');
+    assert.ok(!/app\.use\(\s*express\.urlencoded/.test(server));
+    const pub = path.join(ROOT, 'public');
+    for (const pagina of fs.readdirSync(pub).filter((f) => f.endsWith('.html'))) {
+      const html = fs.readFileSync(path.join(pub, pagina), 'utf8');
+      for (const [form] of html.matchAll(/<form\b[^>]*>/gi)) {
+        assert.ok(!/\b(method|action)\s*=/i.test(form), `${pagina}: ${form}`);
+      }
+    }
+    for (const archivo of fs.readdirSync(path.join(pub, 'js')).filter((f) => f.endsWith('.js'))) {
+      const js = fs.readFileSync(path.join(pub, 'js', archivo), 'utf8');
+      assert.ok(!/x-www-form-urlencoded/.test(js), `${archivo} manda un formulario`);
+      assert.ok(!/body:\s*new\s+URLSearchParams/.test(js), `${archivo} manda un formulario`);
+    }
+  });
+});
+
 describe('purga', () => {
   test('borra revocadas, inactivas y vencidas; deja las vivas', () => {
     raw.exec('DELETE FROM sessions');

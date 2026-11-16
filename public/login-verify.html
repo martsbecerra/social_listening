@@ -49,7 +49,7 @@
           <span class="eyebrow">Último paso</span>
           <h2 id="verifyTitle" tabindex="-1">Entrá a la app</h2>
           <p>Tocá «Entrar» para terminar. Este paso evita que un filtro de correo use el link por vos.</p>
-          <form id="verifyForm" method="POST" action="/api/auth/verify" novalidate>
+          <form id="verifyForm" novalidate>
             <input type="hidden" name="token" id="tokenInput" />
             <p class="lg-err" id="verifyErr" role="alert" hidden></p>
             <button type="submit" class="btn primary" id="verifySubmit"><span>Entrar</span></button>

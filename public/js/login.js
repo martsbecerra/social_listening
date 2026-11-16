@@ -308,3 +308,15 @@ try {
 } catch {
   /* nada que borrar */
 }
+
+// Con una sesión abierta, al inicio. El gate ya lo hace con "/", pero la
+// cookie es sameSite strict: un link a la app desde Gmail o WhatsApp llega
+// sin ella y cae acá aunque haya sesión. Este pedido sale de la propia
+// página, así que sí la lleva.
+fetch('/api/auth/me', { credentials: 'same-origin' })
+  .then((res) => {
+    if (res.ok) window.location.replace('/dashboard.html');
+  })
+  .catch(() => {
+    /* sin red: se queda en el login */
+  });
