@@ -20,6 +20,8 @@
   <link rel="stylesheet" href="vendor/tabulator/tabulator.min.css" />
   <!-- Tema: clara de origen, oscura con el botón (antes de pintar nada). -->
   <script src="js/theme.js"></script>
+  <!-- La sesión: el rol, el 401 al login y X-SL-Auto (js/sesion.js). -->
+  <script src="js/sesion.js"></script>
   <link rel="stylesheet" href="css/styles.css" />
 </head>
 
@@ -66,9 +68,9 @@
         </div>
       </div>
 
-      <div class="card rv">
+      <div class="card rv x-run">
         <label for="url" class="sr">Link de la publicación</label>
-        <div class="urlbar">
+        <div class="urlbar solo-operador">
           <input type="text" id="url" placeholder="https://x.com/usuario/status/1234567890" autocomplete="off" />
           <button id="analyzeBtn" class="btn primary" type="button">Analizar</button>
         </div>
@@ -125,7 +127,7 @@
     <div class="card config rv">
       <div>
         <h3 class="tag">Cuentas trackeadas</h3>
-        <div class="add-row">
+        <div class="add-row solo-operador">
           <input type="text" id="newAccount" placeholder="usuario (sin @)" autocomplete="off" />
           <button id="addAccountBtn" class="btn-ghost" type="button">Agregar</button>
         </div>
@@ -136,7 +138,7 @@
       </div>
       <div>
         <h3 class="tag">Palabras clave / hashtags</h3>
-        <div class="add-row">
+        <div class="add-row solo-operador">
           <input type="text" id="newKeyword" placeholder="Jorge Macri o #JorgeMacri" autocomplete="off" />
           <button id="addKeywordBtn" class="btn-ghost" type="button">Agregar</button>
         </div>
@@ -148,7 +150,7 @@
     </div>
 
     <div class="runbar">
-      <button id="runNowBtn" class="btn primary" type="button">▶ Actualizar ahora</button>
+      <button id="runNowBtn" class="btn primary solo-operador" type="button">▶ Actualizar ahora</button>
       <span class="live">
         <div class="meter" data-meter="7"></div>
         <span><b id="monitoringListenState">Escuchando</b> · <span id="monitoringNextRun">próxima corrida –</span></span>

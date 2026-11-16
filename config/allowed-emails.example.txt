@@ -1,7 +1,16 @@
 # Copiá este archivo como allowed-emails.txt (en esta misma carpeta)
 # y poné un email por línea. No se versiona el .txt real.
 #
-# También podés listar emails en ALLOWED_EMAILS del .env
-# (separados por coma). Un email entra si está en el archivo o en el env.
+# Formato: email;rol (el rol es opcional)
+#   lector   ve todo, pero no gasta ni escribe (es el rol si no ponés nada)
+#   operador puede todo: actualizar, analizar, agregar fuentes, corregir...
+# Un rol mal escrito vale lector (y se avisa en el log). Si el mismo correo
+# aparece dos veces con roles distintos, gana el más alto.
+#
+# También podés listar emails en ALLOWED_EMAILS del .env, con el mismo
+# formato, separados por coma (ana@x.gob.ar;operador,juan@x.gob.ar).
+# Un email entra si está en el archivo o en el env. El archivo se relee en
+# cada pedido: si sacás a alguien, pierde el acceso en el próximo pedido.
 
-# ana@buenosaires.gob.ar
+# ana@buenosaires.gob.ar;operador
+# juan@buenosaires.gob.ar

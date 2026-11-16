@@ -308,3 +308,18 @@ try {
 } catch {
   /* nada que borrar */
 }
+
+// Con una sesión abierta, a la página que se pidió o al inicio. El gate ya
+// lo hace con "/", pero la cookie es sameSite strict: un link a la app desde
+// Gmail o WhatsApp llega sin ella y cae acá aunque haya sesión. Este pedido
+// sale de la propia página, así que sí la lleva. Adónde lo decide
+// loginDestino (public/js/loginDestino.js, cargado antes): el ?volver= que
+// pone el gate, solo si es una de sus páginas, con su # (#analisis-57) si es
+// uno de la app; ante cualquier otra cosa, el inicio.
+fetch('/api/auth/me', { credentials: 'same-origin' })
+  .then((res) => {
+    if (res.ok) window.location.replace(loginDestino(window.location.search, window.location.hash));
+  })
+  .catch(() => {
+    /* sin red: se queda en el login */
+  });

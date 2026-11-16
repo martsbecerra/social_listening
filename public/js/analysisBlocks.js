@@ -679,7 +679,8 @@ function anaRenderThemes() {
       }
     }
     const n = anaEl('span', 'n', t.manual ? '—' : formatCount(t.n));
-    const ed = anaEl('button', 'ed', '✎');
+    // solo-operador: un lector no edita temas (public/js/sesion.js).
+    const ed = anaEl('button', 'ed solo-operador', '✎');
     ed.type = 'button';
     ed.setAttribute('aria-label', `Editar el tema «${t.nombre}»`);
     ed.dataset.tip = v2 && !t.manual ? 'Cambiar el nombre (si coincide con otro tema, se unen)' : 'Cambiar el nombre o el texto, o quitarlo';
@@ -687,7 +688,7 @@ function anaRenderThemes() {
     box.append(row);
   });
   if (temas.length === 0) box.append(anaEl('span', 'note', 'El modelo no encontró temas que se repitan.'));
-  const add = anaEl('button', 'an-theme add', '+ tema');
+  const add = anaEl('button', 'an-theme add solo-operador', '+ tema');
   add.type = 'button';
   add.id = 'anaTemaAdd';
   const lleno = !v2 && temas.length >= window.TemasConversacion.MAX;

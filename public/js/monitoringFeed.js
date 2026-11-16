@@ -153,7 +153,8 @@ function buildFeedHead(post) {
   when.title = time ? `${date} · ${time}` : date;
 
   // El clic lo atiende el contenedor (ver "Acciones de la tarjeta").
-  const ignore = feedNode('button', 'ico del');
+  // solo-operador: un lector no ignora posteos (public/js/sesion.js).
+  const ignore = feedNode('button', 'ico del solo-operador');
   ignore.type = 'button';
   ignore.title = 'Ignorar publicación';
   ignore.setAttribute('aria-label', 'Ignorar publicación');

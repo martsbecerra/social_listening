@@ -1461,6 +1461,35 @@ const claimMagicLinkStmt = db.prepare(`
 const getMagicLinkStmt = db.prepare('SELECT email FROM magic_links WHERE token_hash = ?');
 const deleteUnusedMagicLinksStmt = db.prepare('DELETE FROM magic_links WHERE email = ? AND used_at IS NULL');
 
+// Sesiones (noviembre 2026, src/auth/session.js): la cookie lleva un id al
+// azar; acá queda solo su SHA-256 (id_hash), como con los magic links, nunca
+// el id en claro. Tiempos en milisegundos (Date.now()). Revocable: logout,
+// un correo que sale de la allowlist, o a mano.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS sessions (
+    id_hash TEXT PRIMARY KEY,
+    email TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    last_seen_at INTEGER NOT NULL,
+    revoked INTEGER NOT NULL DEFAULT 0
+  )
+`);
+db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_email ON sessions(email)');
+
+const createSessionStmt = db.prepare(`
+  INSERT INTO sessions (id_hash, email, created_at, last_seen_at, revoked)
+  VALUES (@idHash, @email, @createdAt, @lastSeenAt, 0)
+`);
+const getSessionStmt = db.prepare(
+  'SELECT id_hash, email, created_at, last_seen_at, revoked FROM sessions WHERE id_hash = ?'
+);
+const touchSessionStmt = db.prepare('UPDATE sessions SET last_seen_at = ? WHERE id_hash = ? AND revoked = 0');
+const revokeSessionStmt = db.prepare('UPDATE sessions SET revoked = 1 WHERE id_hash = ?');
+const revokeSessionsByEmailStmt = db.prepare('UPDATE sessions SET revoked = 1 WHERE email = ? AND revoked = 0');
+const purgeSessionsStmt = db.prepare(
+  'DELETE FROM sessions WHERE revoked = 1 OR last_seen_at < @idleBefore OR created_at < @createdBefore'
+);
+
 function findExistingPostId(id, url) {
   if (id && isKnownPostStmt.get(id)) return id;
   if (url) {
@@ -2653,6 +2682,48 @@ function deleteUnusedMagicLinks(email) {
 }
 
 // --------------------------------------------------------------------
+// Sesiones (tabla sessions). Reciben el SHA-256 del id, nunca el id: lo
+// arma src/auth/session.js.
+// --------------------------------------------------------------------
+function createSession({ idHash, email, createdAt, lastSeenAt = createdAt }) {
+  createSessionStmt.run({ idHash, email, createdAt, lastSeenAt });
+}
+
+/** La fila de la sesión (también revocada o vencida: decide session.js), o null. */
+function getSession(idHash) {
+  const row = getSessionStmt.get(idHash);
+  if (!row) return null;
+  return {
+    idHash: row.id_hash,
+    email: row.email,
+    createdAt: Number(row.created_at),
+    lastSeenAt: Number(row.last_seen_at),
+    revoked: Number(row.revoked) === 1,
+  };
+}
+
+function touchSession(idHash, at) {
+  return touchSessionStmt.run(at, idHash).changes > 0;
+}
+
+function revokeSession(idHash) {
+  return revokeSessionStmt.run(idHash).changes > 0;
+}
+
+/** Revoca todas las sesiones abiertas de un correo; devuelve cuántas. */
+function revokeSessionsByEmail(email) {
+  return revokeSessionsByEmailStmt.run(email).changes;
+}
+
+/**
+ * Borra las revocadas y las vencidas (sin actividad desde antes de
+ * `idleBefore`, o creadas antes de `createdBefore`); devuelve cuántas.
+ */
+function purgeSessions({ idleBefore, createdBefore }) {
+  return purgeSessionsStmt.run({ idleBefore, createdBefore }).changes;
+}
+
+// --------------------------------------------------------------------
 // Análisis de publicación (tabla analisis). Todas por plataforma, sin
 // default. Los campos JSON se leen con parseJsonColumn: un valor roto
 // queda null, nunca tira.
@@ -3243,6 +3314,12 @@ module.exports = {
   insertMagicLink,
   claimMagicLink,
   deleteUnusedMagicLinks,
+  createSession,
+  getSession,
+  touchSession,
+  revokeSession,
+  revokeSessionsByEmail,
+  purgeSessions,
   upsertXInfluencer,
   upsertXInfluencers,
   getXInfluencer,

@@ -403,7 +403,10 @@ clasificados sin tema les completa SOLO el tema (`db.updateTema`, que no
 pisa uno guardado), sin tocar título, sentimiento ni `matched_reason`. Una
 llamada al LLM por posteo, de a una (avance por consola cada 50); devuelve
 `{ classified, temasCompletados, stillPending }`. Lo corre el dueño, nunca
-un agente: cuesta una clasificación por posteo pendiente.
+un agente: cuesta una clasificación por posteo pendiente. Desde noviembre
+2026, como mucho `BACKFILL_MAX` (200) por invocación (lo que no entra suma a
+`stillPending`) y uno solo a la vez en todo el proceso: con otro en curso,
+`BACKFILL_EN_CURSO` y la ruta responde 409. Exige rol `operador`.
 
 ## Estadísticas (`src/stats.js`)
 
@@ -543,6 +546,92 @@ Desde noviembre 2026 (rama `hardening-http`; README, "Seguridad HTTP"), en
   clave; el nombre de la variable, solo en el log (en el `message` del
   error o una línea al armarlo). Vale para `userMessage`, el `error` de una
   respuesta y lo que quede guardado para la pantalla.
+
+## Autenticación y roles
+
+Desde noviembre 2026 (rama `roles-y-sesion`; README, "Roles y sesión
+revocable"). Tests: `test/requireRole.test.js`, `test/session.test.js` y
+`test/authGate.test.js`.
+
+| Rol | Qué puede | Cómo se da |
+|---|---|---|
+| `lector` | Ver todo (Monitoreo, Mapa, Análisis, Estadísticas, inicio, CSV). No gasta ni escribe. | `email` o `email;lector` en `config/allowed-emails.txt` o en `ALLOWED_EMAILS` (es el de por defecto; un rol mal escrito también vale lector, con aviso) |
+| `operador` | Todo: actualizar, analizar y confirmar, agregar y sacar fuentes, ignorar y cambiar el tono, editar temas, figuras y reclamos, eliminar análisis, backfill. | `email;operador` |
+
+- **Dónde se aplica.** La regla es general y vive en el gate
+  (`src/auth/gate.js`): en `/api/`, todo método que no sea GET, HEAD u
+  OPTIONS exige `operador`, salvo `/api/auth/*` (un lector tiene que poder
+  salir; un camino con "." o ".." no cuenta como de auth); 403
+  `{ error: 'No tenés permiso para esta acción.' }`. Se decide sobre
+  `canonicalPath`, como el resto del gate. El rol sale de la allowlist en
+  cada pedido (`getRole`, que relee el archivo; un repetido con roles
+  distintos se queda con el más alto) y queda en `req.auth.role`.
+  `requireRole(rol)` (`src/auth/requireRole.js`) va en una ruta para un caso
+  que la regla no ve: un GET que gaste o escriba. Hoy no hay ninguno.
+- **Escrituras solo desde la app** (`mismoOrigen` del gate, antes que todo
+  lo demás, con o sin sesión): todo lo que no sea GET, HEAD u OPTIONS bajo
+  `/api/`, también `/api/auth/*`, necesita `Sec-Fetch-Site` `same-origin` o
+  `none`; sin ese header, `Origin` igual al del Host o al de `APP_BASE_URL`;
+  si no, 403 `{ error: 'Pedido rechazado: no salió de esta app.' }`. Sin
+  ninguno de los dos pasa (el `fetch` de Node no los manda: un script, curl,
+  los tests; la sesión sigue siendo obligatoria). Detrás de un proxy
+  (Railway), un navegador sin `Sec-Fetch-Site` depende de `APP_BASE_URL`
+  si el proxy cambia el Host: tiene que ser EXACTAMENTE la dirección
+  pública, con `https://` (si no, el login da 403). La cookie strict no frena a una página del MISMO sitio (otro
+  puerto de localhost), y run-now, el backfill e ignorar toman la plataforma
+  de la query: un formulario sin cuerpo JSON les llegaba. No exigir
+  `Content-Type: application/json` en su lugar: ignorar va sin cuerpo.
+- **Regla: toda ruta nueva que gaste o escriba exige `operador`.** Si es
+  POST, PUT, PATCH o DELETE bajo `/api/`, la regla del gate ya la cubre (y
+  `test/requireRole.test.js` la recorre: el camino tiene que ir escrito como
+  texto fijo en `app.<método>('…'`, o el test falla). Si fuera un GET (no
+  debería), lleva `requireRole('operador')` explícito. Del lado del
+  navegador, el control que la dispara lleva la clase `solo-operador` (o
+  `solo-operador-ctl` si se deshabilita en vez de ocultarse).
+- **La sesión** (`src/auth/session.js`, tabla `sessions` en `db.js`): la
+  cookie `sl_session` lleva solo un id al azar de 32 bytes; la base guarda
+  su SHA-256 (`id_hash`), el correo, `created_at`, `last_seen_at` (ms) y
+  `revoked`. `readSession` la rechaza revocada, sin actividad en
+  `SESSION_IDLE_MIN` (30) o pasadas `SESSION_MAX_HOURS` (8) desde el login;
+  válida, renueva `last_seen_at` como mucho una vez por minuto (con
+  try/catch: la base no tiene busy_timeout y un SQLITE_BUSY ahí no puede
+  tirar el pedido) y devuelve `{ email, role, sessionId }` (`sessionId` es
+  el hash). Cookie httpOnly, sameSite strict, secure con https, `maxAge` =
+  `SESSION_MAX_HOURS`. Verify crea SIEMPRE una sesión nueva y revoca la de
+  la cookie anterior; logout revoca; un correo que sale de la allowlist
+  pierde TODAS sus sesiones en el próximo pedido (el gate las revoca y borra
+  la cookie). Revocar es para siempre, así que antes el gate relee la
+  allowlist a los `CONFIRMAR_BAJA_MS` (300): una lectura con el archivo a
+  medio guardar lo ve vacío. Un error de lectura que no sea ENOENT usa la
+  última lectura buena (`resolveRole` dice `archivoLeido`); sin poder
+  confirmar, 503 y no se revoca nada. Con `strict`, un link desde Gmail o
+  WhatsApp llega sin la cookie: el gate manda la página a `/?volver=<página>`
+  (solo `PAGINAS_VOLVER`: inicio, instagram y x) y `login.js`, con
+  `/api/auth/me` ok, vuelve ahí con el `#` (`loginDestino` de
+  `public/js/loginDestino.js`: un solo `volver`, igual a uno de
+  `LOGIN_VOLVER`, y el `#` solo `[A-Za-z0-9_-]`; cualquier otra cosa, al
+  inicio). Una página nueva con sesión va en las dos listas
+  (`test/loginDestino.test.js` las compara). Purga de revocadas
+  y vencidas al arrancar y a las 4:17 (`scheduler.js`). Los topes se validan
+  al arrancar (`src/auth/sessionConfig.js`). `SESSION_SECRET` ya no existe.
+- **`X-SL-Auto: 1`**: lo mandan las consultas automáticas del frontend
+  (`slAuto()` de `public/js/sesion.js`: la barra superior, el panel, el
+  inicio, el progreso de una corrida y de un análisis). Solo sirve para NO
+  renovar `last_seen_at`: la sesión se valida igual y, vencida, da 401. Una
+  consulta automática nueva tiene que mandarlo; una acción del usuario, no.
+- **Frontend** (`public/js/sesion.js`, en el `<head>` de instagram, x y el
+  inicio): marca `<html data-rol>`; `.solo-operador` se oculta salvo con
+  `data-rol="operador"` (también mientras no se sabe el rol); un 401 de
+  `/api/` lleva al login con `location.replace` (la página vencida no queda
+  en el historial) y una página que vuelve del bfcache pregunta de nuevo
+  (`pageshow`). Un tooltip que nombra una acción de operador ("✕: sacar")
+  lleva esa parte en `data-tip-op`: `tip.js` la suma solo con
+  `slEsOperador()`. Para un operador las pantallas no cambian.
+- **Rutas de `/api/auth/*`** en `src/auth/authRoutes.js` (magic-link,
+  verify, me —devuelve `role`—, logout). La app solo recibe JSON: no hay
+  `express.urlencoded`.
+- **Backfill**: `BACKFILL_MAX` (200) posteos por invocación, uno a la vez
+  (409 con otro en curso; `src/backfillConfig.js`, `monitor.backfillClassification`).
 
 ## Diseño v4
 
@@ -909,13 +998,19 @@ La D va sin SDD (decisión del dueño). De la E, en
     correo mal escrito (se mira acá), 429, 503 (con texto propio; el del
     backend es el genérico "Falta configuración del servidor.") y sin
     conexión. Abajo: "Sin
-    contraseña · La sesión dura 7 días · Solo correos habilitados".
+    contraseña · Sesión de hasta 8 h · Solo correos habilitados" (el tope
+    por defecto de `SESSION_MAX_HOURS`; es texto fijo del HTML, también en
+    login-verify). Al cargar, si `/api/auth/me` responde, va a la página
+    del `?volver=` que puso el gate, con su `#`, o al inicio (la cookie es
+    sameSite strict: un link desde Gmail o WhatsApp llega sin ella y caía
+    acá aunque hubiera sesión; ver "Autenticación y roles").
   - **login-verify** (`public/js/loginVerify.js`, prefijo `verify`; sin
     script en línea): "Último paso"; entra recién con el clic en "Entrar"
     (un filtro de correo que abre el link no lo usa). Guarda el token en
     memoria y lo saca de la dirección (`history.replaceState`), con `<meta
-    name="referrer" content="no-referrer">`. Manda el mismo cuerpo de
-    siempre a `POST /api/auth/verify` por `fetch`: si la redirección
+    name="referrer" content="no-referrer">`. Manda el token en JSON a
+    `POST /api/auth/verify` por `fetch` (el form no tiene action ni method:
+    la app no acepta formularios): si la redirección
     terminó en `/dashboard.html`, entró y va ahí; si terminó en otro lado
     (el gate la mandó al login: la cookie no quedó), "No se guardó la
     sesión"; un 400 muestra "El link venció o

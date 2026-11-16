@@ -477,6 +477,19 @@ select.field {
 .filters.gap-t20 {
   margin-top: 20px;
 }
+/* Roles (public/js/sesion.js, src/auth): lo que gasta o escribe se ve solo
+   con data-rol="operador" en <html>, también mientras no se sabe el rol.
+   Para un operador no cambia nada. !important: algunos de estos controles
+   los muestra el JS por element.style o por clase. */
+html:not([data-rol='operador']) .solo-operador {
+  display: none !important;
+}
+/* La tarjeta de "Analizar" sin el campo del link: para un lector queda vacía,
+   salvo que muestre un aviso, un error o el progreso de un análisis. */
+html:not([data-rol='operador']) .ana4 .ana-run:not(:has(#anaNotice:not(.hidden), #anaError:not(.hidden), #anaRun.on)),
+html:not([data-rol='operador']) .x-run:not(:has(#status:not(.hidden), #error:not(.hidden))) {
+  display: none;
+}
 
 /* ---------- tooltip global (public/js/tip.js, todo por textContent) ---------- */
 .tip {
@@ -2373,6 +2386,19 @@ pre.report a {
 }
 .sentiment-select:hover {
   box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 14%, transparent);
+}
+/* Un lector ve el tono pero no lo cambia (public/js/sesion.js): sin la
+   flecha ni el cursor de desplegable, con los mismos colores. */
+.sentiment-select:disabled {
+  cursor: default;
+  opacity: 1;
+  padding-right: 12px;
+  background-size:
+    0 0,
+    9px 9px;
+}
+.sentiment-select:disabled:hover {
+  box-shadow: none;
 }
 .sentiment-select.sentiment-positivo {
   background-color: color-mix(in oklab, var(--pos) 15%, var(--surface));

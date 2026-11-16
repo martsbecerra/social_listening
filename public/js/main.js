@@ -272,12 +272,19 @@ async function initAuthHeader() {
   if (!emailEl && !logoutBtn && !avatarEl) return;
 
   try {
-    const res = await fetch('/api/auth/me', { credentials: 'same-origin' });
-    if (!res.ok) {
+    // El mismo pedido de public/js/sesion.js (que también marca el rol); sin
+    // él, uno propio.
+    let data = null;
+    if (window.slMe) {
+      data = await window.slMe;
+    } else {
+      const res = await fetch('/api/auth/me', { credentials: 'same-origin' });
+      data = res.ok ? await res.json() : null;
+    }
+    if (!data) {
       window.location.replace('/');
       return;
     }
-    const data = await res.json();
     const email = data.email || '';
     if (emailEl) emailEl.textContent = email;
     if (avatarEl) avatarEl.textContent = initialsFromEmail(email);
@@ -305,6 +312,12 @@ document.addEventListener('click', async (e) => {
   try {
     await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
   } finally {
+    // La pista del rol de public/js/sesion.js no queda para el próximo que entre.
+    try {
+      localStorage.removeItem('sl.rol');
+    } catch {
+      /* nada */
+    }
     window.location.replace('/');
   }
 });

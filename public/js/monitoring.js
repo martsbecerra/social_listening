@@ -133,6 +133,7 @@ function renderTagList(listEl, items, onRemove, extraClass) {
     span.textContent = item;
     const btn = document.createElement('button');
     btn.type = 'button';
+    btn.className = 'solo-operador'; // un lector no saca fuentes (public/js/sesion.js)
     btn.textContent = '✕';
     btn.title = 'Quitar';
     btn.addEventListener('click', () => onRemove(item));
@@ -426,7 +427,10 @@ function buildSentimentSelect(raw) {
   const sentiment = sinClasificar ? SENTIMENT_UNSET : raw;
 
   const select = document.createElement('select');
-  select.className = `sentiment-select sentiment-${sentiment}`;
+  // solo-operador-ctl: un lector ve el tono pero no lo cambia (queda
+  // disabled; public/js/sesion.js lo pone al día si el rol llega después).
+  select.className = `sentiment-select sentiment-${sentiment} solo-operador-ctl`;
+  select.disabled = typeof slEsOperador === 'function' ? !slEsOperador() : false;
 
   // La opción "Sin clasificar" existe sólo mientras el posteo lo esté: es
   // un estado del sistema, no algo que se elija a mano. Elegir cualquier
@@ -1635,7 +1639,7 @@ const MONITORING_COLUMNS = [
     formatter: (cell) => {
       const id = cell.getRow().getData().id;
       const btn = document.createElement('button');
-      btn.className = 'ico del';
+      btn.className = 'ico del solo-operador';
       btn.title = 'Ignorar publicación';
       btn.setAttribute('aria-label', 'Ignorar publicación');
       btn.innerHTML =
@@ -1778,7 +1782,8 @@ async function loadPosts() {
 async function loadNextRun() {
   if (!monitoringNextRunEl) return;
   try {
-    const resp = await fetch(withPlataforma('/api/monitoring/status'));
+    // Automático: no cuenta como actividad de la sesión (public/js/sesion.js).
+    const resp = await fetch(withPlataforma('/api/monitoring/status'), slAuto());
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data = await resp.json();
     if (data.enCron === false) {
@@ -1878,7 +1883,8 @@ function setProgressPercent(percent) {
 
 async function pollMonitorProgress() {
   try {
-    const resp = await fetch(withPlataforma('/api/monitoring/progress'));
+    // Cada 1,5 s mientras corre: no cuenta como actividad (public/js/sesion.js).
+    const resp = await fetch(withPlataforma('/api/monitoring/progress'), slAuto());
     if (!resp.ok) return;
     const data = await resp.json();
     if (!data || !progressWaiting) return;
@@ -1999,7 +2005,7 @@ async function finishMonitorLoading(ok, text) {
   // de uno anterior).
   if (ok || progressSeenRunning) {
     try {
-      const resp = await fetch(withPlataforma('/api/monitoring/progress'));
+      const resp = await fetch(withPlataforma('/api/monitoring/progress'), slAuto());
       const data = resp.ok ? await resp.json() : null;
       if (data && data.finished) drawProgressLines(data.lines);
     } catch (err) {
