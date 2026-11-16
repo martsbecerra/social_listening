@@ -96,7 +96,17 @@ function readSession(req, { now = Date.now() } = {}) {
   const { idleMs, maxMs } = resolveSessionConfig();
   if (now - row.lastSeenAt > idleMs) return null;
   if (now - row.createdAt > maxMs) return null;
-  if (!isAutoRequest(req) && now - row.lastSeenAt >= TOUCH_EVERY_MS) db.touchSession(idHash, now);
+  if (!isAutoRequest(req) && now - row.lastSeenAt >= TOUCH_EVERY_MS) {
+    // Anotar la actividad es lo único que el gate escribe en cada pedido. Si
+    // la base está ocupada (SQLITE_BUSY: otro proceso escribiendo, como
+    // scripts/costo-apify.js --conciliar), la sesión vale igual para este
+    // pedido; el toque queda para el próximo. Sin esto, un GET daba 500.
+    try {
+      db.touchSession(idHash, now);
+    } catch (err) {
+      console.warn(`[auth] no se pudo anotar la actividad de la sesión: ${err.code || err.message}`);
+    }
+  }
   return { email: row.email, role: allowlist.getRole(row.email), sessionId: idHash };
 }
 

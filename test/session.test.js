@@ -175,6 +175,27 @@ describe('inactividad y tope absoluto', () => {
     assert.equal(fila(s.sessionId).last_seen_at, t0 + 61 * 1000);
   });
 
+  test('con la base ocupada (SQLITE_BUSY) al anotar la actividad, el pedido sigue', async () => {
+    const s = nueva('ana@test.local');
+    mover(s.sessionId, { last_seen_at: Date.now() - 5 * MIN });
+    const touch = db.touchSession;
+    const warn = console.warn;
+    let intentos = 0;
+    db.touchSession = () => {
+      intentos += 1;
+      throw Object.assign(new Error('database is locked'), { code: 'ERR_SQLITE_ERROR', errcode: 5 });
+    };
+    console.warn = () => {};
+    try {
+      assert.ok(session.readSession(reqCon(s.cookie)));
+      assert.equal((await pedir('GET', '/api/monitoring/status', { cookie: s.cookie })).status, 200);
+    } finally {
+      db.touchSession = touch;
+      console.warn = warn;
+    }
+    assert.equal(intentos, 2);
+  });
+
   test('a las SESSION_MAX_HOURS (8) del login se corta aunque haya actividad', () => {
     const t0 = Date.now();
     const s = nueva('ana@test.local', { now: t0 });
