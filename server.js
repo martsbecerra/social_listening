@@ -17,14 +17,17 @@ require('dotenv').config();
 // src/platforms/instagram.js, src/metricsRefresh.js y src/accountStats.js
 // tiran al cargar si el valor no es válido, y el arranque tiene que abortar
 // con un mensaje claro en vez de un stack trace. abortarArranque está más
-// abajo (función hoisted).
+// abajo (función hoisted). Los topes de la sesión (SESSION_IDLE_MIN,
+// SESSION_MAX_HOURS, src/auth/sessionConfig.js), igual.
 const { resolveIgActor } = require('./src/platforms/igActor');
 const { resolveRefreshMode } = require('./src/refreshMode');
 const { resolveReachRule, describeReachRule } = require('./src/reachRule');
+const { resolveSessionConfig, describeSessionConfig } = require('./src/auth/sessionConfig');
 try {
   resolveIgActor();
   resolveRefreshMode();
   resolveReachRule();
+  resolveSessionConfig();
 } catch (err) {
   abortarArranque([err.message]);
 }
@@ -78,20 +81,8 @@ const publicResumen = require('./src/publicResumen');
 const inicioRoutes = require('./src/inicioRoutes');
 const { CATEGORIAS_RECLAMO, isValidEstado } = require('./src/categoriaReclamo');
 const { CATEGORIAS: TEMAS_POSTEO, CATEGORIA_FALLBACK } = require('./src/categoriasConfig');
-const { normalizeEmail, isEmailAllowed } = require('./src/auth/allowlist');
-const { issueMagicLink, redeemMagicLink } = require('./src/auth/magicLink');
-const { sendMagicLinkEmail } = require('./src/mailer');
-const {
-  setSessionCookie,
-  clearSessionCookie,
-  isAuthConfigured,
-} = require('./src/auth/session');
-const {
-  isMagicLinkRateLimited,
-  isResendBlocked,
-  markMagicLinkSent,
-  RESEND_COOLDOWN_MS,
-} = require('./src/auth/rateLimit');
+const authRoutes = require('./src/auth/authRoutes');
+const { purgeExpiredSessions } = require('./src/auth/session');
 const { createAuthGate } = require('./src/auth/gate');
 const { securityHeaders, errorHandler, installProcessHandlers } = require('./src/httpSecurity');
 
@@ -103,21 +94,6 @@ installProcessHandlers();
 const app = express();
 // Sin el encabezado "X-Powered-By: Express": no anunciar qué corre atrás.
 app.disable('x-powered-by');
-
-// La respuesta es SIEMPRE esta, pase lo que pase (email no autorizado,
-// cooldown de reenvío, envío OK): no revela qué direcciones existen.
-// retryAfterSeconds alimenta la cuenta regresiva del frontend y es idéntico
-// en toda respuesta, así el "2 minutos" vive en una sola constante.
-const MAGIC_LINK_GENERIC = {
-  ok: true,
-  message: 'Si el email está autorizado, te mandamos un link. Revisá tu casilla.',
-  retryAfterSeconds: RESEND_COOLDOWN_MS / 1000,
-};
-
-function logAuth(phase, detail = {}) {
-  const payload = Object.keys(detail).length ? ` ${JSON.stringify(detail)}` : '';
-  console.log(`[auth] ${phase}${payload}`);
-}
 
 if (
   process.env.TRUST_PROXY === '1' ||
@@ -161,7 +137,8 @@ function checkEnv() {
   for (const key of claimsLlm) {
     if (!process.env[key]) faltantes.push(key);
   }
-  if (!process.env.SESSION_SECRET) faltantes.push('SESSION_SECRET');
+  // SESSION_SECRET ya no hace falta: la sesión es un id al azar guardado
+  // (hasheado) en SQLite, no una cookie firmada (src/auth/session.js).
   if (!process.env.APP_BASE_URL) faltantes.push('APP_BASE_URL');
   if (!process.env.SMTP_HOST) faltantes.push('SMTP_HOST');
   if (!process.env.SMTP_USER) faltantes.push('SMTP_USER');
@@ -187,84 +164,10 @@ function abortarArranque(lineas) {
 // pedirle nada a Apify o a Grok.
 
 // --------------------------------------------------------------------------
-// Auth: allowlist + magic link + sesión.
+// Auth: allowlist + magic link + sesión (src/auth/authRoutes.js: magic-link,
+// verify, me y logout).
 // --------------------------------------------------------------------------
-app.post('/api/auth/magic-link', async (req, res) => {
-  const email = normalizeEmail(req.body && req.body.email);
-  const ip = req.ip || req.socket.remoteAddress || 'unknown';
-  logAuth('pedido de magic link', { email: email || null });
-
-  if (isMagicLinkRateLimited({ ip, email })) {
-    logAuth('rate limit', { email: email || null });
-    return res.status(429).json({ error: 'Demasiados intentos. Probá en unos minutos.' });
-  }
-
-  // Las variables que faltan, solo en el log: al cliente, el genérico.
-  if (!isAuthConfigured()) {
-    logAuth('config incompleta', { falta: 'SESSION_SECRET o APP_BASE_URL' });
-    return res.status(503).json({ error: 'Falta configuración del servidor.' });
-  }
-
-  if (!email || !isEmailAllowed(email)) {
-    logAuth('email no autorizado o vacío', { email: email || null });
-    return res.json(MAGIC_LINK_GENERIC);
-  }
-
-  // Cooldown de reenvío (un link cada 2 min por email): se responde el mismo
-  // genérico y NO se manda nada — deshabilitar el botón en el frontend no
-  // alcanza, porque recargando la página se saltea.
-  if (isResendBlocked(email)) {
-    logAuth('cooldown de reenvío activo', { email });
-    return res.json(MAGIC_LINK_GENERIC);
-  }
-
-  try {
-    const { rawToken } = issueMagicLink(email);
-    logAuth('enviando mail', { email, smtp: process.env.SMTP_HOST || null });
-    await sendMagicLinkEmail({ email, rawToken });
-    markMagicLinkSent(email);
-    logAuth('mail enviado', { email });
-  } catch (err) {
-    logAuth('error enviando mail', { email, message: err.message });
-    console.error('[auth] Error enviando magic link:', err.message);
-  }
-
-  return res.json(MAGIC_LINK_GENERIC);
-});
-
-app.post('/api/auth/verify', (req, res) => {
-  const token = (req.body && req.body.token) || '';
-  const result = redeemMagicLink(token);
-  if (!result.ok) {
-    logAuth('verify fallido', { motivo: 'token inválido, usado o expirado' });
-    return res
-      .status(400)
-      .type('html')
-      .send(
-        '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Link inválido</title></head><body>' +
-        '<p>El link expiró o ya fue usado. <a href="/">Pedí uno nuevo</a>.</p></body></html>'
-      );
-  }
-  setSessionCookie(res, result.email);
-  logAuth('sesión iniciada', { email: result.email });
-  return res.redirect(302, '/dashboard.html');
-});
-
-app.get('/api/auth/me', (req, res) => {
-  if (!req.auth) {
-    return res.status(401).json({ error: 'Tenés que iniciar sesión.' });
-  }
-  // El rol (lector | operador) lo usa el frontend para mostrar o no los
-  // controles que gastan o escriben (public/js/sesion.js); quien decide es el
-  // gate.
-  return res.json({ email: req.auth.email, role: req.auth.role });
-});
-
-app.post('/api/auth/logout', (req, res) => {
-  logAuth('logout', { email: req.auth ? req.auth.email : null });
-  clearSessionCookie(res);
-  return res.status(204).end();
-});
+authRoutes.register(app);
 
 // --------------------------------------------------------------------------
 // Análisis de publicación de Instagram: POST /api/analyze responde el id
@@ -710,6 +613,14 @@ try {
 } catch (err) {
   console.warn('[analisis] no se pudieron cerrar los análisis interrumpidos:', err.message);
 }
+// Sesiones revocadas o vencidas: se borran al arrancar y después una vez por
+// día (src/scheduler.js).
+try {
+  const borradas = purgeExpiredSessions();
+  if (borradas > 0) console.log(`[auth] ${borradas} sesión/es vencidas o revocadas borradas`);
+} catch (err) {
+  console.warn('[auth] no se pudieron purgar las sesiones vencidas:', err.message);
+}
 startScheduler();
 const server = app.listen(PORT, () => {
   const provider = getLlmProvider();
@@ -737,8 +648,9 @@ const server = app.listen(PORT, () => {
     `   Límites del análisis: COMMENTS_LIMIT (Apify, comentarios y respuestas)=${resolveCommentsLimit()}, COMMENTS_ANALYSIS_LIMIT (modelo)=${resolveMaxCommentsLimit()}, en tandas de ${BATCH_SIZE}; pide confirmación con más de ${confirmarDesde()} comentarios · X: X_COMMENTS_ANALYSIS_LIMIT=${resolveXMaxItems()}`
   );
   console.log(
-    `   Login: APP_BASE_URL=${process.env.APP_BASE_URL || '(falta)'} | SMTP=${process.env.SMTP_HOST || '(falta SMTP_HOST)'}\n`
+    `   Login: APP_BASE_URL=${process.env.APP_BASE_URL || '(falta)'} | SMTP=${process.env.SMTP_HOST || '(falta SMTP_HOST)'}`
   );
+  console.log(`   Sesión (SESSION_IDLE_MIN, SESSION_MAX_HOURS): ${describeSessionConfig(resolveSessionConfig())}\n`);
   // Windows: que la máquina no se suspenda mientras la app corre (ver
   // src/keepAwake.js). Nunca tira; en otros sistemas no hace nada.
   startKeepAwake();

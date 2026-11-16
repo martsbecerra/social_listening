@@ -8,14 +8,16 @@
 //
 // App de prueba en un puerto local, con el mismo orden que server.js: los
 // headers, el JSON, el gate, los estáticos (una carpeta temporal), las rutas
-// y el manejador de errores. No carga server.js ni abre ninguna base.
+// y el manejador de errores. No carga server.js. El gate lee la sesión de la
+// base: una temporal, fijada ANTES de los require (si no, abriría
+// data/monitoring.db).
 
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { EventEmitter } = require('events');
 
-process.env.SESSION_SECRET = 'secreto-de-test';
+process.env.MONITORING_DB_PATH = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'sl-headers-db-')), 'monitoring.db');
 process.env.APP_BASE_URL = 'http://localhost';
 
 const { describe, test, before, after } = require('node:test');

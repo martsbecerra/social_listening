@@ -22,7 +22,6 @@ const http = require('http');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sl-roles-'));
 process.env.MONITORING_DB_PATH = path.join(tmp, 'monitoring.db');
 process.env.APP_BASE_URL = 'http://localhost'; // cookie sin "secure"
-process.env.SESSION_SECRET = 'secreto-de-test';
 process.env.ALLOWED_EMAILS = [
   'lector@test.local',
   'operador@test.local;operador',

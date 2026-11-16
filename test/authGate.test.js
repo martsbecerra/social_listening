@@ -19,7 +19,6 @@ const http = require('http');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sl-gate-'));
 process.env.MONITORING_DB_PATH = path.join(tmp, 'monitoring.db');
-process.env.SESSION_SECRET = 'secreto-de-test';
 process.env.APP_BASE_URL = 'http://localhost'; // cookie sin "secure"
 // El correo de la sesión tiene que estar en la allowlist (el gate la mira en
 // cada pedido); operador, porque estas pruebas también escriben.

@@ -15,7 +15,6 @@ const path = require('path');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sl-resumen-'));
 process.env.MONITORING_DB_PATH = path.join(tmp, 'monitoring.db'); // ANTES de cargar db.js
-process.env.SESSION_SECRET = 'secreto-de-test';
 process.env.APP_BASE_URL = 'http://localhost';
 
 const { describe, test, before, after } = require('node:test');

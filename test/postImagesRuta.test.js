@@ -19,7 +19,6 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sl-fotos-ruta-'));
 const MEDIA = path.join(tmp, 'media');
 process.env.MONITORING_DB_PATH = path.join(tmp, 'monitoring.db');
 process.env.MONITORING_MEDIA_DIR = MEDIA;
-process.env.SESSION_SECRET = 'secreto-de-test';
 process.env.APP_BASE_URL = 'http://localhost'; // cookie sin "secure"
 // El correo de la sesión tiene que estar en la allowlist (el gate la mira en
 // cada pedido); estas rutas solo leen: alcanza con lector.

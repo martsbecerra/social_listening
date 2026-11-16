@@ -25,8 +25,7 @@
 // test/requireRole.test.js y test/session.test.js.
 // ==========================================================================
 
-const { readSession, clearSessionCookie } = require('./session');
-const { getRole } = require('./allowlist');
+const { readSession, clearSessionCookie, sessionIdFromRequest, revokeSessionsForEmail } = require('./session');
 const { hasRole, FORBIDDEN_BODY } = require('./requireRole');
 
 // Roles (noviembre 2026): en /api/, todo método que no sea uno de estos
@@ -96,20 +95,24 @@ function isPagePath(canonical) {
 function createAuthGate() {
   return function authGate(req, res, next) {
     const urlPath = req.path;
+    // readSession ya descarta las revocadas, inactivas y vencidas, y trae el
+    // rol de la allowlist, que se lee en cada pedido: sacar un correo del
+    // archivo le corta el acceso ya, sin esperar a que venza la sesión.
     let session = readSession(req);
-    if (session) {
-      // El rol se lee de la allowlist en cada pedido: sacar un correo del
-      // archivo le corta el acceso ya, sin esperar a que venza la sesión.
-      const role = getRole(session.email);
-      if (role) {
-        session = { ...session, role };
-        req.auth = session;
-      } else {
-        console.log('[auth] sesión rechazada: el correo ya no está en la allowlist');
-        clearSessionCookie(res);
-        session = null;
-      }
+    let cookieLimpia = false;
+    if (session && !session.role) {
+      const revocadas = revokeSessionsForEmail(session.email);
+      console.log(`[auth] sesión revocada: el correo ya no está en la allowlist (${revocadas} sesión/es)`);
+      clearSessionCookie(res);
+      cookieLimpia = true;
+      session = null;
     }
+    if (session) req.auth = session;
+    // Una cookie que ya no es una sesión (vencida, revocada) se borra cuando
+    // el pedido termina en el login o en un 401.
+    const limpiarCookieVieja = () => {
+      if (!session && !cookieLimpia && sessionIdFromRequest(req)) clearSessionCookie(res);
+    };
 
     if (req.method === 'GET' && (urlPath === '/' || urlPath === '/index.html') && session) {
       return res.redirect('/dashboard.html');
@@ -123,6 +126,7 @@ function createAuthGate() {
 
     if (isApiPath(canonical)) {
       if (!session) {
+        limpiarCookieVieja();
         return res.status(401).json({ error: 'Tenés que iniciar sesión.' });
       }
       if (!SAFE_METHODS.has(req.method) && !isAuthApiPath(canonical) && !hasRole(session.role, 'operador')) {
@@ -132,7 +136,10 @@ function createAuthGate() {
     }
 
     if (isPagePath(canonical)) {
-      if (!session) return res.redirect('/');
+      if (!session) {
+        limpiarCookieVieja();
+        return res.redirect('/');
+      }
       return next();
     }
 
