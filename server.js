@@ -254,7 +254,10 @@ app.get('/api/auth/me', (req, res) => {
   if (!req.auth) {
     return res.status(401).json({ error: 'Tenés que iniciar sesión.' });
   }
-  return res.json({ email: req.auth.email });
+  // El rol (lector | operador) lo usa el frontend para mostrar o no los
+  // controles que gastan o escriben (public/js/sesion.js); quien decide es el
+  // gate.
+  return res.json({ email: req.auth.email, role: req.auth.role });
 });
 
 app.post('/api/auth/logout', (req, res) => {

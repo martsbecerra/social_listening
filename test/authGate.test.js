@@ -8,7 +8,8 @@
 //
 // App de prueba en un puerto local de esta máquina: el gate real,
 // express.static sobre una carpeta temporal y handlers de mentira que anotan
-// cada llegada. No carga server.js ni abre ninguna base. Los pedidos van con
+// cada llegada. No carga server.js; la sesión vive en una base temporal
+// (MONITORING_DB_PATH, antes de los require). Los pedidos van con
 // http.request para que el camino salga escrito tal cual (fetch lo normaliza).
 
 const fs = require('fs');
@@ -16,8 +17,13 @@ const os = require('os');
 const path = require('path');
 const http = require('http');
 
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sl-gate-'));
+process.env.MONITORING_DB_PATH = path.join(tmp, 'monitoring.db');
 process.env.SESSION_SECRET = 'secreto-de-test';
 process.env.APP_BASE_URL = 'http://localhost'; // cookie sin "secure"
+// El correo de la sesión tiene que estar en la allowlist (el gate la mira en
+// cada pedido); operador, porque estas pruebas también escriben.
+process.env.ALLOWED_EMAILS = 'prueba@test.local;operador';
 
 const { describe, test, before, after, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
@@ -28,7 +34,6 @@ const { setSessionCookie } = require('../src/auth/session');
 
 const PAGINA = 'PAGINA-PROTEGIDA';
 const LOGIN = 'PAGINA-DE-LOGIN';
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sl-gate-'));
 const PUBLIC = path.join(tmp, 'public');
 
 // Cookie de sesión como la que deja el login.

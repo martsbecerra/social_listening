@@ -17,9 +17,22 @@
 // en minúsculas, con "\" como "/" y las barras repetidas como una sola.
 // Comparar el camino crudo con startsWith('/api/') dejaba pasar /API/... sin
 // sesión hasta el handler (octubre 2026). Test: test/authGate.test.js.
+//
+// Roles (noviembre 2026): con sesión, el rol sale de la allowlist en cada
+// pedido (req.auth.role); un correo que ya no está pierde la sesión. En
+// /api/, todo lo que no sea GET, HEAD u OPTIONS exige `operador`, salvo
+// /api/auth/*: 403 { error: 'No tenés permiso para esta acción.' }. Tests:
+// test/requireRole.test.js y test/session.test.js.
 // ==========================================================================
 
-const { readSession } = require('./session');
+const { readSession, clearSessionCookie } = require('./session');
+const { getRole } = require('./allowlist');
+const { hasRole, FORBIDDEN_BODY } = require('./requireRole');
+
+// Roles (noviembre 2026): en /api/, todo método que no sea uno de estos
+// exige `operador`, salvo /api/auth/* (un lector tiene que poder salir).
+// La decisión va sobre canonicalPath, como el resto: /API/... no la saltea.
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 // Públicos: solo estas formas exactas. Los demás archivos estáticos que no
 // son páginas (css, íconos, js) pasan más abajo, sin sesión, como siempre.
@@ -65,6 +78,14 @@ function isApiPath(canonical) {
   return canonical === '/api' || canonical.startsWith('/api/');
 }
 
+// /api/auth/*, la única excepción de la regla de roles. Un camino con "." o
+// ".." no cuenta (canonicalPath no los resuelve): /api/auth/../monitoring/x
+// no es de auth.
+function isAuthApiPath(canonical) {
+  if (!canonical.startsWith('/api/auth/')) return false;
+  return !canonical.split('/').some((parte) => parte === '.' || parte === '..');
+}
+
 // Una página: cualquier camino que nombre un .html, esté donde esté la
 // extensión dentro del camino (".htm" cubre también el nombre corto de
 // Windows y lo que venga pegado después: ".html.", ".html::$DATA", ".html/").
@@ -75,8 +96,20 @@ function isPagePath(canonical) {
 function createAuthGate() {
   return function authGate(req, res, next) {
     const urlPath = req.path;
-    const session = readSession(req);
-    if (session) req.auth = session;
+    let session = readSession(req);
+    if (session) {
+      // El rol se lee de la allowlist en cada pedido: sacar un correo del
+      // archivo le corta el acceso ya, sin esperar a que venza la sesión.
+      const role = getRole(session.email);
+      if (role) {
+        session = { ...session, role };
+        req.auth = session;
+      } else {
+        console.log('[auth] sesión rechazada: el correo ya no está en la allowlist');
+        clearSessionCookie(res);
+        session = null;
+      }
+    }
 
     if (req.method === 'GET' && (urlPath === '/' || urlPath === '/index.html') && session) {
       return res.redirect('/dashboard.html');
@@ -91,6 +124,9 @@ function createAuthGate() {
     if (isApiPath(canonical)) {
       if (!session) {
         return res.status(401).json({ error: 'Tenés que iniciar sesión.' });
+      }
+      if (!SAFE_METHODS.has(req.method) && !isAuthApiPath(canonical) && !hasRole(session.role, 'operador')) {
+        return res.status(403).json(FORBIDDEN_BODY);
       }
       return next();
     }
