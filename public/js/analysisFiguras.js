@@ -84,7 +84,11 @@ function anaRolChip(f, { sugerida = false } = {}) {
     return chip;
   }
   const chip = anaEl('span', `an-rl${f.alineacion ? ` ${f.alineacion}` : ''}${sugerida ? ' sug' : ''}`, `${sugerida ? 'sugerido: ' : ''}${anaRolTexto(f)}`);
-  if (sugerida) chip.dataset.tip = 'Lo sugirió el modelo: confirmalo, editalo o descartalo';
+  if (sugerida) {
+    chip.dataset.tip = 'Lo sugirió el modelo';
+    // Confirmar, editar y descartar son solo para un operador (tip.js).
+    chip.dataset.tipOp = ': confirmalo, editalo o descartalo';
+  }
   return chip;
 }
 
