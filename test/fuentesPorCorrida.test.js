@@ -279,6 +279,18 @@ describe('el cierre del ciclo dice cómo salió', { concurrency: false }, () => 
   });
 });
 
+describe('el aviso de ciclo sin actividad', () => {
+  test('heartbeatDue: cada chequeo el primer minuto; después, una vez por minuto (las búsquedas pueden esperar 15 min: no es un cuelgue)', () => {
+    assert.equal(scheduler.heartbeatDue(10000, 999999), false, 'menos de 15 s sin actividad: nada');
+    assert.equal(scheduler.heartbeatDue(15000, 0), true);
+    assert.equal(scheduler.heartbeatDue(45000, 15000), true);
+    assert.equal(scheduler.heartbeatDue(75000, 15000), false, 'pasado el minuto, no cada 15 s');
+    assert.equal(scheduler.heartbeatDue(75000, 45000), false);
+    assert.equal(scheduler.heartbeatDue(120000, 60000), true);
+    assert.equal(scheduler.heartbeatDue(900000, 59000), false);
+  });
+});
+
 describe('db: filas de monitoring_run_sources', { concurrency: false }, () => {
   test('startRunSource / updateRunSource: lo que no viene no se toca; las pendientes son las que esperan o quedaron abiertas', () => {
     const id = db.startRunSource({ runId: 900, plataforma: 'instagram', tipo: 'busqueda', fuente: 'Macri', clave: 'macri', tope: 500, desdeIso: '2026-11-06T15:00:00.000Z', until: '2026-11-06' });

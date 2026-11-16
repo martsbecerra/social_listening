@@ -983,6 +983,14 @@ const markApifyCallLostStmt = db.prepare(`
   UPDATE apify_calls SET estado = 'perdida' WHERE apify_run_id = @apifyRunId AND estado IN ('esperando', 'en_curso')
 `);
 const listApifyCallsByApifyRunStmt = db.prepare('SELECT * FROM apify_calls WHERE apify_run_id = ? ORDER BY id');
+// Asiento de una corrida que la app cortó sin registrar (scripts/costo-apify.js
+// --asentar): las llamadas fallidas y sin run de un ciclo, y la escritura del
+// run y de su costo real en una de ellas.
+const listFailedCallsWithoutRunStmt = db.prepare(
+  'SELECT id, target, query_type AS queryType, phase, error FROM apify_calls WHERE run_id = ? AND ok = 0 AND apify_run_id IS NULL ORDER BY id'
+);
+const settleApifyCallStmt = db.prepare('UPDATE apify_calls SET apify_run_id = @apifyRunId, usd_real = @usdReal WHERE id = @id AND apify_run_id IS NULL');
+const listApifyRunIdsSinceStmt = db.prepare('SELECT DISTINCT apify_run_id AS id FROM apify_calls WHERE apify_run_id IS NOT NULL AND at >= ?');
 // Las últimas búsquedas buenas de un término (sin distinguir mayúsculas ni
 // espacios de más), para medir su volumen (src/busquedaTope.js).
 const lastSearchCallsForTermStmt = db.prepare(`
@@ -2414,6 +2422,38 @@ function markApifyCallRecovered(apifyRunId, { items = 0, usd = 0 } = {}) {
   return changed;
 }
 
+/** Las llamadas fallidas y sin run de Apify de un ciclo (candidatas a un asiento). */
+function listFailedCallsWithoutRun(runId) {
+  return listFailedCallsWithoutRunStmt.all(Number(runId)).map((row) => ({ ...row }));
+}
+
+/** ¿Hay alguna llamada registrada con ese run de Apify? */
+function hasApifyRun(apifyRunId) {
+  return listApifyCallsByApifyRunStmt.all(String(apifyRunId)).length > 0;
+}
+
+/**
+ * Anota en UNA llamada fallida y sin run el run de Apify que en realidad
+ * corrió y lo que cobró, y recalcula el usd de su ciclo. No toca nada más
+ * de la fila (sigue fallida: sus resultados no se usaron).
+ * @returns {number} filas cambiadas (0 si ya tenía run)
+ */
+function settleApifyCall(id, { apifyRunId, usdReal }) {
+  const usd = Number(usdReal);
+  if (!apifyRunId || !Number.isFinite(usd) || usd < 0) throw new Error('settleApifyCall: falta el run o el costo');
+  const changed = settleApifyCallStmt.run({ id: Number(id), apifyRunId: String(apifyRunId), usdReal: usd }).changes;
+  if (changed > 0) {
+    const row = getApifyCallStmt.get(Number(id));
+    if (row && row.run_id != null) recomputeMonitoringRunUsdStmt.run({ id: row.run_id });
+  }
+  return changed;
+}
+
+/** Los runs de Apify que la app tiene registrados en llamadas desde `sinceIso`. @returns {Set<string>} */
+function listApifyRunIdsSince(sinceIso) {
+  return new Set(listApifyRunIdsSinceStmt.all(sinceIso).map((row) => row.id));
+}
+
 /**
  * Las últimas búsquedas buenas de un término en esa red (las recuperadas
  * también): cuánto trajo cada una, con qué tope y desde qué día.
@@ -3822,6 +3862,10 @@ module.exports = {
   markApifyCallLost,
   lastSearchCallsForTerm,
   sumSearchSeenByRun,
+  listFailedCallsWithoutRun,
+  hasApifyRun,
+  settleApifyCall,
+  listApifyRunIdsSince,
   startMonitoringRun,
   finishMonitoringRun,
   getMonitoringRun,

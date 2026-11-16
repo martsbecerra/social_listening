@@ -364,6 +364,74 @@ async function reconcileRealCosts({ minAgeMs = 10 * 60 * 1000, maxAgeDays = 7, l
   return totals;
 }
 
+/** Para comparar el objetivo de una llamada con el de un asiento: sin espacios de más, en minúsculas y sin "@". */
+function normTarget(text) {
+  return String(text ?? '').trim().toLowerCase().replace(/^@/, '');
+}
+
+/**
+ * Asienta el costo real de corridas de Apify que la app cortó SIN registrar
+ * su run (antes de noviembre 2026, un corte por tiempo o un 502 en el
+ * seguimiento dejaban la fila fallida, con usd 0 y sin run, aunque la
+ * corrida terminara y se cobrara). Por cada entrada busca, en ese ciclo, la
+ * llamada fallida y sin run de ese objetivo (el término de la búsqueda, o
+ * el usuario o la URL del perfil) y le anota el run y lo que costó. No crea
+ * filas, no toca los resultados ni importa publicaciones. Una entrada cuyo
+ * run ya está registrado no cambia nada: se puede pasar dos veces.
+ * @param {Array<{ ciclo: number, objetivo: string, apifyRunId: string, usd: number }>} entradas
+ * @param {{ aplicar?: boolean }} [options] sin `aplicar` solo informa
+ * @returns {{ asentadas: object[], yaAsentadas: object[], sinFila: object[], invalidas: object[], usd: number }}
+ */
+function settleCutRuns(entradas, { aplicar = false } = {}) {
+  const out = { asentadas: [], yaAsentadas: [], sinFila: [], invalidas: [], usd: 0 };
+  const usadas = new Set();
+  for (const entrada of Array.isArray(entradas) ? entradas : []) {
+    const ciclo = Number(entrada && entrada.ciclo);
+    const usd = Number(entrada && entrada.usd);
+    const objetivo = normTarget(entrada && entrada.objetivo);
+    const apifyRunId = entrada && entrada.apifyRunId ? String(entrada.apifyRunId).trim() : '';
+    if (!Number.isInteger(ciclo) || !objetivo || !apifyRunId || !Number.isFinite(usd) || usd < 0) {
+      out.invalidas.push(entrada);
+      continue;
+    }
+    if (db.hasApifyRun(apifyRunId)) {
+      out.yaAsentadas.push(entrada);
+      continue;
+    }
+    const fila = db.listFailedCallsWithoutRun(ciclo).find((row) => {
+      if (usadas.has(row.id)) return false;
+      const target = normTarget(row.target);
+      return target === objetivo || target.includes(`/${objetivo}/`) || target.replace(/\/+$/, '').endsWith(`/${objetivo}`);
+    });
+    if (!fila) {
+      out.sinFila.push(entrada);
+      continue;
+    }
+    usadas.add(fila.id);
+    if (aplicar) db.settleApifyCall(fila.id, { apifyRunId, usdReal: usd });
+    out.asentadas.push({ ...entrada, callId: fila.id, target: fila.target });
+    out.usd += usd;
+  }
+  return out;
+}
+
+/**
+ * Corridas del actor de búsquedas que están en Apify y que la app no tiene
+ * registradas en ninguna llamada (pasó cuando el arranque devolvió un error
+ * pero el run se creó igual). Solo lee: la API de Apify y la base.
+ * @param {{ actorId?: string, days?: number, now?: number, listActorRuns?: Function }} [options]
+ * @returns {Promise<{ id: string, status: string|null, startedAt: string|null, usdReal: number|null }[]>}
+ */
+async function listOrphanRuns({ actorId = APIDOJO_ACTOR, days = 7, now = Date.now(), listActorRuns } = {}) {
+  // require diferido: apify.js ya depende de este módulo.
+  const lister = listActorRuns || require('./apify').listActorRuns;
+  const sinceMs = now - days * DAY_MS;
+  const enApify = await lister(actorId, { sinceMs });
+  // Con un día de margen: la fila se registra al terminar la llamada.
+  const registradas = db.listApifyRunIdsSince(new Date(sinceMs - DAY_MS).toISOString());
+  return enApify.filter((run) => run && run.id && !registradas.has(run.id));
+}
+
 function startOfTodayIso(now) {
   const d = new Date(now);
   d.setHours(0, 0, 0, 0);
@@ -511,6 +579,8 @@ module.exports = {
   openApifyCall,
   closeApifyCall,
   reconcileRealCosts,
+  settleCutRuns,
+  listOrphanRuns,
   summarizeCosts,
   formatCycleCostLine,
 };

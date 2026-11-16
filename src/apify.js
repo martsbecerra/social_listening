@@ -551,6 +551,34 @@ async function fetchRun(runId) {
 }
 
 /**
+ * Las corridas de un actor en Apify, de la más nueva a la más vieja, hasta
+ * `sinceMs`. Lecturas de la API (GET /v2/acts/{id}/runs): no cuestan ni
+ * pasan por la cola. Sirve para encontrar corridas que la app no registró.
+ * @returns {Promise<{ id: string, status: string|null, startedAt: string|null, finishedAt: string|null, usdReal: number|null }[]>}
+ */
+async function listActorRuns(actorId, { sinceMs = 0, max = 2000 } = {}) {
+  const token = encodeURIComponent(process.env.APIFY_API_TOKEN);
+  const out = [];
+  for (let offset = 0; offset < max; offset += 250) {
+    const body = unwrapRun(await apifyRequest(`${APIFY_BASE}/acts/${actorId}/runs?token=${token}&desc=true&limit=250&offset=${offset}`, { timeoutMs: 30000 }));
+    const items = (body && Array.isArray(body.items) && body.items) || [];
+    for (const run of items) {
+      if (sinceMs && Date.parse(run.startedAt) < sinceMs) return out;
+      const usd = Number(run.usageTotalUsd);
+      out.push({
+        id: run.id,
+        status: run.status || null,
+        startedAt: run.startedAt || null,
+        finishedAt: run.finishedAt || null,
+        usdReal: run.usageTotalUsd !== undefined && run.usageTotalUsd !== null && Number.isFinite(usd) ? usd : null,
+      });
+    }
+    if (items.length < 250) break;
+  }
+  return out;
+}
+
+/**
  * Lo que Apify cobró por un run ya terminado (usageTotalUsd,
  * chargedEventCounts). La usa apifyCost.reconcileRealCosts minutos después
  * de que el run terminó, cuando el cobro ya está asentado.
@@ -887,6 +915,7 @@ module.exports = {
   fetchRunCost,
   fetchRun,
   fetchDatasetItems,
+  listActorRuns,
   mapApifyError,
   isQuotaExceededError,
   // Para tests y diagnóstico: el limitador único del proceso y su tope.

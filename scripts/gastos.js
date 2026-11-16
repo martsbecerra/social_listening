@@ -3,9 +3,14 @@
 // --------------------------------------------------------------------------
 // Qué gastó la app en Apify, corrida por corrida, en tablas de consola:
 //   1. por corrida: inicio y fin (hora de Argentina), duración, llamadas,
-//      resultados, USD estimado y USD real;
+//      resultados, USD estimado y USD real; una corrida incompleta (alguna
+//      búsqueda falló, quedó en Apify o llenó su tope) lleva "~";
 //   2. por corrida y fase: búsqueda, detalle, benchmark, refresco, otras;
-//   3. por término de búsqueda: consultas, resultados y USD del período;
+//   3. por término de búsqueda, su rendimiento en el período: consultas y
+//      resultados (de Apify), cuántos eran nuevos, cuántos trajo solo ese
+//      término, cuántos se guardaron, cuántos descartó el clasificador y
+//      cuántos quedaron sin evaluar (sin texto), con lo que costó en Apify y
+//      en el modelo (desde noviembre 2026, search_seen anota todo eso);
 //   4. total del período.
 // Lee apify_calls y monitoring_runs en data/monitoring.db ABIERTA EN SOLO
 // LECTURA: se puede correr con la app andando, nunca escribe ni llama a
@@ -30,6 +35,14 @@
 // resultado y no tiene run por llamada: su estimado ES el cobro y se toma
 // como real. Un * al lado del real avisa que a esa fila le faltan llamadas
 // por conciliar.
+//
+// Tabla 3: "nuevos" son los resultados que el monitoreo decidió por primera
+// vez en el período (search_seen.first_seen_at) y que ese término trajo
+// (search_seen.terminos: todos los términos que trajeron el posteo; en las
+// filas anteriores a noviembre 2026, solo el primero). "únicos": los que no
+// trajo ningún otro término. El costo del modelo de un posteo que trajeron
+// varios términos se reparte entre ellos. "US$ Apify" es el real donde ya se
+// concilió y, si no, el estimado.
 // ==========================================================================
 
 'use strict';
@@ -179,7 +192,7 @@ function esOficial(actor) {
 }
 
 function nuevoAcumulador() {
-  return { calls: 0, failed: 0, results: 0, usdEst: 0, usdReal: 0, pendientes: 0, fases: new Set() };
+  return { calls: 0, failed: 0, results: 0, usdEst: 0, usdReal: 0, usdEstPendiente: 0, pendientes: 0, fases: new Set() };
 }
 
 /** Suma una fila de apify_calls al acumulador (llamadas, fallidas, resultados, usd estimado y real, pendientes de conciliar). */
@@ -190,7 +203,10 @@ function acumular(a, row) {
   a.usdEst += Number(row.usd) || 0;
   if (row.usd_real != null) a.usdReal += Number(row.usd_real) || 0;
   else if (esOficial(row.actor)) a.usdReal += Number(row.usd) || 0;
-  else if (row.ok || row.apify_run_id) a.pendientes += 1;
+  else if (row.ok || row.apify_run_id) {
+    a.pendientes += 1;
+    a.usdEstPendiente += Number(row.usd) || 0;
+  }
   a.fases.add(row.phase);
   return a;
 }
@@ -217,6 +233,106 @@ function duracionDe(startedAt, finishedAt, { esUltima, now }) {
 
 const COLUMNAS_LLAMADA = 'c.run_id, c.phase, c.query_type, c.actor, c.target, c.items, c.ok, c.error, c.usd, c.usd_real, c.apify_run_id';
 
+/** La clave de un término: sin espacios de más y en minúsculas (como la config). */
+const claveTermino = (t) => String(t ?? '').trim().toLowerCase();
+
+function columnasDe(db, tabla) {
+  return db.prepare(`PRAGMA table_info(${tabla})`).all().map((c) => c.name);
+}
+
+/**
+ * Lo que decidió el monitoreo sobre los resultados de búsqueda vistos por
+ * primera vez desde `desdeIso`, por término (ver el encabezado). Con una
+ * base anterior a noviembre 2026 (sin las columnas nuevas de search_seen)
+ * devuelve `completo: false`: solo se sabe el primer término de cada posteo
+ * y no hay costo del modelo.
+ * @returns {{ porTermino: Map<string, object>, completo: boolean, total: object }}
+ */
+function leerRendimiento(db, desdeIso) {
+  const vacio = () => ({ nuevos: 0, unicos: 0, guardados: 0, descartados: 0, sinEvaluar: 0, usdModelo: 0, conCosto: 0 });
+  const porTermino = new Map();
+  const total = vacio();
+  let columnas = [];
+  try {
+    columnas = columnasDe(db, 'search_seen');
+  } catch {
+    columnas = [];
+  }
+  if (!columnas.includes('first_seen_at')) return { porTermino, completo: false, total };
+  const completo = columnas.includes('terminos') && columnas.includes('llm_usd');
+  const filas = db
+    .prepare(`SELECT term, outcome${completo ? ', terminos, llm_usd' : ''} FROM search_seen WHERE first_seen_at >= ?`)
+    .all(desdeIso);
+  const sumar = (a, fila, parte, unico) => {
+    a.nuevos += 1;
+    if (unico) a.unicos += 1;
+    if (fila.outcome === 'guardado') a.guardados += 1;
+    else if (fila.outcome === 'descartado') a.descartados += 1;
+    else a.sinEvaluar += 1;
+    if (fila.llm_usd != null) {
+      a.usdModelo += Number(fila.llm_usd) * parte;
+      a.conCosto += parte;
+    }
+  };
+  for (const fila of filas) {
+    let terminos = [];
+    if (completo && fila.terminos) {
+      try {
+        const lista = JSON.parse(fila.terminos);
+        if (Array.isArray(lista)) terminos = lista;
+      } catch {
+        terminos = [];
+      }
+    }
+    if (terminos.length === 0 && fila.term) terminos = [fila.term];
+    const claves = [...new Set(terminos.map(claveTermino).filter(Boolean))];
+    sumar(total, fila, 1, claves.length === 1);
+    for (const clave of claves) {
+      if (!porTermino.has(clave)) porTermino.set(clave, vacio());
+      sumar(porTermino.get(clave), fila, 1 / claves.length, claves.length === 1);
+    }
+  }
+  return { porTermino, completo, total };
+}
+
+/**
+ * Las corridas incompletas entre las del reporte: alguna fuente falló, quedó
+ * esperando en Apify, llenó su tope… (src/runStatus.js, la misma regla que
+ * la pantalla). Con una base sin la tabla de fuentes, ninguna.
+ * @returns {Set<number>}
+ */
+function corridasIncompletas(db, runs) {
+  const incompletas = new Set();
+  if (runs.length === 0) return incompletas;
+  let filas = [];
+  try {
+    if (columnasDe(db, 'monitoring_run_sources').length === 0) return incompletas;
+    const ids = runs.map((r) => Number(r.id)).filter(Number.isFinite);
+    filas = db
+      .prepare(`SELECT run_id, plataforma, tipo, estado, intento, motivo, tope_lleno, hueco_desde FROM monitoring_run_sources WHERE run_id IN (${ids.map(() => '?').join(',')})`)
+      .all(...ids);
+  } catch {
+    return incompletas;
+  }
+  const { estadoCorrida } = require('../src/runStatus');
+  const porCorridaYRed = new Map();
+  for (const f of filas) {
+    const key = `${f.run_id}|${f.plataforma}`;
+    if (!porCorridaYRed.has(key)) porCorridaYRed.set(key, []);
+    porCorridaYRed.get(key).push({ tipo: f.tipo, estado: f.estado, intento: f.intento, motivo: f.motivo, topeLleno: Boolean(f.tope_lleno), huecoDesde: f.hueco_desde });
+  }
+  const porId = new Map(runs.map((r) => [Number(r.id), r]));
+  for (const [key, fuentes] of porCorridaYRed) {
+    const id = Number(key.split('|')[0]);
+    const run = porId.get(id);
+    if (!run || !run.finished_at) continue;
+    // La cuota tiene su propia marca ("!"): acá solo lo incompleto.
+    if (estadoCorrida({ id, finishedAt: run.finished_at, quotaExceeded: false, errorCode: run.error_code || null }, fuentes) === 'incompleta') incompletas.add(id);
+  }
+  for (const run of runs) if (run.finished_at && run.error_code) incompletas.add(Number(run.id));
+  return incompletas;
+}
+
 /**
  * Arma el reporte. Corridas = monitoring_runs iniciadas desde `desdeIso`,
  * con TODAS sus llamadas; términos y total = llamadas con `at` desde
@@ -228,9 +344,13 @@ function buildReport({ dbPath = process.env.MONITORING_DB_PATH || DEFAULT_DB_PAT
   const db = abrirBase(dbPath);
   try {
     const ultimoId = db.prepare('SELECT MAX(id) AS id FROM monitoring_runs').get().id;
+    const conErrorCode = columnasDe(db, 'monitoring_runs').includes('error_code');
     const runs = db
-      .prepare('SELECT id, started_at, finished_at, "trigger", plataforma, new_posts, quota_exceeded FROM monitoring_runs WHERE started_at >= ? ORDER BY id')
+      .prepare(
+        `SELECT id, started_at, finished_at, "trigger", plataforma, new_posts, quota_exceeded${conErrorCode ? ', error_code' : ''} FROM monitoring_runs WHERE started_at >= ? ORDER BY id`
+      )
       .all(desdeIso);
+    const incompletas = corridasIncompletas(db, runs);
     const corridas = new Map();
     for (const r of runs) {
       corridas.set(r.id, {
@@ -241,6 +361,7 @@ function buildReport({ dbPath = process.env.MONITORING_DB_PATH || DEFAULT_DB_PAT
         plataforma: r.plataforma,
         newPosts: Number(r.new_posts) || 0,
         quotaExceeded: Boolean(r.quota_exceeded),
+        incompleta: incompletas.has(Number(r.id)),
         duracion: duracionDe(r.started_at, r.finished_at, { esUltima: r.id === ultimoId, now }),
         ...nuevoAcumulador(),
         porFase: {},
@@ -273,11 +394,22 @@ function buildReport({ dbPath = process.env.MONITORING_DB_PATH || DEFAULT_DB_PAT
       if (row.run_id == null) acumular(fueraDeCorridas, row);
       else if (row.run_started_at != null && row.run_started_at < desdeIso) acumular(deCorridasPrevias, row);
       if (row.query_type === 'search') {
-        const termino = row.target || '(sin término)';
-        if (!terminos.has(termino)) terminos.set(termino, { termino, ...nuevoAcumulador() });
-        acumular(terminos.get(termino), row);
+        // Por la clave normalizada: "GCBA" y "gcba" son el mismo término. Se
+        // muestra como se escribió la última vez.
+        const termino = String(row.target || '').trim() || '(sin término)';
+        const clave = claveTermino(termino);
+        if (!terminos.has(clave)) terminos.set(clave, { termino, clave, ...nuevoAcumulador() });
+        terminos.get(clave).termino = termino;
+        acumular(terminos.get(clave), row);
       }
     }
+    // El rendimiento de cada término (lo que decidió el monitoreo). Un
+    // término con decisiones pero sin consultas en el período también sale.
+    const rendimiento = leerRendimiento(db, desdeIso);
+    for (const clave of rendimiento.porTermino.keys()) {
+      if (!terminos.has(clave)) terminos.set(clave, { termino: clave, clave, ...nuevoAcumulador() });
+    }
+    const sinRendimiento = { nuevos: 0, unicos: 0, guardados: 0, descartados: 0, sinEvaluar: 0, usdModelo: 0, conCosto: 0 };
 
     return {
       dbPath,
@@ -286,8 +418,9 @@ function buildReport({ dbPath = process.env.MONITORING_DB_PATH || DEFAULT_DB_PAT
       porDefecto,
       corridas: [...corridas.values()].map((c) => ({ ...cerrar(c), porFase: cerrarPorFase(c.porFase) })),
       terminos: [...terminos.values()]
-        .map(cerrar)
-        .sort((a, b) => b.usdEst - a.usdEst || b.calls - a.calls || a.termino.localeCompare(b.termino)),
+        .map((t) => ({ ...cerrar(t), ...(rendimiento.porTermino.get(t.clave) || sinRendimiento) }))
+        .sort((a, b) => b.usdEst - a.usdEst || b.calls - a.calls || b.nuevos - a.nuevos || a.termino.localeCompare(b.termino)),
+      rendimiento: { completo: rendimiento.completo, total: rendimiento.total },
       total: { ...cerrar(total), porFase: cerrarPorFase(total.porFase) },
       fueraDeCorridas: cerrar(fueraDeCorridas),
       deCorridasPrevias: cerrar(deCorridasPrevias),
@@ -304,6 +437,9 @@ function buildReport({ dbPath = process.env.MONITORING_DB_PATH || DEFAULT_DB_PAT
 const celda = (texto, ancho, derecha = false) => (derecha ? String(texto).padStart(ancho) : String(texto).padEnd(ancho));
 const usd = (n) => (Number(n) || 0).toFixed(3);
 const usdReal = (a) => usd(a.usdReal) + (a.pendientes > 0 ? '*' : '');
+// Lo mejor que se sabe del costo en Apify: lo real de las llamadas ya
+// conciliadas más el estimado de las que faltan.
+const mejorUsd = (a) => (Number(a.usdReal) || 0) + (Number(a.usdEstPendiente) || 0);
 
 function recortar(texto, ancho) {
   const t = String(texto);
@@ -340,10 +476,12 @@ function tablaCorridas(r) {
   const suma = nuevoAcumulador();
   let manuales = 0;
   let conCuota = 0;
+  let incompletas = 0;
   for (const c of r.corridas) {
     if (c.trigger !== 'cron') manuales += 1;
     if (c.quotaExceeded) conCuota += 1;
-    const marca = `#${c.id}${c.trigger === 'cron' ? '' : '*'}${c.quotaExceeded ? '!' : ''}`;
+    if (c.incompleta) incompletas += 1;
+    const marca = `#${c.id}${c.trigger === 'cron' ? '' : '*'}${c.quotaExceeded ? '!' : ''}${c.incompleta ? '~' : ''}`;
     out.push(
       '  ' +
         celda(marca, 6) +
@@ -357,11 +495,13 @@ function tablaCorridas(r) {
     suma.results += c.results;
     suma.usdEst += c.usdEst;
     suma.usdReal += c.usdReal;
+    suma.usdEstPendiente += c.usdEstPendiente;
     suma.pendientes += c.pendientes;
   }
   out.push('  ' + celda('total', 41) + filaNumeros(suma));
   if (manuales > 0) out.push('  * = corrida manual ("Actualizar ahora")');
   if (conCuota > 0) out.push('  ! = alguna llamada cortó por la cuota de Apify');
+  if (incompletas > 0) out.push('  ~ = alguna búsqueda falló o llegó al tope (corrida incompleta)');
   return out;
 }
 
@@ -387,11 +527,40 @@ function tablaTerminos(r) {
     out.push('  (sin búsquedas en el período)');
     return out;
   }
-  const fila = (nombre, a) =>
-    '  ' + celda(nombre, 32) + celda(a.calls, 10, true) + celda(a.results, 9, true) + celda(usd(a.usdEst), 10, true) + celda(usdReal(a), 10, true);
-  out.push('  ' + celda('término', 32) + celda('consultas', 10, true) + celda('result.', 9, true) + celda('USD est.', 10, true) + celda('USD real', 10, true));
-  for (const t of r.terminos) out.push(fila(recortar(t.termino, 32), t));
-  out.push(fila(`total (${r.terminos.length} términos)`, r.total.porFase.busqueda || nuevoAcumulador()));
+  // 80 columnas: término 15 + ocho números + dos de dólares.
+  const fila = (nombre, a, d) =>
+    '  ' +
+    celda(nombre, 15) +
+    celda(a.calls, 6, true) +
+    celda(a.results, 7, true) +
+    celda(d.nuevos, 7, true) +
+    celda(d.unicos, 7, true) +
+    celda(d.guardados, 7, true) +
+    celda(d.descartados, 7, true) +
+    celda(d.sinEvaluar, 6, true) +
+    celda(usd(mejorUsd(a)) + (a.pendientes > 0 ? '*' : ''), 8, true) +
+    celda(d.conCosto > 0 ? usd(d.usdModelo) : '-', 8, true);
+  out.push(
+    '  ' +
+      celda('término', 15) +
+      celda('cons.', 6, true) +
+      celda('result.', 7, true) +
+      celda('nuevos', 7, true) +
+      celda('únicos', 7, true) +
+      celda('guard.', 7, true) +
+      celda('desc.', 7, true) +
+      celda('s/ev.', 6, true) +
+      celda('Apify', 8, true) +
+      celda('modelo', 8, true)
+  );
+  for (const t of r.terminos) out.push(fila(recortar(t.termino, 14), t, t));
+  out.push(fila(`total (${r.terminos.length})`, r.total.porFase.busqueda || nuevoAcumulador(), r.rendimiento.total));
+  out.push('  cons. = consultas · guard. = guardados · desc. = descartados por el modelo');
+  out.push('  s/ev. = sin evaluar (sin texto) · Apify y modelo, en US$');
+  if (!r.rendimiento.completo) {
+    out.push('  Base anterior a noviembre 2026: nuevos, guardados y descartados salen solo');
+    out.push('  del primer término de cada posteo, y no hay costo del modelo.');
+  }
   return out;
 }
 
@@ -483,6 +652,7 @@ module.exports = {
   parseArgs,
   abrirBase,
   faseDe,
+  leerRendimiento,
   buildReport,
   render,
 };

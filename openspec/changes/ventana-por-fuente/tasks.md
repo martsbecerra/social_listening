@@ -79,9 +79,9 @@ recuperado de las corridas cortadas) quedó afuera por decisión del dueño.
 
 ## Phase 12: reportes
 
-- [ ] 12.1 `scripts/gastos.js`: rendimiento por término; marca de corrida incompleta (REQ-VPF-15)
-- [ ] 12.2 `scripts/costo-apify.js`: pendientes en `--conciliar`; `--asentar` (REQ-VPF-16)
-- [ ] 12.3 Tests: `gastos.test.js`, `costoApifyAsentar.test.js`
+- [x] 12.1 `scripts/gastos.js`: rendimiento por término; marca de corrida incompleta (REQ-VPF-15)
+- [x] 12.2 `scripts/costo-apify.js`: pendientes y corridas no registradas en `--conciliar` (`apify.listActorRuns`); `--asentar` (REQ-VPF-16); el aviso de ciclo sin actividad baja a uno por minuto
+- [x] 12.3 Tests: `gastos.test.js`, `costoApifyAsentar.test.js`
 
 ## Phase 13: documentación
 

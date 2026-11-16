@@ -52,6 +52,12 @@ const DEFAULT_CRON_PLATFORMS = ['instagram'];
 // activo mientras corre un ciclo, sin flag de DEBUG (a propósito).
 const HEARTBEAT_STALE_MS = 15000;
 const HEARTBEAT_CHECK_MS = 15000;
+// Desde noviembre 2026 las búsquedas pueden esperar hasta SEARCH_WAIT_MS (15
+// min) a que su corrida termine en Apify: es una espera normal, no un
+// cuelgue. Pasado el primer minuto sin actividad el aviso baja a uno por
+// minuto, para no llenar el log con sesenta líneas iguales.
+const HEARTBEAT_QUIET_AFTER_MS = 60000;
+const HEARTBEAT_QUIET_EVERY_MS = 60000;
 
 // Momento en que terminó la última corrida (cron o "Actualizar ahora"), para
 // el pie de página. En memoria nomás: si el server reinicia, vuelve a null
@@ -227,17 +233,32 @@ function formatActiveTargets(limiter) {
 }
 
 /**
+ * ¿Toca avisar? Con menos de HEARTBEAT_STALE_MS sin actividad, no. El primer
+ * minuto, en cada chequeo. Después, una vez por minuto: `sinceLastLogMs` es
+ * cuánto pasó desde el último aviso.
+ */
+function heartbeatDue(idleMs, sinceLastLogMs) {
+  if (idleMs < HEARTBEAT_STALE_MS) return false;
+  if (idleMs < HEARTBEAT_QUIET_AFTER_MS) return true;
+  return sinceLastLogMs >= HEARTBEAT_QUIET_EVERY_MS;
+}
+
+/**
  * Mientras corre un ciclo: si pasan HEARTBEAT_STALE_MS sin que se registre
  * ningún tick de progreso, loguea la fase actual y qué está activo en cada
  * limitador. Se repite cada vez que el chequeo encuentra que sigue sin
- * actividad — mientras el cuelgue continúe, sigue avisando.
+ * actividad — mientras el cuelgue continúe, sigue avisando: cada 15 s el
+ * primer minuto y después una vez por minuto (ver heartbeatDue).
  */
 function startHeartbeat() {
+  let lastLogAt = 0;
   return setInterval(() => {
     const lastActivityAt = progress.getLastActivityAt();
     if (lastActivityAt == null) return;
-    const idleMs = Date.now() - lastActivityAt;
-    if (idleMs < HEARTBEAT_STALE_MS) return;
+    const now = Date.now();
+    const idleMs = now - lastActivityAt;
+    if (!heartbeatDue(idleMs, now - lastLogAt)) return;
+    lastLogAt = now;
 
     const current = progress.getProgress();
     const faseTexto = current ? `${current.phase} (${current.done}/${current.total}, ${current.percent}%)` : '(ninguna fase activa)';
@@ -509,6 +530,7 @@ module.exports = {
   getRunHours,
   getCurrentRunId,
   resumenDelCiclo,
+  heartbeatDue,
   cronPlatforms,
   DEFAULT_CRON_PLATFORMS,
 };
