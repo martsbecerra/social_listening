@@ -405,7 +405,8 @@ async function anaPoll() {
   if (id === null) return;
   let view;
   try {
-    view = await anaApi(`/api/analyze/progress?plataforma=${ANA_PLATAFORMA}&id=${id}`);
+    // Automático: no cuenta como actividad de la sesión (public/js/sesion.js).
+    view = await anaApi(`/api/analyze/progress?plataforma=${ANA_PLATAFORMA}&id=${id}`, slAuto());
   } catch (err) {
     if (id !== anaRunningId) return;
     if (err.status === 404) {
@@ -826,7 +827,8 @@ function anaGalDelete(a, cuenta, fecha) {
   const hecho = anaDateParts(a.finishedAt);
   const cuando = hecho ? `analizado ${hecho.corta} · ${hecho.hora}` : '';
   if (cuando) box.append(anaEl('span', 'an-gc-cuando', cuando));
-  const del = anaEl('button', 'btn-small an-gc-del-btn', 'Eliminar análisis');
+  // solo-operador: un lector no elimina (public/js/sesion.js).
+  const del = anaEl('button', 'btn-small an-gc-del-btn solo-operador', 'Eliminar análisis');
   del.type = 'button';
   del.setAttribute('aria-label', `Eliminar el análisis de ${cuenta}${fecha ? ` del ${fecha.fecha}` : ''}${cuando ? `, ${cuando}` : ''}`);
   const ask = anaEl('div', 'an-gc-ask');

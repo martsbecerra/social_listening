@@ -18,8 +18,10 @@ const MEDIA = path.join(tmp, 'media');
 process.env.MONITORING_DB_PATH = path.join(tmp, 'monitoring.db'); // ANTES de cargar db.js
 process.env.MONITORING_MEDIA_DIR = MEDIA;
 process.env.APIFY_API_TOKEN = 'token-de-test';
-process.env.SESSION_SECRET = 'secreto-de-test';
 process.env.APP_BASE_URL = 'http://localhost'; // cookie sin "secure"
+// Los correos de las sesiones, en la allowlist y como operadores: estas
+// rutas escriben y gastan (el gate exige operador en todo no-GET).
+process.env.ALLOWED_EMAILS = 'prueba@test.local;operador,otra@test.local;operador';
 delete process.env.COMMENTS_LIMIT;
 delete process.env.COMMENTS_ANALYSIS_LIMIT;
 delete process.env.POST_IMAGES;

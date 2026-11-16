@@ -491,6 +491,66 @@ describe('evaluateRelevance: el modelo decide, la keyword es una pista', { concu
     assert.equal(db.listDetectedPosts({ plataforma: 'instagram' }).posts.find((p) => p.id === 'ut1').tema, 'Transporte');
     assert.throws(() => db.updateTema('ut1', 'Salud'), /falta plataforma/);
   });
+
+  test('backfill: hasta BACKFILL_MAX por invocación y uno solo a la vez', async () => {
+    const { resolveBackfillMax } = require('../src/backfillConfig');
+    assert.equal(resolveBackfillMax({}), 200);
+    assert.equal(resolveBackfillMax({ BACKFILL_MAX: '25' }), 25);
+    for (const malo of ['0', '-1', '2.000', 'muchos']) {
+      assert.throws(() => resolveBackfillMax({ BACKFILL_MAX: malo }), /BACKFILL_MAX/, malo);
+    }
+
+    // Lo que dejaron las pruebas de arriba ya está completo; tres nuevos sin tema.
+    assert.deepEqual(await monitor.backfillClassification('instagram'), { classified: 0, temasCompletados: 0, stillPending: 0 });
+    for (const id of ['bm1', 'bm2', 'bm3']) {
+      db.saveDetectedPost({
+        id,
+        plataforma: 'instagram',
+        account: 'cuenta',
+        url: `https://www.instagram.com/p/${id.toUpperCase()}/`,
+        caption: 'Jorge Macri y el subte',
+        matchedReason: 'Búsqueda: jorge macri',
+        title: 'Título',
+        sentiment: 'neutral',
+      });
+    }
+    modo = 'normal';
+    llamadas.length = 0;
+    const originalLog = console.log;
+    console.log = () => {};
+    try {
+      // Tope 2: dos al modelo, el tercero queda pendiente para la próxima.
+      assert.deepEqual(await monitor.backfillClassification('instagram', { max: 2 }), { classified: 0, temasCompletados: 2, stillPending: 1 });
+      assert.equal(llamadas.length, 2);
+
+      // Uno solo a la vez: el segundo, con el primero en vuelo, tira sin
+      // llamar al modelo.
+      let soltar;
+      const espera = new Promise((resolve) => (soltar = resolve));
+      const original = llm.requestStructuredAnalysis;
+      llm.requestStructuredAnalysis = async (req) => {
+        await espera;
+        return original(req);
+      };
+      try {
+        const primero = monitor.backfillClassification('instagram');
+        await assert.rejects(monitor.backfillClassification('instagram'), (err) => {
+          assert.equal(err.code, 'BACKFILL_EN_CURSO');
+          assert.match(err.userMessage, /Ya hay una clasificación en curso/);
+          return true;
+        });
+        await assert.rejects(monitor.backfillClassification('x'), (err) => err.code === 'BACKFILL_EN_CURSO', 'también desde otra plataforma');
+        soltar();
+        assert.deepEqual(await primero, { classified: 0, temasCompletados: 1, stillPending: 0 });
+      } finally {
+        llm.requestStructuredAnalysis = original;
+      }
+      // Terminado, el candado se suelta (también si tiró).
+      assert.deepEqual(await monitor.backfillClassification('instagram'), { classified: 0, temasCompletados: 0, stillPending: 0 });
+    } finally {
+      console.log = originalLog;
+    }
+  });
 });
 
 describe('un solo modelo LLM', { concurrency: false }, () => {

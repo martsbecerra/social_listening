@@ -208,10 +208,13 @@ function panelChip(kind, value, posts) {
   chip.dataset.tip =
     panelCountText(posts.length) +
     (tone.n ? ` · ${panelPct(tone.pos)} positivo · ${panelPct(tone.neg)} negativo` : '') +
-    '\nClic: filtrar la lista · ✕: sacar';
+    '\nClic: filtrar la lista';
+  // La ✕ es solo para un operador: el tooltip la nombra solo para él (tip.js).
+  chip.dataset.tipOp = ' · ✕: sacar';
   chip.append(panelNode('span', 'w', value), panelNode('span', 'n', PANEL_INT.format(posts.length)));
   if (tone.n) chip.appendChild(panelToneBar(tone));
-  const x = panelNode('button', 'x', '✕');
+  // solo-operador: un lector no saca fuentes (public/js/sesion.js).
+  const x = panelNode('button', 'x solo-operador', '✕');
   x.type = 'button';
   x.dataset.act = 'ask';
   x.setAttribute('aria-label', `Sacar «${value}»`);
@@ -236,11 +239,12 @@ function panelAccountRow(account, posts) {
   const followers = posts.reduce((max, post) => (Number.isFinite(Number(post.followers)) && post.followers != null ? Math.max(max, Number(post.followers)) : max), -1);
   row.dataset.tipTitle = `@${account}`;
   row.dataset.tip =
-    (followers >= 0 ? `${PANEL_INT.format(followers)} seguidores · ` : '') + `${panelCountText(posts.length)}\nClic: filtrar la lista · ✕: sacar`;
+    (followers >= 0 ? `${PANEL_INT.format(followers)} seguidores · ` : '') + `${panelCountText(posts.length)}\nClic: filtrar la lista`;
+  row.dataset.tipOp = ' · ✕: sacar';
   const av = panelNode('span', 'av', account[0] ? account[0].toUpperCase() : '?');
   av.style.background = accountColor(account);
   av.setAttribute('aria-hidden', 'true');
-  const x = panelNode('button', 'x', '✕');
+  const x = panelNode('button', 'x solo-operador', '✕');
   x.type = 'button';
   x.dataset.act = 'ask';
   x.setAttribute('aria-label', `Sacar @${account}`);
@@ -433,7 +437,8 @@ for (const [kind, source] of Object.entries(PANEL_SOURCES)) {
       e.preventDefault();
       panelToggleFilter(kind, node.dataset.value);
     }
-    if (e.key === 'Delete' && e.target === node && !node.classList.contains('ask')) {
+    // Delete = la ✕ del chip: solo un operador saca fuentes (public/js/sesion.js).
+    if (e.key === 'Delete' && e.target === node && !node.classList.contains('ask') && slEsOperador()) {
       e.preventDefault();
       panelSourceAction(kind, node.dataset.value, 'ask');
     }
@@ -642,7 +647,8 @@ function panelRenderPipeline() {
 
 async function panelLoadStatus() {
   try {
-    const resp = await fetch(withPlataforma('/api/monitoring/status'));
+    // Automático (cada 5 min): no cuenta como actividad (public/js/sesion.js).
+    const resp = await fetch(withPlataforma('/api/monitoring/status'), slAuto());
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     panelStatus = await resp.json();
   } catch (err) {

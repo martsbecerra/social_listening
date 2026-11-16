@@ -8,7 +8,8 @@
 //
 // App de prueba en un puerto local de esta máquina: el gate real,
 // express.static sobre una carpeta temporal y handlers de mentira que anotan
-// cada llegada. No carga server.js ni abre ninguna base. Los pedidos van con
+// cada llegada. No carga server.js; la sesión vive en una base temporal
+// (MONITORING_DB_PATH, antes de los require). Los pedidos van con
 // http.request para que el camino salga escrito tal cual (fetch lo normaliza).
 
 const fs = require('fs');
@@ -16,8 +17,12 @@ const os = require('os');
 const path = require('path');
 const http = require('http');
 
-process.env.SESSION_SECRET = 'secreto-de-test';
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sl-gate-'));
+process.env.MONITORING_DB_PATH = path.join(tmp, 'monitoring.db');
 process.env.APP_BASE_URL = 'http://localhost'; // cookie sin "secure"
+// El correo de la sesión tiene que estar en la allowlist (el gate la mira en
+// cada pedido); operador, porque estas pruebas también escriben.
+process.env.ALLOWED_EMAILS = 'prueba@test.local;operador';
 
 const { describe, test, before, after, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
@@ -28,7 +33,6 @@ const { setSessionCookie } = require('../src/auth/session');
 
 const PAGINA = 'PAGINA-PROTEGIDA';
 const LOGIN = 'PAGINA-DE-LOGIN';
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sl-gate-'));
 const PUBLIC = path.join(tmp, 'public');
 
 // Cookie de sesión como la que deja el login.
@@ -253,14 +257,25 @@ describe('gate de login: páginas sin sesión', { concurrency: false }, () => {
     '/css/%2e%2e/dashboard.html',
   ];
 
+  // Al login con ?volver= solo si el camino es, tal cual, una de las tres
+  // páginas (en minúsculas, ya decodificado); cualquier otra forma, a "/".
+  const VOLVER = new Set(['/dashboard.html', '/instagram.html', '/x.html']);
   for (const rawPath of PAGINAS) {
     test(`GET ${rawPath} → al login, sin mostrar la página`, async () => {
       const res = await pedir('GET', rawPath);
       assert.equal(res.status, 302);
-      assert.equal(res.location, '/');
+      const canonical = canonicalPath(rawPath);
+      assert.equal(res.location, VOLVER.has(canonical) ? `/?volver=${encodeURIComponent(canonical)}` : '/');
       assert.ok(!res.body.includes(PAGINA));
     });
   }
+
+  test('?volver= con las tres páginas; otra página, sin él', async () => {
+    assert.equal((await pedir('GET', '/instagram.html')).location, '/?volver=%2Finstagram.html');
+    assert.equal((await pedir('GET', '/x.html')).location, '/?volver=%2Fx.html');
+    assert.equal((await pedir('GET', '/Dashboard.HTML')).location, '/?volver=%2Fdashboard.html');
+    assert.equal((await pedir('GET', '/otra.html')).location, '/');
+  });
 
   test('lo público sigue público: login, estilos, íconos y scripts', async () => {
     for (const rawPath of ['/', '/index.html', '/login-verify.html']) {
@@ -297,6 +312,34 @@ describe('gate de login: con sesión', { concurrency: false }, () => {
       const res = await pedir('GET', rawPath, { cookie: COOKIE });
       assert.equal(res.status, 302, rawPath);
       assert.equal(res.location, '/dashboard.html', rawPath);
+    }
+  });
+
+  test('el login con ?volver= vuelve a esa página, solo si es una de las tres', async () => {
+    const volver = async (query) => (await pedir('GET', `/${query}`, { cookie: COOKIE })).location;
+    assert.equal(await volver('?volver=%2Finstagram.html'), '/instagram.html');
+    assert.equal(await volver('?volver=/x.html'), '/x.html');
+    assert.equal((await pedir('GET', '/index.html?volver=/x.html', { cookie: COOKIE })).location, '/x.html');
+    for (const malo of [
+      '?volver=https://otro.com',
+      '?volver=https%3A%2F%2Fotro.com',
+      '?volver=https://otro.test/x.html',
+      '?volver=//otro.com',
+      '?volver=%2F%2Fotro.com',
+      '?volver=/\\otro.com',
+      '?volver=/%5Cotro.com',
+      '?volver=javascript:alert(1)',
+      '?volver=javascript%3Aalert(1)',
+      '?volver=/x.html%23javascript:alert(1)',
+      '?volver=/INSTAGRAM.HTML',
+      '?volver=/api/auth/me',
+      '?volver[]=/x.html',
+      '?volver=/x.html&volver=//otro.com',
+      '?volver=',
+    ]) {
+      const res = await pedir('GET', `/${malo}`, { cookie: COOKIE });
+      assert.equal(res.status, 302, malo);
+      assert.equal(res.location, '/dashboard.html', malo);
     }
   });
 });

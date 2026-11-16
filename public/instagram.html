@@ -22,6 +22,8 @@
   <link rel="stylesheet" href="vendor/leaflet/leaflet.css" />
   <!-- Tema: clara de origen, oscura con el botón (antes de pintar nada). -->
   <script src="js/theme.js"></script>
+  <!-- La sesión: el rol, el 401 al login y X-SL-Auto (js/sesion.js). -->
+  <script src="js/sesion.js"></script>
   <link rel="stylesheet" href="css/styles.css" />
 </head>
 
@@ -79,7 +81,7 @@
           <button type="button" data-days="7" aria-pressed="false">7 días</button>
           <button type="button" data-days="30" aria-pressed="false">30 días</button>
         </div>
-        <button id="runNowBtn" class="btn primary" type="button">▶ Actualizar ahora</button>
+        <button id="runNowBtn" class="btn primary solo-operador" type="button">▶ Actualizar ahora</button>
       </div>
     </div>
 
@@ -118,9 +120,9 @@
           <div class="ct">
             <h2>Búsquedas</h2>
             <span class="hint" id="searchCount"></span>
-            <button type="button" class="plus" aria-expanded="false" aria-controls="searchAdd" aria-label="Agregar una búsqueda" data-tip="Agregar una búsqueda">+</button>
+            <button type="button" class="plus solo-operador" aria-expanded="false" aria-controls="searchAdd" aria-label="Agregar una búsqueda" data-tip="Agregar una búsqueda">+</button>
           </div>
-          <div class="kw-add" id="searchAdd">
+          <div class="kw-add solo-operador" id="searchAdd">
             <input type="text" id="newSearch" placeholder="Agregar término y Enter…" autocomplete="off" aria-label="Agregar una búsqueda" />
             <button type="button" id="addSearchBtn" aria-label="Agregar la búsqueda">+</button>
           </div>
@@ -132,9 +134,9 @@
           <div class="ct">
             <h2>Palabras clave</h2>
             <span class="hint" id="keywordCount"></span>
-            <button type="button" class="plus" aria-expanded="false" aria-controls="keywordAdd" aria-label="Agregar una palabra clave" data-tip="Agregar una palabra clave">+</button>
+            <button type="button" class="plus solo-operador" aria-expanded="false" aria-controls="keywordAdd" aria-label="Agregar una palabra clave" data-tip="Agregar una palabra clave">+</button>
           </div>
-          <div class="kw-add" id="keywordAdd">
+          <div class="kw-add solo-operador" id="keywordAdd">
             <input type="text" id="newKeyword" placeholder="Agregar palabra y Enter…" autocomplete="off" aria-label="Agregar una palabra clave" />
             <button type="button" id="addKeywordBtn" aria-label="Agregar la palabra clave">+</button>
           </div>
@@ -147,9 +149,9 @@
           <div class="ct">
             <h2>Hashtags</h2>
             <span class="hint" id="hashtagCount"></span>
-            <button type="button" class="plus" aria-expanded="false" aria-controls="hashtagAdd" aria-label="Agregar un hashtag" data-tip="Agregar un hashtag">+</button>
+            <button type="button" class="plus solo-operador" aria-expanded="false" aria-controls="hashtagAdd" aria-label="Agregar un hashtag" data-tip="Agregar un hashtag">+</button>
           </div>
-          <div class="kw-add" id="hashtagAdd">
+          <div class="kw-add solo-operador" id="hashtagAdd">
             <input type="text" id="newHashtag" placeholder="#hashtag y Enter…" autocomplete="off" aria-label="Agregar un hashtag" />
             <button type="button" id="addHashtagBtn" aria-label="Agregar el hashtag">+</button>
           </div>
@@ -197,9 +199,9 @@
           <div class="ct">
             <h2>Cuentas seguidas</h2>
             <span class="hint" id="accountCount"></span>
-            <button type="button" class="plus" aria-expanded="false" aria-controls="accountAdd" aria-label="Agregar una cuenta" data-tip="Agregar una cuenta">+</button>
+            <button type="button" class="plus solo-operador" aria-expanded="false" aria-controls="accountAdd" aria-label="Agregar una cuenta" data-tip="Agregar una cuenta">+</button>
           </div>
-          <div class="kw-add" id="accountAdd">
+          <div class="kw-add solo-operador" id="accountAdd">
             <input type="text" id="newAccount" placeholder="@cuenta y Enter…" autocomplete="off" aria-label="Agregar una cuenta" />
             <button type="button" id="addAccountBtn" aria-label="Agregar la cuenta">+</button>
           </div>
@@ -423,7 +425,7 @@
     <div class="an-view on" id="anaV1">
       <div class="card rv ana-run">
         <label for="url" class="sr">Link de la publicación</label>
-        <div class="urlbar">
+        <div class="urlbar solo-operador">
           <input type="text" id="url" placeholder="https://www.instagram.com/p/… o /reel/…" autocomplete="off" spellcheck="false" />
           <button id="analyzeBtn" class="btn primary" type="button">Analizar</button>
         </div>
@@ -432,7 +434,7 @@
           <span id="anaNoticeText"></span>
           <span class="sp"></span>
           <button type="button" class="btn sm" id="anaNoticeView">Ver ese análisis</button>
-          <button type="button" class="btn sm primary" id="anaNoticeRun">Analizar de nuevo</button>
+          <button type="button" class="btn sm primary solo-operador" id="anaNoticeRun">Analizar de nuevo</button>
         </div>
         <div id="anaError" class="ana-error hidden" role="alert"></div>
         <!-- Los pasos del trabajo, con su detalle y el porcentaje real. -->
@@ -446,7 +448,7 @@
           <div class="an-confirm hidden" id="anaConfirm" role="group" aria-labelledby="anaConfirmText">
             <p class="ct-t" id="anaConfirmText"></p>
             <p class="note" id="anaConfirmNote"></p>
-            <div class="acts" id="anaConfirmActs"></div>
+            <div class="acts solo-operador" id="anaConfirmActs"></div>
           </div>
         </div>
       </div>
@@ -670,7 +672,7 @@
         <div class="an-fig-tools">
           <label for="anaFigQ" class="sr">Buscar en la lista</label>
           <input class="field" type="search" id="anaFigQ" placeholder="Buscar por usuario o nombre…" autocomplete="off" />
-          <button type="button" class="btn sm primary" id="anaFigAdd">+ Agregar figura</button>
+          <button type="button" class="btn sm primary solo-operador" id="anaFigAdd">+ Agregar figura</button>
         </div>
         <div id="anaFigFormBox"></div>
         <p class="note" id="anaFigMsg" role="status" aria-live="polite"></p>

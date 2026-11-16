@@ -33,6 +33,8 @@ const progress = require('./monitoringProgress');
 // Corridas a las 8, 12, 16 y 20 (hora local del server): sin las de 0 y 4,
 // que costaban lo mismo y casi no traían nada. Configurable con MONITOR_CRON.
 const DEFAULT_CRON = '0 8,12,16,20 * * *';
+// La purga diaria de sesiones vencidas (src/auth/session.js), a las 4:17.
+const SESSIONS_PURGE_CRON = '17 4 * * *';
 
 // Plataformas que corre el ciclo AUTOMÁTICO (el cron). X está en stand by
 // (su detección no funciona hoy), así que por defecto el cron corre solo
@@ -397,6 +399,18 @@ function startScheduler() {
     runCycle({ ifBusy: 'skip', trigger: 'cron', plataformas }).catch((err) => {
       console.error('Error en el ciclo de monitoreo agendado:', err.message);
     });
+  });
+
+  // Una vez por día, fuera de las horas de corrida: se borran las sesiones
+  // revocadas o vencidas (src/auth/session.js). server.js también purga al
+  // arrancar. Nunca tira.
+  cron.schedule(SESSIONS_PURGE_CRON, () => {
+    try {
+      const borradas = require('./auth/session').purgeExpiredSessions();
+      if (borradas > 0) console.log(`[auth] purga diaria: ${borradas} sesión/es vencidas o revocadas borradas`);
+    } catch (err) {
+      console.error('[auth] la purga diaria de sesiones falló:', err.message);
+    }
   });
 
   const fuera = listPlatformIds().filter((id) => !plataformas.includes(id));

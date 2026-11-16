@@ -1,8 +1,9 @@
 // Tooltip global (diseño v4, .tip en styles.css). Cualquier elemento con
 // data-tip lo muestra al pasar el mouse o al recibir el foco: el título en
 // data-tip-title (opcional) y el texto en data-tip, con "\n" para cortar
-// renglones. Todo entra por textContent, nunca como HTML: hay tooltips con
-// datos de los posteos y de las cuentas.
+// renglones; data-tip-op, lo que se suma solo para un operador. Todo entra
+// por textContent, nunca como HTML: hay tooltips con datos de los posteos y
+// de las cuentas.
 
 const tipEl = document.createElement('div');
 tipEl.className = 'tip';
@@ -14,7 +15,11 @@ let tipOwner = null;
 
 function tipFill(owner) {
   const title = owner.dataset.tipTitle || '';
-  const text = owner.dataset.tip || '';
+  let text = owner.dataset.tip || '';
+  // data-tip-op: lo que se suma solo para un operador ("· ✕: sacar"), una
+  // acción que un lector no tiene (el rol, public/js/sesion.js). Se mira al
+  // mostrarlo: vale aunque el rol llegue después de armar el elemento.
+  if (owner.dataset.tipOp && typeof window.slEsOperador === 'function' && window.slEsOperador()) text += owner.dataset.tipOp;
   const parts = [];
   if (title) {
     const b = document.createElement('b');
