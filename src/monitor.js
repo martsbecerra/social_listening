@@ -55,7 +55,7 @@ const { CATEGORIA_FALLBACK } = require('./categoriasConfig');
 const { checkAndLogJump } = require('./viralJumpDetector');
 const { getPlatform, listPlatformIds, DEFAULT_PLATFORM_ID } = require('./platforms');
 const { isPlatformError } = require('./platforms/errors');
-const { runWithContext } = require('./usageContext');
+const { runWithContext, getContext } = require('./usageContext');
 const progress = require('./monitoringProgress');
 const { resolveBackfillMax } = require('./backfillConfig');
 const db = require('./db');
@@ -613,9 +613,11 @@ function pickMetrics(platform, post) {
  *
  * @param {object} post posteo normalizado por el adapter
  * @param {string[]} keywords keywords planas (sin "#") de la plataforma
- * @param {{ platform?: object }} [options] adapter, para etiquetar el prompt
+ * @param {{ platform?: object, onUsage?: (usage: object) => void }} [options]
+ *   platform: el adapter, para etiquetar el prompt. onUsage: aviso con lo
+ *   que gastó la llamada al modelo (ver classifier.clasificarPosteo).
  */
-async function evaluateRelevance(post, keywords, { platform } = {}) {
+async function evaluateRelevance(post, keywords, { platform, onUsage } = {}) {
   const platformLabel = platform && platform.label ? platform.label : undefined;
   const text = `${post.caption || ''} ${post.hashtagsText || ''}`.trim();
 
@@ -638,7 +640,7 @@ async function evaluateRelevance(post, keywords, { platform } = {}) {
 
   if (post.sourceType === 'keyword') {
     const term = post.sourceQuery || literalMatch;
-    const { title, sentiment, tema, unclassified } = await clasificarPosteo(post.caption, { platformLabel, pista: { busqueda: term } });
+    const { title, sentiment, tema, unclassified } = await clasificarPosteo(post.caption, { platformLabel, pista: { busqueda: term }, onUsage });
     let base = 'Búsqueda por palabra clave';
     if (term) {
       base = String(term).startsWith('#')
@@ -661,7 +663,7 @@ async function evaluateRelevance(post, keywords, { platform } = {}) {
     hashtag: post.sourceType === 'hashtag',
     busqueda: post.sourceType === 'search' ? post.sourceQuery || null : null,
   };
-  const result = await clasificarPosteo(post.caption, { platformLabel, pista });
+  const result = await clasificarPosteo(post.caption, { platformLabel, pista, onUsage });
 
   // Motivo base, con los textos de siempre según origen y coincidencia.
   const origen =
@@ -770,10 +772,25 @@ function describeFound(posts, platformId) {
   }
 }
 
-/** Nunca tira: no poder anotar un visto no puede frenar el ciclo (a lo sumo se vuelve a pedir ese detalle). */
-function markSearchSeen(post, platformId, outcome) {
+/**
+ * Nunca tira: no poder anotar un visto no puede frenar el ciclo (a lo sumo
+ * ese posteo se vuelve a evaluar). `extra`: el motivo del modelo, lo que
+ * costó la clasificación, la corrida y todos los términos que lo trajeron.
+ */
+function markSearchSeen(post, platformId, outcome, { motivo = null, llmUsd = null, runId = null, terminos = null } = {}) {
   try {
-    db.markSearchSeen({ postId: post.id, plataforma: platformId, url: post.url, term: post.sourceQuery, outcome });
+    db.markSearchSeen({
+      postId: post.id,
+      plataforma: platformId,
+      url: post.url,
+      term: post.sourceQuery,
+      outcome,
+      postedAt: post.postedAt || null,
+      motivo,
+      llmUsd,
+      runId,
+      terminos,
+    });
   } catch (err) {
     console.error(`[monitor] (${platformId}) no se pudo anotar el resultado de búsqueda ${post.id}:`, err.message);
   }
@@ -914,6 +931,90 @@ async function enrichSearchResults(platform, platformId, postsById) {
       '.'
   );
   return out;
+}
+
+/** Suma a un resultado ya anotado los términos que lo trajeron en esta corrida. Nunca tira. */
+function addSearchTerms(post, platformId, termsById) {
+  const terminos = termsById.get(String(post.id));
+  if (!terminos || terminos.length === 0) return;
+  try {
+    db.addSearchSeenTerms(post.id, platformId, terminos);
+  } catch (err) {
+    console.error(`[monitor] (${platformId}) no se pudieron sumar los términos del resultado ${post.id}:`, err.message);
+  }
+}
+
+/**
+ * Guarda (o descarta) un posteo NUEVO ya evaluado y deja anotada la decisión
+ * del modelo. Es el final del pipeline de un posteo: lo usa el ciclo y lo
+ * puede usar cualquier otro camino que traiga candidatos (una búsqueda que
+ * se levanta después).
+ *
+ * search_seen (solo resultados de búsqueda, sourceType 'search'):
+ *   - 'descartado' si había texto y el modelo dijo que no es relevante: no
+ *     se vuelve a clasificar aunque otra búsqueda lo traiga. Antes solo se
+ *     anotaba si se había pagado el detalle; como las búsquedas ya traen el
+ *     texto, los descartados no quedaban anotados y cada corrida los volvía
+ *     a clasificar (42 de los 67 nuevos de la corrida del 16/11/2026).
+ *   - 'guardado' si entró (o si otro ciclo lo guardó en el medio).
+ *   - sin texto no hubo decisión del modelo: no se anota, como antes (el
+ *     detalle lo anota como sin_caption o sin_detalle cuando lo paga).
+ * @returns {object|null} el posteo guardado con su clasificación, o null si
+ *   no entró (descartado, de otra red, o ya estaba).
+ */
+function guardarEvaluado(post, evaluation, { platform, platformId, terminos = null, llmUsd = null, runId = null }) {
+  const anotar = (outcome) => {
+    if (post.sourceType !== 'search') return;
+    markSearchSeen(post, platformId, outcome, { motivo: evaluation.motivo || null, llmUsd, runId, terminos });
+  };
+  if (!evaluation.relevant) {
+    if (hasCaption(post)) anotar('descartado');
+    return null;
+  }
+
+  const postWithClassification = {
+    ...post,
+    plataforma: platformId,
+    title: evaluation.title,
+    sentiment: evaluation.sentiment,
+    tema: evaluation.tema,
+    matchedReason: evaluation.matchedReason,
+    // Snapshot de seguidores: el dato que vino con el posteo (apidojo)
+    // o, si no, la caché account_followers (nunca un llamado al scraper
+    // acá: eso encarecería cada corrida de 4hs; la caché se refresca con
+    // cada respuesta que trae el dato y en accountStats.computeAccountStats).
+    // Posts sin cuenta (hashtag), de cuentas todavía sin caché o de
+    // plataformas sin seguidores quedan null -> "-" en la tabla.
+    followers:
+      post.followers != null
+        ? post.followers
+        : post.account && platform.capabilities && platform.capabilities.followers
+          ? db.getAccountFollowers(post.account, platformId)
+          : null,
+  };
+
+  let inserted;
+  try {
+    inserted = db.saveDetectedPost(postWithClassification);
+  } catch (err) {
+    // Url de otra red que la plataforma que lo trajo: la base lo rechaza
+    // (ver db.saveDetectedPost). Se descarta ese posteo y el ciclo sigue.
+    if (err.code !== 'PLATAFORMA_INCONSISTENTE') throw err;
+    console.error(`[monitor] (${platformId}) descartado: ${err.message}`);
+    return null;
+  }
+  if (!inserted) {
+    // Carrera con otro ciclo: entre el findExisting y el INSERT el otro
+    // proceso ya lo guardó. No es un posteo nuevo para notificar.
+    const racedId = db.findExistingPostId(post.id, post.url);
+    if (racedId) {
+      refreshKnownPost(platform, racedId, post);
+      anotar('guardado');
+    }
+    return null;
+  }
+  anotar('guardado');
+  return postWithClassification;
 }
 
 function notConfiguredError(platform) {
@@ -1131,6 +1232,18 @@ async function runMonitoringCycle({ plataformas, trigger } = {}) {
     // descubrimiento y se filtran igual. A igual prioridad, el primero. La
     // cuenta no se pierde: post.account es el mismo handle en todas. Por
     // plataforma: dos plataformas distintas nunca comparten id.
+    // Antes del dedupe (que se queda con una sola versión de cada posteo):
+    // todos los términos de búsqueda que lo trajeron en esta corrida, para
+    // medir el rendimiento de cada término (search_seen.terminos).
+    const termsById = new Map();
+    for (const post of allCandidates) {
+      if (!post || post.sourceType !== 'search' || !post.sourceQuery || post.id === undefined || post.id === null) continue;
+      const key = String(post.id);
+      const list = termsById.get(key) || [];
+      if (!list.some((t) => t.toLowerCase() === String(post.sourceQuery).toLowerCase())) list.push(String(post.sourceQuery));
+      termsById.set(key, list);
+    }
+
     const seenInThisRun = new Map();
     for (const post of allCandidates) {
       if (!post.url) continue;
@@ -1163,9 +1276,11 @@ async function runMonitoringCycle({ plataformas, trigger } = {}) {
     if (enrichment.platformError && !platformError) platformError = enrichment.platformError;
 
     // Total real de la fase de clasificación: solo los posteos NUEVOS pasan
-    // por evaluateRelevance (los ya conocidos abajo solo se refrescan gratis).
-    const pendingClassification = [...seenInThisRun.values()].filter((post) => !db.findExistingPostId(post.id, post.url)).length;
-    progress.startPhase('Clasificando relevancia', pendingClassification);
+    // por evaluateRelevance. Los ya guardados solo se refrescan gratis, y los
+    // que una corrida anterior ya decidió (search_seen) no se vuelven a
+    // evaluar: antes sí, y cada corrida pagaba de nuevo sus descartados.
+    progress.startPhase('Clasificando relevancia', newIds.size);
+    const cycleRunId = (getContext() || {}).runId ?? null;
 
     // Posteos nuevos de esta plataforma que vinieron con link de imagen: su
     // foto se baja al terminar de guardarlos (más abajo).
@@ -1186,64 +1301,38 @@ async function runMonitoringCycle({ plataformas, trigger } = {}) {
           checkAndLogJump({ account: refresh.account, id: existingId, postedAt: refresh.postedAt, metric: 'comentarios', previous: refresh.previousComments, current: refresh.comments });
           checkAndLogJump({ account: refresh.account, id: existingId, postedAt: refresh.postedAt, metric: 'likes', previous: refresh.previousLikes, current: refresh.likes });
         }
+        addSearchTerms(post, platformId, termsById);
         continue;
       }
 
-      const evaluation = await evaluateRelevance(post, plainKeywords, { platform });
-      progress.tick();
-      if (newIds.has(post.id)) {
-        if (evaluation.relevant) relevantNew += 1;
-        else discardedNew += 1;
-      }
-      // Un resultado de búsqueda con el detalle ya pagado queda anotado con
-      // lo que se decidió: descartado no se vuelve a consultar ni a evaluar.
-      const paidDetail = enrichment.enriched.has(post.id);
-      if (!evaluation.relevant) {
-        if (paidDetail) markSearchSeen(post, platformId, 'descartado');
+      // Ya decidido en una corrida anterior (anotado en search_seen): no se
+      // vuelve a clasificar. Solo se le suman los términos que lo trajeron
+      // esta vez.
+      if (!newIds.has(post.id)) {
+        addSearchTerms(post, platformId, termsById);
         continue;
       }
-      if (paidDetail) markSearchSeen(post, platformId, 'guardado');
 
-      const postWithClassification = {
-        ...post,
-        plataforma: platformId,
-        title: evaluation.title,
-        sentiment: evaluation.sentiment,
-        tema: evaluation.tema,
-        matchedReason: evaluation.matchedReason,
-        // Snapshot de seguidores: el dato que vino con el posteo (apidojo)
-        // o, si no, la caché account_followers (nunca un llamado al scraper
-        // acá: eso encarecería cada corrida de 4hs; la caché se refresca con
-        // cada respuesta que trae el dato y en accountStats.computeAccountStats).
-        // Posts sin cuenta (hashtag), de cuentas todavía sin caché o de
-        // plataformas sin seguidores quedan null -> "-" en la tabla.
-        followers:
-          post.followers != null
-            ? post.followers
-            : post.account && platform.capabilities && platform.capabilities.followers
-              ? db.getAccountFollowers(post.account, platformId)
-              : null,
+      // Lo que costó clasificarlo (estimado por el proveedor), para la fila
+      // de search_seen: el rendimiento de cada término se mide con eso.
+      let llmUsd = null;
+      const onUsage = (usage) => {
+        const cost = Number(usage && usage.costUsd);
+        if (usage && usage.costUsd != null && Number.isFinite(cost)) llmUsd = (llmUsd || 0) + cost;
       };
+      const evaluation = await evaluateRelevance(post, plainKeywords, { platform, onUsage });
+      progress.tick();
+      if (evaluation.relevant) relevantNew += 1;
+      else discardedNew += 1;
 
-      let inserted;
-      try {
-        inserted = db.saveDetectedPost(postWithClassification);
-      } catch (err) {
-        // Url de otra red que la plataforma que lo trajo: la base lo rechaza
-        // (ver db.saveDetectedPost). Se descarta ese posteo y el ciclo sigue.
-        if (err.code !== 'PLATAFORMA_INCONSISTENTE') throw err;
-        console.error(`[monitor] (${platformId}) descartado: ${err.message}`);
-        continue;
-      }
-      if (!inserted) {
-        // Carrera con otro ciclo: entre el findExisting y el INSERT el otro
-        // proceso ya lo guardó. No es un posteo nuevo para notificar.
-        const racedId = db.findExistingPostId(post.id, post.url);
-        if (racedId) {
-          refreshKnownPost(platform, racedId, post);
-        }
-        continue;
-      }
+      const postWithClassification = guardarEvaluado(post, evaluation, {
+        platform,
+        platformId,
+        terminos: termsById.get(String(post.id)) || null,
+        llmUsd,
+        runId: cycleRunId,
+      });
+      if (!postWithClassification) continue;
       newPosts.push(postWithClassification);
       porPlataforma[platformId].newCount += 1;
       if (post.imageUrl) newPostImages.push({ id: post.id, url: post.imageUrl });
@@ -1434,4 +1523,5 @@ module.exports = {
   // Código de la URL de un posteo (/p/{code}/): lo usa también el refresco
   // por URL (src/metricsRefresh.js) para cruzar la respuesta del actor.
   postCodeOf,
+  guardarEvaluado,
 };

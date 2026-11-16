@@ -11,11 +11,11 @@ recuperado de las corridas cortadas) quedó afuera por decisión del dueño.
 
 ## Phase 2: descartados anotados con su búsqueda
 
-- [ ] 2.1 `search_seen`: columnas `posted_at`, `motivo`, `llm_usd`, `run_id`, `terminos`; `markSearchSeen` junta términos y no pisa con un dato ausente; `addSearchSeenTerms` (REQ-VPF-01)
-- [ ] 2.2 `classifier.clasificarPosteo(caption, { onUsage })`
-- [ ] 2.3 `monitor.guardarEvaluado`; el ciclo no vuelve a evaluar lo ya anotado y suma los términos (REQ-VPF-01, REQ-VPF-02)
-- [ ] 2.4 `countDiscardedSearchesForStats` por fecha de publicación
-- [ ] 2.5 Tests: `searchSeenPorTermino.test.js`, `searchSeenMigracion.test.js`; `searchEnrichment.test.js` y `clasificarPosteo.test.js` adaptados
+- [x] 2.1 `search_seen`: columnas `posted_at`, `motivo`, `llm_usd`, `run_id`, `terminos`; `markSearchSeen` junta términos y no pisa con un dato ausente; `addSearchSeenTerms` (REQ-VPF-01)
+- [x] 2.2 `classifier.clasificarPosteo(caption, { onUsage })`
+- [x] 2.3 `monitor.guardarEvaluado`; el ciclo no vuelve a evaluar lo ya anotado y suma los términos (REQ-VPF-01, REQ-VPF-02)
+- [x] 2.4 `countDiscardedSearchesForStats` por fecha de publicación
+- [x] 2.5 Tests: `searchSeenPorTermino.test.js`, `searchSeenMigracion.test.js`; `searchEnrichment.test.js` y `clasificarPosteo.test.js` adaptados
 
 ## Phase 3: costo medido y `apify_calls` con estado
 

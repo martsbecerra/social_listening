@@ -367,6 +367,7 @@ describe('detalle de los resultados de búsqueda sin caption', { concurrency: fa
     db.markSearchSeen({ postId: 'purga-reciente', plataforma: 'instagram', outcome: 'descartado' });
     assert.deepEqual(db.getSearchSeen('purga-reciente', 'instagram'), {
       postId: 'purga-reciente', plataforma: 'instagram', url: null, term: null, outcome: 'descartado', firstSeenAt: recent,
+      postedAt: null, motivo: null, llmUsd: null, runId: null, terminos: [],
     });
     assert.equal(db.isSearchSeen('purga-vieja', 'instagram'), true);
     assert.equal(db.isSearchSeen('purga-vieja', 'x'), false, 'por plataforma');

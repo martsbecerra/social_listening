@@ -717,17 +717,39 @@ db.exec(`
     PRIMARY KEY (post_id, plataforma)
   )
 `);
+// Desde noviembre 2026 (openspec/changes/ventana-por-fuente) la tabla anota
+// TODO lo que decidió el clasificador sobre un resultado de búsqueda, se
+// haya pagado o no su detalle (las búsquedas ya traen el texto): así un
+// descartado no se vuelve a clasificar en cada corrida. Columnas nuevas, las
+// cinco anulables (las filas anteriores no las tienen): posted_at (la fecha
+// de publicación, para contarlo en su día), motivo (el del modelo), llm_usd
+// (lo que costó esa clasificación, estimado), run_id (la corrida que lo
+// decidió) y terminos (JSON: todos los términos que lo trajeron; el primero
+// es `term`, el del motivo).
+const searchSeenColumns = db.prepare('PRAGMA table_info(search_seen)').all().map((c) => c.name);
+for (const [col, type] of [['posted_at', 'TEXT'], ['motivo', 'TEXT'], ['llm_usd', 'REAL'], ['run_id', 'INTEGER'], ['terminos', 'TEXT']]) {
+  if (!searchSeenColumns.includes(col)) db.exec(`ALTER TABLE search_seen ADD COLUMN ${col} ${type}`);
+}
 const getSearchSeenStmt = db.prepare(`
-  SELECT post_id AS postId, plataforma, url, term, outcome, first_seen_at AS firstSeenAt
+  SELECT post_id AS postId, plataforma, url, term, outcome, first_seen_at AS firstSeenAt,
+         posted_at AS postedAt, motivo, llm_usd AS llmUsd, run_id AS runId, terminos
   FROM search_seen WHERE post_id = ? AND plataforma = ?
 `);
-// first_seen_at no se pisa: es la fecha del primer detalle pagado, la que
-// cuenta para la purga.
+// first_seen_at no se pisa: es la fecha de la primera decisión, la que
+// cuenta para la purga. `term` tampoco (es el del motivo). Lo demás se
+// completa si llega: un dato nuevo pisa, uno ausente conserva el guardado.
 const markSearchSeenStmt = db.prepare(`
-  INSERT INTO search_seen (post_id, plataforma, url, term, outcome, first_seen_at)
-  VALUES (@postId, @plataforma, @url, @term, @outcome, @firstSeenAt)
-  ON CONFLICT(post_id, plataforma) DO UPDATE SET outcome = excluded.outcome
+  INSERT INTO search_seen (post_id, plataforma, url, term, outcome, first_seen_at, posted_at, motivo, llm_usd, run_id, terminos)
+  VALUES (@postId, @plataforma, @url, @term, @outcome, @firstSeenAt, @postedAt, @motivo, @llmUsd, @runId, @terminos)
+  ON CONFLICT(post_id, plataforma) DO UPDATE SET
+    outcome = excluded.outcome,
+    posted_at = COALESCE(excluded.posted_at, posted_at),
+    motivo = COALESCE(excluded.motivo, motivo),
+    llm_usd = COALESCE(excluded.llm_usd, llm_usd),
+    run_id = COALESCE(excluded.run_id, run_id),
+    terminos = COALESCE(excluded.terminos, terminos)
 `);
+const setSearchSeenTermsStmt = db.prepare('UPDATE search_seen SET terminos = @terminos WHERE post_id = @postId AND plataforma = @plataforma');
 const purgeSearchSeenStmt = db.prepare('DELETE FROM search_seen WHERE first_seen_at < ?');
 
 // Gasto en Apify (ver src/apifyCost.js): una fila por llamada a runActorSync
@@ -872,9 +894,10 @@ const listPostsForStatsStmt = db.prepare(`
 `);
 // Las menciones por término de Estadísticas cuentan también lo que no quedó:
 // los ignorados (por posted_at, como el resto) y los resultados de búsqueda
-// descartados. search_seen no guarda posted_at: los descartados van por
-// first_seen_at, el día en que se pagó su detalle (con la ventana dinámica
-// de la detección, el mismo día de la publicación o el siguiente).
+// descartados, por su fecha de publicación (search_seen.posted_at, desde
+// noviembre 2026). Las filas anteriores no la tienen: van por first_seen_at,
+// el día en que se decidieron (con la ventana de la detección, el mismo día
+// de la publicación o el siguiente).
 const listIgnoredPostsForStatsStmt = db.prepare(`
   SELECT matched_reason FROM detected_posts
   WHERE plataforma = ? AND ignored = 1 AND posted_at >= ? AND posted_at < ?
@@ -882,7 +905,7 @@ const listIgnoredPostsForStatsStmt = db.prepare(`
 const countDiscardedSearchesForStatsStmt = db.prepare(`
   SELECT term, COUNT(*) AS n FROM search_seen
   WHERE plataforma = ? AND outcome = 'descartado' AND term IS NOT NULL
-    AND first_seen_at >= ? AND first_seen_at < ?
+    AND COALESCE(posted_at, first_seen_at) >= ? AND COALESCE(posted_at, first_seen_at) < ?
   GROUP BY term
 `);
 // Rastros de corridas de una plataforma en un rango, para contar en cuántos
@@ -2412,11 +2435,43 @@ function sumApifyCallsSince(sinceIso) {
   return sumApifyCallsSinceStmt.all(sinceIso);
 }
 
-/** @returns {{postId: string, plataforma: string, url: string|null, term: string|null, outcome: string, firstSeenAt: string}|null} */
+/** Lista de términos sin vacíos ni repetidos (sin distinguir mayúsculas), en el orden en que llegan. */
+function mergeSearchTerms(...lists) {
+  const out = [];
+  const seen = new Set();
+  for (const list of lists) {
+    for (const raw of Array.isArray(list) ? list : []) {
+      const term = String(raw ?? '').trim();
+      const key = term.toLowerCase();
+      if (!term || seen.has(key)) continue;
+      seen.add(key);
+      out.push(term);
+    }
+  }
+  return out;
+}
+
+/** El JSON de search_seen.terminos como lista; algo roto o vacío es una lista vacía. */
+function parseSearchTerms(raw) {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return mergeSearchTerms(Array.isArray(parsed) ? parsed : []);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * @returns {{postId: string, plataforma: string, url: string|null, term: string|null, outcome: string, firstSeenAt: string,
+ *   postedAt: string|null, motivo: string|null, llmUsd: number|null, runId: number|null, terminos: string[]}|null}
+ *   terminos: todos los términos que trajeron el posteo; en una fila anterior a la columna, solo `term`.
+ */
 function getSearchSeen(postId, plataforma) {
   requirePlataforma(plataforma, 'getSearchSeen');
   const row = getSearchSeenStmt.get(String(postId), plataforma);
-  return row ? { ...row } : null;
+  if (!row) return null;
+  return { ...row, terminos: mergeSearchTerms(row.term ? [row.term] : [], parseSearchTerms(row.terminos)) };
 }
 
 function isSearchSeen(postId, plataforma) {
@@ -2424,17 +2479,46 @@ function isSearchSeen(postId, plataforma) {
   return Boolean(getSearchSeenStmt.get(String(postId), plataforma));
 }
 
-/** Anota un resultado de búsqueda al que ya se le pidió el detalle. Si ya estaba, solo cambia el outcome. */
-function markSearchSeen({ postId, plataforma, url = null, term = null, outcome, firstSeenAt }) {
+/**
+ * Anota lo que se decidió sobre un resultado de búsqueda. Si ya estaba,
+ * cambia el outcome, completa lo que llegue (fecha de publicación, motivo,
+ * costo, corrida) y SUMA los términos; nunca pisa first_seen_at ni `term`.
+ */
+function markSearchSeen({ postId, plataforma, url = null, term = null, outcome, firstSeenAt, postedAt = null, motivo = null, llmUsd = null, runId = null, terminos = null }) {
   requirePlataforma(plataforma, 'markSearchSeen');
+  const previo = getSearchSeenStmt.get(String(postId), plataforma);
+  const lista = mergeSearchTerms(previo && previo.term ? [previo.term] : [], previo ? parseSearchTerms(previo.terminos) : [], term ? [term] : [], terminos);
+  const usd = Number(llmUsd);
   markSearchSeenStmt.run({
     postId: String(postId),
     plataforma,
     url: url || null,
-    term: term || null,
+    term: term || lista[0] || null,
     outcome: String(outcome),
     firstSeenAt: firstSeenAt || new Date().toISOString(),
+    postedAt: postedAt || null,
+    motivo: motivo ? String(motivo).slice(0, 500) : null,
+    llmUsd: llmUsd != null && Number.isFinite(usd) ? usd : null,
+    runId: runId == null ? null : Number(runId),
+    terminos: lista.length > 0 ? JSON.stringify(lista) : null,
   });
+}
+
+/**
+ * Suma términos a un resultado ya anotado (otra búsqueda lo volvió a traer).
+ * Sin fila no hace nada: los términos son de lo ya decidido.
+ * @returns {boolean} true si la lista cambió
+ */
+function addSearchSeenTerms(postId, plataforma, terminos) {
+  requirePlataforma(plataforma, 'addSearchSeenTerms');
+  const previo = getSearchSeenStmt.get(String(postId), plataforma);
+  if (!previo) return false;
+  const antes = mergeSearchTerms(previo.term ? [previo.term] : [], parseSearchTerms(previo.terminos));
+  const lista = mergeSearchTerms(antes, terminos);
+  if (lista.length === antes.length && previo.terminos) return false;
+  if (lista.length === 0) return false;
+  setSearchSeenTermsStmt.run({ postId: String(postId), plataforma, terminos: JSON.stringify(lista) });
+  return lista.length !== antes.length;
 }
 
 /** Borra los vistos anteriores a olderThanIso. @returns {number} filas borradas */
@@ -3259,6 +3343,7 @@ module.exports = {
   getSearchSeen,
   isSearchSeen,
   markSearchSeen,
+  addSearchSeenTerms,
   purgeSearchSeen,
   insertApifyCall,
   startMonitoringRun,
