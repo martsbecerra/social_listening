@@ -825,6 +825,135 @@ const monitoringRunsColumns = db.prepare('PRAGMA table_info(monitoring_runs)').a
 if (!monitoringRunsColumns.includes('new_candidates')) {
   db.exec('ALTER TABLE monitoring_runs ADD COLUMN new_candidates INTEGER');
 }
+// Si el ciclo entero tiró (un error de plataforma en una corrida manual),
+// el código del error: la corrida no fue "ok" (src/runStatus.js).
+if (!monitoringRunsColumns.includes('error_code')) {
+  db.exec('ALTER TABLE monitoring_runs ADD COLUMN error_code TEXT');
+}
+
+// Una fila por consulta de detección de cada ciclo (noviembre 2026,
+// openspec/changes/ventana-por-fuente): qué fuente se consultó, con qué
+// ventana y tope, cómo terminó y, si fue una corrida de Apify, su id. Es a
+// la vez el registro de qué falló en una corrida (src/runStatus.js calcula
+// el estado al leer) y la cola de las corridas que siguen en Apify y hay que
+// levantar (estado `esperando`). tipo: busqueda | cuenta | hashtag | keyword
+// | detalle (el detalle de los resultados nuevos) | plataforma (no se buscó
+// nada: el motivo dice por qué). `clave` es la fuente normalizada, la misma
+// de la marca de detección. `intento` 2 es la segunda consulta por tope
+// lleno. `detalle` es el texto crudo del error, acotado: sirve al log y a
+// los scripts y NUNCA sale por la API. Sin CHECK en `estado` (ver
+// src/runStatus.js para los valores).
+db.exec(`
+  CREATE TABLE IF NOT EXISTS monitoring_run_sources (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id INTEGER,
+    plataforma TEXT NOT NULL,
+    tipo TEXT NOT NULL,
+    fuente TEXT,
+    clave TEXT,
+    intento INTEGER NOT NULL DEFAULT 1,
+    estado TEXT NOT NULL,
+    motivo TEXT,
+    detalle TEXT,
+    actor TEXT,
+    apify_run_id TEXT,
+    desde_iso TEXT,
+    until TEXT,
+    tope INTEGER,
+    items INTEGER,
+    nuevos INTEGER,
+    tope_lleno INTEGER NOT NULL DEFAULT 0,
+    hueco_desde TEXT,
+    recuperada_en INTEGER,
+    recuperada_at TEXT,
+    started_at TEXT NOT NULL,
+    finished_at TEXT,
+    duracion_ms INTEGER
+  )
+`);
+db.exec('CREATE INDEX IF NOT EXISTS idx_run_sources_run ON monitoring_run_sources(run_id, plataforma)');
+db.exec('CREATE INDEX IF NOT EXISTS idx_run_sources_estado ON monitoring_run_sources(plataforma, estado)');
+const insertRunSourceStmt = db.prepare(`
+  INSERT INTO monitoring_run_sources
+    (run_id, plataforma, tipo, fuente, clave, intento, estado, motivo, detalle, actor, apify_run_id, desde_iso, until, tope, items, nuevos,
+     tope_lleno, hueco_desde, started_at, finished_at, duracion_ms)
+  VALUES
+    (@runId, @plataforma, @tipo, @fuente, @clave, @intento, @estado, @motivo, @detalle, @actor, @apifyRunId, @desdeIso, @until, @tope, @items, @nuevos,
+     @topeLleno, @huecoDesde, @startedAt, @finishedAt, @duracionMs)
+`);
+const getRunSourceStmt = db.prepare('SELECT * FROM monitoring_run_sources WHERE id = ?');
+const listRunSourcesStmt = db.prepare('SELECT * FROM monitoring_run_sources WHERE run_id = ? AND plataforma = ? ORDER BY id');
+const listRunSourcesAllStmt = db.prepare('SELECT * FROM monitoring_run_sources WHERE run_id = ? ORDER BY id');
+const listPendingRunSourcesStmt = db.prepare(
+  "SELECT * FROM monitoring_run_sources WHERE plataforma = ? AND estado IN ('esperando', 'en curso') ORDER BY id"
+);
+const lastRunSourcesForKeyStmt = db.prepare(
+  "SELECT * FROM monitoring_run_sources WHERE plataforma = ? AND tipo = ? AND clave = ? AND intento = 1 AND estado <> 'en curso' ORDER BY id DESC LIMIT ?"
+);
+// Completado ÚNICO de las corridas anteriores a la tabla (marca
+// `fuentes_por_corrida_backfill` en refresh_state): una fila por cada
+// consulta de detección que quedó en apify_calls (las búsquedas; y, en las
+// corridas viejas de Instagram, los perfiles y hashtags de la fase
+// monitoreo), `fallo` si la llamada falló. Así las corridas que ya estaban
+// en la base dicen la verdad: las que tuvieron búsquedas caídas pasan a
+// "incompleta". En una transacción; si algo falla no queda nada a medias y
+// se reintenta en el próximo arranque.
+if (!getRefreshStateStmt.get('fuentes_por_corrida_backfill')) {
+  const { motivoDeFallo } = require('./runStatus');
+  const TIPO_POR_CONSULTA = { search: 'busqueda', user: 'cuenta', hashtag: 'hashtag' };
+  const fuenteDe = (call) => {
+    const target = String(call.target || '');
+    if (call.query_type === 'hashtag') return decodeURIComponent((/\/explore\/tags\/([^/?#]+)/.exec(target) || [])[1] || target);
+    if (call.query_type === 'user') return (/instagram\.com\/([^/?#]+)/.exec(target) || [])[1] || target;
+    return target;
+  };
+  db.exec('BEGIN');
+  try {
+    const llamadas = db
+      .prepare(
+        `SELECT c.* FROM apify_calls c
+         WHERE c.run_id IS NOT NULL AND c.phase IN ('monitoreo', 'busqueda') AND c.query_type IN ('search', 'user', 'hashtag')
+           AND EXISTS (SELECT 1 FROM monitoring_runs r WHERE r.id = c.run_id)
+           AND NOT EXISTS (SELECT 1 FROM monitoring_run_sources s WHERE s.run_id = c.run_id)
+         ORDER BY c.id`
+      )
+      .all();
+    for (const call of llamadas) {
+      const fuente = fuenteDe(call);
+      const finMs = Date.parse(call.at);
+      const inicio = Number.isFinite(finMs) && call.duration_ms != null ? new Date(finMs - call.duration_ms).toISOString() : call.at;
+      insertRunSourceStmt.run({
+        runId: call.run_id,
+        plataforma: call.plataforma,
+        tipo: TIPO_POR_CONSULTA[call.query_type],
+        fuente,
+        clave: String(fuente).trim().toLowerCase().replace(/^[@#]/, ''),
+        intento: 1,
+        estado: call.ok ? 'ok' : 'fallo',
+        motivo: call.ok ? null : motivoDeFallo(call.error),
+        detalle: call.ok || !call.error ? null : String(call.error).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200),
+        actor: call.actor,
+        apifyRunId: call.apify_run_id,
+        desdeIso: null,
+        until: call.until ?? null,
+        tope: call.max_items ?? null,
+        items: call.items,
+        nuevos: null,
+        topeLleno: 0,
+        huecoDesde: null,
+        startedAt: inicio,
+        finishedAt: call.at,
+        duracionMs: call.duration_ms,
+      });
+    }
+    setRefreshStateStmt.run({ key: 'fuentes_por_corrida_backfill', value: new Date().toISOString() });
+    db.exec('COMMIT');
+    if (llamadas.length > 0) console.log(`[db] fuentes por corrida: ${llamadas.length} consulta(s) de corridas anteriores registradas.`);
+  } catch (err) {
+    db.exec('ROLLBACK');
+    console.error('[db] No se pudieron registrar las fuentes de las corridas anteriores (se reintenta en el próximo arranque):', err.message);
+  }
+}
 const insertApifyCallStmt = db.prepare(`
   INSERT INTO apify_calls (at, run_id, phase, plataforma, actor, query_type, target, results_type, items, ok, error, duration_ms, usd, usd_real, apify_run_id, analisis_id, estado, max_items, until)
   VALUES (@at, @runId, @phase, @plataforma, @actor, @queryType, @target, @resultsType, @items, @ok, @error, @durationMs, @usd, @usdReal, @apifyRunId, @analisisId, @estado, @maxItems, @until)
@@ -853,7 +982,7 @@ const sumApifyCallsByRunStmt = db.prepare(`
 const finishMonitoringRunStmt = db.prepare(`
   UPDATE monitoring_runs
   SET finished_at = @finishedAt, new_posts = @newPosts, new_candidates = @newCandidates, calls = @calls, results = @results,
-      usd = @usd, quota_exceeded = @quotaExceeded
+      usd = @usd, quota_exceeded = @quotaExceeded, error_code = @errorCode
   WHERE id = @id
 `);
 const getMonitoringRunStmt = db.prepare('SELECT * FROM monitoring_runs WHERE id = ?');
@@ -970,7 +1099,7 @@ const countReclamosEnMapaStmt = db.prepare(`
 // Las corridas de una plataforma que arrancaron en un rango, terminadas o no:
 // la línea de 24 h del inicio (src/inicioRoutes.js).
 const listRunsBetweenStmt = db.prepare(`
-  SELECT id, started_at, finished_at, "trigger", plataforma, new_candidates, new_posts, quota_exceeded FROM monitoring_runs
+  SELECT id, started_at, finished_at, "trigger", plataforma, new_candidates, new_posts, quota_exceeded, error_code FROM monitoring_runs
   WHERE started_at >= ? AND started_at < ?
     AND (plataforma = 'todas' OR (',' || plataforma || ',') LIKE ('%,' || ? || ',%'))
   ORDER BY started_at
@@ -2237,7 +2366,7 @@ function startMonitoringRun({ trigger, plataforma, startedAt } = {}) {
  *   porFase: Object<string, {calls: number, results: number, usd: number,
  *     porActor: Object<string, {calls: number, results: number, usd: number, usdReal: number|null, withReal: number}>}> }}
  */
-function finishMonitoringRun(id, { newPosts = 0, newCandidates = null, finishedAt } = {}) {
+function finishMonitoringRun(id, { newPosts = 0, newCandidates = null, finishedAt, errorCode = null } = {}) {
   const byPhaseActor = sumApifyCallsByRunStmt.all(id);
   const totals = { calls: 0, results: 0, usd: 0, quotaExceeded: false };
   const porFase = {};
@@ -2261,6 +2390,7 @@ function finishMonitoringRun(id, { newPosts = 0, newCandidates = null, finishedA
     results: totals.results,
     usd: totals.usd,
     quotaExceeded: totals.quotaExceeded ? 1 : 0,
+    errorCode: errorCode ? String(errorCode).slice(0, 60) : null,
   });
   return { id, ...totals, porFase };
 }
@@ -2278,7 +2408,150 @@ function monitoringRunFromRow(row) {
     results: row.results,
     usd: row.usd,
     quotaExceeded: Boolean(row.quota_exceeded),
+    errorCode: row.error_code ?? null,
   };
+}
+
+function runSourceFromRow(row) {
+  return {
+    id: Number(row.id),
+    runId: row.run_id == null ? null : Number(row.run_id),
+    plataforma: row.plataforma,
+    tipo: row.tipo,
+    fuente: row.fuente,
+    clave: row.clave,
+    intento: Number(row.intento) || 1,
+    estado: row.estado,
+    motivo: row.motivo,
+    detalle: row.detalle,
+    actor: row.actor,
+    apifyRunId: row.apify_run_id,
+    desdeIso: row.desde_iso,
+    until: row.until,
+    tope: row.tope == null ? null : Number(row.tope),
+    items: row.items == null ? null : Number(row.items),
+    nuevos: row.nuevos == null ? null : Number(row.nuevos),
+    topeLleno: Boolean(row.tope_lleno),
+    huecoDesde: row.hueco_desde,
+    recuperadaEn: row.recuperada_en == null ? null : Number(row.recuperada_en),
+    recuperadaAt: row.recuperada_at,
+    startedAt: row.started_at,
+    finishedAt: row.finished_at,
+    duracionMs: row.duracion_ms == null ? null : Number(row.duracion_ms),
+  };
+}
+
+const RUN_SOURCE_COLUMNS = {
+  estado: 'estado',
+  motivo: 'motivo',
+  detalle: 'detalle',
+  actor: 'actor',
+  apifyRunId: 'apify_run_id',
+  desdeIso: 'desde_iso',
+  until: 'until',
+  tope: 'tope',
+  items: 'items',
+  nuevos: 'nuevos',
+  topeLleno: 'tope_lleno',
+  huecoDesde: 'hueco_desde',
+  recuperadaEn: 'recuperada_en',
+  recuperadaAt: 'recuperada_at',
+  finishedAt: 'finished_at',
+  duracionMs: 'duracion_ms',
+};
+
+/** El texto crudo de un error para la columna `detalle`: una línea, sin HTML, hasta 200 caracteres. */
+function cleanSourceDetail(text) {
+  if (text === undefined || text === null || text === '') return null;
+  return String(text).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200) || null;
+}
+
+/**
+ * Abre la fila de una consulta de detección. `runId` puede ser null (el
+ * ciclo no pudo abrir su fila): la consulta se registra igual, para que una
+ * corrida que quede esperando se pueda levantar.
+ * @returns {number} id de la fila
+ */
+function startRunSource({ runId = null, plataforma, tipo, fuente = null, clave = null, intento = 1, estado = 'en curso', motivo = null, detalle = null,
+  actor = null, apifyRunId = null, desdeIso = null, until = null, tope = null, items = null, nuevos = null, topeLleno = false, huecoDesde = null,
+  startedAt, finishedAt = null, duracionMs = null } = {}) {
+  requirePlataforma(plataforma, 'startRunSource');
+  const result = insertRunSourceStmt.run({
+    runId: runId == null ? null : Number(runId),
+    plataforma,
+    tipo: String(tipo),
+    fuente: fuente == null ? null : String(fuente),
+    clave: clave == null ? null : String(clave),
+    intento: Number(intento) || 1,
+    estado: String(estado),
+    motivo: motivo ?? null,
+    detalle: cleanSourceDetail(detalle),
+    actor: actor ?? null,
+    apifyRunId: apifyRunId ?? null,
+    desdeIso: desdeIso ?? null,
+    until: until ?? null,
+    tope: tope == null ? null : Math.floor(Number(tope)),
+    items: items == null ? null : Math.floor(Number(items)),
+    nuevos: nuevos == null ? null : Math.floor(Number(nuevos)),
+    topeLleno: topeLleno ? 1 : 0,
+    huecoDesde: huecoDesde ?? null,
+    startedAt: startedAt || new Date().toISOString(),
+    finishedAt: finishedAt ?? null,
+    duracionMs: duracionMs == null ? null : Math.round(Number(duracionMs)),
+  });
+  return Number(result.lastInsertRowid);
+}
+
+/**
+ * Cambia lo que venga en `fields` de una fila de monitoring_run_sources
+ * (estado, motivo, detalle, apifyRunId, items, nuevos, topeLleno,
+ * huecoDesde, recuperadaEn, recuperadaAt, finishedAt, duracionMs…). Lo que
+ * no viene no se toca. @returns {number} filas cambiadas
+ */
+function updateRunSource(id, fields = {}) {
+  const sets = [];
+  const params = { id };
+  for (const [key, column] of Object.entries(RUN_SOURCE_COLUMNS)) {
+    if (!Object.hasOwn(fields, key) || fields[key] === undefined) continue;
+    let value = fields[key];
+    if (key === 'detalle') value = cleanSourceDetail(value);
+    else if (key === 'topeLleno') value = value ? 1 : 0;
+    else if (['tope', 'items', 'nuevos', 'recuperadaEn', 'duracionMs'].includes(key)) value = value == null ? null : Math.round(Number(value));
+    sets.push(`${column} = @${key}`);
+    params[key] = value ?? null;
+  }
+  if (sets.length === 0) return 0;
+  return db.prepare(`UPDATE monitoring_run_sources SET ${sets.join(', ')} WHERE id = @id`).run(params).changes;
+}
+
+function getRunSource(id) {
+  const row = getRunSourceStmt.get(id);
+  return row ? runSourceFromRow(row) : null;
+}
+
+/** Las consultas de detección de una corrida para una red, en el orden en que se lanzaron. */
+function listRunSources({ runId, plataforma }) {
+  requirePlataforma(plataforma, 'listRunSources');
+  if (runId == null) return [];
+  return listRunSourcesStmt.all(Number(runId), plataforma).map(runSourceFromRow);
+}
+
+/** Todas las consultas de detección de una corrida, de todas sus redes (el cierre del ciclo). */
+function listRunSourcesOfRun(runId) {
+  if (runId == null) return [];
+  return listRunSourcesAllStmt.all(Number(runId)).map(runSourceFromRow);
+}
+
+/** Las consultas de una red que quedaron esperando (o abiertas por un proceso que se cayó): la cola de lo que hay que levantar. */
+function listPendingRunSources(plataforma) {
+  requirePlataforma(plataforma, 'listPendingRunSources');
+  return listPendingRunSourcesStmt.all(plataforma).map(runSourceFromRow);
+}
+
+/** Las últimas `limit` consultas cerradas de una fuente (primer intento), de la más nueva a la más vieja. */
+function lastRunSourcesForKey({ plataforma, tipo, clave, limit = 2 }) {
+  requirePlataforma(plataforma, 'lastRunSourcesForKey');
+  return lastRunSourcesForKeyStmt.all(plataforma, String(tipo), String(clave), Math.max(1, Math.floor(Number(limit)) || 2)).map(runSourceFromRow);
 }
 
 function getMonitoringRun(id) {
@@ -2297,7 +2570,11 @@ function getLastFinishedRun(plataforma) {
   const row = getLastFinishedRunStmt.get(plataforma);
   if (!row) return null;
   const detection = sumDetectionItemsStmt.get(row.id, plataforma);
-  return { ...monitoringRunFromRow(row), fetched: detection.calls > 0 ? detection.items : null };
+  return {
+    ...monitoringRunFromRow(row),
+    fetched: detection.calls > 0 ? detection.items : null,
+    fuentes: listRunSourcesStmt.all(row.id, plataforma).map(runSourceFromRow),
+  };
 }
 
 /** Posteos no ignorados de esa plataforma con detected_at entre fromIso y toIso (inclusive). */
@@ -2436,6 +2713,9 @@ function listRunsBetween({ plataforma, desdeIso, hastaIso }) {
     newCandidates: row.new_candidates === null || row.new_candidates === undefined ? null : Number(row.new_candidates),
     newPosts: Number(row.new_posts) || 0,
     quotaExceeded: Boolean(row.quota_exceeded),
+    errorCode: row.error_code ?? null,
+    // Las consultas de detección de esa corrida en ESTA red (src/runStatus.js).
+    fuentes: listRunSourcesStmt.all(row.id, plataforma).map(runSourceFromRow),
   }));
 }
 
@@ -3393,6 +3673,13 @@ module.exports = {
   startMonitoringRun,
   finishMonitoringRun,
   getMonitoringRun,
+  startRunSource,
+  updateRunSource,
+  getRunSource,
+  listRunSources,
+  listRunSourcesOfRun,
+  listPendingRunSources,
+  lastRunSourcesForKey,
   getLastFinishedRunAt,
   getLastFinishedRunAtAny,
   getLastFinishedRun,

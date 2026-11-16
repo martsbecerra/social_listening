@@ -25,6 +25,7 @@ const { refreshStaleAccountStats, benchmarkLimiter } = require('./accountStats')
 const { refreshPostMetrics, refreshLimiter } = require('./metricsRefresh');
 const { runWithContext } = require('./usageContext');
 const { formatCycleCostLine, reconcileRealCosts } = require('./apifyCost');
+const { estadoCorrida, resumenParaLog } = require('./runStatus');
 const { apifyLimiter } = require('./apify');
 const { imageLimiter } = require('./postImages');
 const postImageSync = require('./postImageSync');
@@ -258,6 +259,44 @@ function getCurrentRunId() {
   return currentRunId;
 }
 
+// De menos a más grave: el estado del ciclo es el peor de sus redes.
+const ORDEN_ESTADO = ['ok', 'incompleta', 'cortada'];
+
+/**
+ * Cómo salió el ciclo, mirando las consultas de detección que dejó cada red
+ * (monitoring_run_sources, src/runStatus.js): `ok`, `incompleta` (alguna
+ * fuente falló, quedó esperando en Apify, llenó su tope…) o `cortada`
+ * (cuota). `texto` es el detalle para el log, por red. Nunca tira.
+ * @returns {{ estado: string, texto: string, porPlataforma: Object<string, string> }}
+ */
+function resumenDelCiclo(runId, { quotaExceeded = false, errorCode = null } = {}) {
+  const out = { estado: 'ok', texto: '', porPlataforma: {} };
+  try {
+    const run = { id: runId, finishedAt: new Date().toISOString(), quotaExceeded, errorCode };
+    const porRed = new Map();
+    for (const fila of runId != null ? db.listRunSourcesOfRun(runId) : []) {
+      if (!porRed.has(fila.plataforma)) porRed.set(fila.plataforma, []);
+      porRed.get(fila.plataforma).push(fila);
+    }
+    const textos = [];
+    const peor = (estado) => {
+      if (ORDEN_ESTADO.indexOf(estado) > ORDEN_ESTADO.indexOf(out.estado)) out.estado = estado;
+    };
+    if (porRed.size === 0) peor(estadoCorrida(run, []));
+    for (const [red, filas] of porRed) {
+      const estado = estadoCorrida(run, filas);
+      out.porPlataforma[red] = estado;
+      peor(estado);
+      const texto = resumenParaLog(filas);
+      if (texto) textos.push(`${red}: ${texto}`);
+    }
+    out.texto = textos.join(' | ');
+  } catch (err) {
+    console.error('[ciclo] No se pudo calcular el estado de la corrida:', err.message);
+  }
+  return out;
+}
+
 /**
  * Abre la fila del ciclo en monitoring_runs, corre las fases y la cierra con
  * los totales de gasto en Apify (ver src/apifyCost.js), pase lo que pase.
@@ -285,8 +324,9 @@ async function runCycleUnlocked(plataformas, trigger = 'manual') {
   // una); null si el ciclo se cayó antes de contarlos.
   let newCandidates = null;
   let cycleError = null;
+  let result = null;
   try {
-    const result = await runCyclePhases(plataformas, runId, trigger);
+    result = await runCyclePhases(plataformas, runId, trigger);
     newCount = result.newCount;
     newCandidates = Object.values(result.porPlataforma || {}).reduce((sum, p) => sum + (Number(p && p.newCandidates) || 0), 0);
     return result;
@@ -296,24 +336,37 @@ async function runCycleUnlocked(plataformas, trigger = 'manual') {
   } finally {
     currentRunId = null;
     clearInterval(heartbeat);
+    // Primero se cierra la fila del ciclo (con el código del error, si tiró):
+    // el estado de la corrida se calcula con eso y con lo que dejó cada fuente.
+    const errorCode = cycleError ? String(cycleError.code || 'ERROR') : null;
+    let closed = null;
+    if (runId != null) {
+      try {
+        closed = db.finishMonitoringRun(runId, { newPosts: newCount, newCandidates, errorCode });
+      } catch (err) {
+        console.error('[costo] No se pudo cerrar el registro del ciclo:', err.message);
+      }
+    }
+    const resumen = resumenDelCiclo(runId, { quotaExceeded: Boolean(closed && closed.quotaExceeded), errorCode });
+    // Quien disparó la corrida (run-now) recibe cómo salió.
+    if (result) {
+      result.estado = resumen.estado;
+      result.estadoPorPlataforma = resumen.porPlataforma;
+    }
     progress.endCycle();
+    // "ok" solo si todas las fuentes respondieron: antes una corrida con
+    // seis de ocho búsquedas caídas cerraba como resultado=ok.
     console.log(
-      `[ciclo] fin (duración ${formatDurationMs(Date.now() - cycleStartedAt)}, resultado=${cycleError ? 'error' : 'ok'}${
+      `[ciclo] fin (duración ${formatDurationMs(Date.now() - cycleStartedAt)}, resultado=${cycleError ? 'error' : resumen.estado}${
         cycleError ? `: ${cycleError.message}` : ''
-      })`
+      }${resumen.texto ? ` — ${resumen.texto}` : ''})`
     );
     // Fotos de los posteos: una sola línea por ciclo (si alguna respuesta
     // trajo link de imagen). El detalle de cada fallo ya lo escribió
     // src/postImages.js.
     const fotos = postImageSync.formatCycleSummary(postImageSync.takeCycleSummary());
     if (fotos) console.log(fotos);
-    if (runId != null) {
-      try {
-        console.log(formatCycleCostLine(db.finishMonitoringRun(runId, { newPosts: newCount, newCandidates })));
-      } catch (err) {
-        console.error('[costo] No se pudo cerrar el registro del ciclo:', err.message);
-      }
-    }
+    if (closed) console.log(formatCycleCostLine(closed));
     // Costo real de las llamadas de ciclos ANTERIORES (las de este todavía
     // no están asentadas en Apify): lecturas gratis de la API, nunca tira.
     const reconciled = await reconcileRealCosts();
@@ -430,6 +483,7 @@ module.exports = {
   getNextRunAt,
   getRunHours,
   getCurrentRunId,
+  resumenDelCiclo,
   cronPlatforms,
   DEFAULT_CRON_PLATFORMS,
 };

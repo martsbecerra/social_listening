@@ -78,7 +78,7 @@ const { processPendingReclamos, processPendingReclamosInBackground, reintentarSi
 const geoReproceso = require('./src/geo/reproceso');
 const accountStats = require('./src/accountStats');
 const postImageRoutes = require('./src/postImageRoutes');
-const { buildLastRun } = require('./src/lastRun');
+const { buildLastRun, estadoUltimaCorrida } = require('./src/lastRun');
 const statsRoutes = require('./src/statsRoutes');
 const publicResumen = require('./src/publicResumen');
 const inicioRoutes = require('./src/inicioRoutes');
@@ -397,6 +397,16 @@ app.get('/api/monitoring/status', (req, res) => {
       console.error('Error armando el resumen de la última corrida:', err.message);
     }
   }
+  // Sin plataforma (el inicio): cómo salió la última corrida de las redes
+  // del ciclo automático. Con plataforma va dentro de lastRun.
+  let ultimaDelCron = null;
+  if (!plataforma) {
+    try {
+      ultimaDelCron = estadoUltimaCorrida(CRON_PLATFORMS);
+    } catch (err) {
+      console.error('Error armando el estado de la última corrida:', err.message);
+    }
+  }
   let model = null;
   try {
     model = getAnalysisModel();
@@ -410,6 +420,10 @@ app.get('/api/monitoring/status', (req, res) => {
     lastRunAt,
     runHours: getRunHours(),
     lastRun,
+    // ok | incompleta | cortada, y qué falló en textos para una persona
+    // (src/runStatus.js). Nunca el error crudo.
+    lastRunEstado: plataforma ? (lastRun ? lastRun.estado : null) : ultimaDelCron ? ultimaDelCron.estado : null,
+    lastRunFallidas: plataforma ? (lastRun ? lastRun.fallidas : null) : ultimaDelCron ? ultimaDelCron.fallidas : null,
     model,
   });
 });

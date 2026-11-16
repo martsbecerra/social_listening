@@ -32,12 +32,12 @@ recuperado de las corridas cortadas) quedó afuera por decisión del dueño.
 
 ## Phase 5: registro por fuente y estado de la corrida
 
-- [ ] 5.1 Tabla `monitoring_run_sources`, `monitoring_runs.error_code`, completado único de las corridas anteriores (REQ-VPF-05)
-- [ ] 5.2 `src/runStatus.js` (REQ-VPF-06)
-- [ ] 5.3 `monitor.js`: cada fuente abre y cierra su fila; filas `plataforma` y `detalle`
-- [ ] 5.4 `scheduler.js`: cierre con estado y línea `[ciclo] fin` con lo que falló
-- [ ] 5.5 `lastRun.js`, `inicioRoutes.js`, `server.js`: estado y fuentes fallidas en las respuestas, sin texto crudo
-- [ ] 5.6 Tests: `estadoCorrida.test.js`, `fuentesPorCorrida.test.js`, `fuentesPorCorridaMigracion.test.js`; los que miran el cierre del ciclo, adaptados
+- [x] 5.1 Tabla `monitoring_run_sources`, `monitoring_runs.error_code`, completado único de las corridas anteriores (REQ-VPF-05)
+- [x] 5.2 `src/runStatus.js` (REQ-VPF-06)
+- [x] 5.3 `monitor.js`: cada fuente abre y cierra su fila; filas `plataforma` y `detalle`
+- [x] 5.4 `scheduler.js`: cierre con estado y línea `[ciclo] fin` con lo que falló
+- [x] 5.5 `lastRun.js`, `inicioRoutes.js`, `server.js`: estado y fuentes fallidas en las respuestas, sin texto crudo
+- [x] 5.6 Tests: `estadoCorrida.test.js`, `fuentesPorCorrida.test.js`, `fuentesPorCorridaMigracion.test.js`; los que miran el cierre del ciclo, adaptados
 
 ## Phase 6: búsquedas que esperan y se levantan después
 

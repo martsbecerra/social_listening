@@ -55,6 +55,7 @@ const { CATEGORIA_FALLBACK } = require('./categoriasConfig');
 const { checkAndLogJump } = require('./viralJumpDetector');
 const { getPlatform, listPlatformIds, DEFAULT_PLATFORM_ID } = require('./platforms');
 const { isPlatformError } = require('./platforms/errors');
+const { motivoDeFallo } = require('./runStatus');
 const { runWithContext, getContext } = require('./usageContext');
 const progress = require('./monitoringProgress');
 const { resolveBackfillMax } = require('./backfillConfig');
@@ -864,10 +865,16 @@ async function enrichSearchResults(platform, platformId, postsById) {
   stats.deferred = candidates.length - batch.length;
   progress.startPhase('Detalle de búsquedas', batch.length);
 
+  // El detalle también deja su fila: si falla, la corrida no fue completa
+  // (los nuevos sin texto no se pudieron evaluar).
+  const detalleStartedMs = Date.now();
+  const detalleRow = abrirFuente({ plataforma: platformId, tipo: 'detalle', fuente: null, clave: null, tope: batch.length });
   let details;
   try {
     details = await runWithContext({ phase: 'busqueda' }, () => platform.fetchPostDetails(batch.map((post) => post.url)));
+    actualizarFuente(detalleRow, { estado: 'ok', items: Array.isArray(details) ? details.length : 0 }, { startedMs: detalleStartedMs });
   } catch (err) {
+    actualizarFuente(detalleRow, { estado: 'fallo', motivo: motivoDeFallo(err), detalle: err && err.message }, { startedMs: detalleStartedMs });
     stats.failed = true;
     progress.setPhaseSummary('Detalle de búsquedas', { detail: 'falló', ok: false });
     if (isPlatformError(err)) {
@@ -931,6 +938,53 @@ async function enrichSearchResults(platform, platformId, postsById) {
       '.'
   );
   return out;
+}
+
+/**
+ * La clave de una fuente: como está en la config pero sin espacios de más,
+ * en minúsculas y sin el "@" o el "#" de adelante. Es la de su fila en
+ * monitoring_run_sources y la de su marca de detección.
+ */
+function sourceKey(fuente) {
+  return String(fuente ?? '').trim().toLowerCase().replace(/^[@#]/, '');
+}
+
+/** Abre la fila de una consulta de detección. Nunca tira: sin fila el ciclo sigue (devuelve null). */
+function abrirFuente(fields) {
+  try {
+    return db.startRunSource({ runId: (getContext() || {}).runId ?? null, ...fields, clave: fields.clave ?? (fields.fuente ? sourceKey(fields.fuente) : null) });
+  } catch (err) {
+    console.error(`[monitor] (${fields.plataforma}) no se pudo registrar la fuente ${fields.fuente || fields.tipo}:`, err.message);
+    return null;
+  }
+}
+
+/** Cambia (o cierra) la fila de una consulta de detección. Nunca tira. */
+function actualizarFuente(id, fields, { startedMs = null } = {}) {
+  if (id == null) return;
+  try {
+    const cierre = fields.estado && fields.estado !== 'en curso' && !fields.finishedAt ? { finishedAt: new Date().toISOString() } : {};
+    const duracion = startedMs != null && fields.estado && fields.estado !== 'en curso' ? { duracionMs: Date.now() - startedMs } : {};
+    db.updateRunSource(id, { ...cierre, ...duracion, ...fields });
+  } catch (err) {
+    console.error('[monitor] no se pudo actualizar el registro de una fuente:', err.message);
+  }
+}
+
+/** Posteos distintos de una respuesta que son nuevos para el monitoreo (ver isNewPost). Nunca tira. */
+function contarNuevos(posts, platformId) {
+  try {
+    const vistos = new Set();
+    let nuevos = 0;
+    for (const post of Array.isArray(posts) ? posts : []) {
+      if (!post || post.id === undefined || post.id === null || vistos.has(String(post.id))) continue;
+      vistos.add(String(post.id));
+      if (isNewPost(post, platformId)) nuevos += 1;
+    }
+    return nuevos;
+  } catch {
+    return null;
+  }
 }
 
 /** Suma a un resultado ya anotado los términos que lo trajeron en esta corrida. Nunca tira. */
@@ -1086,6 +1140,8 @@ async function runMonitoringCycle({ plataformas, trigger } = {}) {
     porPlataforma[platformId] = { checked: 0, newCount: 0, newCandidates: 0, skipped: false };
 
     if (typeof platform.isConfigured === 'function' && !platform.isConfigured()) {
+      // No se buscó nada en esta red: que quede dicho (la corrida no es "ok").
+      abrirFuente({ plataforma: platformId, tipo: 'plataforma', estado: 'fallo', motivo: 'NOT_CONFIGURED', finishedAt: new Date().toISOString() });
       if (singlePlatformRun) throw notConfiguredError(platform);
       console.warn(`[monitor] ${platformId}: sin credenciales configuradas, se saltea esta plataforma.`);
       porPlataforma[platformId].skipped = true;
@@ -1151,73 +1207,125 @@ async function runMonitoringCycle({ plataformas, trigger } = {}) {
       accountsToScrape.length + hashtagsToScrape.length + (canSearchKeywords ? textKeywords.length : 0) + (canSearch ? searches.length : 0);
     // En pantalla: "Buscando posteos nuevos · 5 de 8 listas" (las fuentes
     // corren en paralelo, no hay "la búsqueda actual"). La fase no deja
-    // resumen propio: sus líneas son las de cada fuente (trackSource).
+    // resumen propio: sus líneas son las de cada fuente (lanzarFuente).
     progress.startPhase('Buscando posteos nuevos', detectionTotal, { suffix: 'listas', summary: false });
-    // Cada fuente deja una línea en el progreso: en curso mientras se
-    // consulta y, al terminar, cuántos posteos trajo y cuántos son nuevos, o
-    // que falló (src/monitoringProgress.js). `kind` solo arma la clave.
-    // .then(ok, error) en vez de .finally(): así cada tick sabe si esa
-    // llamada terminó bien o mal (para "[fase] termina ... N ok, N error"),
-    // y sigue devolviendo el mismo valor/error para Promise.allSettled.
-    const trackSource = (kind, label, promise) => {
-      const key = `${platformId}:${kind}:${label}`;
-      progress.startItem(key, label, 'buscando…');
-      return promise.then(
-        (value) => {
-          progress.finishItem(key, { ok: true, detail: describeFound(value, platformId) });
-          progress.tick(1, { ok: true });
-          return value;
-        },
-        (err) => {
-          progress.finishItem(key, { ok: false, detail: 'falló' });
-          progress.tick(1, { ok: false });
-          throw err;
-        }
-      );
+    if (detectionTotal === 0) {
+      // No hay nada que consultar en esta red (o el actor activo no busca):
+      // la corrida no detectó nada y tiene que verse.
+      abrirFuente({
+        plataforma: platformId,
+        tipo: 'plataforma',
+        estado: 'fallo',
+        motivo: searches.length > 0 && !canSearch ? 'SIN_BUSQUEDA' : 'SIN_FUENTES',
+        finishedAt: new Date().toISOString(),
+      });
+    }
+
+    // Las fuentes de la detección de esta red, todas con la misma forma:
+    // qué son, cómo se muestran y cómo se consultan.
+    const sources = [
+      ...accountsToScrape.map((account) => ({
+        tipo: 'cuenta',
+        fuente: account,
+        label: `@${account}`,
+        limit: accountLimit,
+        lookback: window.lookback,
+        run: (options) => platform.scrapeAccount(account, options),
+      })),
+      ...hashtagsToScrape.map((tag) => ({
+        tipo: 'hashtag',
+        fuente: tag,
+        label: `#${tag}`,
+        limit: hashtagLimit,
+        lookback: window.lookback,
+        run: (options) => platform.scrapeHashtag(tag, options),
+      })),
+      ...(canSearchKeywords
+        ? textKeywords.map((keyword) => ({
+            tipo: 'keyword',
+            fuente: keyword,
+            label: `«${keyword}»`,
+            limit: limits.search,
+            lookback: legacyLookback,
+            run: (options) => platform.scrapeKeyword(keyword, options),
+          }))
+        : []),
+      // Cada búsqueda va en la fase 'busqueda' del registro de gasto.
+      ...(canSearch
+        ? searches.map((term) => ({
+            tipo: 'busqueda',
+            fuente: term,
+            label: `«${term}»`,
+            limit: searchLimit,
+            lookback: window.lookback,
+            run: (options) => runWithContext({ phase: 'busqueda' }, () => platform.scrapeSearch(term, options)),
+          }))
+        : []),
+    ];
+
+    // Cada fuente deja una línea en el progreso (en curso mientras se
+    // consulta; al terminar, cuántos posteos trajo y cuántos son nuevos, o
+    // que falló: src/monitoringProgress.js) y una fila en
+    // monitoring_run_sources con cómo salió (src/runStatus.js). Nunca tira:
+    // devuelve cómo le fue, para que una fuente caída no frene a las demás.
+    const lanzarFuente = async (source) => {
+      const key = `${platformId}:${source.tipo}:${source.label}`;
+      const startedMs = Date.now();
+      const rowId = abrirFuente({
+        plataforma: platformId,
+        tipo: source.tipo,
+        fuente: source.fuente,
+        actor: platform.actorId || null,
+        desdeIso: window.sinceIso,
+        tope: source.limit,
+      });
+      progress.startItem(key, source.label, 'buscando…');
+      let apifyRunId = null;
+      try {
+        const posts = await source.run({
+          resultsLimit: source.limit,
+          lookback: source.lookback,
+          onRunStarted: (run) => {
+            apifyRunId = run && run.id ? run.id : null;
+            actualizarFuente(rowId, { apifyRunId });
+          },
+        });
+        progress.finishItem(key, { ok: true, detail: describeFound(posts, platformId) });
+        progress.tick(1, { ok: true });
+        actualizarFuente(rowId, { estado: 'ok', items: Array.isArray(posts) ? posts.length : 0, nuevos: contarNuevos(posts, platformId), apifyRunId }, { startedMs });
+        return { source, ok: true, posts: Array.isArray(posts) ? posts : [], estado: 'ok', motivo: null };
+      } catch (err) {
+        const motivo = motivoDeFallo(err);
+        progress.finishItem(key, { ok: false, detail: 'falló' });
+        progress.tick(1, { ok: false });
+        actualizarFuente(rowId, { estado: 'fallo', motivo, detalle: err && err.message, apifyRunId: (err && err.apifyRunId) || apifyRunId }, { startedMs });
+        return { source, ok: false, err, posts: [], estado: 'fallo', motivo };
+      }
     };
 
-    const sourceResults = await Promise.allSettled([
-      ...accountsToScrape.map((account) =>
-        trackSource('cuenta', `@${account}`, platform.scrapeAccount(account, { resultsLimit: accountLimit, lookback: window.lookback }))
-      ),
-      ...hashtagsToScrape.map((tag) =>
-        trackSource('hashtag', `#${tag}`, platform.scrapeHashtag(tag, { resultsLimit: hashtagLimit, lookback: window.lookback }))
-      ),
-      ...(canSearchKeywords
-        ? textKeywords.map((keyword) =>
-            trackSource('keyword', `«${keyword}»`, platform.scrapeKeyword(keyword, { resultsLimit: limits.search, lookback: legacyLookback }))
-          )
-        : []),
-      ...(canSearch
-        ? searches.map((term) =>
-            trackSource(
-              'busqueda',
-              `«${term}»`,
-              runWithContext({ phase: 'busqueda' }, () => platform.scrapeSearch(term, { resultsLimit: searchLimit, lookback: window.lookback }))
-            )
-          )
-        : []),
-    ]);
+    const outcomes = await Promise.all(sources.map(lanzarFuente));
 
     const allCandidates = [];
     // Primer error de plataforma de esta corrida (clave inválida, rate limit,
     // cuota): se resuelve DESPUÉS de guardar lo que sí llegó (ver abajo).
     let platformError = null;
-    for (const result of sourceResults) {
-      if (result.status === 'fulfilled') {
-        allCandidates.push(...result.value);
-      } else if (isPlatformError(result.reason)) {
-        if (!platformError) platformError = result.reason;
+    for (const outcome of outcomes) {
+      if (outcome.ok) {
+        allCandidates.push(...outcome.posts);
+      } else if (isPlatformError(outcome.err)) {
+        if (!platformError) platformError = outcome.err;
         console.error(
-          `Monitoreo (${platformId}): la plataforma no se pudo consultar (${result.reason.code}):`,
-          result.reason.message
+          `Monitoreo (${platformId}): la plataforma no se pudo consultar (${outcome.err.code}):`,
+          outcome.err.message
         );
       } else {
         // Una fuente que falla sola (cuenta privada/eliminada, error puntual
         // de la fuente, etc.) no debe tirar abajo el resto del ciclo.
-        console.error(`Monitoreo (${platformId}): falló una fuente:`, result.reason && result.reason.message);
+        console.error(`Monitoreo (${platformId}): falló una fuente:`, outcome.err && outcome.err.message);
       }
     }
+    // Cómo le fue a cada fuente, para quien cierra el ciclo.
+    porPlataforma[platformId].fuentes = outcomes.map((o) => ({ tipo: o.source.tipo, fuente: o.source.fuente, estado: o.estado, motivo: o.motivo }));
 
     // Seguidores que vinieron con los posteos (apidojo): a la caché antes de
     // guardar, así el snapshot del posteo nuevo ya sale con el dato fresco.

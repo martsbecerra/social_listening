@@ -124,7 +124,9 @@ describe('búsqueda por palabra clave (fuente search)', { concurrency: false }, 
       throw new Error(`scrapeHashtag(${tag}) no debería llamarse: no hay hashtags configurados`);
     };
     instagram.scrapeSearch = async (term, options) => {
-      searchCalls.push({ term, ...options, phase: (getContext() || {}).phase });
+      // El ciclo pasa además el aviso del run de Apify (onRunStarted), para la fila de la fuente.
+      assert.equal(typeof options.onRunStarted, 'function');
+      searchCalls.push({ term, resultsLimit: options.resultsLimit, lookback: options.lookback, phase: (getContext() || {}).phase });
       return [
         post({ id: 's1', caption: 'Jorge Macri inauguró el túnel' }), // literal
         post({ id: 's2', caption: 'La gestión porteña avanza con las veredas' }), // semántica (sin keyword literal)

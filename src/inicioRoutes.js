@@ -28,14 +28,11 @@
 const db = require('./db');
 const stats = require('./stats');
 const { buildLastRun } = require('./lastRun');
+const { estadoCorrida, resumenFallidas } = require('./runStatus');
 
 const INICIO_ROUTE = '/api/inicio';
 const DIAS = 7;
 
-function estadoDe(run, runIdEnCurso) {
-  if (!run.finishedAt) return run.id === runIdEnCurso ? 'en curso' : 'interrumpida';
-  return run.quotaExceeded ? 'cortada' : 'ok';
-}
 
 /**
  * @param {object} deps
@@ -83,7 +80,10 @@ function armarInicio({ listPlatformIds, getPlatform, cronPlatforms, nextRunAt, r
           trigger: run.trigger,
           nuevas: deEstaRed ? run.newCandidates : null,
           guardadas: deEstaRed ? run.newPosts : null,
-          estado: estadoDe(run, enCurso),
+          // ok | incompleta | cortada | en curso | interrumpida, y qué falló
+          // (src/runStatus.js), con las consultas de ESTA red en esa corrida.
+          estado: estadoCorrida(run, run.fuentes, { runIdEnCurso: enCurso }),
+          fallidas: run.finishedAt ? resumenFallidas(run.fuentes) : null,
         };
       }),
     };

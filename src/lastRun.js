@@ -11,16 +11,23 @@
 
 const db = require('./db');
 const accountStats = require('./accountStats');
+const { estadoCorrida, resumenFallidas } = require('./runStatus');
+
+// De menos a más grave, para quedarse con el peor estado entre varias redes.
+const ORDEN_ESTADO = ['ok', 'incompleta', 'cortada'];
 
 /**
  * @param {string} plataforma
  * @param {{ hasBenchmark?: boolean }} [opts] hasBenchmark: el adapter de esa
  *   red calcula alcance (sin eso, `highlighted` va null: no hay con qué).
  * @returns {null | { finishedAt: string, durationSec: number|null, fetched: number|null,
- *   newCandidates: number|null, saved: number, highlighted: number|null, usd: number }}
+ *   newCandidates: number|null, saved: number, highlighted: number|null, usd: number,
+ *   estado: string, fallidas: object|null }}
  *   null si esa plataforma nunca terminó una corrida. `fetched` null: la
  *   corrida no hizo consultas de detección en esa red; `newCandidates` null:
- *   corrida anterior a la columna o caída antes de contar.
+ *   corrida anterior a la columna o caída antes de contar. `estado`: ok |
+ *   incompleta | cortada (src/runStatus.js); `fallidas`: qué falló, en
+ *   textos para una persona (runStatus.resumenFallidas), o null.
  */
 function buildLastRun(plataforma, { hasBenchmark = false } = {}) {
   const run = db.getLastFinishedRun(plataforma);
@@ -57,7 +64,29 @@ function buildLastRun(plataforma, { hasBenchmark = false } = {}) {
     saved: Number(run.newPosts) || 0,
     highlighted,
     usd: Number(run.usd) || 0,
+    estado: estadoCorrida(run, run.fuentes),
+    fallidas: resumenFallidas(run.fuentes),
   };
 }
 
-module.exports = { buildLastRun };
+/**
+ * Cómo salió la última corrida terminada entre las redes del ciclo
+ * automático: el estado de la escucha del inicio, que no es de ninguna red
+ * (una corrida manual de una red en pausa no lo cambia). Si esa corrida fue
+ * de varias redes, vale el peor estado.
+ * @param {string[]} redes las redes del cron
+ * @returns {null | { finishedAt: string, estado: string, fallidas: object|null }}
+ */
+function estadoUltimaCorrida(redes) {
+  let ultima = null;
+  for (const red of redes || []) {
+    const run = db.getLastFinishedRun(red);
+    if (!run) continue;
+    const propia = { finishedAt: run.finishedAt, id: run.id, estado: estadoCorrida(run, run.fuentes), fallidas: resumenFallidas(run.fuentes) };
+    if (!ultima || propia.finishedAt > ultima.finishedAt) ultima = propia;
+    else if (propia.id === ultima.id && ORDEN_ESTADO.indexOf(propia.estado) > ORDEN_ESTADO.indexOf(ultima.estado)) ultima = propia;
+  }
+  return ultima ? { finishedAt: ultima.finishedAt, estado: ultima.estado, fallidas: ultima.fallidas } : null;
+}
+
+module.exports = { buildLastRun, estadoUltimaCorrida };

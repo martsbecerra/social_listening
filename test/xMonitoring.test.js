@@ -440,6 +440,7 @@ describe('adapter X', { concurrency: false }, () => {
       const cron = await monitor.runMonitoringCycle();
       assert.deepEqual(cron.porPlataforma.instagram, {
         checked: 0, newCount: 0, newCandidates: 0, skipped: false,
+        fuentes: [{ tipo: 'busqueda', fuente: 'gcba', estado: 'fallo', motivo: 'QUOTA_EXCEEDED' }],
         error: { code: 'QUOTA_EXCEEDED', message: 'Se agotó la cuota mensual de Apify.' },
       });
       assert.equal(cron.porPlataforma.x.checked, 1);
