@@ -24,7 +24,8 @@
 const crypto = require('crypto');
 const cookie = require('cookie');
 const db = require('../db');
-const { getRole } = require('./allowlist');
+// Por el objeto del módulo (no desarmado): los tests lo stubean.
+const allowlist = require('./allowlist');
 const { resolveSessionConfig } = require('./sessionConfig');
 
 const COOKIE_NAME = 'sl_session';
@@ -96,7 +97,7 @@ function readSession(req, { now = Date.now() } = {}) {
   if (now - row.lastSeenAt > idleMs) return null;
   if (now - row.createdAt > maxMs) return null;
   if (!isAutoRequest(req) && now - row.lastSeenAt >= TOUCH_EVERY_MS) db.touchSession(idHash, now);
-  return { email: row.email, role: getRole(row.email), sessionId: idHash };
+  return { email: row.email, role: allowlist.getRole(row.email), sessionId: idHash };
 }
 
 /** Revoca la sesión de la cookie del pedido, si hay. */

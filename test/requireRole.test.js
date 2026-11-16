@@ -188,6 +188,43 @@ describe('allowlist con roles', () => {
     // El env suma al archivo: operador@test.local solo está en el env.
     assert.equal(allowlist.getRole('operador@test.local', file), 'operador');
   });
+
+  test('un error al leer el archivo (EBUSY) no saca a nadie: vale la última lectura buena', () => {
+    const file = conArchivo('ana@x.gob.ar;operador\n');
+    assert.deepEqual(allowlist.resolveRole('ana@x.gob.ar', file), { role: 'operador', archivoLeido: true });
+    const leer = fs.readFileSync;
+    const avisos = [];
+    const avisar = console.warn;
+    fs.readFileSync = (p, ...rest) => {
+      if (p === file) throw Object.assign(new Error('resource busy or locked'), { code: 'EBUSY' });
+      return leer(p, ...rest);
+    };
+    console.warn = (...args) => avisos.push(args.join(' '));
+    try {
+      assert.deepEqual(allowlist.resolveRole('ana@x.gob.ar', file), { role: 'operador', archivoLeido: false });
+      assert.equal(allowlist.getRole('ana@x.gob.ar', file), 'operador');
+      assert.equal(allowlist.getRole('nadie@x.gob.ar', file), null);
+    } finally {
+      fs.readFileSync = leer;
+      console.warn = avisar;
+    }
+    assert.equal(avisos.filter((a) => a.includes('EBUSY')).length, 1, avisos.join('\n'));
+    // Sin ninguna lectura buena antes: nadie del archivo, y archivoLeido false.
+    const otro = conArchivo('pepe@x.gob.ar\n');
+    fs.readFileSync = (p, ...rest) => {
+      if (p === otro) throw Object.assign(new Error('operation not permitted'), { code: 'EPERM' });
+      return leer(p, ...rest);
+    };
+    console.warn = () => {};
+    try {
+      assert.deepEqual(allowlist.resolveRole('pepe@x.gob.ar', otro), { role: null, archivoLeido: false });
+    } finally {
+      fs.readFileSync = leer;
+      console.warn = avisar;
+    }
+    // Que no exista sí es una lectura buena: el archivo es opcional.
+    assert.deepEqual(allowlist.resolveRole('pepe@x.gob.ar', path.join(tmp, 'no-existe.txt')), { role: null, archivoLeido: true });
+  });
 });
 
 describe('requireRole', () => {

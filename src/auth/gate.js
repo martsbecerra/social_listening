@@ -19,7 +19,8 @@
 // sesión hasta el handler (octubre 2026). Test: test/authGate.test.js.
 //
 // Roles (noviembre 2026): con sesión, el rol sale de la allowlist en cada
-// pedido (req.auth.role); un correo que ya no está pierde la sesión. En
+// pedido (req.auth.role); un correo que ya no está pierde la sesión (se
+// confirma con una segunda lectura: CONFIRMAR_BAJA_MS). En
 // /api/, todo lo que no sea GET, HEAD u OPTIONS exige `operador`, salvo
 // /api/auth/*: 403 { error: 'No tenés permiso para esta acción.' }. Tests:
 // test/requireRole.test.js y test/session.test.js.
@@ -27,6 +28,15 @@
 
 const { readSession, clearSessionCookie, sessionIdFromRequest, revokeSessionsForEmail } = require('./session');
 const { hasRole, FORBIDDEN_BODY } = require('./requireRole');
+// Por el objeto del módulo (no desarmado): los tests lo stubean.
+const allowlist = require('./allowlist');
+
+// Antes de revocar a un correo que "ya no está", la allowlist se vuelve a
+// leer un rato después: un editor que guarda el archivo lo vacía y lo
+// reescribe, y una lectura en ese instante lo ve vacío o cortado. Revocar es
+// para siempre (revisión de noviembre 2026).
+const CONFIRMAR_BAJA_MS = 300;
+const SIN_VERIFICAR_BODY = Object.freeze({ error: 'No se pudo verificar el acceso. Probá de nuevo en unos segundos.' });
 
 // Roles (noviembre 2026): en /api/, todo método que no sea uno de estos
 // exige `operador`, salvo /api/auth/* (un lector tiene que poder salir).
@@ -92,59 +102,87 @@ function isPagePath(canonical) {
   return canonical.includes('.htm');
 }
 
-function createAuthGate() {
+// La decisión, con la sesión ya resuelta (null si no hay). cookieLimpia: el
+// gate ya mandó a borrar la cookie.
+function decidir(req, res, next, session, cookieLimpia) {
+  const urlPath = req.path;
+  if (session) req.auth = session;
+  // Una cookie que ya no es una sesión (vencida, revocada) se borra cuando
+  // el pedido termina en el login o en un 401.
+  const limpiarCookieVieja = () => {
+    if (!session && !cookieLimpia && sessionIdFromRequest(req)) clearSessionCookie(res);
+  };
+
+  if (req.method === 'GET' && (urlPath === '/' || urlPath === '/index.html') && session) {
+    return res.redirect('/dashboard.html');
+  }
+
+  if (PUBLIC_EXACT.has(urlPath)) return next();
+  if (PUBLIC_API.has(`${req.method} ${urlPath}`)) return next();
+
+  const canonical = canonicalPath(urlPath);
+  if (canonical === null) return res.status(400).json({ error: 'Dirección inválida.' });
+
+  if (isApiPath(canonical)) {
+    if (!session) {
+      limpiarCookieVieja();
+      return res.status(401).json({ error: 'Tenés que iniciar sesión.' });
+    }
+    if (!SAFE_METHODS.has(req.method) && !isAuthApiPath(canonical) && !hasRole(session.role, 'operador')) {
+      return res.status(403).json(FORBIDDEN_BODY);
+    }
+    return next();
+  }
+
+  if (isPagePath(canonical)) {
+    if (!session) {
+      limpiarCookieVieja();
+      return res.redirect('/');
+    }
+    return next();
+  }
+
+  return next();
+}
+
+/**
+ * @param {object} [opts]
+ * @param {number} [opts.confirmarBajaMs] la espera antes de releer la
+ *   allowlist para confirmar una baja (CONFIRMAR_BAJA_MS; los tests la achican).
+ */
+function createAuthGate({ confirmarBajaMs = CONFIRMAR_BAJA_MS } = {}) {
   return function authGate(req, res, next) {
-    const urlPath = req.path;
     // readSession ya descarta las revocadas, inactivas y vencidas, y trae el
     // rol de la allowlist, que se lee en cada pedido: sacar un correo del
     // archivo le corta el acceso ya, sin esperar a que venza la sesión.
-    let session = readSession(req);
-    let cookieLimpia = false;
-    if (session && !session.role) {
-      const revocadas = revokeSessionsForEmail(session.email);
-      console.log(`[auth] sesión revocada: el correo ya no está en la allowlist (${revocadas} sesión/es)`);
-      clearSessionCookie(res);
-      cookieLimpia = true;
-      session = null;
-    }
-    if (session) req.auth = session;
-    // Una cookie que ya no es una sesión (vencida, revocada) se borra cuando
-    // el pedido termina en el login o en un 401.
-    const limpiarCookieVieja = () => {
-      if (!session && !cookieLimpia && sessionIdFromRequest(req)) clearSessionCookie(res);
-    };
+    const session = readSession(req);
+    if (!session || session.role) return decidir(req, res, next, session, false);
 
-    if (req.method === 'GET' && (urlPath === '/' || urlPath === '/index.html') && session) {
-      return res.redirect('/dashboard.html');
-    }
-
-    if (PUBLIC_EXACT.has(urlPath)) return next();
-    if (PUBLIC_API.has(`${req.method} ${urlPath}`)) return next();
-
-    const canonical = canonicalPath(urlPath);
-    if (canonical === null) return res.status(400).json({ error: 'Dirección inválida.' });
-
-    if (isApiPath(canonical)) {
-      if (!session) {
-        limpiarCookieVieja();
-        return res.status(401).json({ error: 'Tenés que iniciar sesión.' });
+    // Con sesión y sin rol: se confirma con otra lectura antes de revocar.
+    setTimeout(() => {
+      try {
+        const { role, archivoLeido } = allowlist.resolveRole(session.email);
+        if (role) return decidir(req, res, next, { ...session, role }, false);
+        if (!archivoLeido) {
+          // No se pudo leer el archivo y la última lectura buena no lo tiene
+          // (o no hubo ninguna): sin confirmar no se revoca nada.
+          console.warn('[auth] no se pudo leer la allowlist para confirmar una baja: no se revoca nada.');
+          return res.status(503).json(SIN_VERIFICAR_BODY);
+        }
+        let revocadas = 0;
+        try {
+          revocadas = revokeSessionsForEmail(session.email);
+        } catch (err) {
+          console.error('[auth] no se pudieron revocar las sesiones:', err.message);
+        }
+        if (revocadas > 0) console.log(`[auth] sesión revocada: el correo ya no está en la allowlist (${revocadas} sesión/es)`);
+        clearSessionCookie(res);
+        return decidir(req, res, next, null, true);
+      } catch (err) {
+        return next(err);
       }
-      if (!SAFE_METHODS.has(req.method) && !isAuthApiPath(canonical) && !hasRole(session.role, 'operador')) {
-        return res.status(403).json(FORBIDDEN_BODY);
-      }
-      return next();
-    }
-
-    if (isPagePath(canonical)) {
-      if (!session) {
-        limpiarCookieVieja();
-        return res.redirect('/');
-      }
-      return next();
-    }
-
-    return next();
+    }, confirmarBajaMs);
   };
 }
 
-module.exports = { createAuthGate, canonicalPath };
+module.exports = { createAuthGate, canonicalPath, CONFIRMAR_BAJA_MS };

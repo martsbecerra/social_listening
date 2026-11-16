@@ -33,6 +33,7 @@ const { DatabaseSync } = require('node:sqlite');
 
 const db = require('../src/db');
 const session = require('../src/auth/session');
+const allowlist = require('../src/auth/allowlist');
 const { resolveSessionConfig } = require('../src/auth/sessionConfig');
 const { createAuthGate } = require('../src/auth/gate');
 const authRoutes = require('../src/auth/authRoutes');
@@ -94,7 +95,7 @@ function pedir(method, rawPath, { cookie = null, headers = {}, body = null } = {
 before(async () => {
   const app = express();
   app.use(express.json());
-  app.use(createAuthGate());
+  app.use(createAuthGate({ confirmarBajaMs: 20 }));
   authRoutes.register(app, { sendMagicLinkEmail: async () => {} });
   app.use('/api', (req, res) => {
     llegadas.push(`${req.method} ${req.path}`);
@@ -298,6 +299,45 @@ describe('allowlist: un correo que sale pierde el acceso', { concurrency: false 
     const pag = await pedir('GET', '/dashboard.html', { cookie: b.cookie });
     assert.equal(pag.status, 302);
     assert.equal(pag.location, '/');
+  });
+
+  test('una lectura que no lo ve (el archivo a medio guardar) no revoca: se confirma con otra', async () => {
+    const s = nueva('sale@test.local');
+    const getRole = allowlist.getRole;
+    let veces = 0;
+    // La primera lectura (la de readSession) no lo encuentra; la del gate,
+    // un rato después, sí (el env sigue teniéndolo).
+    allowlist.getRole = (...args) => (veces++ === 0 ? null : getRole(...args));
+    try {
+      const res = await pedir('POST', '/api/monitoring/run-now', { cookie: s.cookie, body: {} });
+      assert.equal(res.status, 200);
+      assert.ok(!res.setCookie.some((c) => /^sl_session=;/.test(c)));
+    } finally {
+      allowlist.getRole = getRole;
+    }
+    assert.equal(fila(s.sessionId).revoked, 0);
+    assert.deepEqual(llegadas, ['POST /monitoring/run-now']);
+  });
+
+  test('sin poder leer la allowlist para confirmar la baja: 503 y no se revoca nada', async () => {
+    const s = nueva('sale@test.local');
+    const getRole = allowlist.getRole;
+    const resolveRole = allowlist.resolveRole;
+    const warn = console.warn;
+    allowlist.getRole = () => null;
+    allowlist.resolveRole = () => ({ role: null, archivoLeido: false });
+    console.warn = () => {};
+    try {
+      const res = await pedir('GET', '/api/x', { cookie: s.cookie });
+      assert.equal(res.status, 503);
+      assert.ok(!res.setCookie.some((c) => /^sl_session=;/.test(c)));
+    } finally {
+      allowlist.getRole = getRole;
+      allowlist.resolveRole = resolveRole;
+      console.warn = warn;
+    }
+    assert.equal(fila(s.sessionId).revoked, 0);
+    assert.equal((await pedir('GET', '/api/x', { cookie: s.cookie })).status, 200);
   });
 
   test('un cambio de rol vale en el próximo pedido, sin volver a entrar', async () => {
