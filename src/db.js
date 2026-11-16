@@ -696,6 +696,10 @@ const setRefreshStateStmt = db.prepare(`
   INSERT INTO refresh_state (key, value) VALUES (@key, @value)
   ON CONFLICT(key) DO UPDATE SET value = excluded.value
 `);
+const deleteRefreshStateStmt = db.prepare('DELETE FROM refresh_state WHERE key = ?');
+// Por prefijo con substr, nunca LIKE: una clave puede traer "%" o "_" (un
+// término de búsqueda es texto libre).
+const listRefreshStateByPrefixStmt = db.prepare('SELECT key, value FROM refresh_state WHERE substr(key, 1, length(@prefix)) = @prefix ORDER BY key');
 
 // Resultados de la búsqueda por palabra clave de Instagram a los que ya se
 // les pidió el detalle (ver enrichSearchResults en src/monitor.js). La
@@ -2898,6 +2902,39 @@ function setRefreshState(key, value) {
   setRefreshStateStmt.run({ key, value });
 }
 
+/** Borra una clave de refresh_state. @returns {number} filas borradas */
+function deleteRefreshState(key) {
+  return deleteRefreshStateStmt.run(String(key)).changes;
+}
+
+/** Las claves de refresh_state que empiezan con `prefix` (comparación exacta, sin comodines). */
+function listRefreshStateByPrefix(prefix) {
+  return listRefreshStateByPrefixStmt.all({ prefix: String(prefix) }).map((row) => ({ key: row.key, value: row.value }));
+}
+
+/**
+ * Una marca de tiempo (ISO) que solo avanza: guarda `iso` si la clave no
+ * existe, si lo guardado no es una fecha o si `iso` es posterior. Nunca
+ * retrocede ni guarda una fecha del futuro (se recorta a ahora).
+ * @returns {boolean} true si cambió
+ */
+function advanceRefreshState(key, iso, { now = Date.now() } = {}) {
+  let ms = Date.parse(iso);
+  if (!Number.isFinite(ms)) return false;
+  if (ms > now) ms = now;
+  const actual = Date.parse(getRefreshState(key) || '');
+  if (Number.isFinite(actual) && actual >= ms) return false;
+  setRefreshState(key, new Date(ms).toISOString());
+  return true;
+}
+
+/** Guarda `iso` solo si la clave no tiene una fecha válida todavía. @returns {boolean} true si la guardó */
+function initRefreshState(key, iso) {
+  if (Number.isFinite(Date.parse(getRefreshState(key) || '')) || !Number.isFinite(Date.parse(iso))) return false;
+  setRefreshState(key, new Date(Date.parse(iso)).toISOString());
+  return true;
+}
+
 /**
  * Cuentas con al menos un posteo con posted_at en (sinceIso, untilIso] que
  * cumpla la cadencia (cadenceIso null = sin filtro de metrics_updated_at).
@@ -3703,6 +3740,10 @@ module.exports = {
   updateFollowersForAccount,
   getRefreshState,
   setRefreshState,
+  deleteRefreshState,
+  listRefreshStateByPrefix,
+  advanceRefreshState,
+  initRefreshState,
   getSearchSeen,
   isSearchSeen,
   markSearchSeen,

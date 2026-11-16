@@ -164,35 +164,77 @@ function parseFirstRunLookbackMs(raw) {
   return parseWindowMs(raw, DAY_MS);
 }
 
+/** MONITOR_MIN_WINDOW a milisegundos (default 1 día): lo mínimo que mira hacia atrás cada consulta. */
+function parseMinWindowMs(raw) {
+  return parseWindowMs(raw, DAY_MS);
+}
+
 /**
- * Ventana de detección dinámica de una plataforma: en Instagram la usan las
- * búsquedas por palabra clave (la única fuente de detección); en X, cuentas
- * y hashtags. Las keywords de X y el benchmark NO: siguen con su lógica de
- * siempre. Va desde el fin de la última detección exitosa de esa plataforma
- * (`detection_last_success:<platformId>` en refresh_state, ver
- * runMonitoringCycle) hasta `now`, con un techo de MONITOR_LOOKBACK_MAX
- * (default 30 días) para que una caída larga no dispare una recuperación
- * sin fin. Sin ninguna corrida previa registrada, la ventana
- * es MONITOR_LOOKBACK (default 1 día): la primera corrida mira un día hacia
- * atrás, no una semana. Redondeada hacia arriba a días enteros, mínimo 1:
- * en el caso normal (cron al día) da exactamente "1 day" — el techo solo se
- * nota después de una caída real. Se manda en días enteros, nunca
- * fracciones de hora: `apify/instagram-scraper` recibe este string tal cual
- * en `onlyPostsNewerThan` y no hay garantía de que entienda horas
- * fraccionarias; apidojo igual refiltra por milisegundos exactos
- * (`applyWindow` en instagramApidojo.js), así que ahí no se pierde precisión.
+ * Clave en refresh_state de la marca de detección de UNA fuente:
+ * `detection_last_success:<red>:<tipo>:<clave>` (tipo: busqueda | cuenta |
+ * hashtag | keyword; la clave, normalizada como sourceKey). La de la red
+ * entera sigue siendo `detection_last_success:<red>`.
+ */
+function sourceMarkKey(platformId, tipo, fuente) {
+  return `detection_last_success:${platformId}:${tipo}:${sourceKey(fuente)}`;
+}
+
+/**
+ * Ventana de detección de UNA fuente (desde noviembre 2026; antes había una
+ * sola por red): cada búsqueda de Instagram, y en X cada cuenta, hashtag y
+ * keyword. Va desde la última detección exitosa DE ESA FUENTE (su marca en
+ * refresh_state, ver sourceMarkKey y las reglas de avance en
+ * runMonitoringCycle) hasta `now`:
+ *   - nunca menos que MONITOR_MIN_WINDOW (default 1 día): con el cron al día
+ *     cada consulta sigue mirando 24 h hacia atrás, como siempre;
+ *   - nunca más que MONITOR_LOOKBACK_MAX (default 30 días): una caída larga
+ *     no dispara una recuperación sin fin. Si el techo recorta, `huecoDesde`
+ *     dice desde cuándo NO se pidió (queda registrado en la fila de la
+ *     fuente);
+ *   - sin marca (una fuente nueva), MONITOR_LOOKBACK (default 1 día).
+ * Con la marca por red, una búsqueda que fallaba dos corridas seguidas
+ * perdía esos días: la marca avanzaba igual porque las demás habían
+ * respondido (corridas #55 y #56 del piloto).
+ *
+ * `cubiertoHasta`: una corrida de esa fuente que quedó en Apify y se acaba
+ * de levantar ya cubrió hasta su lanzamiento; la ventana arranca desde ahí
+ * si es posterior a la marca.
+ *
+ * Sin `tipo` y `fuente` devuelve la ventana de la RED (la marca
+ * `detection_last_success:<platformId>`, que se sigue escribiendo cuando
+ * todas las fuentes avanzaron): es lo que usaría el código anterior.
+ *
+ * Se redondea hacia arriba a días enteros para `lookback` (el string que
+ * reciben los adapters que no entienden otra cosa); `sinceIso` es el
+ * instante exacto, y el adapter de apidojo arma su `until` con él.
  *
  * @param {string} platformId
- * @param {{ now?: number }} [options] `now` inyectable para tests (reloj fijo).
- * @returns {{ lookback: string, windowDays: number, isDefault: boolean, sinceIso: string }}
+ * @param {{ now?: number, tipo?: string|null, fuente?: string|null, cubiertoHasta?: string|null }} [options]
+ *   `now` inyectable para tests (reloj fijo).
+ * @returns {{ lookback: string, windowDays: number, isDefault: boolean, sinceIso: string,
+ *   origen: 'primera'|'marca'|'minimo'|'techo', huecoDesde: string|null }}
  */
-function detectionWindowFor(platformId, { now = Date.now() } = {}) {
-  const maxMs = parseLookbackMaxMs(process.env.MONITOR_LOOKBACK_MAX);
-  const ceilingMs = now - maxMs;
-  const lastSuccessRaw = db.getRefreshState(`detection_last_success:${platformId}`);
-  const lastSuccessMs = lastSuccessRaw ? Date.parse(lastSuccessRaw) : NaN;
-  const firstRunMs = now - parseFirstRunLookbackMs(process.env.MONITOR_LOOKBACK);
-  const sinceMs = Math.max(ceilingMs, Number.isFinite(lastSuccessMs) ? lastSuccessMs : firstRunMs);
+function detectionWindowFor(platformId, { now = Date.now(), tipo = null, fuente = null, cubiertoHasta = null } = {}) {
+  const ceilingMs = now - parseLookbackMaxMs(process.env.MONITOR_LOOKBACK_MAX);
+  const key = tipo && fuente ? sourceMarkKey(platformId, tipo, fuente) : `detection_last_success:${platformId}`;
+  const markMs = Date.parse(db.getRefreshState(key) || '');
+  const coveredMs = Date.parse(cubiertoHasta || '');
+  const known = [markMs, coveredMs].filter(Number.isFinite);
+
+  let origen = known.length > 0 ? 'marca' : 'primera';
+  let sinceMs = known.length > 0 ? Math.max(...known) : now - parseFirstRunLookbackMs(process.env.MONITOR_LOOKBACK);
+  const minMs = now - parseMinWindowMs(process.env.MONITOR_MIN_WINDOW);
+  if (sinceMs > minMs) {
+    sinceMs = minMs;
+    if (origen === 'marca') origen = 'minimo';
+  }
+  let huecoDesde = null;
+  if (sinceMs < ceilingMs) {
+    // Lo anterior al techo no se pide: si había marca, queda un hueco.
+    if (origen !== 'primera') huecoDesde = new Date(sinceMs).toISOString();
+    sinceMs = ceilingMs;
+    origen = 'techo';
+  }
   const windowDays = Math.max(1, Math.ceil((now - sinceMs) / DAY_MS));
   // Singular en 1 para que el caso normal (cron al día) sea BYTE A BYTE el
   // mismo string que el fijo de antes ("1 day"); parseLookbackMs entiende
@@ -202,7 +244,113 @@ function detectionWindowFor(platformId, { now = Date.now() } = {}) {
     windowDays,
     isDefault: windowDays === 1,
     sinceIso: new Date(sinceMs).toISOString(),
+    origen,
+    huecoDesde,
   };
+}
+
+/**
+ * Migración de las marcas de detección al esquema por fuente. La primera
+ * vez (sin `detection_por_fuente:<red>`) cada fuente configurada arranca en
+ * la marca de la RED, que es exactamente lo que habría usado el código
+ * anterior: la primera corrida después del cambio no pide más atrás que la
+ * que habría corrido sin él (decisión del dueño, 16/11/2026: el hueco que
+ * dejaron las corridas caídas de noviembre queda sin cubrir a propósito).
+ *
+ * Después, `detection_por_fuente:<red>` guarda el valor de la marca de la
+ * red que este código vio o escribió por última vez. Si no coincide con la
+ * marca actual, corrió código anterior en el medio (se volvió atrás y se
+ * volvió a subir): cada fuente pasa al máximo entre su marca y la de la
+ * red, para no pedir de nuevo lo que ese código ya dio por detectado.
+ * Nunca tira.
+ */
+function migrateDetectionMarks(platformId, sources) {
+  try {
+    const flagKey = `detection_por_fuente:${platformId}`;
+    const network = db.getRefreshState(`detection_last_success:${platformId}`) || '';
+    const flag = db.getRefreshState(flagKey);
+    if (flag === network) return;
+    let movidas = 0;
+    if (Number.isFinite(Date.parse(network))) {
+      for (const { tipo, fuente } of sources) {
+        if (db.advanceRefreshState(sourceMarkKey(platformId, tipo, fuente), network)) movidas += 1;
+      }
+    }
+    db.setRefreshState(flagKey, network);
+    console.log(
+      `[monitor] ${platformId}: marcas de detección por fuente ${flag === null ? 'creadas' : 'alineadas'} desde la marca de la red ` +
+        `(${network || 'sin marca'}): ${movidas} de ${sources.length} fuente(s).`
+    );
+  } catch (err) {
+    console.error(`[monitor] (${platformId}) no se pudieron migrar las marcas de detección:`, err.message);
+  }
+}
+
+/** Borra las marcas de las fuentes que ya no están configuradas en esa red. Nunca tira. */
+function cleanupStaleMarks(platformId, sources) {
+  try {
+    const vigentes = new Set(sources.map(({ tipo, fuente }) => sourceMarkKey(platformId, tipo, fuente)));
+    for (const { key } of db.listRefreshStateByPrefix(`detection_last_success:${platformId}:`)) {
+      if (!vigentes.has(key)) db.deleteRefreshState(key);
+    }
+  } catch (err) {
+    console.error(`[monitor] (${platformId}) no se pudieron limpiar las marcas de detección huérfanas:`, err.message);
+  }
+}
+
+/** Sacar una fuente (o darla de alta de nuevo) borra su marca: vuelve a ser una fuente nueva. Nunca tira. */
+function forgetSourceMark(platformId, tipo, fuente) {
+  try {
+    db.deleteRefreshState(sourceMarkKey(platformId, tipo, fuente));
+  } catch (err) {
+    console.error(`[monitor] (${platformId}) no se pudo borrar la marca de detección de ${fuente}:`, err.message);
+  }
+}
+
+/** El tipo de fuente de una keyword de la config: con "#" es un hashtag. */
+function keywordSourceType(keyword) {
+  return String(keyword || '').trim().startsWith('#') ? 'hashtag' : 'keyword';
+}
+
+/**
+ * Avanza las marcas de detección de las fuentes de un ciclo, según cómo le
+ * fue a cada una:
+ *   - ok: la marca pasa al inicio del ciclo;
+ *   - parcial (Apify cortó la corrida): la primera vez no avanza (se vuelve
+ *     a pedir todo); la segunda seguida sí, para que la ventana no crezca
+ *     sin fin: la pérdida queda registrada en su fila;
+ *   - fallo o esperando: no avanza. Una fuente que todavía no tenía marca
+ *     queda con la del inicio de la ventana que se intentó: el reintento
+ *     pide más, no arranca de cero;
+ *   - una fuente salteada (su corrida anterior sigue en Apify): no avanza.
+ * Nunca tira.
+ * @returns {boolean} true si TODAS las fuentes avanzaron al inicio del ciclo
+ */
+function advanceSourceMarks(platformId, outcomes, cycleNowMs) {
+  const cycleIso = new Date(cycleNowMs).toISOString();
+  let todas = true;
+  for (const outcome of outcomes) {
+    try {
+      const { tipo, fuente, window } = outcome.source;
+      const key = sourceMarkKey(platformId, tipo, fuente);
+      let avanza = outcome.estado === 'ok';
+      if (outcome.estado === 'parcial') {
+        const previas = db.lastRunSourcesForKey({ plataforma: platformId, tipo, clave: sourceKey(fuente), limit: 2 });
+        avanza = previas.length >= 2 && previas[1].estado === 'parcial';
+        if (avanza) console.warn(`[monitor] ${platformId}: ${tipo} «${fuente}» quedó parcial dos veces seguidas: la marca avanza igual y lo que faltó queda registrado.`);
+      }
+      if (avanza) {
+        db.advanceRefreshState(key, cycleIso);
+      } else {
+        todas = false;
+        if (window) db.initRefreshState(key, window.sinceIso);
+      }
+    } catch (err) {
+      todas = false;
+      console.error(`[monitor] (${platformId}) no se pudo guardar la marca de detección de una fuente:`, err.message);
+    }
+  }
+  return todas;
 }
 
 /**
@@ -419,6 +567,7 @@ async function addAccount(account, platformId) {
 
 function removeAccount(account, platformId) {
   requirePlatformId(platformId, 'removeAccount');
+  forgetSourceMark(platformId, 'cuenta', account);
   const all = loadConfigAll();
   const config = all[platformId] || (all[platformId] = { accounts: [], keywords: [] });
   config.accounts = config.accounts.filter((a) => a.toLowerCase() !== String(account).toLowerCase());
@@ -455,6 +604,7 @@ async function addKeyword(keyword, platformId) {
 
 function removeKeyword(keyword, platformId) {
   requirePlatformId(platformId, 'removeKeyword');
+  forgetSourceMark(platformId, keywordSourceType(keyword), keyword);
   const all = loadConfigAll();
   const config = all[platformId] || (all[platformId] = { accounts: [], keywords: [] });
   config.keywords = config.keywords.filter((k) => k.toLowerCase() !== String(keyword).toLowerCase());
@@ -477,6 +627,8 @@ function removeKeyword(keyword, platformId) {
 function addSearch(term, platformId) {
   requirePlatformId(platformId, 'addSearch');
   const clean = String(term || '').trim();
+  // Un término que se da de alta (aunque haya existido antes) es una fuente nueva.
+  if (clean) forgetSourceMark(platformId, 'busqueda', clean);
   if (!clean) {
     const e = new Error('Búsqueda vacía');
     e.userMessage = 'Escribí un término de búsqueda.';
@@ -507,6 +659,7 @@ function addSearch(term, platformId) {
 
 function removeSearch(term, platformId) {
   requirePlatformId(platformId, 'removeSearch');
+  forgetSourceMark(platformId, 'busqueda', term);
   const all = loadConfigAll();
   const config = all[platformId];
   if (config && Array.isArray(config.searches)) {
@@ -1069,8 +1222,12 @@ async function recoverPendingSearchRuns(platform, platformId, { searches = [] } 
         const posts = Array.isArray(r.posts) ? r.posts : [];
         out.candidates.push(...posts);
         out.recuperadas.push({ row, estado: r.estado, rawItems: r.rawItems != null ? r.rawItems : posts.length, nuevos: contarNuevos(posts, platformId), runStatus: r.runStatus || null });
-        const previo = out.cubiertoHasta.get(row.clave);
-        if (!previo || row.startedAt > previo) out.cubiertoHasta.set(row.clave, row.startedAt);
+        // Solo una corrida que terminó bien cubre hasta su lanzamiento: de
+        // una que Apify cortó puede faltar algo, y se vuelve a pedir.
+        if (r.estado === 'ok') {
+          const previo = out.cubiertoHasta.get(row.clave);
+          if (!previo || row.startedAt > previo) out.cubiertoHasta.set(row.clave, row.startedAt);
+        }
         levantadas += 1;
         encontrados += posts.length;
         progress.finishItem(key, { ok: true, detail: describeFound(posts, platformId) });
@@ -1127,6 +1284,15 @@ function cerrarRecuperadas(recovery, { platformId, runId }) {
       recuperadaAt: ahora,
       finishedAt: row.finishedAt || ahora,
     });
+    // Lo levantado ya está procesado: la marca de esa fuente llega, como
+    // mínimo, hasta el lanzamiento de esa corrida.
+    if (estado === 'ok') {
+      try {
+        db.advanceRefreshState(sourceMarkKey(platformId, row.tipo, row.fuente), row.startedAt);
+      } catch (err) {
+        console.error(`[monitor] (${platformId}) no se pudo avanzar la marca de «${row.fuente}»:`, err.message);
+      }
+    }
     try {
       db.markApifyCallRecovered(row.apifyRunId, { items: rawItems, usd: usdForCall({ actor: row.actor, queryType: 'search', items: rawItems }) });
     } catch (err) {
@@ -1259,9 +1425,6 @@ function notConfiguredError(platform) {
 async function runMonitoringCycle({ plataformas, trigger } = {}) {
   const all = loadConfigAll();
   const limits = monitorLimits();
-  // Búsquedas y keywords (X) siguen con la ventana fija de siempre; solo
-  // cuentas y hashtags usan la ventana dinámica (ver detectionWindowFor).
-  const legacyLookback = process.env.MONITOR_LOOKBACK || '1 day';
   const cycleNowMs = Date.now();
   const ids = listPlatformIds().filter((id) => !plataformas || plataformas.includes(id));
   // Un error de plataforma se le tira al usuario solo en una corrida MANUAL
@@ -1328,23 +1491,18 @@ async function runMonitoringCycle({ plataformas, trigger } = {}) {
       );
     }
 
-    // Ventana de detección de ESTA corrida (cuentas, hashtags y búsquedas):
-    // dinámica, desde el fin de la última detección exitosa (sin corrida
-    // previa, MONITOR_LOOKBACK: 1 día), con techo MONITOR_LOOKBACK_MAX. Si
-    // superó 1 día, los topes suben proporcionalmente para no perder posteos
-    // por el tope de cantidad en vez de por fecha (ver raiseLimitForWindow):
-    // el excedente sobre lo incluido por consulta se paga, no se corta.
-    const window = detectionWindowFor(platformId, { now: cycleNowMs });
-    const accountLimit = window.isDefault ? limits.account : raiseLimitForWindow(limits.account, window.windowDays);
-    const hashtagLimit = window.isDefault ? limits.hashtag : raiseLimitForWindow(limits.hashtag, window.windowDays);
-    const searchLimit = window.isDefault ? limits.search : raiseLimitForWindow(limits.search, window.windowDays);
-    if (!window.isDefault) {
-      console.log(
-        `[monitor] ${platformId}: ventana de detección ampliada a ${window.windowDays} día(s) (desde ${window.sinceIso}); ` +
-          `topes de esta corrida: cuentas ${accountLimit} (base ${limits.account}), hashtags ${hashtagLimit} (base ${limits.hashtag}), ` +
-          `búsquedas ${searchLimit} (base ${limits.search}).`
-      );
-    }
+    // Las fuentes que consulta la detección de esta red, y sus marcas: la
+    // ventana es POR FUENTE (ver detectionWindowFor). Antes de mirar ninguna
+    // marca se migran desde la de la red (la primera vez, o si corrió código
+    // anterior en el medio) y se limpian las de fuentes que ya no están.
+    const configuredSources = [
+      ...accountsToScrape.map((fuente) => ({ tipo: 'cuenta', fuente })),
+      ...hashtagsToScrape.map((fuente) => ({ tipo: 'hashtag', fuente })),
+      ...(canSearchKeywords ? textKeywords.map((fuente) => ({ tipo: 'keyword', fuente })) : []),
+      ...(canSearch ? searches.map((fuente) => ({ tipo: 'busqueda', fuente })) : []),
+    ];
+    migrateDetectionMarks(platformId, configuredSources);
+    cleanupStaleMarks(platformId, configuredSources);
 
     // Cada búsqueda va en la fase 'busqueda' del registro de gasto
     // (src/apifyCost.js), heredando el ciclo del contexto del scheduler.
@@ -1364,7 +1522,7 @@ async function runMonitoringCycle({ plataformas, trigger } = {}) {
     // corren en paralelo, no hay "la búsqueda actual"). La fase no deja
     // resumen propio: sus líneas son las de cada fuente (lanzarFuente).
     progress.startPhase('Buscando posteos nuevos', detectionTotal, { suffix: 'listas', summary: false });
-    if (detectionTotal === 0) {
+    if (detectionTotal === 0 && searchesSkipped.length === 0) {
       // No hay nada que consultar en esta red (o el actor activo no busca):
       // la corrida no detectó nada y tiene que verse.
       abrirFuente({
@@ -1376,43 +1534,54 @@ async function runMonitoringCycle({ plataformas, trigger } = {}) {
       });
     }
 
+    // La ventana y el tope de cada fuente: desde SU última detección
+    // exitosa (o desde el lanzamiento de la corrida suya que se acaba de
+    // levantar). Si la ventana supera 1 día el tope sube proporcionalmente,
+    // para no perder posteos por cantidad en vez de por fecha (ver
+    // raiseLimitForWindow): el excedente se paga, no se corta.
+    const withWindow = (tipo, fuente, baseLimit) => {
+      const window = detectionWindowFor(platformId, {
+        tipo,
+        fuente,
+        now: cycleNowMs,
+        cubiertoHasta: tipo === 'busqueda' ? recovery.cubiertoHasta.get(sourceKey(fuente)) || null : null,
+      });
+      const limit = window.isDefault ? baseLimit : raiseLimitForWindow(baseLimit, window.windowDays);
+      if (!window.isDefault) {
+        console.log(
+          `[monitor] ${platformId} ${tipo} «${fuente}»: retoma desde ${window.sinceIso} (${window.windowDays} días; tope ${limit}, base ${baseLimit})` +
+            (window.huecoDesde ? `; no respondía desde ${window.huecoDesde}: lo anterior al techo de la ventana no se pide` : '')
+        );
+      }
+      return { tipo, fuente, window, baseLimit, limit };
+    };
+
     // Las fuentes de la detección de esta red, todas con la misma forma:
     // qué son, cómo se muestran y cómo se consultan.
     const sources = [
       ...accountsToScrape.map((account) => ({
-        tipo: 'cuenta',
-        fuente: account,
+        ...withWindow('cuenta', account, limits.account),
         label: `@${account}`,
-        limit: accountLimit,
-        lookback: window.lookback,
         run: (options) => platform.scrapeAccount(account, options),
       })),
       ...hashtagsToScrape.map((tag) => ({
-        tipo: 'hashtag',
-        fuente: tag,
+        ...withWindow('hashtag', tag, limits.hashtag),
         label: `#${tag}`,
-        limit: hashtagLimit,
-        lookback: window.lookback,
         run: (options) => platform.scrapeHashtag(tag, options),
       })),
       ...(canSearchKeywords
         ? textKeywords.map((keyword) => ({
-            tipo: 'keyword',
-            fuente: keyword,
+            ...withWindow('keyword', keyword, limits.search),
             label: `«${keyword}»`,
-            limit: limits.search,
-            lookback: legacyLookback,
             run: (options) => platform.scrapeKeyword(keyword, options),
           }))
         : []),
-      // Cada búsqueda va en la fase 'busqueda' del registro de gasto.
+      // Cada búsqueda va en la fase 'busqueda' del registro de gasto
+      // (src/apifyCost.js), heredando el ciclo del contexto del scheduler.
       ...(canSearch
         ? searchesToRun.map((term) => ({
-            tipo: 'busqueda',
-            fuente: term,
+            ...withWindow('busqueda', term, limits.search),
             label: `«${term}»`,
-            limit: searchLimit,
-            lookback: window.lookback,
             run: (options) => runWithContext({ phase: 'busqueda' }, () => platform.scrapeSearch(term, options)),
           }))
         : []),
@@ -1431,7 +1600,8 @@ async function runMonitoringCycle({ plataformas, trigger } = {}) {
         tipo: source.tipo,
         fuente: source.fuente,
         actor: platform.actorId || null,
-        desdeIso: window.sinceIso,
+        desdeIso: source.window.sinceIso,
+        huecoDesde: source.window.huecoDesde,
         tope: source.limit,
       });
       progress.startItem(key, source.label, 'buscando…');
@@ -1440,7 +1610,9 @@ async function runMonitoringCycle({ plataformas, trigger } = {}) {
       try {
         const posts = await source.run({
           resultsLimit: source.limit,
-          lookback: source.lookback,
+          lookback: source.window.lookback,
+          // El instante exacto desde el que se pide (el adapter de apidojo arma su `until` con él).
+          sinceIso: source.window.sinceIso,
           // El vencimiento es UNO para todas las fuentes de la red (ver
           // src/searchWait.js): la detección no dura más que eso.
           deadlineAt,
@@ -1672,6 +1844,11 @@ async function runMonitoringCycle({ plataformas, trigger } = {}) {
     // consultó en la detección, así que el refresco las pide si les toca.
     scrapedAccounts[platformId] = [...accountsToScrape];
 
+    // Marcas de detección, ANTES de cualquier throw: cada fuente avanza
+    // según cómo le fue (ver advanceSourceMarks). Los posteos de las que
+    // respondieron ya quedaron guardados o anotados arriba.
+    const todasAvanzaron = advanceSourceMarks(platformId, outcomes, cycleNowMs);
+
     if (platformError) {
       const saved = porPlataforma[platformId].newCount;
       const userMessage = platformError.userMessage || platformError.message;
@@ -1688,15 +1865,16 @@ async function runMonitoringCycle({ plataformas, trigger } = {}) {
         throw platformError;
       }
       console.warn(`[monitor] ${platformId}: la corrida quedó incompleta (${code}); se sigue con las demás plataformas.`);
-    } else {
-      // Detección exitosa (las fuentes que esta plataforma consulta:
-      // búsquedas en Instagram; cuentas, hashtags y keywords en X — con o
-      // sin posteos nuevos): marca el fin de esta corrida como punto de
-      // partida de la próxima ventana (ver detectionWindowFor). Solo la
-      // detección cuenta acá, aunque el ciclo completo falle después en
-      // benchmark o refresco.
+    } else if (todasAvanzaron) {
+      // Todas las fuentes de la red respondieron: se escribe también la
+      // marca de la RED (`detection_last_success:<red>`), que es la que usa
+      // el código anterior si se vuelve atrás, y se anota que este código
+      // la vio (ver migrateDetectionMarks). Si alguna fuente no avanzó, la
+      // marca de la red se queda donde estaba.
       try {
-        db.setRefreshState(`detection_last_success:${platformId}`, new Date(cycleNowMs).toISOString());
+        const iso = new Date(cycleNowMs).toISOString();
+        db.setRefreshState(`detection_last_success:${platformId}`, iso);
+        db.setRefreshState(`detection_por_fuente:${platformId}`, iso);
       } catch (err) {
         console.error(`[monitor] (${platformId}) no se pudo guardar el fin de la última detección exitosa:`, err.message);
       }
@@ -1829,6 +2007,9 @@ module.exports = {
   monitorLimits,
   searchEnrichLimit,
   detectionWindowFor,
+  sourceMarkKey,
+  sourceKey,
+  migrateDetectionMarks,
   // Expuestos para tests.
   evaluateRelevance,
   pickMetrics,

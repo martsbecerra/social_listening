@@ -48,10 +48,10 @@ recuperado de las corridas cortadas) quedó afuera por decisión del dueño.
 
 ## Phase 7: ventana por fuente
 
-- [ ] 7.1 `detectionWindowFor` por fuente, `MONITOR_MIN_WINDOW`, reglas de avance, marca de la red solo si todas avanzaron (REQ-VPF-09)
-- [ ] 7.2 Migración desde la marca de la red y re-migración; marcas huérfanas; alta y baja de una fuente (REQ-VPF-10)
-- [ ] 7.3 `db.js`: lecturas y escrituras de `refresh_state` por prefijo
-- [ ] 7.4 Tests: `ventanaPorFuente.test.js`; `detectionWindow.test.js` y `xMonitoring.test.js` adaptados
+- [x] 7.1 `detectionWindowFor` por fuente, `MONITOR_MIN_WINDOW`, reglas de avance, marca de la red solo si todas avanzaron (REQ-VPF-09)
+- [x] 7.2 Migración desde la marca de la red y re-migración; marcas huérfanas; alta y baja de una fuente (REQ-VPF-10)
+- [x] 7.3 `db.js`: lecturas y escrituras de `refresh_state` por prefijo
+- [x] 7.4 Tests: `ventanaPorFuente.test.js` (`detectionWindow.test.js` y `xMonitoring.test.js` siguen pasando sin cambios: la ventana de la red se conserva)
 
 ## Phase 8: `applyWindow` por el día de `until`
 
