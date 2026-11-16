@@ -1047,12 +1047,37 @@ por `textContent`, nunca como HTML. El alcance se ve con el `.reach` de la
 maqueta (`buildReachMeter`: cinco barras; alto en el acento, latiendo, con
 la razón; medio en ámbar; bajo gris; "—" sin referencia) en la tabla, el
 feed, el flujo y "Se despegaron"; con alcance alto la foto lleva "N,NN× se
-despegó". Filas completas: se dibujan 3 filas según las columnas reales de
-la grilla (`feedColumns`) y, si hay más, la última celda es "+N · Ver 12
-más" (`feedRows` suma otra tanda); otro filtro u orden vuelve a 3, otro
-ancho con otras columnas las completa. El redibujo es completo, con espera
-de 150 ms y `content-visibility: auto`; `feedVisibleIds` guarda la lista
-entera (filtrada y ordenada) para el pop-up.
+despegó". Scroll infinito (desde noviembre 2026; reemplazó a la celda "+N
+· Ver 12 más"): se dibujan 3 filas según las columnas reales de la grilla
+(`feedColumns`) y, cuando al borde de abajo del feed le falta menos de una
+pantalla para entrar a la vista, `feedFill` suma otra tanda
+(`feedAppendRows`: `FEED_ROWS_STEP` × columnas, solo las tarjetas nuevas,
+sin rehacer las demás ni mover la página, con `feed-rise` escalonado, que se
+saca al terminar; quietas con movimiento reducido), y repite hasta llenar
+una pantalla alta o terminar la lista. Sin botón, contador ni cartel de fin.
+Lo dispara el scroll (sin `requestAnimationFrame`: en el panel oculto del
+navegador de la app no corre), `resize`, el final de cada `renderFeed` y un
+`MutationObserver` sobre la clase de `#tab-monitoring`. No suma nada en la
+vista Tabla ni con otra solapa (`feedOnScreen` mira la clase: oculta, la
+solapa sigue en el layout), ni con un redibujo en espera. Otro filtro u
+orden vuelve a 3 filas (primero `feedScrollToStart`, después `feedFill`: al
+revés sumaba tandas antes de volver), también al pasar a Tabla; otro ancho
+con otras columnas las completa. El redibujo es completo, con espera de
+150 ms y `content-visibility: auto`; uno de la misma lista (ignorar, un
+tono, datos nuevos) conserva las filas sumadas y arranca cada lugar de la
+grilla con el alto que tenía (`feedCardHeights`, sin bordes y con
+decimales, en `contain-intrinsic-height` por `element.style`): con el alto
+estimado, las tarjetas de arriba corrían la página decenas de píxeles por
+fila. `feedVisibleIds` guarda la lista entera (filtrada y ordenada) para el
+pop-up, y `feedList` la misma con los posteos, de donde salen las tandas.
+"Volver arriba" (`#feedTop`, hijo de `<body>`: dentro de la solapa, el
+`transform` de su animación de entrada rompería el `position: fixed`):
+redondo, abajo a la derecha, visible (`.on`) con el feed a la vista y su
+comienzo por arriba de la barra superior; lleva al tope (sin animar con
+movimiento reducido) y el foco pasa a la solapa elegida. Lo que depende de
+las tarjetas dibujadas (`feedGoToCard`, el foco al cerrar el pop-up,
+`#publicacion-<id>`) no cambió: una tarjeta que todavía no se dibujó no se
+busca.
 Toda la tarjeta abre un pop-up con el posteo completo: un clic en cualquier
 parte, o Enter / Espacio con el foco en ella (`tabindex="0"`, aro de foco
 visible). No lo abren sus controles (`FEED_CARD_CONTROLS`: la ✕ de ignorar,
