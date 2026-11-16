@@ -43,7 +43,8 @@ const OTRO_SITIO_BODY = Object.freeze({ error: 'Pedido rechazado: no salió de e
 // Las páginas a las que el login puede volver (?volver=). La cookie es
 // sameSite strict: un link a /instagram.html#analisis-57 abierto desde Gmail
 // o WhatsApp llega sin ella aunque haya sesión, y el gate lo manda al login.
-// Con ?volver=, el login (public/js/login.js, con la misma lista) confirma
+// Con ?volver=, el login (public/js/loginDestino.js, con la misma lista;
+// test/loginDestino.test.js las compara) confirma
 // la sesión con /api/auth/me y vuelve a esa página; el navegador conserva el
 // # en las redirecciones. Solo estas: nunca un camino escrito por otro
 // (revisión de noviembre 2026).
@@ -239,4 +240,4 @@ function createAuthGate({ confirmarBajaMs = CONFIRMAR_BAJA_MS } = {}) {
   };
 }
 
-module.exports = { createAuthGate, canonicalPath, CONFIRMAR_BAJA_MS };
+module.exports = { createAuthGate, canonicalPath, CONFIRMAR_BAJA_MS, PAGINAS_VOLVER };

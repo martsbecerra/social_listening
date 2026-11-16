@@ -320,8 +320,26 @@ describe('gate de login: con sesión', { concurrency: false }, () => {
     assert.equal(await volver('?volver=%2Finstagram.html'), '/instagram.html');
     assert.equal(await volver('?volver=/x.html'), '/x.html');
     assert.equal((await pedir('GET', '/index.html?volver=/x.html', { cookie: COOKIE })).location, '/x.html');
-    for (const malo of ['?volver=//otro.test', '?volver=https://otro.test/x.html', '?volver=/INSTAGRAM.HTML', '?volver=/api/auth/me', '?volver[]=/x.html', '?volver=']) {
-      assert.equal(await volver(malo), '/dashboard.html', malo);
+    for (const malo of [
+      '?volver=https://otro.com',
+      '?volver=https%3A%2F%2Fotro.com',
+      '?volver=https://otro.test/x.html',
+      '?volver=//otro.com',
+      '?volver=%2F%2Fotro.com',
+      '?volver=/\\otro.com',
+      '?volver=/%5Cotro.com',
+      '?volver=javascript:alert(1)',
+      '?volver=javascript%3Aalert(1)',
+      '?volver=/x.html%23javascript:alert(1)',
+      '?volver=/INSTAGRAM.HTML',
+      '?volver=/api/auth/me',
+      '?volver[]=/x.html',
+      '?volver=/x.html&volver=//otro.com',
+      '?volver=',
+    ]) {
+      const res = await pedir('GET', `/${malo}`, { cookie: COOKIE });
+      assert.equal(res.status, 302, malo);
+      assert.equal(res.location, '/dashboard.html', malo);
     }
   });
 });
