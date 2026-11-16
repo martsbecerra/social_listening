@@ -789,6 +789,12 @@
   </section>
   </main>
 
+  <!-- "Volver arriba" del feed del Monitoreo (public/js/monitoringFeed.js):
+       aparece al bajar más allá del comienzo del feed. Va fuera de la
+       solapa: la animación de entrada de .tab-panel usa transform, y con eso
+       un position: fixed adentro quedaría pegado al panel. -->
+  <button type="button" class="feed-top" id="feedTop" aria-label="Volver arriba"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
+
   <!-- Pie: lo arma public/js/footer.js -->
   <footer id="siteFooter"></footer>
 
