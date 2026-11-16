@@ -74,8 +74,8 @@ recuperado de las corridas cortadas) quedó afuera por decisión del dueño.
 
 ## Phase 11: estadísticas
 
-- [ ] 11.1 `listRunTracesForStats`: una corrida sin ninguna fuente que respondiera no cuenta como día con corridas (REQ-VPF-14)
-- [ ] 11.2 Tests: `stats.test.js`
+- [x] 11.1 `listRunTracesForStats`: una corrida sin ninguna fuente que respondiera no cuenta como día con corridas (REQ-VPF-14)
+- [x] 11.2 Tests: `stats.test.js`
 
 ## Phase 12: reportes
 

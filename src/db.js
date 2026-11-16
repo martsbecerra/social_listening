@@ -1085,15 +1085,38 @@ const countDiscardedSearchesForStatsStmt = db.prepare(`
 // monitoring_runs existe recién desde el 23/9/2026, también cuándo se
 // detectó un posteo (visible o ignorado) o se vio un resultado de búsqueda:
 // eso solo pasa en una corrida.
-const listRunTracesForStatsStmt = db.prepare(`
-  SELECT started_at AS t FROM monitoring_runs
-  WHERE finished_at IS NOT NULL AND started_at >= ? AND started_at < ?
-    AND (plataforma = 'todas' OR (',' || plataforma || ',') LIKE ('%,' || ? || ',%'))
+// Desde noviembre 2026 (openspec/changes/ventana-por-fuente) una corrida que
+// no detectó nada en esa red NO es un rastro: no se buscó nada (una fila
+// `plataforma` en monitoring_run_sources) o no respondió ninguna de sus
+// fuentes (ni se levantó después). Antes, un día cuya única corrida tenía
+// todas las búsquedas caídas contaba como "día con corridas" y con cero
+// publicaciones. Una corrida sin filas (anterior a la tabla) cuenta como
+// siempre. La tabla se crea más abajo: por eso el statement se prepara al
+// usarlo (ver listRunTracesForStats).
+const LIST_RUN_TRACES_FOR_STATS_SQL = `
+  SELECT r.started_at AS t FROM monitoring_runs r
+  WHERE r.finished_at IS NOT NULL AND r.started_at >= @desde AND r.started_at < @hasta
+    AND (r.plataforma = 'todas' OR (',' || r.plataforma || ',') LIKE ('%,' || @plataforma || ',%'))
+    AND NOT EXISTS (
+      SELECT 1 FROM monitoring_run_sources s WHERE s.run_id = r.id AND s.plataforma = @plataforma AND s.tipo = 'plataforma'
+    )
+    AND (
+      NOT EXISTS (
+        SELECT 1 FROM monitoring_run_sources s
+        WHERE s.run_id = r.id AND s.plataforma = @plataforma AND s.tipo IN ('busqueda', 'cuenta', 'hashtag', 'keyword')
+      )
+      OR EXISTS (
+        SELECT 1 FROM monitoring_run_sources s
+        WHERE s.run_id = r.id AND s.plataforma = @plataforma AND s.tipo IN ('busqueda', 'cuenta', 'hashtag', 'keyword')
+          AND s.estado IN ('ok', 'parcial', 'recuperada')
+      )
+    )
   UNION
-  SELECT detected_at FROM detected_posts WHERE plataforma = ? AND detected_at >= ? AND detected_at < ?
+  SELECT detected_at FROM detected_posts WHERE plataforma = @plataforma AND detected_at >= @desde AND detected_at < @hasta
   UNION
-  SELECT first_seen_at FROM search_seen WHERE plataforma = ? AND first_seen_at >= ? AND first_seen_at < ?
-`);
+  SELECT first_seen_at FROM search_seen WHERE plataforma = @plataforma AND first_seen_at >= @desde AND first_seen_at < @hasta
+`;
+let listRunTracesForStatsStmt = null;
 // El primer posteo visible de la plataforma: antes de ese día no hay datos,
 // que no es lo mismo que un día sin publicaciones.
 const getFirstPostedAtStmt = db.prepare(
@@ -2721,15 +2744,16 @@ function countDiscardedSearchesForStats({ plataforma, desdeIso, hastaIso }) {
 /**
  * Instantes (ISO) que muestran que hubo una corrida de la plataforma entre
  * desdeIso (incluido) y hastaIso (excluido): el arranque de las corridas
- * terminadas y, para lo anterior a monitoring_runs, las detecciones de
+ * terminadas que detectaron algo o al menos consultaron una fuente que
+ * respondió (una corrida con todas sus fuentes caídas, o que no buscó nada,
+ * no cuenta) y, para lo anterior a monitoring_runs, las detecciones de
  * posteos y de resultados de búsqueda. Sin repetidos.
  * @returns {string[]}
  */
 function listRunTracesForStats({ plataforma, desdeIso, hastaIso }) {
   requirePlataforma(plataforma, 'listRunTracesForStats');
-  return listRunTracesForStatsStmt
-    .all(desdeIso, hastaIso, plataforma, plataforma, desdeIso, hastaIso, plataforma, desdeIso, hastaIso)
-    .map((row) => row.t);
+  if (!listRunTracesForStatsStmt) listRunTracesForStatsStmt = db.prepare(LIST_RUN_TRACES_FOR_STATS_SQL);
+  return listRunTracesForStatsStmt.all({ plataforma, desde: desdeIso, hasta: hastaIso }).map((row) => row.t);
 }
 
 /** @returns {string|null} posted_at (ISO) del primer posteo visible de la plataforma, o null si no hay ninguno. */

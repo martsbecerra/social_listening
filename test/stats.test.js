@@ -645,6 +645,46 @@ describe('stats: la respuesta armada desde la base', { concurrency: false }, () 
     assert.equal(r.anterior.comparable, false); // antes del primer posteo (12/3): no se compara igual
   });
 
+  test('un día cuya única corrida no detectó nada no es un día con corridas: no se buscó nada, o no respondió ninguna búsqueda', () => {
+    const corrida = (dia, hora = 8) => {
+      const id = db.startMonitoringRun({ trigger: 'cron', plataforma: 'instagram', startedAt: enArgentina(dia, hora) });
+      db.finishMonitoringRun(id, { finishedAt: enArgentina(dia, hora, 10) });
+      return id;
+    };
+    const fuente = (runId, estado, extra = {}) => db.startRunSource({ runId, plataforma: 'instagram', tipo: 'busqueda', fuente: 'macri', clave: 'macri', estado, ...extra });
+    const dias = () => {
+      const trazas = db.listRunTracesForStats({ plataforma: 'instagram', desdeIso: enArgentina('2026-01-10', 0), hastaIso: enArgentina('2026-01-20', 0) });
+      return [...new Set(trazas.map((t) => stats.fechaArgentina(Date.parse(t))))].sort();
+    };
+
+    corrida('2026-01-10'); // anterior a la tabla de fuentes (sin filas): cuenta, como siempre
+    const todasCaidas = corrida('2026-01-11');
+    fuente(todasCaidas, 'fallo', { motivo: 'TIMEOUT' });
+    db.startRunSource({ runId: todasCaidas, plataforma: 'instagram', tipo: 'busqueda', fuente: 'gcba', clave: 'gcba', estado: 'esperando' });
+    const unaRespondio = corrida('2026-01-12');
+    fuente(unaRespondio, 'fallo', { motivo: 'TIMEOUT' });
+    db.startRunSource({ runId: unaRespondio, plataforma: 'instagram', tipo: 'busqueda', fuente: 'gcba', clave: 'gcba', estado: 'ok' });
+    const sinBuscar = corrida('2026-01-13');
+    db.startRunSource({ runId: sinBuscar, plataforma: 'instagram', tipo: 'plataforma', estado: 'fallo', motivo: 'NOT_CONFIGURED' });
+    const levantada = corrida('2026-01-14');
+    const filaLevantada = fuente(levantada, 'esperando', { motivo: 'TIMEOUT' });
+    // Las fuentes de otra red no cuentan para esta.
+    const deOtraRed = corrida('2026-01-15');
+    fuente(deOtraRed, 'fallo', { motivo: 'TIMEOUT' });
+    db.startRunSource({ runId: deOtraRed, plataforma: 'x', tipo: 'cuenta', fuente: 'alguien', clave: 'alguien', estado: 'ok' });
+    // Dos corridas el mismo día: alcanza con que una haya detectado.
+    fuente(corrida('2026-01-16', 8), 'fallo', { motivo: 'TIMEOUT' });
+    fuente(corrida('2026-01-16', 12), 'ok');
+
+    assert.deepEqual(dias(), ['2026-01-10', '2026-01-12', '2026-01-16']);
+    // Cuando la búsqueda que había quedado esperando se levanta, ese día pasa a contar.
+    db.updateRunSource(filaLevantada, { estado: 'recuperada' });
+    assert.deepEqual(dias(), ['2026-01-10', '2026-01-12', '2026-01-14', '2026-01-16']);
+    // Apify cortó la corrida pero dejó algo: respondió.
+    db.updateRunSource(filaLevantada, { estado: 'parcial' });
+    assert.ok(dias().includes('2026-01-14'));
+  });
+
   test('un período anterior con datos pero sin posteos da 0, no null (y los porcentajes, null)', () => {
     const r = stats.armarEstadisticas({ plataforma: 'instagram', desde: '2026-03-15', hasta: '2026-03-15', conAlcance: true, ahora: AHORA });
     assert.equal(r.resumen.relevantes, 2);
