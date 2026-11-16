@@ -74,14 +74,15 @@ describe('motivo de un fallo', () => {
 });
 
 describe('lo que falló, en textos', () => {
-  // La corrida #56 del piloto (16/11/2026): seis de ocho.
+  // La forma de la corrida #56 del piloto (16/11/2026): seis de ocho, con los
+  // términos de hoy.
   const corrida56 = [
     fila('blacri', 'ok'),
     fila('gobierno porteño', 'fallo', { motivo: 'HTTP_502' }),
     fila('blackri', 'ok'),
     fila('macri', 'fallo', { motivo: 'HTTP_502' }),
     fila('GCBA', 'fallo', { motivo: 'TIMEOUT' }),
-    fila('PDLC', 'fallo', { motivo: 'TIMEOUT' }),
+    fila('policía de la ciudad', 'fallo', { motivo: 'TIMEOUT' }),
     fila('gobierno de la ciudad', 'fallo', { motivo: 'TIMEOUT' }),
     fila('jorgemacri', 'fallo', { motivo: 'TIMEOUT' }),
   ];
@@ -90,7 +91,7 @@ describe('lo que falló, en textos', () => {
     const r = rs.resumenFallidas(corrida56);
     assert.equal(r.titulo, 'Fallaron 6 de 8 búsquedas');
     assert.equal(r.nota, 'se retoman solas');
-    assert.equal(r.nombres, '«gobierno porteño», «macri», «GCBA», «PDLC» y 2 más');
+    assert.equal(r.nombres, '«gobierno porteño», «macri», «GCBA», «policía de la ciudad» y 2 más');
     assert.equal(r.lineas.length, 6);
     assert.equal(r.lineas[0], '«gobierno porteño» · Apify respondió con un error (502)');
     assert.equal(r.lineas[2], '«GCBA» · no respondió a tiempo (la búsqueda siguió en Apify)');
@@ -126,7 +127,7 @@ describe('lo que falló, en textos', () => {
     assert.equal(r.corto, 'Fallaron 6 de 8 búsquedas');
     assert.equal(r.chip, '6 de 8 búsquedas fallaron');
     assert.equal(r.frase, 'fallaron 6 de 8 búsquedas');
-    assert.equal(r.tooltip, 'Fallaron 6 de 8 búsquedas: «gobierno porteño», «macri», «GCBA», «PDLC» y 2 más.\nCada una retoma desde la última vez que anduvo.');
+    assert.equal(r.tooltip, 'Fallaron 6 de 8 búsquedas: «gobierno porteño», «macri», «GCBA», «policía de la ciudad» y 2 más.\nCada una retoma desde la última vez que anduvo.');
     assert.equal(r.pipeline, 'Fallaron 6 de 8 búsquedas: traídas, nuevas y relevantes son de las 2 que respondieron.');
     assert.equal(r.deLasQueRespondieron, 'de las 2 búsquedas que respondieron');
     assert.equal(r.respondieron, 2);
@@ -232,7 +233,7 @@ describe('lo que falló, en textos', () => {
   test('resumenParaLog: con los códigos, para la línea "[ciclo] fin"', () => {
     assert.equal(
       rs.resumenParaLog(corrida56),
-      'fallaron 6 de 8 búsquedas: «gobierno porteño» HTTP_502, «macri» HTTP_502, «GCBA» TIMEOUT, «PDLC» TIMEOUT, «gobierno de la ciudad» TIMEOUT, «jorgemacri» TIMEOUT'
+      'fallaron 6 de 8 búsquedas: «gobierno porteño» HTTP_502, «macri» HTTP_502, «GCBA» TIMEOUT, «policía de la ciudad» TIMEOUT, «gobierno de la ciudad» TIMEOUT, «jorgemacri» TIMEOUT'
     );
     assert.equal(rs.resumenParaLog([fila('macri', 'ok')]), '');
     assert.equal(rs.resumenParaLog([fila('macri', 'esperando'), fila('gcba', 'ok', { topeLleno: true })]), '1 sigue en Apify: «macri»; tope lleno: «gcba»');

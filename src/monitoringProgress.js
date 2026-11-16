@@ -37,7 +37,8 @@
 // ciclo arma una lista corta, escrita para una persona y no para el log:
 //   - una línea por fuente de la detección (startItem / finishItem): en
 //     curso mientras se consulta ("«macri» · buscando…") y, al terminar,
-//     cómo salió ("«macri» · 50 encontrados, 6 nuevos" o "«PDLC» · falló");
+//     cómo salió ("«macri» · 50 encontrados, 6 nuevos" o "«policía de la
+//     ciudad» · falló");
 //   - una línea de resumen por cada fase que termina ("Relevancia · 4
 //     relevantes, 7 descartados"): la deja quien corre la fase con
 //     setPhaseSummary; si no, sale una genérica con el contador.

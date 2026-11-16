@@ -126,7 +126,7 @@ describe('monitoringProgress', () => {
 // Lo que dibuja la pantalla de "Actualizar ahora" (getView): la fase con su
 // contador y las últimas líneas, ya escritas para una persona.
 describe('monitoringProgress: líneas para la pantalla', () => {
-  const TERMS = ['macri', 'blackri', 'blacri', 'GCBA', 'PDLC', 'gobierno de la ciudad', 'gobierno porteño', 'jorgemacri'];
+  const TERMS = ['macri', 'blackri', 'blacri', 'GCBA', 'policía de la ciudad', 'gobierno de la ciudad', 'gobierno porteño', 'jorgemacri'];
   const run = (label, detail = 'buscando…') => ({ state: 'run', label, detail });
   const ok = (label, detail) => ({ state: 'ok', label, detail });
   const err = (label, detail) => ({ state: 'err', label, detail });
@@ -167,7 +167,7 @@ describe('monitoringProgress: líneas para la pantalla', () => {
 
     // Con 3 en curso o menos, se nombran todas.
     for (const term of ['blackri', 'blacri', 'macri', 'jorgemacri', 'GCBA']) finish(term, '3 encontrados, ninguno nuevo');
-    assert.deepEqual(lines().filter((l) => l.state === 'run'), [run('«PDLC»'), run('«gobierno de la ciudad»'), run('«gobierno porteño»')]);
+    assert.deepEqual(lines().filter((l) => l.state === 'run'), [run('«policía de la ciudad»'), run('«gobierno de la ciudad»'), run('«gobierno porteño»')]);
   });
 
   test('lo terminado va arriba, en el orden en que terminó, con su resultado; una búsqueda que falla sale con ✕', () => {
@@ -180,18 +180,18 @@ describe('monitoringProgress: líneas para la pantalla', () => {
       ok('«blackri»', '3 encontrados, ninguno nuevo'),
       ok('«macri»', '50 encontrados, 6 nuevos'),
       run('«GCBA»'),
-      run('«PDLC»'),
+      run('«policía de la ciudad»'),
       run('y 3 más'),
     ]);
 
-    finish('PDLC', 'falló', false);
+    finish('policía de la ciudad', 'falló', false);
     finish('GCBA', '50 encontrados, 2 nuevos');
     // Seis líneas como mucho: tres en curso dejan lugar para las tres
     // últimas que terminaron (las más viejas salen de la vista).
     assert.equal(progress.VIEW_MAX_LINES, 6);
     assert.deepEqual(lines(), [
       ok('«macri»', '50 encontrados, 6 nuevos'),
-      err('«PDLC»', 'falló'),
+      err('«policía de la ciudad»', 'falló'),
       ok('«GCBA»', '50 encontrados, 2 nuevos'),
       run('«gobierno de la ciudad»'),
       run('«gobierno porteño»'),
@@ -203,7 +203,7 @@ describe('monitoringProgress: líneas para la pantalla', () => {
     finish('gobierno porteño', '41 encontrados, 1 nuevo');
     assert.deepEqual(lines(), [
       ok('«macri»', '50 encontrados, 6 nuevos'),
-      err('«PDLC»', 'falló'),
+      err('«policía de la ciudad»', 'falló'),
       ok('«GCBA»', '50 encontrados, 2 nuevos'),
       ok('«jorgemacri»', '28 encontrados, ninguno nuevo'),
       ok('«gobierno de la ciudad»', '37 encontrados, 2 nuevos'),

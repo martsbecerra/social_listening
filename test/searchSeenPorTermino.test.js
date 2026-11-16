@@ -190,9 +190,9 @@ describe('db: términos de un resultado anotado', { concurrency: false }, () => 
   });
 
   test('addSearchSeenTerms: suma a una fila que existe, no crea una, y exige plataforma', () => {
-    assert.equal(db.addSearchSeenTerms('t1', 'instagram', ['jorgemacri', 'PDLC']), true);
-    assert.deepEqual(db.getSearchSeen('t1', 'instagram').terminos, ['macri', 'GCBA', 'jorgemacri', 'PDLC']);
-    assert.equal(db.addSearchSeenTerms('t1', 'instagram', ['pdlc']), false, 'nada nuevo');
+    assert.equal(db.addSearchSeenTerms('t1', 'instagram', ['jorgemacri', 'policía de la ciudad']), true);
+    assert.deepEqual(db.getSearchSeen('t1', 'instagram').terminos, ['macri', 'GCBA', 'jorgemacri', 'policía de la ciudad']);
+    assert.equal(db.addSearchSeenTerms('t1', 'instagram', ['Policía de la Ciudad']), false, 'nada nuevo');
     assert.equal(db.addSearchSeenTerms('no-existe', 'instagram', ['macri']), false);
     assert.equal(db.getSearchSeen('no-existe', 'instagram'), null);
     assert.equal(db.addSearchSeenTerms('t1', 'x', ['macri']), false, 'por plataforma');

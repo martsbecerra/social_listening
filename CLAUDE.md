@@ -66,6 +66,25 @@ saber antes de tocar algo.
   los comentarios del análisis, `ANALISIS_COMMENTS_TIMEOUT_MS`, 30 min) va
   SIEMPRE por el asincrónico, también con `APIFY_REAL_COST=0`: el
   sincrónico de Apify corta a los 300 s.
+- **El id del run no se pierde** (noviembre 2026, `ventana-por-fuente`). En
+  el asincrónico el `POST` que arranca el run va sin espera; apenas vuelve,
+  la fila de `apify_calls` se abre con el id (`estado` `en_curso`,
+  `apifyCost.openApifyCall`) y se avisa a quien llamó (`onRunStarted`): si
+  el proceso muere ahí, el gasto ya quedó anotado. El seguimiento (`GET
+  /actor-runs/{id}`) tiene plazo propio (`deadlineAt` o `timeoutMs`), y un
+  5xx, 408, 429, corte de red o tiempo agotado de ESA lectura se reintenta a
+  los 5, 10, 20 y 30 s (`APIFY_POLL_RETRY_MS` solo para tests); un 401, 403
+  o 404, no. Al vencer el plazo tira `TIMEOUT` con `apifyRunId` y
+  `runPending`, y NO aborta el run. Un run que Apify termina `FAILED`,
+  `ABORTED` o `TIMED-OUT` entrega lo que dejó (`err.partialItems`). El
+  `POST` nunca se reintenta (crearía otro run pago), salvo el 402 por runs
+  simultáneos, que no creó nada. `apify_calls.estado`: `en_curso` | `ok` |
+  `error` | `esperando` | `parcial` | `recuperada` | `perdida` (NULL en las
+  filas anteriores, que se leen por `ok`; una recuperada queda con `ok = 1`
+  y sus resultados, así las sumas de siempre no cambian); `max_items` y
+  `until`, lo que se pidió. Las búsquedas del monitoreo van SIEMPRE por acá
+  (`asincronico`, `recuperable`), también con `APIFY_REAL_COST=0`. Lecturas
+  sin cola ni fila: `fetchRun`, `fetchDatasetItems`, `listActorRuns`.
 
 ## Fuentes de detección de Instagram (`config/monitoring.json`, sección `instagram`)
 
@@ -73,15 +92,11 @@ Desde septiembre 2026 **lo único que busca publicaciones nuevas en Instagram
 es `searches`** (la lupita: búsqueda por palabra clave nativa, solo con
 apidojo, `scrapeSearch`; una consulta cobrada por término y por ciclo;
 `sourceType 'search'`, motivo `Búsqueda: <término>`; con `IG_ACTOR=apify` se
-ignoran con aviso y no se detecta nada). Ventana DINÁMICA
-(`monitor.detectionWindowFor`): sin corrida previa, `MONITOR_LOOKBACK` (1
-día); con corrida previa, desde el fin de la última detección exitosa de esa
-plataforma (`detection_last_success:<id>` en `refresh_state`), techo
-`MONITOR_LOOKBACK_MAX` (30 días). Si la ventana supera 1 día,
-`SEARCH_RESULTS_LIMIT` (y en X los topes de cuentas/hashtags) sube
-proporcionalmente (tope 10x): el excedente sobre los 20 incluidos se paga
-(0,0005 c/u), no se corta; si una búsqueda igual llena su `maxItems`, el
-adapter apidojo lo avisa por log. `accounts` (cuentas trackeadas) y
+ignoran con aviso y no se detecta nada). La ventana, la espera, el tope y
+la marca de cada búsqueda son POR FUENTE desde noviembre 2026 (ver
+"Detección por fuente"): cada búsqueda retoma desde SU última detección
+exitosa, con techo `MONITOR_LOOKBACK_MAX` (30 días), y sin detección previa
+mira `MONITOR_LOOKBACK` (1 día). `accounts` (cuentas trackeadas) y
 `keywords` (con o sin `#`) NO se consultan en la detección: son guía para el
 clasificador (pista de cuenta trackeada / coincidencia literal, ver
 "Clasificación con contexto"). Lo declara el adapter en
@@ -118,8 +133,146 @@ si la búsqueda lo vuelve a traer: por eso es holgado).
 `search_seen` anota lo ya pagado (`guardado` | `descartado` | `sin_caption`
 | `sin_detalle`): un descartado no se vuelve a consultar ni a evaluar; se
 purga a los 100 días (`SEARCH_SEEN_TTL_DAYS`; era 30: Estadísticas cuenta
-los descartados por término en períodos de hasta 90 días). Si el run falla
-entero no se anota nada.
+los descartados por término en períodos de hasta 90 días). Si el run del
+detalle falla entero no se anota nada. Desde noviembre 2026 anota además lo
+que decidió el modelo: `posted_at`, `motivo`, `llm_usd`, `run_id` y
+`terminos` (JSON: todos los términos que lo trajeron; el primero es `term`,
+el del motivo). `monitor.guardarEvaluado` es el final de la tubería: guarda
+y marca `guardado`, o marca `descartado` si había texto y el modelo dijo que
+no (solo `sourceType 'search'`: X no escribe en la tabla; sin texto no hubo
+decisión y no se anota). Un posteo que ya estaba en `search_seen` al empezar
+el ciclo no se vuelve a evaluar: solo se le suman los términos que lo
+trajeron esta vez (`db.addSearchSeenTerms`). Por eso una búsqueda puede
+pedir una ventana que se pisa con la anterior sin volver a pagar
+clasificaciones (antes, las búsquedas que ya traían el texto no anotaban
+nada y cada corrida volvía a clasificar los mismos descartados).
+
+## Detección por fuente (noviembre 2026)
+
+Rama `ventana-por-fuente`, SDD en `openspec/changes/ventana-por-fuente/`
+(con la evidencia: las corridas #55 y #56 del piloto, con búsquedas cortadas
+a los 300 s que en Apify terminaron bien y se cobraron, y la sonda del
+16/11/2026). Cada consulta de detección (una búsqueda de Instagram; en X,
+cada cuenta, hashtag y keyword) es una "fuente", con su fila, su ventana y
+su marca.
+
+- **Registro** (`monitoring_run_sources`, una fila por consulta): `run_id`,
+  `plataforma`, `tipo` (busqueda | cuenta | hashtag | keyword | detalle |
+  plataforma), `fuente`, `clave`, `intento` (2 = la segunda consulta por
+  tope lleno), `estado` (en curso | ok | esperando | parcial | fallo |
+  recuperada | perdida | sin_fuente), `motivo` (código corto: TIMEOUT,
+  HTTP_502, RED, AUTH_INVALID, QUOTA_EXCEEDED, RATE_LIMITED, RUN_FAILED,
+  NO_LANZADA, SIGUE_EN_APIFY…), `detalle` (hasta 200 caracteres, para el log
+  y los scripts: NUNCA sale por la API), `actor`, `apify_run_id`,
+  `desde_iso`, `until`, `tope`, `items`, `nuevos`, `tope_lleno`,
+  `hueco_desde`, `recuperada_en`, `recuperada_at` y los tiempos. Una fila
+  `plataforma` dice que esa red no buscó nada (NOT_CONFIGURED, SIN_BUSQUEDA,
+  SIN_FUENTES); una `detalle`, que falló el pedido del texto. Las corridas
+  anteriores se completaron UNA vez desde `apify_calls` (marca
+  `fuentes_por_corrida_backfill`). `monitoring_runs.error_code`: el código
+  si el ciclo entero tiró.
+- **Estado de la corrida** (`src/runStatus.js`, puro como `reachRule.js`):
+  `estadoCorrida(run, fuentes, { runIdEnCurso })` por red: `en curso` o
+  `interrumpida` > `cortada` (cuota) > `incompleta` > `ok`. Incompleta:
+  alguna fuente en fallo, esperando, parcial, recuperada o perdida; una fila
+  `plataforma`; un tope lleno sin cubrir; un hueco por el techo de la
+  ventana; o `error_code`. Una corrida sin filas da `ok`. Las fallas del
+  benchmark, el refresco o las fotos NO la marcan. `resumenFallidas` arma
+  los textos para una persona (`titulo`, `chip`, `frase`, `nota`, `tooltip`,
+  `pipeline`, `lineas`…) y `resumenParaLog`, la cola de `[ciclo] fin`. Una
+  búsqueda que Apify cortó es "Apify cortó N", no "falló". El frontend no
+  calcula el estado: lo recibe (`lastRunEstado` y `lastRunFallidas` en
+  `/api/monitoring/status`; `estado`, `fallidas` y `recuperadas` en
+  `lastRun`; `estado` y `fallidas` por corrida en `/api/inicio`), siempre
+  con el motivo en texto para una persona, nunca el error crudo.
+- **Ventana y marca por fuente** (`monitor.detectionWindowFor(red, { tipo,
+  fuente, now, cubiertoHasta })`): la marca es
+  `detection_last_success:<red>:<tipo>:<clave>` en `refresh_state`
+  (`monitor.sourceMarkKey`; la clave, normalizada como la config: trim,
+  minúsculas, sin `@` ni `#`). Desde = max(ahora − `MONITOR_LOOKBACK_MAX`,
+  min(base, ahora − `MONITOR_MIN_WINDOW`)), con base = max(marca,
+  `cubiertoHasta`) o, sin marca, ahora − `MONITOR_LOOKBACK`. Devuelve
+  también `origen` (primera | marca | minimo | techo) y `huecoDesde` si el
+  techo recortó. `MONITOR_MIN_WINDOW` (default 1 día: lo de siempre) es lo
+  mínimo que mira hacia atrás cada consulta. La marca avanza al final de la
+  detección de la red: ok → inicio del ciclo; fallo, esperando o salteada →
+  no avanza (una fuente sin marca que falla queda con la marca en el inicio
+  de su ventana); recuperada → max(marca, lanzamiento de esa corrida);
+  parcial → no avanza la primera vez y sí la segunda seguida; tope lleno sin
+  cubrir → avanza y queda registrado. La marca de la red
+  (`detection_last_success:<red>`) se sigue escribiendo, solo cuando TODAS
+  las fuentes avanzaron: es la que usa el código anterior si se vuelve
+  atrás. Migración (`migrateDetectionMarks`, marca
+  `detection_por_fuente:<red>`): la primera vez, cada fuente configurada
+  arranca en la marca de la red, así la primera corrida después del deploy
+  no pide más atrás que la que habría corrido sin el cambio (decisión del
+  dueño: el hueco del 5 al 15/11/2026 queda sin cubrir); si el valor
+  guardado no coincide con la marca de la red, corrió código anterior en el
+  medio y cada fuente pasa a max(su marca, la de la red). Sacar una fuente,
+  o darla de alta de nuevo, borra su marca (`forgetSourceMark`); las de
+  fuentes que ya no están se limpian al empezar el ciclo.
+- **`until` y `applyWindow`** (`instagramApidojo.js`): `until` es el día UTC
+  en que arranca la ventana (`untilDateFor`, desde el `sinceIso`), calculado
+  una vez por consulta; `applyWindow(posts, until)` se queda con todo lo
+  publicado desde las 00:00 UTC de ese día, que es lo que se pagó (antes
+  recortaba en "ahora menos N días" y tiraba lo ya cobrado). La respuesta de
+  `scrapeSearch` lleva una meta no enumerable `{ rawItems, maxItems, until,
+  apifyRunId }`.
+- **Espera y recuperación** (`src/searchWait.js`): `SEARCH_WAIT_MS` (15 min,
+  piso 1 s) es UNA espera para toda la detección de la red (`deadlineAt`
+  compartido, también con las segundas consultas): una búsqueda que no
+  consiguió cupo al vencer no se lanza (`NO_LANZADA`).
+  `SEARCH_RUN_TIMEOUT_SECS` (3600) viaja en el `POST`: Apify corta el run
+  ahí. Lo que no terminó queda `esperando` con su run. Al empezar la
+  detección, `monitor.recoverPendingSearchRuns` relee cada fila `esperando`
+  (y las `en curso` de ciclos anteriores) con `adapter.recoverSearchRun`,
+  que elige el proveedor por el `actor` de la fila, no por `IG_ACTOR`:
+  `SUCCEEDED` → sus posteos entran como candidatos a la tubería del ciclo
+  (dedupe → detalle → clasificación → `guardarEvaluado`), la fila pasa a
+  `recuperada` y la búsqueda de este ciclo arranca desde que esa corrida se
+  lanzó (`cubiertoHasta`); sigue corriendo → ese término se saltea (fila
+  `fallo` con motivo `SIGUE_EN_APIFY`: no se paga dos veces); cortada por
+  Apify → entra lo que dejó, `parcial`; 404 → `perdida`; no se pudo leer →
+  se reintenta en el ciclo siguiente y, a los 7 días, `perdida`; el término
+  ya no está configurado → `sin_fuente`. La fila se cierra DESPUÉS de
+  procesar sus posteos (`cerrarRecuperadas`): si el ciclo se corta en el
+  medio, el siguiente la vuelve a levantar. No hay limitador propio para las
+  búsquedas (no anidan llamadas); la recuperación son lecturas, sin cola.
+- **Tope por término** (`src/busquedaTope.js`, puro): tope =
+  min(`SEARCH_RESULTS_MAX` (2000), max(`raiseLimitForWindow(base, días)`, 2
+  × tasa × horas pedidas)), con la tasa = el máximo de resultados por hora
+  de las últimas 6 consultas buenas de ese término
+  (`db.lastSearchCallsForTerm`; el doble si esa consulta llenó su tope).
+  Nunca menor que el de antes. Con el tope lleno, UNA segunda consulta de la
+  misma ventana con 4 × el tope (`intento` 2), si su costo máximo
+  (`apifyCost.maxUsdForSearch`) entra en `SEARCH_EXTRA_MAX_USD_PER_CYCLE`
+  (2,00; 0 las apaga), que cubre solo esas segundas consultas; si no entra,
+  `tope_lleno`, la marca avanza y la corrida queda incompleta. El actor no
+  devuelve los resultados por fecha: un tope lleno deja afuera una parte de
+  cada día, no "lo más viejo".
+- **Cuánto dura un ciclo**: con `APIFY_MAX_CONCURRENT` 10 las ocho búsquedas
+  corren a la vez; la detección dura como mucho `SEARCH_WAIT_MS`. Después,
+  el detalle (hasta 5 min), la clasificación (unos 2 s por posteo nuevo, sin
+  techo) y benchmark y refresco como siempre. Si un ciclo sigue corriendo a
+  la hora del siguiente, el cron lo saltea.
+- **Lo medido** (sonda autorizada del 16/11/2026, US$ 0,43): con `until` de
+  1 día el actor devolvió el 4 % (macri) y el 19 % (GCBA) de lo publicado en
+  esas 24 h; con 7 días, el 70 % y el 74 %, en 7 a 11 minutos. Ninguna
+  ventana trae todo en una pasada. `MONITOR_MIN_WINDOW` quedó en 1 día: la
+  ventana mínima y una corrida honda por día se deciden aparte.
+- `server.js` valida al arrancar `SEARCH_WAIT_MS`, `SEARCH_RUN_TIMEOUT_SECS`,
+  `SEARCH_RESULTS_MAX` y `SEARCH_EXTRA_MAX_USD_PER_CYCLE` (como `IG_ACTOR`) y
+  muestra una línea con cada grupo y con las tarifas de apidojo en uso.
+- Si se vuelve al código anterior: la tabla y las columnas nuevas no le
+  molestan y la marca de la red sigue al día; una búsqueda que haya quedado
+  `esperando` no la levanta nadie.
+- Lo recuperado a mano de las corridas #55 y #56 NO se importó (decisión del
+  dueño); su costo se asienta con `scripts/costo-apify.js --asentar` (ver
+  "Modelo de costo").
+- Tests: `searchSeenPorTermino`, `searchSeenMigracion`, `apifyCallEstado`,
+  `apifyCorridaCortada`, `estadoCorrida`, `fuentesPorCorrida`,
+  `fuentesPorCorridaMigracion`, `busquedasPendientes`, `ventanaPorFuente`,
+  `topeBusqueda` y `costoApifyAsentar` (todos `test/<nombre>.test.js`).
 
 ## Modelo de costo (`src/apifyCost.js`)
 
@@ -130,8 +283,13 @@ entero no se anota nada.
   con `query_type` `post`, fase `refresco`.
 - `apidojo/instagram-scraper-api` cobra **por consulta** con posteos
   incluidos, más `APIDOJO_RATE_ITEM` (0,0005) por posteo de más: perfil
-  0,005 (10 incl.), hashtag 0,015 (30), búsqueda 0,015 (20), posteo suelto
-  0,005 (`APIDOJO_RATE_*`, `APIDOJO_INCLUDED_*`). Uso de plataforma incluido.
+  0,005 (10 incl.), hashtag 0,015 (30), posteo suelto 0,005
+  (`APIDOJO_RATE_*`, `APIDOJO_INCLUDED_*`). La búsqueda, 0,015 más 0,0005
+  por posteo DESDE EL PRIMERO (`APIDOJO_INCLUDED_SEARCH` 0 desde noviembre
+  2026: con los 20 "incluidos" de la pestaña de precios, el estimado de 388
+  búsquedas conciliadas daba 6 % menos que lo cobrado).
+  `maxUsdForSearch(maxItems)` es el techo de lo que puede costar una
+  búsqueda. Uso de plataforma incluido.
 - `apify/instagram-comment-scraper` (los comentarios del análisis, fase G)
   cobra **por resultado**, con las mismas tarifas que el oficial: cada
   respuesta es un resultado (la sonda del 25/10/2026: 16 por 0,0368).
@@ -141,17 +299,35 @@ entero no se anota nada.
 - `apify_calls` guarda por llamada: fase, ciclo, `actor`, `query_type`
   (user | hashtag | search | post | details), items, `usd` estimado,
   `usd_real`, `apify_run_id` y, en un análisis de publicación,
-  `analisis_id` (del contexto de `usageContext`). `monitoring_runs`, una fila por ciclo. Fases:
+  `analisis_id` (del contexto de `usageContext`); desde noviembre 2026,
+  `estado`, `max_items` y `until`. `monitoring_runs`, una fila por ciclo
+  (y `monitoring_run_sources`, una por consulta de detección). Fases:
   `monitoreo`, `busqueda`, `benchmark`, `refresco` (las marcan
   `src/scheduler.js` y `src/monitor.js` con `src/usageContext.js`),
   `validacion`, `recalc-script`, `analisis`, `fotos` (la carga única de
   `scripts/cargar-fotos.js`).
 - Salidas: la línea `[costo] ciclo #N: X llamadas, Y resultados ≈ US$ Z
-  (monitoreo · busqueda · benchmark · refresco)`, `npm run costo`,
-  `npm run gastos` (`scripts/gastos.js`: por corrida, por corrida y fase,
-  por término de búsqueda y total; `--desde "AAAA-MM-DD HH:MM"` en hora de
-  Argentina, default últimas 24 h; abre la base en solo lectura) y
-  `GET /api/monitoring/costs`.
+  (monitoreo · busqueda · benchmark · refresco)`, que suma "· N búsquedas
+  esperando en Apify" y "· N clasificaciones ≈ US$ Z (estimado, modelo)"
+  cuando hay; `npm run costo`; `npm run gastos` (`scripts/gastos.js`: por
+  corrida —una incompleta lleva "~"—, por corrida y fase, por término de
+  búsqueda y total; `--desde "AAAA-MM-DD HH:MM"` en hora de Argentina,
+  default últimas 24 h; abre la base en solo lectura) y
+  `GET /api/monitoring/costs`. La tabla por término es su rendimiento:
+  consultas, resultados, nuevos, únicos (los que trajo solo ese término),
+  guardados, descartados, sin evaluar, US$ de Apify y US$ del modelo (de
+  `search_seen`; el de un posteo que trajeron varios términos se reparte);
+  con una base anterior a noviembre 2026 avisa y no tira.
+- `node scripts/costo-apify.js --conciliar` lista además las búsquedas que
+  siguen esperando en Apify y las corridas del actor que están en Apify y la
+  app no registró (`apifyCost.listOrphanRuns`; son lecturas).
+  `--asentar <archivo.json> [--si]` (`apifyCost.settleCutRuns`) anota el run
+  y el costo real de corridas que la app cortó sin registrar: el archivo es
+  una lista de `{ ciclo, objetivo, apifyRunId, usd }`, y por cada entrada
+  busca en ese ciclo la llamada fallida y sin run de ese objetivo. No crea
+  filas ni importa publicaciones; sin `--si` solo informa; pasarla dos veces
+  no cambia nada. Así se asientan las once de las corridas #55 y #56 del
+  piloto (US$ 1,5775), cuando el dueño lo decida.
 
 ## Ciclo de monitoreo: progreso real
 
@@ -194,6 +370,24 @@ Las fases de fotos son la excepción al porcentaje: se anuncian con su
 contador pero `startPhase(..., { countsInPercent: false })` las deja fuera
 del total global (si no, la barra volvía de 100 % a la mitad al final del
 ciclo); `tick(n, { ok: null })` avanza sin contar como bien ni como error.
+
+Desde noviembre 2026 (`ventana-por-fuente`) una línea tiene un estado más,
+`wait` (ámbar: quedó pendiente, no es un error), además de `run`, `ok` y
+`err`: "«macri» · sigue en Apify" (no terminó dentro de la espera y se
+levanta en la corrida siguiente), "«macri» · tope lleno: puede faltar algo"
+y "«macri» · Apify la cortó", las dos últimas con lo que trajeron. Una
+fuente que se pone al día dice desde cuándo retoma ("«macri» · desde 04/11
+16:00", con ", el máximo" si recortó el techo); una línea en curso dice
+cuánto lleva pasados unos minutos ("buscando… · 6 min") y, con el tope
+lleno, "tope lleno · se pide más…" (`updateItem`). Si había búsquedas
+esperando, la corrida empieza con la fase "Recuperando búsquedas
+pendientes" (contador "N de M corridas"). `finishItem(key, { ok, state,
+detail, label })`; `addCycleNote` deja la línea de qué pasó;
+`endCycle({ estado })`, y la vista terminada lleva `estado`: con
+`incompleta` o `cortada` el recuadro cierra en ámbar, "! Corrida incompleta
+· HH:MM · duración" (o "Corrida cortada"), y NO se va solo. Los textos de
+qué falló salen de `runStatus.resumenFallidas`, los mismos en el recuadro,
+la barra superior, el Pipeline y el inicio.
 
 `refreshStaleAccountStats` y `refreshPostMetrics` también lanzan sus
 cuentas (el refresco por URL, sus lotes de URLs) con `Promise.allSettled`,
@@ -326,10 +520,16 @@ ok/N error (monitoringProgress.js), `[apify] →`/`←` por llamada real y
 quedan siempre en consola. Si pasan 15s sin que termine ninguna llamada
 mientras un ciclo está en curso, `[heartbeat]` (scheduler.js) loguea la
 fase actual y qué target tiene cada tarea activa en `apifyLimiter`,
-`benchmarkLimiter` y `refreshLimiter`. `APIFY_CALL_TIMEOUT_MS` (default
-300000, piso 1000; una llamada cortada se cobra igual y pierde sus
-resultados, por eso es holgado) corta cada llamada a Apify que no respondió
-a tiempo, libera su cupo y la deja en `apify_calls` con `error='TIMEOUT'`.
+`benchmarkLimiter` y `refreshLimiter`: cada 15 s durante el primer minuto
+sin actividad y después una vez por minuto (`heartbeatDue`: una búsqueda
+larga no llena el log). `APIFY_CALL_TIMEOUT_MS` (default 300000, piso 1000)
+corta cada llamada a Apify que no respondió a tiempo, libera su cupo y la
+deja en `apify_calls` con `error='TIMEOUT'`; en el flujo asincrónico la fila
+conserva el `apify_run_id` (el run sigue en Apify y su costo se concilia).
+Las búsquedas del monitoreo no usan ese tope sino `SEARCH_WAIT_MS` (ver
+"Detección por fuente"). `[ciclo] fin` dice cómo salió: `resultado=ok` o
+`resultado=incompleta — instagram: fallaron 6 de 8 búsquedas: «macri»
+HTTP_502, …` (`scheduler.resumenDelCiclo`, `runStatus.resumenParaLog`).
 
 ## Máquina despierta (Windows)
 
@@ -346,7 +546,9 @@ log en `logs/`, QuickEdit apagado).
 ## Clasificación con contexto (LLM del monitoreo)
 
 `src/classifier.js` tiene UNA función, `clasificarPosteo(caption, {
-platformLabel, pista })`: una llamada con schema
+platformLabel, pista, onUsage })` (`onUsage` avisa lo que costó la llamada,
+también si falló: el monitoreo lo anota en `search_seen.llm_usd`; el
+resultado no cambia de forma): una llamada con schema
 (`llm.requestStructuredAnalysis`, `maxTokens` 300, `timeoutMs` 60000) que
 devuelve `relevant`, `title`, `sentiment`, `tema` y `motivo`, con el modelo
 de análisis. En `openrouterProvider.js` toda request lleva timeout (default
@@ -437,8 +639,10 @@ días (si no, 400 con `userMessage`). Con la base real tarda unos 50 ms con
   cuántos de sus días hubo corridas (`db.listRunTracesForStats`: corridas
   terminadas de la plataforma y, como `monitoring_runs` existe desde el
   23/9/2026, también días en que se detectó un posteo o se vio un resultado
-  de búsqueda). Con menos de la mitad, la pantalla avisa "Período anterior
-  con pocas corridas" sin dejar de comparar.
+  de búsqueda; desde noviembre 2026 no cuenta una corrida en la que no
+  respondió ninguna fuente, ni una que no buscó nada: fila `plataforma` de
+  `monitoring_run_sources`). Con menos de la mitad, la pantalla avisa
+  "Período anterior con pocas corridas" sin dejar de comparar.
 - Cuentan los posteos visibles (`ignored = 0`) por `posted_at`.
   Sentimiento null = neutral; tema null = "Coyuntura / Otros"
   (`CATEGORIA_FALLBACK`).
@@ -467,8 +671,9 @@ días (si no, 400 con `userMessage`). Con la base real tarda unos 50 ms con
 - **`menciones`**: una fila por término de búsqueda con algo en el período
   (el de "Búsqueda: <término>" del motivo, leído como `postReasonParts`).
   `detectadas` suma también los ignorados y los descartados por el
-  clasificador (`search_seen`, por `first_seen_at`: no guarda
-  `posted_at`); `relevantes`, lo guardado y visible; `positivas`, de esas.
+  clasificador (`search_seen`, por `posted_at`; las filas anteriores a
+  noviembre 2026 no lo guardan y van por `first_seen_at`); `relevantes`, lo
+  guardado y visible; `positivas`, de esas.
   Lo que no llegó por una búsqueda (cuentas y hashtags, antes de septiembre
   de 2026) no entra. El share of voice de la pantalla sale de acá.
 - **`temas`**: por tramo, con `anterior` (null si el período anterior no
@@ -749,7 +954,10 @@ La D va sin SDD (decisión del dueño). De la E, en
   08:03"; ninguna: "todavía no corrió"; sin respuesta, "—" (nunca una hora
   inventada). Hora de Argentina por `Intl`. Se pide cada 5 min y con
   `{ run: 'end' }` de `notifyMonitoringViews`; el color se recalcula cada
-  minuto.
+  minuto. Si esa corrida no salió del todo bien (`lastRunEstado`
+  `incompleta` | `cortada`, de `src/runStatus.js`), punto ámbar quieto
+  (`.warn`) y "incompleta · 16:02" o "cortada · 16:02", con lo que falló
+  (`lastRunFallidas`) en el tooltip y en el `aria-label`.
 - **Tooltip** (`public/js/tip.js`): cualquier elemento con `data-tip` (y
   `data-tip-title`) lo muestra al pasar el mouse o al enfocarlo; "\n" corta
   renglones. Todo por `textContent`, nunca HTML.
@@ -809,7 +1017,12 @@ La D va sin SDD (decisión del dueño). De la E, en
     `monitoring_runs.new_candidates`, `saved` = `new_posts`, `highlighted` =
     guardados en la ventana de la corrida con `top.level === 'alto'`, `usd`;
     null sin corridas) y `model` (`getAnalysisModel`). La columna es
-    anulable: las corridas anteriores muestran "—".
+    anulable: las corridas anteriores muestran "—". Desde noviembre 2026
+    `lastRun` trae también `estado`, `fallidas` y `recuperadas`, y
+    `fetched` cuenta lo levantado de búsquedas que habían quedado en Apify:
+    con una corrida incompleta o cortada el hint lo dice y debajo de las
+    etapas va `#pipeWarn` (qué falló, una línea por fuente, y "traídas,
+    nuevas y relevantes son de las N que respondieron").
   - **Flujo en vivo** (`public/js/monitoringFlow.js`, prefijo `flow`): las
     publicaciones del período por `detected_at`, tantas como entran (la
     tarjeta `.flowcard` tiene el alto de la fila y su contenido es una capa
@@ -1046,7 +1259,9 @@ La D va sin SDD (decisión del dueño). De la E, en
     los números de Estadísticas, sin clasificar = neutral), `lastRunAt`,
     `lastRun` (`buildLastRun`, el del Pipeline) y `corridasHoy`
     (`db.listRunsBetween`: las de hoy de esa red o de "todas", con su
-    estado `ok` | `cortada` (cuota) | `en curso` | `interrumpida`). Una
+    estado `ok` | `incompleta` (alguna búsqueda falló, quedó en Apify o
+    llenó su tope: `runStatus.estadoCorrida`, con sus `fallidas`) |
+    `cortada` (cuota) | `en curso` | `interrumpida`). Una
     fila sin `finished_at` está "en curso" solo si es la del ciclo que corre
     AHORA (`scheduler.getCurrentRunId`, que `server.js` pasa como
     `runIdEnCurso`); si no, quedó sin cerrar porque el proceso se cayó en el
@@ -1073,7 +1288,8 @@ La D va sin SDD (decisión del dueño). De la E, en
     hora, se vuelve a pedir a los 20 s. La línea de 24 h pone las horas de
     `runHours` con el estado real de su corrida (una corrida es la de su
     hora si arrancó en esa media hora; la del cron primero): terminada con
-    "N nuevas", cortada (sin la tilde de terminada), en curso,
+    "N nuevas", incompleta (`.part`, en ámbar, con lo que falló en el
+    tooltip), cortada (sin la tilde de terminada), en curso,
     interrumpida (`.stop`, "se cayó" debajo del punto), "siguiente" o,
     pasado un cuarto de hora sin corrida, "no corrió". Los rótulos no se
     enciman: con menos de 60 px entre dos horas (celular, dos columnas)
@@ -1957,4 +2173,6 @@ plataforma: parámetro obligatorio, sin default.
   `trigger: 'cron'` `runMonitoringCycle` nunca tira un error de plataforma
   aunque la lista tenga una sola (lo anota en `porPlataforma`). "Actualizar
   ahora" en la solapa X sigue corriendo X (`trigger` manual). No borrar el
-  código de X.
+  código de X. Desde noviembre 2026 sus cuentas, hashtags y keywords usan
+  la ventana y la marca por fuente (ver "Detección por fuente"); no esperan
+  ni se levantan después: eso es solo de las búsquedas de apidojo.

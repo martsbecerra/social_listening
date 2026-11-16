@@ -85,6 +85,6 @@ recuperado de las corridas cortadas) quedó afuera por decisión del dueño.
 
 ## Phase 13: documentación
 
-- [ ] 13.1 `.env.example`
-- [ ] 13.2 `CLAUDE.md`, `README.md`
-- [ ] 13.3 Suite verde con `IG_ACTOR=apidojo` y `IG_ACTOR=apify`
+- [x] 13.1 `.env.example`
+- [x] 13.2 `CLAUDE.md`, `README.md`
+- [x] 13.3 Suite verde con `IG_ACTOR=apidojo` y `IG_ACTOR=apify`

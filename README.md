@@ -102,6 +102,9 @@ social_listening_app/
 │   ├── notify.js             # Orquesta las notificaciones (email + WhatsApp a futuro).
 │   ├── scheduler.js          # Agenda el monitoreo (node-cron; default 8, 12, 16 y 20 h).
 │   ├── lastRun.js            # Resumen de la última corrida (traídas, nuevas, guardadas, destacadas, costo) para el Pipeline.
+│   ├── runStatus.js          # Estado de una corrida (ok | incompleta | cortada…) y los textos de qué falló, por fuente.
+│   ├── searchWait.js         # Espera de las búsquedas del monitoreo (SEARCH_WAIT_MS, SEARCH_RUN_TIMEOUT_SECS), validada al arrancar.
+│   ├── busquedaTope.js       # Tope de resultados por término y techo de las segundas consultas (SEARCH_RESULTS_MAX, SEARCH_EXTRA_MAX_USD_PER_CYCLE).
 │   ├── stats.js              # Estadísticas: todos los bloques de un período (y el anterior) desde la base.
 │   ├── statsRoutes.js        # GET /api/monitoring/stats.
 │   ├── inicioRoutes.js       # GET /api/inicio: las tarjetas de cada red, las corridas de hoy y la última corrida.
@@ -162,7 +165,7 @@ social_listening_app/
 ├── scripts/
 │   ├── import-reclamos.js       # Importador genérico de Excel/CSV (solo CLI).
 │   ├── migrate-categorias.js    # Migra categorías viejas al esquema de dos niveles.
-│   ├── costo-apify.js           # Gasto en Apify por ventana, fase y actor (npm run costo).
+│   ├── costo-apify.js           # Gasto en Apify por ventana, fase y actor (npm run costo); --conciliar y --asentar.
 │   ├── gastos.js                # Gasto por corrida, fase y término de búsqueda (npm run gastos).
 │   ├── cargar-fotos.js          # Carga única de las fotos de los posteos ya guardados (sin --si solo informa).
 │   ├── geo-reprocesar.js        # Fase H: ubicación de los reclamos sin punto, una vez y sobre una copia (--costo, --simulado, --si, --aplicar).
@@ -368,7 +371,11 @@ como llegaba y `/API/...` pasaba sin sesión hasta el handler. Test:
      `descartado`, `sin_caption`, `sin_detalle`) y un descartado no se vuelve
      a consultar ni a evaluar; la tabla se purga a los 100 días. Si el run de
      detalle falla entero no se anota nada y se reintenta en el próximo
-     ciclo.
+     ciclo. Desde noviembre 2026 la tabla anota también lo que decidió el
+     modelo (fecha de publicación, motivo, costo de la clasificación,
+     corrida y todos los términos que lo trajeron): un posteo ya evaluado no
+     se vuelve a clasificar aunque otra búsqueda, o una ventana que se pisa
+     con la anterior, lo vuelva a traer.
      La búsqueda por palabra clave de Instagram (`searches`) NO entra por el
      camino 1: Instagram asocia al término mucho contenido ajeno, así que sus
      resultados pasan por el 2 y el 3 como los de un hashtag, con el motivo
@@ -558,8 +565,12 @@ El monitoreo de Instagram corre con el actor que elija `IG_ACTOR`
   US$ 1,90 y 2,70 por cada 1.000 según el plan (`APIFY_RATE_*`).
 - **apidojo/instagram-scraper-api** cobra **por consulta**, con posteos
   incluidos, más US$ 0,0005 por cada posteo de más (`APIDOJO_*` en el
-  `.env`): perfil 0,005 con 10 incluidos, hashtag 0,015 con 30, búsqueda por
-  palabra clave 0,015 con 20, posteo suelto 0,005. Uso de plataforma incluido.
+  `.env`): perfil 0,005 con 10 incluidos, hashtag 0,015 con 30, posteo
+  suelto 0,005. La búsqueda por palabra clave, 0,015 más 0,0005 por cada
+  resultado desde el primero: no incluye ninguno (medido en noviembre 2026
+  sobre 388 búsquedas conciliadas; con los 20 "incluidos" de la pestaña de
+  precios el estimado daba 6 % menos que lo cobrado). Uso de plataforma
+  incluido.
 
 Con los topes por defecto (`MONITOR_ACCOUNT_LIMIT=10`,
 `MONITOR_HASHTAG_LIMIT=30`, `SEARCH_RESULTS_LIMIT=100`,
@@ -571,7 +582,7 @@ Starter (2,30 por 1.000):
 | Cuenta trackeada por ciclo, con posteos nuevos | hasta 0,0345 (15 res.) | 0,005 (10 incl.) |
 | Cuenta trackeada por ciclo, sin novedades | 0,0023 (1 item de error) | 0,005 |
 | Hashtag por ciclo | 0,0345 | 0,015 (30 incl.) |
-| Búsqueda por palabra clave, 100 resultados (el tope; lo normal son menos de 20: 0,015) | no existe | 0,055 |
+| Búsqueda por palabra clave: 0,015 + 0,0005 por resultado (con 13 resultados, 0,0215; con 100, 0,065; con el tope máximo de 2.000, 1,015) | no existe | 0,065 con 100 resultados |
 | Detalle de un resultado de búsqueda nuevo (una sola vez por posteo) | 0,0023, siempre con este actor | — (0,005 si se pidiera acá) |
 | Benchmark de una cuenta (15 posteos + seguidores) | 0,0368 (+1 consulta de perfil) | 0,0075 |
 | Refresco de métricas, por publicación (`REFRESH_MODE=url`, default) | 0,0023 por posteo vencido, siempre con este actor | — |
@@ -579,10 +590,14 @@ Starter (2,30 por 1.000):
 | Validar una cuenta / un hashtag al agregarlos | 0,0023 / 0,0023 | 0,005 / 0,015 |
 
 Desde septiembre 2026 la detección de Instagram son **solo las búsquedas**
-(cuentas y hashtags no se consultan): con 8 términos y
-`SEARCH_RESULTS_LIMIT=100`, como mucho 8 × 0,055 = 0,44 por ciclo (0,015 por
-término si trae 20 o menos, que es lo normal: en septiembre 2026 ninguna
-búsqueda pasó de 7), más el detalle de los resultados nuevos, como
+(cuentas y hashtags no se consultan): con 8 términos, 8 × 0,015 = 0,12 por
+ciclo más 0,0005 por cada resultado (la corrida #57 del piloto, del
+16/11/2026: 105 resultados entre las 8, 0,17). El tope de cada búsqueda ya
+no es fijo (ver "Detección por fuente", más abajo): con una ventana de
+varios días una sola búsqueda puede traer cientos de resultados (500 son
+0,265), y si llena su tope se hace una segunda consulta, con un techo de
+`SEARCH_EXTRA_MAX_USD_PER_CYCLE` (2,00) por ciclo para esas segundas
+consultas. A eso se suma el detalle de los resultados nuevos, como
 mucho `SEARCH_ENRICH_LIMIT` × 0,0023 por ciclo (0,23 con el default de 100)
 y en régimen mucho menos (unos 6 posteos nuevos por ciclo en septiembre
 2026): solo se paga por posteos que la búsqueda trae por primera vez. La búsqueda por palabra clave solo existe en apidojo. El
@@ -656,9 +671,10 @@ Tarifas en el `.env`: `APIFY_RATE_FREE` (2.70), `APIFY_RATE_STARTER`
 oficial; `APIDOJO_RATE_USER` (0.005), `APIDOJO_RATE_HASHTAG` (0.015),
 `APIDOJO_RATE_SEARCH` (0.015), `APIDOJO_RATE_POST` (0.005),
 `APIDOJO_RATE_ITEM` (0.0005) y `APIDOJO_INCLUDED_USER` (10), `_HASHTAG`
-(30), `_SEARCH` (20) para apidojo. El reporte recalcula las filas del
-oficial desde los resultados con las tres tarifas a la vez (cambiar de plan
-no invalida el histórico) y para apidojo usa `usd_real` cuando existe:
+(30), `_SEARCH` (0: la búsqueda no incluye posteos) para apidojo. El
+reporte recalcula las filas del oficial desde los resultados con las tres
+tarifas a la vez (cambiar de plan no invalida el histórico) y para apidojo
+usa `usd_real` cuando existe:
 
 ```bash
 npm run costo
@@ -674,6 +690,29 @@ aplican al oficial; apidojo muestra estimado y real) y por fase, más la
 proyección mensual (promedio diario de los últimos 7 días × 30).
 `GET /api/monitoring/costs?days=30` devuelve lo mismo en JSON. Nada de esto
 llama a Apify.
+
+Desde noviembre 2026, `--conciliar` lista además lo que quedó sin cerrar:
+las búsquedas que siguen esperando en Apify (se levantan solas en la
+próxima corrida) y las corridas del actor que están en Apify y la app no
+registró. Y hay una opción para asentar el costo de corridas que la app
+cortó sin registrar (antes de noviembre 2026, un corte por tiempo dejaba la
+llamada fallida, con costo 0 y sin run, aunque la corrida terminara y se
+cobrara):
+
+```bash
+node scripts/costo-apify.js --asentar corridas.json
+```
+
+```bash
+node scripts/costo-apify.js --asentar corridas.json --si
+```
+
+El archivo es una lista de `{ "ciclo", "objetivo", "apifyRunId", "usd" }`
+(el número de corrida, el término de la búsqueda o el usuario del perfil, el
+id del run en Apify y lo que cobró). Sin `--si` solo informa lo que haría;
+con `--si` anota el run y el costo en la llamada fallida de ese ciclo y
+corrige el total de la corrida. No crea filas ni importa publicaciones, y
+pasarlo dos veces no cambia nada.
 
 #### Gasto corrida por corrida: `npm run gastos`
 
@@ -692,15 +731,22 @@ Cuatro tablas, ninguna de más de 80 columnas para que no se corten:
 
 1. **Por corrida**: número, inicio y fin en hora de Argentina, duración,
    llamadas a Apify, resultados, USD estimado y USD real. `#N*` es una
-   corrida manual ("Actualizar ahora") y `#N!` una en la que alguna llamada
-   cortó por cuota; una corrida sin cierre figura "en curso" (si es la
+   corrida manual ("Actualizar ahora"), `#N!` una en la que alguna llamada
+   cortó por cuota y `#N~` una incompleta (alguna búsqueda falló, quedó en
+   Apify o llenó su tope); una corrida sin cierre figura "en curso" (si es la
    última y empezó hace menos de 3 horas) o "sin cierre".
 2. **Por corrida y fase**: búsqueda (las consultas por término), detalle
    (el detalle de los resultados nuevos vía `apify/instagram-scraper`),
    benchmark, refresco y otras (con la fase real entre paréntesis:
    `monitoreo` de las corridas viejas, `validacion`, `recalc-script`,
    `analisis`), con llamadas, resultados y USD.
-3. **Por término de búsqueda**: consultas, resultados y USD en el período.
+3. **Por término de búsqueda**, su rendimiento en el período: consultas y
+   resultados (de Apify), cuántos eran nuevos, cuántos trajo solo ese
+   término ("únicos"), cuántos se guardaron, cuántos descartó el
+   clasificador y cuántos quedaron sin evaluar (sin texto), con lo que
+   costó en Apify y en el modelo (el de un posteo que trajeron varios
+   términos se reparte). Sirve para decidir si un término vale lo que
+   cuesta. Con una base anterior a noviembre 2026 avisa que faltan datos.
 4. **Total del período**, con el desglose por fase.
 
 `--desde "AAAA-MM-DD HH:MM"` (hora de Argentina; también vale solo la
@@ -1054,8 +1100,9 @@ que avanza sola.
   listas", "Clasificando relevancia · 3 de 11", "Guardando fotos · 4 de 12".
 - La barra, a todo el ancho.
 - Debajo, hasta 6 líneas escritas para una persona (no el log): una por
-  búsqueda ("✓ «macri» · 50 encontrados, 6 nuevos", "✕ «PDLC» · falló"), las
-  que siguen en curso con su ruedita, y un resumen por cada fase que termina
+  búsqueda ("✓ «macri» · 50 encontrados, 6 nuevos", "✕ «policía de la
+  ciudad» · falló"), las que siguen en curso con su ruedita, y un resumen
+  por cada fase que termina
   ("✓ Relevancia · 4 relevantes, 7 descartados", "✓ Métricas · 148
   actualizadas, 2 sin respuesta"). Las líneas las arma y las elige el
   backend; el frontend solo las dibuja.
@@ -1065,6 +1112,17 @@ que avanza sola.
   espera). Si falla, "✕ La corrida falló · …" queda hasta "Ocultar".
 - Cada línea lleva un punto (en curso late; verde, bien; rojo, falló) y
   toma el ancho de su texto: si no entra baja de renglón, nunca se corta.
+- Desde noviembre 2026 hay un color más, ámbar, para lo que no es un error
+  pero quedó pendiente: "«macri» · sigue en Apify" (la búsqueda no terminó
+  dentro de la espera y se levanta en la corrida siguiente), "«macri» ·
+  tope lleno: puede faltar algo", "«macri» · Apify la cortó". Una búsqueda
+  que se pone al día dice desde cuándo retoma ("«macri» · desde 04/11
+  16:00"). Si había búsquedas esperando de la corrida anterior, la corrida
+  empieza con "Recuperando búsquedas pendientes". Y si alguna búsqueda
+  falló, quedó en Apify o llenó su tope, el recuadro cierra con "! Corrida
+  incompleta · 16:02" y qué pasó ("Fallaron 2 de 8 búsquedas · se retoman
+  solas"), y no se va solo. Lo mismo dicen la barra superior ("incompleta ·
+  16:02"), el Pipeline y la línea de 24 h del inicio.
 
 "Nuevos" quiere decir lo mismo en todos lados: posteos que no estaban
 guardados ni se habían evaluado antes (`monitor.isNewPost`). Cada búsqueda
@@ -1639,42 +1697,108 @@ cuelgan.
 - `[fase] arranca`/`[fase] termina` (duración, N ok, N error) en `src/monitoringProgress.js`, cada vez que una fase empieza o cede lugar a la siguiente.
 - `[apify] →`/`[apify] ←` por cada llamada real (fase, target, actor; al resolver, ok/error, duración, items) en `src/apify.js`.
 - `[limiter:<nombre>]` cuando una tarea espera cupo, lo adquiere o lo libera (activos/cola), en cualquier `createLimiter`.
-- `[heartbeat]`: si pasan 15s sin que termine ninguna llamada mientras un ciclo está en curso, un snapshot de la fase actual y qué target tiene cada tarea activa en `apifyLimiter`, `benchmarkLimiter` y `refreshLimiter` — se repite cada 15s mientras siga sin actividad.
-- `APIFY_CALL_TIMEOUT_MS` (default 300000, piso 1000; era 120000 y hubo consultas reales de más de 100 s que quedaban al borde): cada llamada a Apify se corta a los ms configurados si no respondió, libera su cupo y queda en `apify_calls` con `error='TIMEOUT'`, sin tirar abajo el resto del ciclo. Una llamada cortada se cobra igual y sus resultados se pierden: el tope es contra el cuelgue, no contra una consulta lenta.
+- `[heartbeat]`: si pasan 15s sin que termine ninguna llamada mientras un ciclo está en curso, un snapshot de la fase actual y qué target tiene cada tarea activa en `apifyLimiter`, `benchmarkLimiter` y `refreshLimiter` — se repite cada 15 s durante el primer minuto sin actividad y después una vez por minuto (una búsqueda larga no llena el log).
+- `APIFY_CALL_TIMEOUT_MS` (default 300000, piso 1000; era 120000 y hubo consultas reales de más de 100 s que quedaban al borde): cada llamada a Apify se corta a los ms configurados si no respondió, libera su cupo y queda en `apify_calls` con `error='TIMEOUT'`, sin tirar abajo el resto del ciclo. El tope es contra el cuelgue, no contra una consulta lenta. Desde noviembre 2026, en el flujo asincrónico la fila conserva el id del run (el run sigue en Apify y su costo se concilia), y las búsquedas del monitoreo no usan este tope sino `SEARCH_WAIT_MS`: lo que no termina a tiempo queda esperando y se levanta en la corrida siguiente (ver "Detección por fuente").
+- `[ciclo] fin` dice cómo salió la corrida: `resultado=ok`, o `resultado=incompleta — instagram: fallaron 6 de 8 búsquedas: «macri» HTTP_502, …`.
 
-### Ventana de detección dinámica (búsquedas en Instagram; cuentas y hashtags en X)
+### Detección por fuente: ventana, espera y estado de la corrida (noviembre 2026)
 
-`monitor.detectionWindowFor(platformId)` calcula, para cada corrida, la
-ventana de "solo posteos más nuevos que":
+Rama `ventana-por-fuente`, SDD en `openspec/changes/ventana-por-fuente/`.
 
-- **Sin ninguna corrida previa registrada** (primera vez en esta base):
-  `MONITOR_LOOKBACK`, default 1 día hacia atrás.
-- **Con corrida previa**: desde el fin de la última detección exitosa de esa
-  plataforma hasta ahora, con techo `MONITOR_LOOKBACK_MAX` (default 30
-  días; era 7 y una caída de más de una semana perdía lo anterior;
-  recuperar un mes de búsquedas son centavos). Así, si el server estuvo
-  apagado, lo publicado en el medio no se pierde.
+**Qué pasó.** El 6 y el 16 de noviembre de 2026 (corridas #55 y #56 del
+piloto, la segunda después de diez días apagado) las búsquedas tuvieron que
+mirar varios días hacia atrás y tardaron más que los 300 s que la app las
+esperaba: se cortaron cuatro de ocho y seis de ocho. Tres cosas salieron
+mal a la vez:
 
-En el caso normal (cron al día) la ventana redondea a "1 day" — el techo
-solo se nota después de una caída real. El fin de la última detección
-exitosa se guarda en `refresh_state` (`detection_last_success:<plataforma>`)
-apenas esa fase termina sin error, aunque el ciclo completo falle después
-en benchmark o refresco. En Instagram la usan las búsquedas por palabra
-clave (la única fuente de detección); en X, cuentas y hashtags. Las keywords
-de X (search de Grok, `MONITOR_LOOKBACK` fijo) y el benchmark
-(`BENCHMARK_RECALC_DAYS`, 30 días fijos) no cambian.
+- La corrida figuró como buena y la marca de "última detección exitosa",
+  que era una sola para toda la red, avanzó igual: la corrida siguiente ya
+  no volvió a pedir esos días. Quedó un hueco del 5 al 15/11.
+- Las búsquedas cortadas siguieron en Apify, terminaron bien y se cobraron
+  (US$ 1,58 en once corridas), pero la app no había guardado su id: ni las
+  publicaciones ni el gasto quedaron en ningún lado.
+- Lo que el clasificador descartaba no quedaba anotado: cada corrida volvía
+  a clasificar los mismos descartados.
 
-Si la ventana calculada supera 1 día, `SEARCH_RESULTS_LIMIT`,
-`MONITOR_ACCOUNT_LIMIT` y `MONITOR_HASHTAG_LIMIT` de esa corrida suben
-proporcionalmente (`raiseLimitForWindow`: factor = días de ventana, nunca
-más de 10x el tope configurado) para no perderse posteos por el tope de
-cantidad en vez de por fecha: el excedente sobre los posteos incluidos por
-consulta (20 en la búsqueda de apidojo) se paga a 0,0005 usd por posteo, no
-se corta. La consola lo registra cuando no fue la ventana default. Si aun
-así una búsqueda llena su tope (`maxItems`), el adapter lo avisa por log
-(`[apidojo] la búsqueda "..." devolvió N posteos, el tope de la consulta`):
-lo más viejo de la ventana puede haber quedado afuera; subir
-`SEARCH_RESULTS_LIMIT` es pagar el excedente en vez de cortar.
+**Qué cambió.** Cada consulta de detección (una búsqueda de Instagram; en
+X, cada cuenta, hashtag y keyword) es una "fuente" con su propio registro:
+
+- **Marca por fuente.** Cada búsqueda guarda su última detección exitosa
+  (`detection_last_success:<red>:<tipo>:<clave>` en `refresh_state`) y
+  retoma desde ahí (`monitor.detectionWindowFor`): si una falla, solo ella
+  vuelve a pedir esos días. Sin detección previa mira `MONITOR_LOOKBACK` (1
+  día); nunca más atrás que `MONITOR_LOOKBACK_MAX` (30 días) ni menos que
+  `MONITOR_MIN_WINDOW` (1 día). La marca avanza solo si la búsqueda
+  respondió y sus publicaciones quedaron procesadas. Sacar un término, o
+  darlo de alta de nuevo, borra su marca. La marca de la red se sigue
+  escribiendo (cuando todas las fuentes avanzaron) para poder volver al
+  código anterior.
+- **Espera larga, y lo que no termina se levanta después.** Las búsquedas
+  comparten UNA espera de `SEARCH_WAIT_MS` (15 minutos) por corrida. La app
+  guarda el id de cada corrida de Apify apenas arranca; si una búsqueda no
+  terminó a tiempo queda "esperando" y, al empezar la corrida siguiente, la
+  app baja su resultado y lo pasa por el mismo camino de siempre (detalle,
+  clasificación, guardado). No se pierde ni se paga dos veces: mientras esa
+  corrida siga en Apify, ese término no se vuelve a buscar. Apify corta
+  cada búsqueda a la hora (`SEARCH_RUN_TIMEOUT_SECS`), y si la corta se usa
+  lo que dejó.
+- **Tope por término.** El tope de resultados de cada búsqueda sale de lo
+  que ese término suele traer (el doble de su mejor hora reciente, por las
+  horas que se piden), entre `SEARCH_RESULTS_LIMIT` y `SEARCH_RESULTS_MAX`
+  (2.000). Si igual lo llena, se hace una segunda consulta con cuatro veces
+  el tope, mientras entre en `SEARCH_EXTRA_MAX_USD_PER_CYCLE` (US$ 2 por
+  corrida). El actor no devuelve los resultados por fecha: un tope lleno no
+  deja afuera "lo más viejo" sino una parte de cada día.
+- **Lo pagado no se tira.** Al actor solo se le puede pedir "desde tal día"
+  (`until`, un día entero): la app se queda con todo lo publicado desde ese
+  día, que es lo que se pagó. Antes recortaba en "ahora menos N días" y
+  descartaba el resto.
+- **La corrida dice cómo salió.** Cada consulta deja una fila en
+  `monitoring_run_sources` (estado, motivo, ventana, tope, resultados,
+  nuevos, id de la corrida de Apify) y `src/runStatus.js` saca de ahí el
+  estado de la corrida: `ok`, `incompleta` (alguna búsqueda falló, quedó en
+  Apify, la cortó Apify o llenó su tope), `cortada` (cuota), `en curso` o
+  `interrumpida`. La pantalla lo muestra en el recuadro de "Actualizar
+  ahora", la barra superior, el Pipeline y el inicio, con qué búsquedas
+  fallaron y por qué, en palabras ("no respondió a tiempo", "Apify
+  respondió con un error (502)"). Un fallo del benchmark, del refresco o de
+  las fotos no marca la corrida como incompleta.
+
+**Cuánto puede durar una corrida.** Con `APIFY_MAX_CONCURRENT=10` las ocho
+búsquedas corren a la vez y la detección dura como mucho `SEARCH_WAIT_MS`
+(15 minutos, también con las segundas consultas). Después vienen el detalle
+(hasta 5 minutos), la clasificación (unos 2 segundos por publicación nueva)
+y el benchmark y el refresco de siempre. Para acortarla, bajar
+`SEARCH_WAIT_MS`: lo que no llegue queda esperando y entra en la corrida
+siguiente.
+
+**Lo que está medido y todavía no se decidió.** Sonda autorizada del
+16/11/2026 (US$ 0,43), búsquedas "macri" y "GCBA":
+
+| Ventana pedida | De lo publicado en las últimas 24 h, trajo | Tardó | Costó |
+|---|---|---|---|
+| 1 día | 4 % y 19 % | 27 y 84 s | 0,017 y 0,021 |
+| 3 días | 10 % y 2 % | 62 y 20 s | 0,025 y 0,015 |
+| 7 días | 70 % y 74 % | 7 y 11 min | 0,21 y 0,14 |
+
+Con la ventana de 1 día (la de siempre) el actor devuelve una fracción
+chica de lo publicado; con 7 días, cerca del 70 % por pasada, y dos pasadas
+juntas, entre el 91 y el 95 %. Ninguna ventana trae todo de una vez. Esta
+rama deja la ventana mínima como estaba (`MONITOR_MIN_WINDOW=1 day`): subirla
+trae más y cuesta más (se paga cada resultado, también los ya vistos, que
+no se vuelven a clasificar). Con 7 días en las cuatro corridas diarias el
+estimado es de unos US$ 1,3 por corrida; una corrida honda por día y tres
+cortas, cerca de un tercio. Queda para decidir aparte.
+
+**Lo que quedó afuera.** Las publicaciones recuperadas a mano de las
+corridas #55 y #56 no se importaron (decisión del dueño); su costo se puede
+asentar con `node scripts/costo-apify.js --asentar` (ver "Costo en Apify
+del monitoreo").
+
+**Para volver atrás.** El código anterior funciona con la base ya migrada
+(las columnas y la tabla nuevas no le molestan) y encuentra la marca de la
+red al día. Una búsqueda que hubiera quedado esperando ya no la levanta
+nadie.
 
 ### Separación por plataforma: la url manda
 

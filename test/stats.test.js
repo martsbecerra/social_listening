@@ -92,7 +92,7 @@ describe('db: lecturas para Estadísticas', { concurrency: false }, () => {
       db.markSearchSeen({ postId, plataforma, term, outcome, firstSeenAt });
     marcar('d1', 'macri', 'descartado', '2026-10-01T10:00:00.000Z');
     marcar('d2', 'macri', 'descartado', '2026-10-02T10:00:00.000Z');
-    marcar('d3', 'PDLC', 'descartado', '2026-10-02T11:00:00.000Z');
+    marcar('d3', 'policía de la ciudad', 'descartado', '2026-10-02T11:00:00.000Z');
     marcar('d4', 'macri', 'guardado', '2026-10-02T12:00:00.000Z'); // guardado: está en detected_posts
     marcar('d5', 'macri', 'sin_caption', '2026-10-02T12:00:00.000Z');
     marcar('d6', 'macri', 'descartado', '2026-10-05T10:00:00.000Z'); // fuera del rango
@@ -103,7 +103,7 @@ describe('db: lecturas para Estadísticas', { concurrency: false }, () => {
       porTermino.sort((a, b) => a.term.localeCompare(b.term)),
       [
         { term: 'macri', n: 2 },
-        { term: 'PDLC', n: 1 },
+        { term: 'policía de la ciudad', n: 1 },
       ]
     );
   });
@@ -294,14 +294,14 @@ describe('stats: bloques', () => {
       descartados: [
         { term: 'macri', n: 4 },
         { term: 'Gobierno Porteno', n: 1 },
-        { term: 'PDLC', n: 2 },
+        { term: 'policía de la ciudad', n: 2 },
         { term: 'nada', n: 0 },
       ],
     });
     assert.deepEqual(menciones, [
       { termino: 'macri', detectadas: 7, relevantes: 3, positivas: 1 },
       { termino: 'gobierno porteño', detectadas: 3, relevantes: 1, positivas: 1 },
-      { termino: 'PDLC', detectadas: 2, relevantes: 0, positivas: 0 },
+      { termino: 'policía de la ciudad', detectadas: 2, relevantes: 0, positivas: 0 },
     ]);
     assert.deepEqual(stats.contarMenciones([]), []);
   });
@@ -443,7 +443,7 @@ describe('stats: la respuesta armada desde la base', { concurrency: false }, () 
     for (const [postId, term, outcome, firstSeenAt] of [
       ['marzo-1', 'macri', 'descartado', enArgentina('2026-03-15', 9)],
       ['marzo-2', 'macri', 'descartado', enArgentina('2026-03-18', 9)],
-      ['marzo-3', 'PDLC', 'descartado', enArgentina('2026-03-19', 9)],
+      ['marzo-3', 'policía de la ciudad', 'descartado', enArgentina('2026-03-19', 9)],
       ['marzo-4', 'GCBA', 'guardado', enArgentina('2026-03-19', 9)], // guardado: ya cuenta como relevante
       ['febrero-1', 'macri', 'descartado', enArgentina('2026-02-01', 9)], // antes del período de 30 días
     ]) {
@@ -577,12 +577,12 @@ describe('stats: la respuesta armada desde la base', { concurrency: false }, () 
     assert.ok(r.palabras.some((p) => p.palabra === 'gobierno de la ciudad' && p.n === 1));
 
     // macri: 10 relevantes (4 positivas) + el ignorado + 2 descartados del
-    // período. GCBA: 6 (el de la cuenta trackeada no entra). PDLC: solo un
-    // descartado.
+    // período. GCBA: 6 (el de la cuenta trackeada no entra). "policía de la ciudad":
+    // solo un descartado.
     assert.deepEqual(r.menciones, [
       { termino: 'macri', detectadas: 13, relevantes: 10, positivas: 4 },
       { termino: 'GCBA', detectadas: 6, relevantes: 6, positivas: 1 },
-      { termino: 'PDLC', detectadas: 1, relevantes: 0, positivas: 0 },
+      { termino: 'policía de la ciudad', detectadas: 1, relevantes: 0, positivas: 0 },
     ]);
   });
 

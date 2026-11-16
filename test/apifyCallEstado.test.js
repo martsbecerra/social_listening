@@ -76,7 +76,7 @@ describe('apify_calls: estado, tope y until', { concurrency: false }, () => {
     assert.equal(fallo.estado, 'error');
     assert.equal(fallo.usd, 0);
 
-    const esperando = db.getApifyCall(apifyCost.recordApifyCall({ runId: 60, phase: 'busqueda', plataforma: 'instagram', actor: APIDOJO, input: { keywords: ['pdlc'] }, ok: false, error: 'TIMEOUT', estado: 'esperando', apifyRunId: 'run-1' }));
+    const esperando = db.getApifyCall(apifyCost.recordApifyCall({ runId: 60, phase: 'busqueda', plataforma: 'instagram', actor: APIDOJO, input: { keywords: ['policía de la ciudad'] }, ok: false, error: 'TIMEOUT', estado: 'esperando', apifyRunId: 'run-1' }));
     assert.equal(esperando.estado, 'esperando');
     assert.equal(esperando.apify_run_id, 'run-1');
 
