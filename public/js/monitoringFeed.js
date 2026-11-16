@@ -399,6 +399,7 @@ function renderFeed({ fill = true } = {}) {
   // antes de volver y no quedaban las primeras filas.
   if (listChanged) feedScrollToStart();
   if (fill) feedFill();
+  feedUpdateTopButton();
 }
 
 // Los avisos de monitoring.js llegan de a uno por tecla del buscador. Rehacer
@@ -488,12 +489,37 @@ function feedRiseDone(e) {
 feedContainerEl.addEventListener('animationend', feedRiseDone);
 feedContainerEl.addEventListener('animationcancel', feedRiseDone);
 
+// -------------------------------------------------------------------------
+// "Volver arriba" (#feedTop en instagram.html): aparece cuando la página
+// bajó más allá del comienzo del feed, solo con el feed a la vista (vista
+// Feed, solapa Monitoreo), y lleva al tope de la página. No gasta ni
+// modifica nada.
+// -------------------------------------------------------------------------
+const feedTopEl = document.getElementById('feedTop');
+
+function feedUpdateTopButton() {
+  if (!feedTopEl) return;
+  const show = feedOnScreen() && feedShown > 0 && feedContainerEl.getBoundingClientRect().top < feedBarBottom();
+  feedTopEl.classList.toggle('on', show);
+}
+
+if (feedTopEl) {
+  feedTopEl.addEventListener('click', () => {
+    window.scrollTo({ top: 0, behavior: feedReducedMotion.matches ? 'auto' : 'smooth' });
+    // Arriba el botón se esconde: el foco pasa a la solapa elegida de la
+    // barra superior (si no, caía en <body>) y el Tab sigue desde ahí.
+    const tab = document.querySelector('nav.tabs [role="tab"][aria-selected="true"]');
+    if (tab) tab.focus({ preventScroll: true });
+  });
+}
+
 // Se mira con el scroll (el navegador lo avisa como mucho una vez por
 // cuadro), con otro tamaño de ventana y cuando se abre o se cierra la solapa
 // (main.js le cambia la clase; así también cuando se abre sin mover la
 // página, como desde #publicacion-<id>).
 function feedCheckScroll() {
   feedFill();
+  feedUpdateTopButton();
 }
 window.addEventListener('scroll', feedCheckScroll, { passive: true });
 if (feedTabEl) new MutationObserver(feedCheckScroll).observe(feedTabEl, { attributes: true, attributeFilter: ['class'] });
@@ -547,6 +573,7 @@ function setFeedView(view, { save = true } = {}) {
   // Recién ahora, ya en el principio, las filas que falten para llenar la
   // pantalla.
   if (isFeed) feedFill();
+  feedUpdateTopButton();
 }
 
 feedViewSegEl.addEventListener('click', (e) => {

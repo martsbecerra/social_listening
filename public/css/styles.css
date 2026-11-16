@@ -6557,6 +6557,70 @@ svg.line {
   text-align: center;
   color: var(--muted);
 }
+/* "Volver arriba": redondo, fijo abajo a la derecha. Lo muestra
+   monitoringFeed.js con .on, solo con el feed a la vista y la página más
+   abajo que su comienzo. Oculto no se ve, no recibe el foco y no lo lee un
+   lector de pantalla. Arriba de las tarjetas; abajo de la barra superior
+   (40), los menús, los modales y los tooltips. */
+.feed-top {
+  position: fixed;
+  right: max(20px, env(safe-area-inset-right));
+  bottom: max(20px, env(safe-area-inset-bottom));
+  z-index: 35;
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  padding: 0;
+  border: 1px solid var(--line2);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--fg);
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(10px);
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease,
+    visibility 0s linear 0.2s,
+    border-color 0.2s ease,
+    color 0.2s ease;
+}
+.feed-top.on {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease,
+    visibility 0s,
+    border-color 0.2s ease,
+    color 0.2s ease;
+}
+.feed-top svg {
+  width: 20px;
+  height: 20px;
+}
+@media (hover: hover) {
+  .feed-top:hover {
+    border-color: var(--accent);
+    color: var(--accent); /* un ícono: la base, no la tinta */
+  }
+}
+.feed-top:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+@media (max-width: 560px) {
+  .feed-top {
+    right: max(16px, env(safe-area-inset-right));
+    bottom: max(16px, env(safe-area-inset-bottom));
+    width: 44px;
+    height: 44px;
+  }
+}
 .feed-card {
   --s: var(--line2);
   --edge: var(--muted);
