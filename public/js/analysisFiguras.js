@@ -283,8 +283,9 @@ function anaPersona(q, i) {
   body.append(nm);
   if (q.comentario && q.comentario.texto) body.append(anaEl('div', 'tx', q.comentario.texto));
 
-  // Las acciones sobre la lista de figuras.
-  const acts = anaEl('div', 'acts');
+  // Las acciones sobre la lista de figuras (solo-operador: un lector ve la
+  // tarjeta pero no cambia la lista; public/js/sesion.js).
+  const acts = anaEl('div', 'acts solo-operador');
   const accion = (texto, k, fn, clase) => {
     const b = anaBtn(texto, clase);
     b.dataset.k = k;
@@ -423,7 +424,7 @@ function anaFigFila(f) {
   nm.append(anaEl('b', '', f.nombre || `@${f.username}`));
   if (f.nombre) nm.append(anaEl('small', '', `@${f.username}`));
   nm.append(anaRolChip(f, { sugerida: f.origen === 'sugerida' }));
-  const acts = anaEl('div', 'acts');
+  const acts = anaEl('div', 'acts solo-operador'); // un lector ve la lista, no la cambia
   const accion = (texto, fn, clase = 'btn sm ghost') => {
     const b = anaBtn(texto, clase);
     b.addEventListener('click', fn);

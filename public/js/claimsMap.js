@@ -980,7 +980,8 @@ async function postReclamo(r, accion, cuerpo) {
 }
 
 function agregarAcciones(item, r) {
-  const botones = el('div', 'claims-su-acciones');
+  // solo-operador: un lector no corrige ni descarta (public/js/sesion.js).
+  const botones = el('div', 'claims-su-acciones solo-operador');
   const corregir = el('button', 'btn-small', r.motivoSinUbicar === 'descartado' ? 'Ubicar igual' : 'Corregir dirección');
   corregir.type = 'button';
   botones.append(corregir);

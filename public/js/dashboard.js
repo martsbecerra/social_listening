@@ -480,7 +480,7 @@ let homeTemasLoaded = false;
 async function homeLoadTemas() {
   if (homeTemasLoaded) return;
   try {
-    const res = await fetch('/api/monitoring/config?plataforma=instagram', { credentials: 'same-origin' });
+    const res = await fetch('/api/monitoring/config?plataforma=instagram', slAuto({ credentials: 'same-origin' }));
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const config = await res.json();
     setPostViewTemas(config.temas);
@@ -495,7 +495,7 @@ async function homeLoadTemas() {
 async function homeLoadPosts() {
   try {
     const [res] = await Promise.all([
-      fetch(`/api/monitoring/posts?plataforma=instagram&pageSize=${HOME_POSTS}`, { credentials: 'same-origin' }),
+      fetch(`/api/monitoring/posts?plataforma=instagram&pageSize=${HOME_POSTS}`, slAuto({ credentials: 'same-origin' })),
       homeLoadTemas(),
     ]);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -602,7 +602,7 @@ function homeAnaLine(a) {
 async function homeLoadAnalisis() {
   const box = homeEl('homeAna');
   try {
-    const res = await fetch(`/api/analisis?plataforma=instagram&limit=${HOME_ANALISIS}`, { credentials: 'same-origin' });
+    const res = await fetch(`/api/analisis?plataforma=instagram&limit=${HOME_ANALISIS}`, slAuto({ credentials: 'same-origin' }));
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     const list = (data.recientes || []).slice(0, HOME_ANALISIS);
@@ -627,7 +627,7 @@ async function homeLoad() {
   homeRetryTimer = 0;
   homeLoadAnalisis();
   try {
-    const res = await fetch('/api/inicio', { credentials: 'same-origin' });
+    const res = await fetch('/api/inicio', slAuto({ credentials: 'same-origin' }));
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     homeInicio = await res.json();
   } catch (err) {

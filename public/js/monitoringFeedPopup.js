@@ -225,11 +225,12 @@ function fillFeedPopFoot(post, error = '') {
   const sentiment = buildSentimentSelect(post.sentiment);
   sentiment.setAttribute('aria-label', 'Sentimiento');
 
-  const ignore = feedNode('button', 'feed-pop-btn danger', 'Ignorar');
+  // solo-operador: un lector no ignora ni analiza (public/js/sesion.js).
+  const ignore = feedNode('button', 'feed-pop-btn danger solo-operador', 'Ignorar');
   ignore.type = 'button';
   ignore.dataset.act = 'ignore';
 
-  const analyze = feedNode('button', 'feed-pop-btn', 'Analizar comentarios');
+  const analyze = feedNode('button', 'feed-pop-btn solo-operador', 'Analizar comentarios');
   analyze.type = 'button';
   analyze.dataset.act = 'analyze';
   analyze.dataset.tipTitle = 'Analizar comentarios';

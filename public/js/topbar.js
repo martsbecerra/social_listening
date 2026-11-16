@@ -51,7 +51,8 @@ async function topbarLoad() {
     const url = topbarPlatform
       ? `/api/monitoring/status?plataforma=${encodeURIComponent(topbarPlatform)}`
       : '/api/monitoring/status';
-    const resp = await fetch(url);
+    // Automático (cada 5 min): no cuenta como actividad (public/js/sesion.js).
+    const resp = await fetch(url, slAuto());
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data = await resp.json();
     const last = data && data.lastRunAt ? new Date(data.lastRunAt) : null;
