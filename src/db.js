@@ -755,6 +755,8 @@ const markSearchSeenStmt = db.prepare(`
 `);
 const setSearchSeenTermsStmt = db.prepare('UPDATE search_seen SET terminos = @terminos WHERE post_id = @postId AND plataforma = @plataforma');
 const purgeSearchSeenStmt = db.prepare('DELETE FROM search_seen WHERE first_seen_at < ?');
+// Lo que decidió el clasificador en una corrida (para la línea de costo del ciclo).
+const sumSearchSeenByRunStmt = db.prepare('SELECT COUNT(*) AS n, SUM(llm_usd) AS usd FROM search_seen WHERE run_id = ?');
 
 // Gasto en Apify (ver src/apifyCost.js): una fila por llamada a runActorSync
 // (src/apify.js) y una por ciclo de monitoreo (src/scheduler.js). Apify
@@ -979,6 +981,13 @@ const markApifyCallLostStmt = db.prepare(`
   UPDATE apify_calls SET estado = 'perdida' WHERE apify_run_id = @apifyRunId AND estado IN ('esperando', 'en_curso')
 `);
 const listApifyCallsByApifyRunStmt = db.prepare('SELECT * FROM apify_calls WHERE apify_run_id = ? ORDER BY id');
+// Las últimas búsquedas buenas de un término (sin distinguir mayúsculas ni
+// espacios de más), para medir su volumen (src/busquedaTope.js).
+const lastSearchCallsForTermStmt = db.prepare(`
+  SELECT items, max_items AS maxItems, until, at FROM apify_calls
+  WHERE plataforma = @plataforma AND query_type = 'search' AND ok = 1 AND lower(trim(target)) = @term
+  ORDER BY id DESC LIMIT @limit
+`);
 // Las sumas van por fase Y por actor: el actor oficial se valúa por
 // resultados (tres tarifas), apidojo por consulta. usdBest = lo que cobró
 // Apify si se sabe (usd_real), si no el estimado (usd).
@@ -2380,6 +2389,18 @@ function markApifyCallRecovered(apifyRunId, { items = 0, usd = 0 } = {}) {
   return changed;
 }
 
+/**
+ * Las últimas búsquedas buenas de un término en esa red (las recuperadas
+ * también): cuánto trajo cada una, con qué tope y desde qué día.
+ * @returns {{ items: number, maxItems: number|null, until: string|null, at: string }[]}
+ */
+function lastSearchCallsForTerm(plataforma, term, limit = 6) {
+  requirePlataforma(plataforma, 'lastSearchCallsForTerm');
+  return lastSearchCallsForTermStmt
+    .all({ plataforma, term: String(term ?? '').trim().toLowerCase(), limit: Math.max(1, Math.floor(Number(limit)) || 6) })
+    .map((row) => ({ items: Number(row.items) || 0, maxItems: row.maxItems == null ? null : Number(row.maxItems), until: row.until, at: row.at }));
+}
+
 /** La corrida de Apify de esa llamada ya no existe: la fila queda `perdida` (sigue fallida). @returns {number} filas cambiadas */
 function markApifyCallLost(apifyRunId) {
   if (!apifyRunId) return 0;
@@ -2886,6 +2907,18 @@ function addSearchSeenTerms(postId, plataforma, terminos) {
   if (lista.length === 0) return false;
   setSearchSeenTermsStmt.run({ postId: String(postId), plataforma, terminos: JSON.stringify(lista) });
   return lista.length !== antes.length;
+}
+
+/**
+ * Cuántos resultados de búsqueda decidió el clasificador en esa corrida
+ * (guardados y descartados) y lo que costó, estimado; `usd` null si ninguno
+ * informó su costo. De todas las redes de la corrida.
+ * @returns {{ n: number, usd: number|null }}
+ */
+function sumSearchSeenByRun(runId) {
+  if (runId == null) return { n: 0, usd: null };
+  const row = sumSearchSeenByRunStmt.get(Number(runId));
+  return { n: Number(row.n) || 0, usd: row.usd == null ? null : Number(row.usd) };
 }
 
 /** Borra los vistos anteriores a olderThanIso. @returns {number} filas borradas */
@@ -3754,6 +3787,8 @@ module.exports = {
   getApifyCall,
   markApifyCallRecovered,
   markApifyCallLost,
+  lastSearchCallsForTerm,
+  sumSearchSeenByRun,
   startMonitoringRun,
   finishMonitoringRun,
   getMonitoringRun,

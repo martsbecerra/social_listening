@@ -153,6 +153,13 @@ function startItem(key, label, detail = '') {
   current.lines.push({ key, state: 'run', label, detail, ended: 0 });
 }
 
+/** Cambia el texto de una fuente que sigue en curso ("tope lleno · se pide más…"). Sin esa línea en curso, no hace nada. */
+function updateItem(key, detail = '') {
+  if (!current) return;
+  const line = current.lines.find((l) => l.key === key && l.state === 'run');
+  if (line) line.detail = detail;
+}
+
 /** La fuente terminó: su línea pasa a bien o a falló, con el texto final. */
 function finishItem(key, { ok = true, detail = '' } = {}) {
   if (!current) return;
@@ -223,6 +230,7 @@ module.exports = {
   startPhase,
   tick,
   startItem,
+  updateItem,
   finishItem,
   setPhaseSummary,
   getProgress,

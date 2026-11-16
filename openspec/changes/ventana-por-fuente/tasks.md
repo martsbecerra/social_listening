@@ -60,10 +60,10 @@ recuperado de las corridas cortadas) quedó afuera por decisión del dueño.
 
 ## Phase 9: tope por término y segunda consulta
 
-- [ ] 9.1 `src/busquedaTope.js`; `db.lastSearchCallsForTerm` (REQ-VPF-12)
-- [ ] 9.2 `monitor.js`: segunda consulta con el tope lleno, dentro del techo del excedente; `tope_lleno` si no entra
-- [ ] 9.3 `scheduler.js`: la línea `[costo]` suma las búsquedas esperando y las clasificaciones; `server.js` valida las variables
-- [ ] 9.4 Tests: `topeBusqueda.test.js`
+- [x] 9.1 `src/busquedaTope.js`; `db.lastSearchCallsForTerm` (REQ-VPF-12)
+- [x] 9.2 `monitor.js`: segunda consulta con el tope lleno, dentro del techo del excedente; `tope_lleno` si no entra
+- [x] 9.3 `scheduler.js`: la línea `[costo]` suma las búsquedas esperando y las clasificaciones; `server.js` valida las variables
+- [x] 9.4 Tests: `topeBusqueda.test.js`
 
 ## Phase 10: pantalla
 

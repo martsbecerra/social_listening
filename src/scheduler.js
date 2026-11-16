@@ -366,7 +366,22 @@ async function runCycleUnlocked(plataformas, trigger = 'manual') {
     // src/postImages.js.
     const fotos = postImageSync.formatCycleSummary(postImageSync.takeCycleSummary());
     if (fotos) console.log(fotos);
-    if (closed) console.log(formatCycleCostLine(closed));
+    if (closed) {
+      // Además del gasto en Apify: las búsquedas que quedaron esperando (su
+      // costo llega cuando se concilie) y lo que clasificó el modelo.
+      let extra = {};
+      try {
+        const clasificado = db.sumSearchSeenByRun(runId);
+        extra = {
+          esperando: db.listRunSourcesOfRun(runId).filter((f) => f.estado === 'esperando').length,
+          clasificaciones: clasificado.n,
+          clasificacionesUsd: clasificado.usd,
+        };
+      } catch (err) {
+        console.error('[costo] No se pudo contar lo pendiente del ciclo:', err.message);
+      }
+      console.log(formatCycleCostLine(closed, extra));
+    }
     // Costo real de las llamadas de ciclos ANTERIORES (las de este todavía
     // no están asentadas en Apify): lecturas gratis de la API, nunca tira.
     const reconciled = await reconcileRealCosts();

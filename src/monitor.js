@@ -57,7 +57,8 @@ const { getPlatform, listPlatformIds, DEFAULT_PLATFORM_ID } = require('./platfor
 const { isPlatformError } = require('./platforms/errors');
 const { motivoDeFallo } = require('./runStatus');
 const { searchWait } = require('./searchWait');
-const { usdForCall } = require('./apifyCost');
+const { usdForCall, maxUsdForSearch } = require('./apifyCost');
+const busquedaTope = require('./busquedaTope');
 const { runWithContext, getContext } = require('./usageContext');
 const progress = require('./monitoringProgress');
 const { resolveBackfillMax } = require('./backfillConfig');
@@ -1301,6 +1302,18 @@ function cerrarRecuperadas(recovery, { platformId, runId }) {
   }
 }
 
+/** Junta dos respuestas de la misma búsqueda sin repetir posteos (por id; gana el primero que llegó). */
+function unirPosteos(primeros, segundos) {
+  const vistos = new Set(primeros.map((p) => String(p && p.id)));
+  const out = [...primeros];
+  for (const post of segundos) {
+    if (!post || vistos.has(String(post.id))) continue;
+    vistos.add(String(post.id));
+    out.push(post);
+  }
+  return out;
+}
+
 /** Suma a un resultado ya anotado los términos que lo trajeron en esta corrida. Nunca tira. */
 function addSearchTerms(post, platformId, termsById) {
   const terminos = termsById.get(String(post.id));
@@ -1437,6 +1450,11 @@ async function runMonitoringCycle({ plataformas, trigger } = {}) {
   const scrapedAccounts = {};
   const porPlataforma = {};
   let metricsRefreshedFree = 0;
+  // Tope máximo de una búsqueda y techo de gasto de ESTA corrida para las
+  // segundas consultas (cuando una búsqueda llena su tope): ver
+  // src/busquedaTope.js. El techo no recorta las consultas normales.
+  const topeConfig = busquedaTope.topeConfig();
+  const presupuestoExtra = busquedaTope.crearPresupuesto({ extraMaxUsd: topeConfig.extraMaxUsd });
 
   // Resultados de búsqueda ya consultados hace más de SEARCH_SEEN_TTL_DAYS.
   try {
@@ -1546,7 +1564,19 @@ async function runMonitoringCycle({ plataformas, trigger } = {}) {
         now: cycleNowMs,
         cubiertoHasta: tipo === 'busqueda' ? recovery.cubiertoHasta.get(sourceKey(fuente)) || null : null,
       });
-      const limit = window.isDefault ? baseLimit : raiseLimitForWindow(baseLimit, window.windowDays);
+      let limit = window.isDefault ? baseLimit : raiseLimitForWindow(baseLimit, window.windowDays);
+      // Una búsqueda: el tope sale además del volumen medido de ESE término
+      // (lo que trajo por hora en sus consultas recientes), nunca menos que
+      // el de recién. Pedir un tope más alto no cuesta: se paga por resultado.
+      if (tipo === 'busqueda') {
+        try {
+          const tasa = busquedaTope.tasaTermino(db.lastSearchCallsForTerm(platformId, fuente, busquedaTope.HISTORY_CALLS));
+          const horas = busquedaTope.horasPedidas(window.sinceIso, cycleNowMs) || 24;
+          limit = busquedaTope.topeParaTermino({ topeDeHoy: limit, tasa, horas, resultsMax: topeConfig.resultsMax });
+        } catch (err) {
+          console.error(`[monitor] (${platformId}) no se pudo medir el volumen de «${fuente}» (se usa el tope de siempre):`, err.message);
+        }
+      }
       if (!window.isDefault) {
         console.log(
           `[monitor] ${platformId} ${tipo} «${fuente}»: retoma desde ${window.sinceIso} (${window.windowDays} días; tope ${limit}, base ${baseLimit})` +
@@ -1628,21 +1658,33 @@ async function runMonitoringCycle({ plataformas, trigger } = {}) {
         // pero no es una respuesta completa.
         const parcial = Boolean(meta && meta.parcial);
         const motivo = parcial ? `RUN_${String(meta.runStatus || 'FAILED').replace('-', '_')}` : null;
-        progress.finishItem(key, { ok: true, detail: describeFound(posts, platformId) });
+        let todos = Array.isArray(posts) ? posts : [];
+        // La búsqueda llenó su tope: quedó afuera una parte de cada día de la
+        // ventana (los resultados no vienen por fecha). Se pide más con una
+        // segunda consulta, si entra en el techo de la corrida; si no, queda
+        // marcado. Sin meta (un adapter que no la informa) no se sabe: nada.
+        let topeLleno = false;
+        if (!parcial && meta && Number(meta.maxItems) > 0 && Number(meta.rawItems) >= Number(meta.maxItems)) {
+          const segunda = await segundaConsulta(source, key);
+          todos = segunda.posts.length > 0 ? unirPosteos(todos, segunda.posts) : todos;
+          topeLleno = !segunda.cubierto;
+        }
+        progress.finishItem(key, { ok: true, detail: describeFound(todos, platformId) });
         progress.tick(1, { ok: true });
         actualizarFuente(
           rowId,
           {
             estado: parcial ? 'parcial' : 'ok',
             ...(parcial ? { motivo } : {}),
-            items: meta && meta.rawItems != null ? meta.rawItems : Array.isArray(posts) ? posts.length : 0,
-            nuevos: contarNuevos(posts, platformId),
+            items: meta && meta.rawItems != null ? meta.rawItems : todos.length,
+            nuevos: contarNuevos(todos, platformId),
             apifyRunId,
+            topeLleno,
             ...(meta && meta.until ? { until: meta.until } : {}),
           },
           { startedMs }
         );
-        return { source, ok: true, posts: Array.isArray(posts) ? posts : [], estado: parcial ? 'parcial' : 'ok', motivo, meta };
+        return { source, ok: true, posts: todos, estado: parcial ? 'parcial' : 'ok', motivo, meta, topeLleno };
       } catch (err) {
         // La corrida no terminó dentro de la espera pero sigue en Apify con
         // su id: queda esperando y el ciclo siguiente la levanta.
@@ -1653,6 +1695,85 @@ async function runMonitoringCycle({ plataformas, trigger } = {}) {
         progress.tick(1, { ok: pendiente ? null : false });
         actualizarFuente(rowId, { estado: pendiente ? 'esperando' : 'fallo', motivo, detalle: err && err.message, apifyRunId: runId }, { startedMs });
         return { source, ok: false, err, posts: [], estado: pendiente ? 'esperando' : 'fallo', motivo };
+      }
+    };
+
+    /**
+     * La segunda consulta de una búsqueda que llenó su tope: la misma
+     * ventana, con 4 veces el tope (hasta SEARCH_RESULTS_MAX), si lo máximo
+     * que puede costar entra en el techo de la corrida para estas consultas.
+     * Deja su propia fila (intento 2). Nunca tira.
+     * @returns {Promise<{ posts: object[], cubierto: boolean }>} cubierto:
+     *   la segunda respondió y NO llenó su tope (ya no falta nada).
+     */
+    const segundaConsulta = async (source, key) => {
+      const tope = busquedaTope.topeRelanzamiento(source.limit, topeConfig.resultsMax);
+      if (!tope) {
+        console.warn(`[monitor] ${platformId}: «${source.fuente}» llenó su tope (${source.limit}), que ya es el máximo: puede faltar algo.`);
+        return { posts: [], cubierto: false };
+      }
+      const costoMax = maxUsdForSearch(tope);
+      if (!presupuestoExtra.reservar(costoMax)) {
+        console.warn(
+          `[monitor] ${platformId}: «${source.fuente}» llenó su tope (${source.limit}) y la segunda consulta (hasta US$ ${costoMax.toFixed(2)}) no entra en el techo de esta corrida ` +
+            `(US$ ${presupuestoExtra.techo.toFixed(2)}, ${presupuestoExtra.reservado().toFixed(2)} ya apartados): puede faltar algo.`
+        );
+        return { posts: [], cubierto: false };
+      }
+      console.log(`[monitor] ${platformId}: «${source.fuente}» llenó su tope (${source.limit}): se pide más, con tope ${tope} (hasta US$ ${costoMax.toFixed(2)}).`);
+      const startedMs = Date.now();
+      const rowId = abrirFuente({
+        plataforma: platformId,
+        tipo: source.tipo,
+        fuente: source.fuente,
+        intento: 2,
+        actor: platform.actorId || null,
+        desdeIso: source.window.sinceIso,
+        tope,
+      });
+      progress.updateItem(key, 'tope lleno · se pide más…');
+      let apifyRunId = null;
+      let meta = null;
+      try {
+        const posts = await source.run({
+          resultsLimit: tope,
+          lookback: source.window.lookback,
+          sinceIso: source.window.sinceIso,
+          deadlineAt,
+          onRunStarted: (run) => {
+            apifyRunId = run && run.id ? run.id : null;
+            actualizarFuente(rowId, { apifyRunId });
+          },
+          onMeta: (m) => {
+            meta = m || null;
+          },
+        });
+        const lista = Array.isArray(posts) ? posts : [];
+        const parcial = Boolean(meta && meta.parcial);
+        const llena = Boolean(meta && Number(meta.maxItems) > 0 && Number(meta.rawItems) >= Number(meta.maxItems));
+        actualizarFuente(
+          rowId,
+          {
+            estado: parcial ? 'parcial' : 'ok',
+            ...(parcial ? { motivo: `RUN_${String(meta.runStatus || 'FAILED').replace('-', '_')}` } : {}),
+            items: meta && meta.rawItems != null ? meta.rawItems : lista.length,
+            nuevos: contarNuevos(lista, platformId),
+            apifyRunId,
+            topeLleno: llena,
+            ...(meta && meta.until ? { until: meta.until } : {}),
+          },
+          { startedMs }
+        );
+        if (llena) console.warn(`[monitor] ${platformId}: «${source.fuente}» llenó también el tope de la segunda consulta (${tope}): puede faltar algo.`);
+        return { posts: lista, cubierto: !parcial && !llena };
+      } catch (err) {
+        const runId = (err && err.apifyRunId) || apifyRunId;
+        const pendiente = Boolean(err && err.runPending && runId);
+        actualizarFuente(rowId, { estado: pendiente ? 'esperando' : 'fallo', motivo: motivoDeFallo(err), detalle: err && err.message, apifyRunId: runId }, { startedMs });
+        console.warn(
+          `[monitor] ${platformId}: la segunda consulta de «${source.fuente}» ${pendiente ? 'no terminó a tiempo y sigue en Apify (se levanta en el próximo ciclo)' : `falló (${(err && err.message) || 'sin detalle'})`}; se usa lo que trajo la primera.`
+        );
+        return { posts: [], cubierto: false };
       }
     };
 
@@ -1698,7 +1819,13 @@ async function runMonitoringCycle({ plataformas, trigger } = {}) {
       }
     }
     // Cómo le fue a cada fuente, para quien cierra el ciclo.
-    porPlataforma[platformId].fuentes = outcomes.map((o) => ({ tipo: o.source.tipo, fuente: o.source.fuente, estado: o.estado, motivo: o.motivo }));
+    porPlataforma[platformId].fuentes = outcomes.map((o) => ({
+      tipo: o.source.tipo,
+      fuente: o.source.fuente,
+      estado: o.estado,
+      motivo: o.motivo,
+      ...(o.topeLleno ? { topeLleno: true } : {}),
+    }));
 
     // Seguidores que vinieron con los posteos (apidojo): a la caché antes de
     // guardar, así el snapshot del posteo nuevo ya sale con el dato fresco.

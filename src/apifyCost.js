@@ -467,13 +467,24 @@ function summarizeCosts({ days = 30, now = Date.now() } = {}) {
  * Apify; se concilia al cerrar el ciclo siguiente y ahí se corrige el usd
  * de monitoring_runs); el desglose entre paréntesis, en resultados por fase.
  * @param {{ id: number, calls: number, results: number, usd: number, porFase: Object<string, {results: number}> }} run
+ * @param {{ esperando?: number, clasificaciones?: number, clasificacionesUsd?: number|null }} [extra]
+ *   esperando: búsquedas que quedaron en Apify (se levantan en el ciclo
+ *   siguiente; su costo todavía no está en el total). clasificaciones: los
+ *   resultados de búsqueda que evaluó el modelo en este ciclo, con su costo
+ *   estimado (no es de Apify: va aparte). Sin nada que decir, la línea es
+ *   la de siempre.
  */
-function formatCycleCostLine(run) {
+function formatCycleCostLine(run, { esperando = 0, clasificaciones = 0, clasificacionesUsd = null } = {}) {
   const resultsOf = (phase) => (run.porFase && run.porFase[phase] ? run.porFase[phase].results : 0);
-  return (
+  let line =
     `[costo] ciclo #${run.id}: ${run.calls} llamadas, ${run.results} resultados ≈ US$ ${Number(run.usd || 0).toFixed(2)} ` +
-    `(monitoreo ${resultsOf('monitoreo')} · busqueda ${resultsOf('busqueda')} · benchmark ${resultsOf('benchmark')} · refresco ${resultsOf('refresco')})`
-  );
+    `(monitoreo ${resultsOf('monitoreo')} · busqueda ${resultsOf('busqueda')} · benchmark ${resultsOf('benchmark')} · refresco ${resultsOf('refresco')})`;
+  if (esperando > 0) line += ` · ${esperando} ${esperando === 1 ? 'búsqueda esperando' : 'búsquedas esperando'} en Apify`;
+  if (clasificaciones > 0) {
+    line += ` · ${clasificaciones} ${clasificaciones === 1 ? 'clasificación' : 'clasificaciones'}`;
+    if (clasificacionesUsd != null) line += ` ≈ US$ ${Number(clasificacionesUsd).toFixed(2)} (estimado, modelo)`;
+  }
+  return line;
 }
 
 module.exports = {
