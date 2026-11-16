@@ -96,7 +96,9 @@ social_listening_app/
 │   ├── postImageRoutes.js    # Ruta de la imagen (detrás del login) y el campo image del listado de posteos.
 │   ├── classifier.js         # Relevancia + título + sentimiento + motivo de cada posteo (una llamada, mismo modelo que el análisis), para todas las redes.
 │   ├── mailer.js             # Envío de emails (alertas + magic link).
-│   ├── auth/                 # Allowlist, magic link, sesión, rate limit, gate.
+│   ├── auth/                 # Allowlist con roles, magic link, sesión en SQLite (y sus topes), rate limit, gate, requireRole y las rutas de /api/auth.
+│   ├── backfillConfig.js     # BACKFILL_MAX: el tope de posteos por invocación del backfill.
+│   ├── envEntero.js          # Lee un entero positivo del .env (los chequeos del arranque).
 │   ├── notify.js             # Orquesta las notificaciones (email + WhatsApp a futuro).
 │   ├── scheduler.js          # Agenda el monitoreo (node-cron; default 8, 12, 16 y 20 h).
 │   ├── lastRun.js            # Resumen de la última corrida (traídas, nuevas, guardadas, destacadas, costo) para el Pipeline.
@@ -132,6 +134,7 @@ social_listening_app/
 │   ├── vendor/               # Tabulator 6.3.0 y Leaflet 1.9.4, copiados del paquete de npm (nunca desde un CDN).
 │   └── js/
 │       ├── theme.js          # Tema: clara de origen, botón para pasar a oscura (va en el <head>).
+│       ├── sesion.js         # La sesión en el navegador: el rol (oculta lo de operador), el 401 al login y X-SL-Auto (va en el <head>).
 │       ├── platform.js       # window.SL_PLATFORM desde el data-platform del <body> (instagram.html, x.html).
 │       ├── main.js           # Píldora de solapas (teclas 1-4, hash) + menú del usuario (sesión / logout).
 │       ├── topbar.js         # "escuchando · HH:MM" de la barra superior (última corrida terminada).
@@ -213,10 +216,13 @@ social_listening_app/
 
 Solo entran emails de la allowlist. El archivo
 `config/allowed-emails.txt` (no se versiona; copiá el `.example.txt`) se puede
-editar a mano, un email por línea. En producción (Railway) usá también
-`ALLOWED_EMAILS` en las variables de entorno: un email entra si está en el
-archivo **o** en el env. Los cambios al archivo aplican en el próximo intento,
-sin reiniciar.
+editar a mano, un email por línea, con su rol: `email;rol` (`lector` u
+`operador`; sin rol, `lector`). En producción (Railway) usá también
+`ALLOWED_EMAILS` en las variables de entorno, con el mismo formato separado
+por comas: un email entra si está en el archivo **o** en el env. Los cambios
+al archivo aplican en el próximo pedido, sin reiniciar: un cambio de rol vale
+ya, y sacar a alguien le corta la sesión (ver "Roles y sesión revocable" en
+las decisiones técnicas).
 
 Flujo: la persona pone su email → si está autorizado se manda un link (15 min,
 un solo uso) → abre el mail, toca el link y, en la página que se abre, hace
@@ -229,14 +235,18 @@ abre ese webmail en otra pestaña. Antes de entrar no se ve ninguna
 publicación: la parte de la izquierda muestra solo temas y cantidades de
 `GET /api/public/resumen`.
 
-Hace falta `SESSION_SECRET` (string largo aleatorio) y `APP_BASE_URL` (p. ej.
-`http://localhost:3000`). El SMTP es el mismo de las alertas (`SMTP_*`).
+Hace falta `APP_BASE_URL` (p. ej. `http://localhost:3000`); `SESSION_SECRET`
+ya no se usa (la sesión vive en SQLite). El SMTP es el mismo de las alertas
+(`SMTP_*`). Las rutas de `/api/auth/*` están en `src/auth/authRoutes.js`.
 
 Qué pide sesión lo decide `src/auth/gate.js`, que corre antes que todo lo
 demás: `/api/` (salvo las cuatro rutas de `/api/auth/` y `GET
 /api/public/resumen`, cinco en total, escritas exactas) y cualquier página
-`.html` que no sea la de login. Lo público se reconoce por el camino exacto;
-lo protegido, por el camino **decodificado y en minúsculas, con las barras
+`.html` que no sea la de login. En `/api/`, además, todo lo que no sea GET,
+HEAD u OPTIONS exige el rol `operador` (salvo `/api/auth/*`) y tiene que
+salir de una página de la app (`Sec-Fetch-Site` u `Origin`, también en
+`/api/auth/*`). Una página sin sesión va al login con `?volver=`. Lo público se
+reconoce por el camino exacto; lo protegido, por el camino **decodificado y en minúsculas, con las barras
 unificadas**, porque Express no distingue mayúsculas en las rutas y el disco
 de Windows tampoco: hasta octubre de 2026 el gate comparaba el camino tal
 como llegaba y `/API/...` pasaba sin sesión hasta el handler. Test:
@@ -820,10 +830,32 @@ Abrí `.env` y pegá:
   ["contraseña de aplicación"](https://myaccount.google.com/apppasswords)
   (alertas del monitoreo y magic link de login)
 - `ALERT_EMAIL_TO` → a quién avisar cuando aparezca un posteo relevante
-- `SESSION_SECRET` → firma de la cookie de sesión (obligatorio para entrar)
 - `APP_BASE_URL` → URL pública de la app, sin barra final (el link del mail
   se arma con esto, no con el header Host)
-- `ALLOWED_EMAILS` → opcional; emails extra separados por coma
+- `ALLOWED_EMAILS` → opcional; emails extra separados por coma, con el mismo
+  formato que el archivo (`ana@x.gob.ar;operador,juan@x.gob.ar`)
+- `SESSION_IDLE_MIN` → opcional; minutos sin actividad que cortan la sesión
+  (30). Las consultas automáticas de la pantalla no cuentan como actividad.
+- `SESSION_MAX_HOURS` → opcional; horas desde el login que la cortan aunque
+  haya actividad (8)
+- `BACKFILL_MAX` → opcional; posteos que clasifica como mucho una invocación
+  del backfill (200)
+- `SESSION_SECRET` **ya no se usa**: si está en tu `.env`, borralo.
+
+La allowlist (`config/allowed-emails.txt`, copiada de
+`config/allowed-emails.example.txt`) lleva un correo por línea con su rol:
+
+```
+ana@buenosaires.gob.ar;operador
+juan@buenosaires.gob.ar
+```
+
+`lector` (el rol si no ponés nada) ve todo pero no gasta ni escribe: no
+actualiza, no analiza, no agrega ni saca fuentes, no ignora ni cambia el
+tono, no edita temas, figuras ni reclamos. `operador` puede todo. Un rol mal
+escrito vale `lector` y se avisa en el log. Los valores mal escritos de
+`SESSION_IDLE_MIN`, `SESSION_MAX_HOURS` y `BACKFILL_MAX` frenan el arranque
+con un mensaje claro.
 
 El geocoding del mapa de reclamos usa USIG (servicio del GCBA) y los datos
 abiertos del GCBA (villas, plazas, estaciones, hospitales, clubes,
@@ -2133,6 +2165,87 @@ es `test/securityHeaders.test.js`.
   ni el `.env`: dicen "Falta configuración del servidor" o qué servicio
   rechazó la clave. El nombre de la variable queda en el log.
 - **Producción:** `NODE_ENV=production` (ver `.env.example`).
+
+### Roles y sesión revocable (noviembre 2026)
+
+Rama `roles-y-sesion` (OWASP ASVS V7 y V8). Tests: `test/requireRole.test.js`
+y `test/session.test.js`.
+
+- **Roles.** `lector` ve todo pero no gasta ni escribe; `operador` puede
+  todo. Salen de la allowlist (`email;rol`, `src/auth/allowlist.js`) en cada
+  pedido. **La regla es general, no ruta por ruta**: en el gate
+  (`src/auth/gate.js`), todo pedido a `/api/` que no sea GET, HEAD u OPTIONS
+  exige `operador`, salvo `/api/auth/*` (un lector tiene que poder salir), y
+  responde 403 `{ error: 'No tenés permiso para esta acción.' }`. Se decide
+  sobre el camino canónico (decodificado, en minúsculas, con las barras
+  unificadas), así `/API/...` no la saltea. Una ruta nueva que escriba queda
+  cubierta sola; el test recorre todas las rutas no-GET registradas (las lee
+  del código). `requireRole('operador')` (`src/auth/requireRole.js`) queda
+  para un GET que gaste o escriba; hoy no hay ninguno (lo único que hace un
+  GET es bajar gratis las comunas del GCBA a `data/geo`).
+- **Por qué la sesión en SQLite.** Antes la cookie estaba firmada con HMAC y
+  valía 7 días: no había forma de cortarla. Si alguien salía de la allowlist
+  o se copiaba una cookie, seguía entrando hasta que vencía. Ahora la cookie
+  lleva solo un id al azar de 32 bytes y la tabla `sessions` guarda su
+  SHA-256 (como los magic links: con la base sola no se arma una cookie), el
+  correo, cuándo se creó, la última actividad y si está revocada. Se revoca
+  al salir (logout), cuando el correo sale de la allowlist (todas sus
+  sesiones, en el próximo pedido) y se puede revocar a mano. Cada login crea
+  una sesión nueva y revoca la que traía la cookie.
+- **Una lectura dudosa de la allowlist no revoca.** Revocar es para siempre,
+  así que el gate, antes de revocar a un correo que "ya no está", vuelve a
+  leer el archivo a los 300 ms (`CONFIRMAR_BAJA_MS`): un editor que lo guarda
+  lo vacía y lo reescribe, y una lectura en ese instante lo ve vacío o
+  cortado. Un error de lectura que no sea "no existe" (EBUSY o EPERM en
+  Windows) usa la última lectura buena; si ni así se puede confirmar, 503 y
+  no se revoca nada.
+- **Cortes.** Sin actividad en `SESSION_IDLE_MIN` (30) o a las
+  `SESSION_MAX_HOURS` (8) del login, aunque haya actividad. La última
+  actividad se anota como mucho una vez por minuto; si la base está ocupada
+  en ese momento (otro proceso escribiendo), el pedido sigue y el toque queda
+  para el próximo. La purga borra las revocadas y las vencidas al arrancar y
+  una vez por día (4:17).
+- **`X-SL-Auto`.** Las consultas automáticas de la pantalla (la barra
+  superior, el panel, el inicio cada minuto, el progreso de una corrida o de
+  un análisis) mandan `X-SL-Auto: 1`: se validan igual, pero no cuentan como
+  actividad. Si no, una pestaña abierta mantenía viva la sesión para
+  siempre. El header solo sirve para no renovar: vencida, la sesión da 401
+  igual.
+- **Cookie.** `httpOnly`, `sameSite: 'strict'`, `secure` con `APP_BASE_URL`
+  https, `maxAge` de `SESSION_MAX_HOURS`. Con `strict`, un link a la app
+  desde Gmail o WhatsApp llega sin la cookie aunque haya sesión: el gate
+  manda la página al login con `?volver=` (solo `/dashboard.html`,
+  `/instagram.html` y `/x.html`), y el login consulta `/api/auth/me` al
+  cargar y, si hay sesión, vuelve a esa página con su `#` (un
+  `#analisis-57` compartido abre ese análisis); sin `?volver=`, al inicio.
+- **Escrituras solo desde la app.** `strict` no frena a otra página del
+  mismo sitio (otro puerto de localhost, otro subdominio). Por eso el gate
+  exige, en todo lo que no sea GET, HEAD u OPTIONS bajo `/api` (también
+  `/api/auth/*`), que el pedido salga de una página de la app:
+  `Sec-Fetch-Site` `same-origin` (o `none`) o, sin ese header, un `Origin`
+  igual al del Host o al de `APP_BASE_URL`; si no, 403 "Pedido rechazado: no
+  salió de esta app.". Sin ninguno de los dos headers no hay navegador de
+  por medio (curl, los tests) y pasa: la sesión sigue siendo obligatoria.
+- **Solo JSON.** `server.js` ya no monta `express.urlencoded`. Ojo: eso solo
+  no frena un formulario (varias rutas toman la plataforma de la query y no
+  necesitan cuerpo); lo frena la regla de arriba. El login
+  (`public/js/loginVerify.js`) manda el token en JSON.
+- **Frontend.** `public/js/sesion.js` (en el `<head>` de las páginas con
+  sesión) pide `/api/auth/me`, marca `<html data-rol>` y lleva al login ante
+  cualquier 401 de `/api/` (con el corte por inactividad, pasa seguido), con
+  `location.replace`: la página vencida no queda en el historial, y si una
+  vuelve del bfcache con "Atrás", pregunta de nuevo. Lo que gasta o escribe
+  lleva la clase `solo-operador` y el CSS lo oculta salvo para un operador;
+  el selector de tono queda deshabilitado; un tooltip que nombra una de esas
+  acciones lleva esa parte en `data-tip-op` (`tip.js` la suma solo para un
+  operador). Para un operador las pantallas no cambian (comparado control
+  por control contra `main`).
+- **Backfill.** `POST /api/monitoring/backfill-classification` clasifica
+  como mucho `BACKFILL_MAX` (200) posteos por invocación y de a uno por vez:
+  con otro en curso responde 409.
+- **Al desplegar:** las sesiones de antes (cookie firmada) dejan de valer y
+  todos vuelven a entrar con un link; la allowlist arranca con todos como
+  `lector` hasta que se les ponga `;operador`.
 
 ---
 
