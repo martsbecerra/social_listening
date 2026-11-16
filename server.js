@@ -18,16 +18,19 @@ require('dotenv').config();
 // tiran al cargar si el valor no es válido, y el arranque tiene que abortar
 // con un mensaje claro en vez de un stack trace. abortarArranque está más
 // abajo (función hoisted). Los topes de la sesión (SESSION_IDLE_MIN,
-// SESSION_MAX_HOURS, src/auth/sessionConfig.js), igual.
+// SESSION_MAX_HOURS, src/auth/sessionConfig.js) y BACKFILL_MAX
+// (src/backfillConfig.js), igual.
 const { resolveIgActor } = require('./src/platforms/igActor');
 const { resolveRefreshMode } = require('./src/refreshMode');
 const { resolveReachRule, describeReachRule } = require('./src/reachRule');
 const { resolveSessionConfig, describeSessionConfig } = require('./src/auth/sessionConfig');
+const { resolveBackfillMax } = require('./src/backfillConfig');
 try {
   resolveIgActor();
   resolveRefreshMode();
   resolveReachRule();
   resolveSessionConfig();
+  resolveBackfillMax();
 } catch (err) {
   abortarArranque([err.message]);
 }
@@ -558,12 +561,17 @@ app.post('/api/monitoring/run-now', async (req, res) => {
 // tienen (posteos de antes de esta funcionalidad, o que fallaron al
 // clasificar), y SOLO el tema para los ya clasificados que no lo tienen (los
 // guardados antes de la columna tema). Una llamada al LLM por posteo: con
-// muchos pendientes tarda (el avance sale por consola cada 50).
+// muchos pendientes tarda (el avance sale por consola cada 50). Hasta
+// BACKFILL_MAX posteos por invocación (src/backfillConfig.js) y una sola a la
+// vez: con otra en curso, 409.
 app.post('/api/monitoring/backfill-classification', async (req, res) => {
   try {
     const result = await monitor.backfillClassification(monitoringPlataforma(req));
     res.json(result);
   } catch (err) {
+    if (err.code === 'BACKFILL_EN_CURSO') {
+      return res.status(409).json({ error: err.userMessage });
+    }
     console.error('Error en /api/monitoring/backfill-classification:', err);
     res.status(502).json({ error: err.userMessage || 'Falló la clasificación. Revisá la consola del servidor.' });
   }
@@ -652,7 +660,8 @@ const server = app.listen(PORT, () => {
   console.log(
     `   Login: APP_BASE_URL=${process.env.APP_BASE_URL || '(falta)'} | SMTP=${process.env.SMTP_HOST || '(falta SMTP_HOST)'}`
   );
-  console.log(`   Sesión (SESSION_IDLE_MIN, SESSION_MAX_HOURS): ${describeSessionConfig(resolveSessionConfig())}\n`);
+  console.log(`   Sesión (SESSION_IDLE_MIN, SESSION_MAX_HOURS): ${describeSessionConfig(resolveSessionConfig())}`);
+  console.log(`   Backfill de la clasificación: hasta BACKFILL_MAX=${resolveBackfillMax()} posteos por invocación, uno a la vez\n`);
   // Windows: que la máquina no se suspenda mientras la app corre (ver
   // src/keepAwake.js). Nunca tira; en otros sistemas no hace nada.
   startKeepAwake();

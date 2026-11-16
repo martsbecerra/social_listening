@@ -10,20 +10,10 @@
 // puede nombrar la variable).
 // ==========================================================================
 
+const { leerEnteroPositivo } = require('../envEntero');
+
 const DEFAULT_IDLE_MIN = 30;
 const DEFAULT_MAX_HOURS = 8;
-
-function leerEnteroPositivo(env, nombre, porDefecto) {
-  const raw = env[nombre];
-  if (raw == null || String(raw).trim() === '') return porDefecto;
-  const texto = String(raw).trim();
-  if (!/^\d+$/.test(texto) || Number(texto) <= 0) {
-    const e = new Error(`${nombre}="${raw}" no es válido: tiene que ser un entero positivo, sin puntos ni comas (por defecto ${porDefecto}).`);
-    e.userMessage = e.message;
-    throw e;
-  }
-  return Number(texto);
-}
 
 function resolveSessionConfig(env = process.env) {
   const idleMin = leerEnteroPositivo(env, 'SESSION_IDLE_MIN', DEFAULT_IDLE_MIN);
@@ -38,7 +28,6 @@ function describeSessionConfig(cfg = resolveSessionConfig()) {
 module.exports = {
   resolveSessionConfig,
   describeSessionConfig,
-  leerEnteroPositivo,
   DEFAULT_IDLE_MIN,
   DEFAULT_MAX_HOURS,
 };

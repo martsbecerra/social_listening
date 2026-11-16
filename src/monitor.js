@@ -57,6 +57,7 @@ const { getPlatform, listPlatformIds, DEFAULT_PLATFORM_ID } = require('./platfor
 const { isPlatformError } = require('./platforms/errors');
 const { runWithContext } = require('./usageContext');
 const progress = require('./monitoringProgress');
+const { resolveBackfillMax } = require('./backfillConfig');
 const db = require('./db');
 const { syncPostImages } = require('./postImageSync');
 
@@ -1314,21 +1315,47 @@ async function runMonitoringCycle({ plataformas, trigger } = {}) {
  * tema para los ya clasificados que no lo tienen (guardados antes de la
  * columna tema). Una llamada al LLM por posteo, de a una. Se puede llamar
  * las veces que haga falta: no vuelve a tocar lo que ya está completo.
+ * Hasta `max` posteos por invocación (BACKFILL_MAX, 200 por defecto, ver
+ * src/backfillConfig.js): el resto queda para la próxima. Una sola a la vez
+ * en todo el proceso: con otra en curso tira code BACKFILL_EN_CURSO (la ruta
+ * responde 409); dos clics seguidos pagarían dos veces los mismos posteos.
  * @returns {Promise<{ classified: number, temasCompletados: number, stillPending: number }>}
  *   classified: sin título que quedaron clasificados; temasCompletados: ya
  *   clasificados a los que solo se les completó el tema; stillPending: los
- *   que el clasificador no pudo resolver (quedan para la próxima).
+ *   que quedan pendientes (el clasificador no pudo, o no entraron en el tope).
  */
-async function backfillClassification(platformId) {
+let backfillEnCurso = false;
+
+async function backfillClassification(platformId, { max = resolveBackfillMax() } = {}) {
   requirePlatformId(platformId, 'backfillClassification');
+  if (backfillEnCurso) {
+    const e = new Error('Ya hay un backfill de la clasificación en curso');
+    e.code = 'BACKFILL_EN_CURSO';
+    e.userMessage = 'Ya hay una clasificación en curso. Esperá a que termine.';
+    throw e;
+  }
+  backfillEnCurso = true;
+  try {
+    return await backfillSinCandado(platformId, max);
+  } finally {
+    backfillEnCurso = false;
+  }
+}
+
+async function backfillSinCandado(platformId, max) {
   const platform = getPlatform(platformId);
-  const pending = db.listUnclassified({ plataforma: platformId });
+  const todos = db.listUnclassified({ plataforma: platformId });
+  const pending = todos.slice(0, max);
+  const sinIntentar = todos.length - pending.length;
   let classified = 0;
   let temasCompletados = 0;
   let stillPending = 0;
 
-  if (pending.length > 0) {
-    console.log(`[monitor] backfill (${platformId}): ${pending.length} posteo(s) sin clasificar o sin tema.`);
+  if (todos.length > 0) {
+    console.log(
+      `[monitor] backfill (${platformId}): ${todos.length} posteo(s) sin clasificar o sin tema` +
+        (sinIntentar > 0 ? `; van ${pending.length} (tope BACKFILL_MAX=${max}), ${sinIntentar} quedan para la próxima.` : '.')
+    );
   }
   for (const [i, row] of pending.entries()) {
     // Puede tardar (una llamada por posteo): una línea cada 50 para seguirlo.
@@ -1382,7 +1409,7 @@ async function backfillClassification(platformId) {
       `[monitor] backfill: ${stillPending} posteo(s) siguen sin clasificar o sin tema (el clasificador falló). Se reintentan en la próxima corrida.`
     );
   }
-  return { classified, temasCompletados, stillPending };
+  return { classified, temasCompletados, stillPending: stillPending + sinIntentar };
 }
 
 module.exports = {
