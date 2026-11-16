@@ -14,7 +14,8 @@
 //   para pintar la primera vez sin parpadeo; quien decide es el servidor
 //   (el gate responde 403 a un lector en todo lo que no sea GET).
 // - El 401. Si cualquier pedido a /api/ responde 401 (la sesión venció, se
-//   revocó o el correo salió de la allowlist), la página va al login.
+//   revocó o el correo salió de la allowlist), la página va al login (sin
+//   quedar en el historial); si vuelve del bfcache, se pregunta de nuevo.
 // - X-SL-Auto. slAuto(init) suma el header `X-SL-Auto: 1` a un pedido
 //   automático (la barra superior, el inicio cada minuto, el progreso): el
 //   servidor lo valida igual pero no lo cuenta como actividad, así dejar la
@@ -65,7 +66,10 @@
     } catch {
       /* nada */
     }
-    window.location.assign('/');
+    // replace, no assign: la página vencida no queda en el historial, así
+    // "Atrás" desde el login no la vuelve a mostrar (revisión de noviembre
+    // 2026). Si igual vuelve del bfcache, ver el pageshow de abajo.
+    window.location.replace('/');
   }
 
   window.fetch = async function slFetch(input, init) {
@@ -86,25 +90,40 @@
   };
 
   // --- El rol, del servidor -----------------------------------------------
-  window.slMe = fetchOriginal('/api/auth/me', { credentials: 'same-origin' })
-    .then(async (res) => {
-      if (res.status === 401) {
-        irAlLogin();
-        return null;
-      }
-      if (!res.ok) return null;
-      const me = await res.json();
-      const rol = ROLES.includes(me.role) ? me.role : null;
-      aplicarRol(rol);
-      try {
-        if (rol) localStorage.setItem(ROL_KEY, rol);
-      } catch {
-        /* nada */
-      }
-      document.dispatchEvent(new CustomEvent('sl:rol', { detail: rol }));
-      return me;
-    })
-    .catch(() => null);
+  function pedirRol() {
+    return fetchOriginal('/api/auth/me', { credentials: 'same-origin' })
+      .then(async (res) => {
+        if (res.status === 401) {
+          irAlLogin();
+          return null;
+        }
+        if (!res.ok) return null;
+        const me = await res.json();
+        const rol = ROLES.includes(me.role) ? me.role : null;
+        aplicarRol(rol);
+        try {
+          if (rol) localStorage.setItem(ROL_KEY, rol);
+        } catch {
+          /* nada */
+        }
+        document.dispatchEvent(new CustomEvent('sl:rol', { detail: rol }));
+        return me;
+      })
+      .catch(() => null);
+  }
+
+  window.slMe = pedirRol();
+
+  // Una página que vuelve del bfcache ("Atrás", "Adelante") vuelve con este
+  // ámbito tal cual quedó, también con yendoAlLogin en true si ya se había
+  // ido al login: sin esto, ningún 401 la volvía a llevar. Se baja la
+  // bandera y se vuelve a preguntar la sesión (un 401 lleva al login) y el
+  // rol, que pudo cambiar mientras tanto.
+  window.addEventListener('pageshow', (e) => {
+    if (!e.persisted) return;
+    yendoAlLogin = false;
+    pedirRol();
+  });
 
   // Los controles que se arman antes de saber el rol quedan bien al llegar
   // (aplicarRol recorre los que ya están); los que se arman después leen
