@@ -1393,11 +1393,20 @@ async function recoverPendingSearchRuns(platform, platformId, { searches = [] } 
 function cerrarRecuperadas(recovery, { platformId, runId }) {
   for (const { row, estado, rawItems, nuevos, runStatus, segundaParcial } of recovery.recuperadas) {
     const ahora = new Date().toISOString();
+    // La corrida levantada había llenado su tope: quedó afuera una parte de
+    // cada día de su ventana. La marca avanza igual (como en el camino
+    // directo cuando no se puede pedir más) y queda dicho en su fila: la
+    // pantalla lo muestra como "llegó al tope: puede faltar algo".
+    const llena = estado === 'ok' && Number(row.tope) > 0 && Number(rawItems) >= Number(row.tope);
+    if (llena) {
+      console.warn(`[monitor] ${platformId}: la búsqueda «${row.fuente}» que se levantó de Apify había llenado su tope (${row.tope}): puede faltar algo.`);
+    }
     actualizarFuente(row.id, {
       estado: estado === 'ok' ? 'recuperada' : 'parcial',
       motivo: row.motivo || (estado === 'ok' ? 'TIMEOUT' : `RUN_${String(runStatus || 'FAILED').replace('-', '_')}`),
       items: rawItems,
       nuevos,
+      topeLleno: llena,
       recuperadaEn: runId,
       recuperadaAt: ahora,
       finishedAt: row.finishedAt || ahora,

@@ -276,6 +276,32 @@ describe('una búsqueda que no termina a tiempo queda esperando y el ciclo sigui
     }
   });
 
+  test('una corrida levantada que había llenado su tope: la fila lo dice y la corrida original muestra que puede faltar algo', async () => {
+    const llena = db.startRunSource({ runId: 1, plataforma: 'instagram', tipo: 'busqueda', fuente: 'macri', clave: 'macri', estado: 'esperando', motivo: 'TIMEOUT', actor: APIDOJO, apifyRunId: 'run-llena', tope: 300 });
+    const holgada = db.startRunSource({ runId: 1, plataforma: 'instagram', tipo: 'busqueda', fuente: 'gcba', clave: 'gcba', estado: 'esperando', motivo: 'TIMEOUT', actor: APIDOJO, apifyRunId: 'run-holgada', tope: 300 });
+    const restore = stubInstagram({
+      buscar: { macri: [], gcba: [] },
+      recuperar: {
+        'run-llena': { estado: 'ok', posts: [], rawItems: 300, runStatus: 'SUCCEEDED' },
+        'run-holgada': { estado: 'ok', posts: [], rawItems: 120, runStatus: 'SUCCEEDED' },
+      },
+    });
+    const avisos = [];
+    console.warn = (...a) => avisos.push(a.join(' '));
+    try {
+      await ciclo();
+      assert.equal(db.getRunSource(llena).estado, 'recuperada');
+      assert.equal(db.getRunSource(llena).topeLleno, true);
+      assert.equal(db.getRunSource(holgada).topeLleno, false);
+      assert.ok(avisos.some((a) => /«macri» que se levantó de Apify había llenado su tope \(300\)/.test(a)));
+      const lineas = rs.resumenFallidas([db.getRunSource(llena), db.getRunSource(holgada)]).lineas;
+      assert.ok(lineas.includes('«macri» · llegó al tope de 300 resultados: puede faltar algo'));
+      assert.ok(!lineas.some((l) => /«gcba» · llegó al tope/.test(l)));
+    } finally {
+      restore();
+    }
+  });
+
   test('un término cuya corrida Apify corta siempre después de la espera: a la segunda cortada seguida la marca avanza y deja de pedirse toda la ventana', async () => {
     // Es la regla de "parcial dos veces seguidas", que en su ciclo no se
     // veía: la corrida quedaba `esperando` y recién al levantarla, `parcial`.
