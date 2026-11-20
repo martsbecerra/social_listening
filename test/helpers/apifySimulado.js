@@ -25,7 +25,7 @@ function apifySimulado(responder, { status = 201, otro = null } = {}) {
       inputs.push({ actor: sync[1], input });
       return json(await responder(input, sync[1]), status);
     }
-    const arranque = u.match(/\/acts\/([^/]+)\/runs\?/);
+    const arranque = u.match(/\/acts\/([^/]+)\/runs(?:\?|$)/);
     if (arranque) {
       const input = JSON.parse(opts.body);
       inputs.push({ actor: arranque[1], input });

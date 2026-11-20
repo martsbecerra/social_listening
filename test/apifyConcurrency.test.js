@@ -79,7 +79,7 @@ describe('apify: cola de runs simultáneos', { concurrency: false }, () => {
     let maxInFlight = 0;
     const order = [];
     global.fetch = async (url, { body }) => {
-      assert.match(url, /run-sync-get-dataset-items\?token=token-de-test$/);
+      assert.match(url, /run-sync-get-dataset-items$/);
       const { n } = JSON.parse(body);
       order.push(n);
       inFlight += 1;

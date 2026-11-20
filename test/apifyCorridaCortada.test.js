@@ -57,7 +57,7 @@ function simular({ post = [200], seguimiento = ['SUCCEEDED'], dataset = [{ id: '
     const u = String(url);
     const method = options.method || 'GET';
     pedidos.push(`${method} ${u.replace(/^https:\/\/api\.apify\.com\/v2/, '').replace(/token=[^&]+/, 'token=***')}`);
-    if (method === 'POST' && /\/acts\/[^/]+\/runs\?/.test(u)) {
+    if (method === 'POST' && /\/acts\/[^/]+\/runs(\?|$)/.test(u)) {
       const r = tomar(post);
       return r === 200 ? respond(201, run('RUNNING')) : respond(r, null, `error ${r}`);
     }
@@ -69,7 +69,7 @@ function simular({ post = [200], seguimiento = ['SUCCEEDED'], dataset = [{ id: '
       if (r === 'RED') throw new TypeError('fetch failed');
       return typeof r === 'number' ? respond(r, null, `error ${r}`) : respond(200, run(r));
     }
-    if (/\/datasets\/ds-x\/items\?/.test(u)) {
+    if (/\/datasets\/ds-x\/items$/.test(u)) {
       if (cortes > 0) {
         cortes -= 1;
         return cuerpoCortado();
@@ -107,9 +107,9 @@ describe('flujo asincrónico: el id del run nunca se pierde', { concurrency: fal
     const items = await buscar({ runTimeoutSecs: 3600, onRunStarted: (run) => avisos.push(run) });
     assert.equal(items.length, 2);
     assert.deepEqual(avisos, [{ id: 'run-x', datasetId: 'ds-x' }]);
-    assert.equal(pedidos[0], 'POST /acts/apidojo~instagram-scraper-api/runs?token=***&timeout=3600');
-    assert.match(pedidos[1], /^GET \/actor-runs\/run-x\?token=\*\*\*&waitForFinish=60$/);
-    assert.equal(pedidos.at(-1), 'GET /datasets/ds-x/items?token=***');
+    assert.equal(pedidos[0], 'POST /acts/apidojo~instagram-scraper-api/runs?timeout=3600');
+    assert.match(pedidos[1], /^GET \/actor-runs\/run-x\?waitForFinish=60$/);
+    assert.equal(pedidos.at(-1), 'GET /datasets/ds-x/items');
 
     assert.equal(enCurso.estado, 'en_curso', 'mientras el run corre la fila ya existe');
     assert.equal(enCurso.apify_run_id, 'run-x');
@@ -275,7 +275,7 @@ describe('flujo asincrónico: el id del run nunca se pierde', { concurrency: fal
     try {
       const pedidos = simular();
       await buscar();
-      assert.match(pedidos[0], /^POST \/acts\/apidojo~instagram-scraper-api\/runs\?token=\*\*\*$/);
+      assert.match(pedidos[0], /^POST \/acts\/apidojo~instagram-scraper-api\/runs$/);
       assert.equal(ultima().apify_run_id, 'run-x');
 
       const sync = [];

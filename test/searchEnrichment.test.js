@@ -140,7 +140,7 @@ describe('detalle de los resultados de búsqueda sin caption', { concurrency: fa
       const result = await runWithContext({ runId: 7, phase: 'monitoreo' }, cycle);
 
       assert.equal(requests.length, 1, 'un solo run para todas las URLs');
-      assert.match(requests[0].url, /\/acts\/apify~instagram-scraper\/run-sync-get-dataset-items\?token=token-de-test$/);
+      assert.match(requests[0].url, /\/acts\/apify~instagram-scraper\/run-sync-get-dataset-items$/);
       assert.deepEqual(requests[0].body, { directUrls: [REEL_URL, OTHER_URL], resultsType: 'posts', resultsLimit: 1 }, 'los más nuevos primero');
 
       assert.equal(result.checked, 2);

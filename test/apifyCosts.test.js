@@ -212,7 +212,7 @@ describe('costo de Apify', { concurrency: false }, () => {
     global.fetch = async (url, options = {}) => {
       requests.push({ method: options.method || 'GET', url });
       // El arranque no espera (sin waitForFinish): vuelve enseguida con el id del run.
-      if (/\/acts\/apidojo~instagram-scraper-api\/runs\?token=token-de-test$/.test(url)) {
+      if (/\/acts\/apidojo~instagram-scraper-api\/runs$/.test(url)) {
         assert.equal(options.method, 'POST');
         assert.deepEqual(JSON.parse(options.body), { startUrls: ['https://www.instagram.com/clavescom/'], maxItems: 15 });
         if (firstPostStatus === 402) {
@@ -221,11 +221,11 @@ describe('costo de Apify', { concurrency: false }, () => {
         }
         return respond(200, '', runObject(postStatus));
       }
-      if (/\/actor-runs\/run-1\?token=token-de-test&waitForFinish=60$/.test(url)) {
+      if (/\/actor-runs\/run-1\?waitForFinish=60$/.test(url)) {
         // Al terminar, Apify todavía no asentó el cobro: usageTotalUsd en 0.
         return respond(200, '', runObject(statusAfterWait, { usageTotalUsd: 0, statusMessage: statusAfterWait === 'FAILED' ? 'Actor crashed' : null }));
       }
-      if (/\/datasets\/ds-1\/items\?token=token-de-test$/.test(url)) return respond(200, '', Array.from({ length: 12 }, (_, i) => ({ id: String(i) })));
+      if (/\/datasets\/ds-1\/items$/.test(url)) return respond(200, '', Array.from({ length: 12 }, (_, i) => ({ id: String(i) })));
       throw new Error(`request inesperada: ${url}`);
     };
     try {
@@ -235,9 +235,9 @@ describe('costo de Apify', { concurrency: false }, () => {
       assert.deepEqual(
         requests.map((r) => `${r.method} ${r.url.replace(/token=[^&]+/, 'token=***')}`),
         [
-          'POST https://api.apify.com/v2/acts/apidojo~instagram-scraper-api/runs?token=***',
-          'GET https://api.apify.com/v2/actor-runs/run-1?token=***&waitForFinish=60',
-          'GET https://api.apify.com/v2/datasets/ds-1/items?token=***',
+          'POST https://api.apify.com/v2/acts/apidojo~instagram-scraper-api/runs',
+          'GET https://api.apify.com/v2/actor-runs/run-1?waitForFinish=60',
+          'GET https://api.apify.com/v2/datasets/ds-1/items',
         ]
       );
       let row = lastCall();
@@ -292,7 +292,7 @@ describe('costo de Apify', { concurrency: false }, () => {
       process.env.APIFY_REAL_COST = '0';
       global.fetch = async (url) => {
         requests.push({ method: 'POST', url });
-        assert.match(url, /run-sync-get-dataset-items\?token=token-de-test$/);
+        assert.match(url, /run-sync-get-dataset-items$/);
         return respond(200, '', [{ id: 1 }]);
       };
       requests.length = 0;
@@ -314,7 +314,7 @@ describe('costo de Apify', { concurrency: false }, () => {
     try {
       global.fetch = async (url, options = {}) => {
         assert.equal(options.method || 'GET', 'GET');
-        assert.match(url, /\/actor-runs\/run-9\?token=token-de-test$/);
+        assert.match(url, /\/actor-runs\/run-9$/);
         return respond(200, '', { data: { id: 'run-9', status: 'SUCCEEDED', usageTotalUsd: 0.0065, chargedEventCounts: { 'user-query': 1, 'dataset-item': 3 }, finishedAt: '2026-09-18T06:22:00.000Z' } });
       };
       assert.deepEqual(await fetchRunCost('run-9'), {
