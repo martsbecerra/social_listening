@@ -268,6 +268,22 @@ describe('lo que falló, en textos', () => {
     r = rs.resumenFallidas([fila('a', 'fallo', { motivo: 'QUOTA_EXCEEDED' }), fila('b', 'esperando'), fila('c', 'ok')], { estado: 'cortada' });
     assert.equal(r.pipeline, 'Se cortó por la cuota de Apify: falló 1 de 3 búsquedas y 1 sigue en Apify.');
 
+    // Un término que el ciclo salteó porque su corrida ANTERIOR sigue en
+    // Apify no falló: se cuenta con las que siguen en Apify.
+    const salteada = fila('macri', 'fallo', { motivo: 'SIGUE_EN_APIFY' });
+    r = rs.resumenFallidas([salteada, fila('gcba', 'fallo', { motivo: 'HTTP_502' }), fila('blacri', 'ok')]);
+    assert.equal(r.titulo, 'Falló 1 de 3 búsquedas y 1 sigue en Apify');
+    assert.equal(r.pipeline, 'Falló 1 de 3 búsquedas y 1 sigue en Apify: traídas, nuevas y relevantes son de la 1 que respondió.');
+    assert.equal(r.tooltip, 'Falló 1 de 3 búsquedas: «gcba».\n1 sigue en Apify: «macri»; se levanta en la próxima corrida.\nRetoma desde la última vez que anduvo.');
+    assert.ok(r.lineas.includes('«macri» · su corrida anterior sigue en Apify'));
+    assert.deepEqual({ fallidas: r.fallidas, esperando: r.esperando }, { fallidas: 1, esperando: 1 });
+    r = rs.resumenFallidas([salteada, fila('gcba', 'ok')]);
+    assert.equal(r.titulo, '1 de 2 búsquedas sigue en Apify');
+    assert.equal(r.pipeline, '1 de 2 búsquedas sigue en Apify: se levanta en la próxima corrida.');
+    assert.equal(r.fallidas, 0);
+    assert.equal(rs.estadoCorrida(TERMINADA, [salteada, fila('gcba', 'ok')]), 'incompleta', 'la corrida igual no fue completa');
+    assert.equal(rs.resumenParaLog([salteada, fila('gcba', 'ok')]), '1 sigue en Apify: «macri»');
+
     // Sin ninguna esperando, los textos de siempre.
     r = rs.resumenFallidas([fila('a', 'fallo', { motivo: 'TIMEOUT' }), fila('b', 'ok')]);
     assert.equal(r.titulo, 'Falló 1 de 2 búsquedas');

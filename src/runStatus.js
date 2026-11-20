@@ -137,11 +137,15 @@ function contar(fuentes) {
   const claveDe = (f) => `${f.tipo}:${f.clave != null ? f.clave : String(f.fuente || '').trim().toLowerCase()}`;
   const segundaDe = new Map(filas.filter((f) => TIPOS_FUENTE.has(f.tipo) && (f.intento || 1) === 2).map((f) => [claveDe(f), f]));
   const estadoSegunda = (f) => (segundaDe.get(claveDe(f)) || {}).estado || null;
+  // Un término que este ciclo salteó porque su corrida anterior sigue en
+  // Apify no falló: sigue en Apify. Su fila es `fallo` (deja la corrida
+  // incompleta), pero se cuenta y se nombra con las que esperan.
+  const salteada = (f) => f.estado === 'fallo' && f.motivo === 'SIGUE_EN_APIFY';
   return {
     total: reales.length,
     respondieron: reales.filter((f) => f.estado === 'ok' || f.estado === 'parcial').length,
-    fallidas: de('fallo'),
-    esperando: de('esperando'),
+    fallidas: de('fallo').filter((f) => !salteada(f)),
+    esperando: [...de('esperando'), ...reales.filter(salteada)],
     parciales: de('parcial'),
     recuperadas: de('recuperada'),
     perdidas: de('perdida'),
@@ -221,7 +225,9 @@ function resumenFallidas(fuentes, { estado = null } = {}) {
   const lineas = [];
   for (const f of caidas) lineas.push(`${nombreFuente(f)} · ${f.estado === 'perdida' ? 'su corrida ya no está en Apify' : motivoTexto(f.motivo)}`);
   for (const f of cortadas) lineas.push(`${nombreFuente(f)} · Apify cortó la corrida`);
-  for (const f of c.esperando) lineas.push(`${nombreFuente(f)} · sigue en Apify, se levanta en la próxima corrida`);
+  for (const f of c.esperando) {
+    lineas.push(`${nombreFuente(f)} · ${f.estado === 'fallo' ? motivoTexto(f.motivo) : 'sigue en Apify, se levanta en la próxima corrida'}`);
+  }
   for (const f of levantadas) lineas.push(`${nombreFuente(f)} · ${motivoTexto(f.motivo)} · se levantó después`);
   const alTope = (f) => `llegó al tope${f.tope ? ` de ${f.tope} resultados` : ''}`;
   for (const f of c.topeLleno) {

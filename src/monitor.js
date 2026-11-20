@@ -1302,6 +1302,8 @@ async function recoverPendingSearchRuns(platform, platformId, { searches = [] } 
   progress.startPhase('Recuperando búsquedas pendientes', aLeer.length, { suffix: 'corridas' });
   let levantadas = 0;
   let encontrados = 0;
+  let siguen = 0;
+  let perdidas = 0;
   await Promise.all(
     aLeer.map(async (row) => {
       const key = `${platformId}:pendiente:${row.id}`;
@@ -1353,6 +1355,7 @@ async function recoverPendingSearchRuns(platform, platformId, { searches = [] } 
         console.log(`[monitor] ${platformId}: se levantó la búsqueda «${row.fuente}» que había quedado en Apify (run ${row.apifyRunId}, ${r.runStatus || 'terminada'}): ${posts.length} posteo(s).`);
       } else if (r && r.estado === 'corriendo') {
         out.saltear.add(row.clave);
+        siguen += 1;
         progress.finishItem(key, { state: 'wait', detail: 'sigue en Apify' });
         progress.tick(1, { ok: null });
         console.log(`[monitor] ${platformId}: la búsqueda «${row.fuente}» sigue corriendo en Apify (run ${row.apifyRunId}): no se vuelve a lanzar en este ciclo.`);
@@ -1363,6 +1366,7 @@ async function recoverPendingSearchRuns(platform, platformId, { searches = [] } 
         } catch (err) {
           console.error(`[monitor] (${platformId}) no se pudo marcar la llamada perdida:`, err.message);
         }
+        perdidas += 1;
         progress.finishItem(key, { ok: false, detail: 'ya no está en Apify' });
         progress.tick(1, { ok: false });
         console.warn(`[monitor] ${platformId}: la corrida ${row.apifyRunId} de «${row.fuente}» ya no está en Apify: sus resultados se perdieron.`);
@@ -1370,6 +1374,7 @@ async function recoverPendingSearchRuns(platform, platformId, { searches = [] } 
         // No se pudo leer ahora. Si todavía puede estar corriendo, el
         // término se saltea; si no, se busca normal y esta se reintenta.
         if (edadMs <= espera.runTimeoutSecs * 1000) out.saltear.add(row.clave);
+        siguen += 1;
         progress.finishItem(key, { state: 'wait', detail: 'no se pudo leer' });
         progress.tick(1, { ok: null });
         console.warn(`[monitor] ${platformId}: no se pudo leer la corrida ${row.apifyRunId} de «${row.fuente}» (se reintenta en el próximo ciclo): ${(r && r.error && r.error.message) || 'sin detalle'}`);
@@ -1378,8 +1383,11 @@ async function recoverPendingSearchRuns(platform, platformId, { searches = [] } 
   );
   progress.setPhaseSummary('Recuperando búsquedas pendientes', {
     label: 'Recuperadas',
-    detail: `${plural(levantadas, 'corrida', 'corridas')}, ${plural(encontrados, 'encontrado', 'encontrados')}`,
-    ok: levantadas > 0 || aLeer.length === 0,
+    detail:
+      `${plural(levantadas, 'corrida', 'corridas')}, ${plural(encontrados, 'encontrado', 'encontrados')}` +
+      (siguen > 0 ? ` · ${siguen} ${siguen === 1 ? 'sigue' : 'siguen'} pendiente${siguen === 1 ? '' : 's'}` : ''),
+    // En rojo solo si una se perdió: que sigan en Apify no es un error.
+    ok: perdidas === 0,
   });
   return out;
 }
