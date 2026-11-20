@@ -1411,6 +1411,17 @@ function cerrarRecuperadas(recovery, { platformId, runId }) {
       recuperadaAt: ahora,
       finishedAt: row.finishedAt || ahora,
     });
+    // Era la segunda consulta de una búsqueda que había llenado su tope, y
+    // no llenó el suyo: ya no falta nada, la primera deja de decir "tope
+    // lleno". Si vino cortada o llenó también su tope, la primera queda
+    // como está: ahí sí puede faltar algo.
+    if ((row.intento || 1) === 2 && estado === 'ok' && !llena && row.runId != null) {
+      try {
+        db.clearTopeLlenoPrimerIntento({ runId: row.runId, plataforma: platformId, tipo: row.tipo, clave: row.clave });
+      } catch (err) {
+        console.error(`[monitor] (${platformId}) no se pudo actualizar la primera consulta de «${row.fuente}»:`, err.message);
+      }
+    }
     // Lo levantado ya está procesado: la marca de esa fuente llega, como
     // mínimo, hasta el lanzamiento de esa corrida. Una cortada no avanza,
     // salvo la segunda seguida (para que la ventana no crezca sin fin).

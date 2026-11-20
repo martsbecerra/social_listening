@@ -289,6 +289,35 @@ describe('lo que falló, en textos', () => {
     assert.equal(rs.resumenFallidas([], { estado: 'ok' }), null);
   });
 
+  test('tope lleno y su segunda consulta: si sigue en Apify lo dice; si se levantó después y lo cubrió, también', () => {
+    const enApify = [fila('macri', 'ok', { topeLleno: true, tope: 350 }), fila('macri', 'esperando', { intento: 2 }), fila('gcba', 'ok')];
+    let r = rs.resumenFallidas(enApify);
+    assert.equal(r.pipeline, '«macri» llegó al tope de 350 resultados: lo que falta sigue en Apify y se levanta en la próxima corrida.');
+    assert.equal(r.tooltip, r.pipeline);
+    assert.equal(r.nota, 'lo que falta sigue en Apify');
+    assert.deepEqual(r.lineas, ['«macri» · llegó al tope de 350 resultados: lo que falta sigue en Apify, se levanta en la próxima corrida']);
+    assert.deepEqual([r.total, r.respondieron, r.esperando, r.topeLleno], [2, 2, 0, 1], 'la segunda no es otra búsqueda');
+    assert.equal(rs.resumenParaLog(enApify), 'tope lleno: «macri» (la segunda consulta sigue en Apify)');
+
+    // Con otra que llegó al tope sin segunda consulta (no entró en el techo): puede faltar algo.
+    r = rs.resumenFallidas([...enApify, fila('pdlc', 'ok', { topeLleno: true, tope: 350 })]);
+    assert.equal(r.pipeline, '2 búsquedas llegaron al tope: puede faltar algo.');
+    assert.equal(r.lineas[1], '«pdlc» · llegó al tope de 350 resultados: puede faltar algo');
+
+    // La segunda se levantó después y no llenó su tope: la primera ya no está marcada.
+    const cubierto = [fila('macri', 'ok', { tope: 350 }), fila('macri', 'recuperada', { intento: 2 }), fila('gcba', 'ok')];
+    assert.equal(rs.estadoCorrida(TERMINADA, cubierto), 'incompleta');
+    r = rs.resumenFallidas(cubierto);
+    assert.equal(r.titulo, '«macri» llegó al tope de 350 resultados');
+    assert.equal(r.nota, 'lo que faltaba se levantó después');
+    assert.equal(r.pipeline, '«macri» llegó al tope de 350 resultados: lo que faltaba se levantó en una corrida posterior.');
+    assert.deepEqual(r.lineas, ['«macri» · llegó al tope de 350 resultados · lo que faltaba se levantó después']);
+    assert.equal(rs.resumenParaLog(cubierto), 'tope lleno, cubierto después: «macri»');
+    // Si la segunda falló, la primera sigue con "puede faltar algo".
+    const fallida = [fila('macri', 'ok', { topeLleno: true, tope: 350 }), fila('macri', 'fallo', { intento: 2, motivo: 'HTTP_502' })];
+    assert.equal(rs.resumenFallidas(fallida).pipeline, '«macri» llegó al tope de 350 resultados: puede faltar algo.');
+  });
+
   test('una segunda consulta (intento 2) no cuenta como otra fuente; en X dice "fuentes" y nombra @cuenta y #hashtag', () => {
     const conRelanzamiento = [fila('macri', 'ok'), fila('macri', 'ok', { intento: 2 }), fila('gcba', 'fallo', { motivo: 'TIMEOUT' })];
     assert.equal(rs.resumenFallidas(conRelanzamiento).titulo, 'Falló 1 de 2 búsquedas');

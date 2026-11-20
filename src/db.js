@@ -901,6 +901,11 @@ const listRunSourcesRecoveredInStmt = db.prepare('SELECT * FROM monitoring_run_s
 const listPendingRunSourcesStmt = db.prepare(
   "SELECT * FROM monitoring_run_sources WHERE plataforma = ? AND estado IN ('esperando', 'en curso') ORDER BY id"
 );
+// La segunda consulta de una búsqueda se levantó después y cubrió lo que
+// faltaba: la primera de esa corrida deja de estar marcada como tope lleno.
+const clearTopeLlenoPrimerIntentoStmt = db.prepare(
+  'UPDATE monitoring_run_sources SET tope_lleno = 0 WHERE run_id = ? AND plataforma = ? AND tipo = ? AND clave = ? AND intento = 1 AND tope_lleno = 1'
+);
 const lastRunSourcesForKeyStmt = db.prepare(
   "SELECT * FROM monitoring_run_sources WHERE plataforma = ? AND tipo = ? AND clave = ? AND intento = 1 AND estado <> 'en curso' ORDER BY id DESC LIMIT ?"
 );
@@ -2719,6 +2724,17 @@ function listPendingRunSources(plataforma) {
   return listPendingRunSourcesStmt.all(plataforma).map(runSourceFromRow);
 }
 
+/**
+ * Saca la marca de "tope lleno" de la primera consulta de una fuente en una
+ * corrida (cuando su segunda consulta, levantada después, lo cubrió).
+ * @returns {number} filas cambiadas
+ */
+function clearTopeLlenoPrimerIntento({ runId, plataforma, tipo, clave }) {
+  requirePlataforma(plataforma, 'clearTopeLlenoPrimerIntento');
+  if (runId == null || clave == null) return 0;
+  return clearTopeLlenoPrimerIntentoStmt.run(Number(runId), plataforma, String(tipo), String(clave)).changes;
+}
+
 /** Las últimas `limit` consultas cerradas de una fuente (primer intento), de la más nueva a la más vieja. */
 function lastRunSourcesForKey({ plataforma, tipo, clave, limit = 2 }) {
   requirePlataforma(plataforma, 'lastRunSourcesForKey');
@@ -3911,6 +3927,7 @@ module.exports = {
   listPendingRunSources,
   listRunSourcesRecoveredIn,
   lastRunSourcesForKey,
+  clearTopeLlenoPrimerIntento,
   getLastFinishedRunAt,
   getLastFinishedRunAtAny,
   getLastFinishedRun,

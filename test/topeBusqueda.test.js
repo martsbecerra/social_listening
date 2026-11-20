@@ -330,6 +330,56 @@ describe('el ciclo: tope por volumen y segunda consulta', { concurrency: false }
     }
   });
 
+  test('la segunda consulta quedó en Apify: la corrida dice que lo que falta sigue en Apify; al levantarla, la primera deja de decir "tope lleno" si no llenó el suyo', async () => {
+    const segundaPendiente = (run) => (term, options, n) => {
+      if (n === 1) return { posts: [], meta: llena(100) };
+      options.onRunStarted({ id: run });
+      throw Object.assign(new Error('Apify: se superó la espera'), { code: 'TIMEOUT', runPending: true, apifyRunId: run });
+    };
+    const levantar = async (rawItems) => {
+      const restore = stubInstagram(() => ({ posts: [], meta: holgada(3, 100) }));
+      instagram.recoverSearchRun = async () => ({ estado: 'ok', posts: [], rawItems, runStatus: 'SUCCEEDED' });
+      try {
+        await ciclo();
+      } finally {
+        restore();
+      }
+    };
+
+    let restore = stubInstagram(segundaPendiente('run-2a'));
+    let uno;
+    try {
+      uno = await ciclo();
+    } finally {
+      restore();
+    }
+    let r = rs.resumenFallidas(uno.filas);
+    assert.equal(r.pipeline, '«macri» llegó al tope de 100 resultados: lo que falta sigue en Apify y se levanta en la próxima corrida.');
+    assert.deepEqual(r.lineas, ['«macri» · llegó al tope de 100 resultados: lo que falta sigue en Apify, se levanta en la próxima corrida']);
+
+    // La segunda se levanta con 150 de 400: ya no falta nada.
+    await levantar(150);
+    let filas = db.listRunSources({ runId: uno.runId, plataforma: 'instagram' });
+    assert.deepEqual(filas.map((f) => [f.intento, f.estado, f.items, f.topeLleno]), [[1, 'ok', 100, false], [2, 'recuperada', 150, false]]);
+    assert.equal(rs.estadoCorrida(db.getMonitoringRun(uno.runId), filas), 'incompleta', 'la corrida no trajo eso cuando corrió');
+    r = rs.resumenFallidas(filas);
+    assert.equal(r.pipeline, '«macri» llegó al tope de 100 resultados: lo que faltaba se levantó en una corrida posterior.');
+    assert.deepEqual(r.lineas, ['«macri» · llegó al tope de 100 resultados · lo que faltaba se levantó después']);
+
+    // Otra corrida igual, pero la segunda también llenó su tope (400 de 400): sigue pudiendo faltar algo.
+    restore = stubInstagram(segundaPendiente('run-2b'));
+    let dos;
+    try {
+      dos = await ciclo();
+    } finally {
+      restore();
+    }
+    await levantar(400);
+    filas = db.listRunSources({ runId: dos.runId, plataforma: 'instagram' });
+    assert.deepEqual(filas.map((f) => [f.intento, f.estado, f.topeLleno]), [[1, 'ok', true], [2, 'recuperada', true]]);
+    assert.equal(rs.resumenFallidas(filas).pipeline, '«macri» llegó al tope de 100 resultados: puede faltar algo.');
+  });
+
   test('un adapter que no informa la meta de la consulta: no se sabe si llenó el tope, no hay segunda consulta', async () => {
     const restore = stubInstagram(() => ({ posts: Array.from({ length: 100 }, () => resultado('macri')) }));
     try {

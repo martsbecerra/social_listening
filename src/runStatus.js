@@ -121,15 +121,22 @@ function listar(nombres, max = 4) {
  * intento de cada fuente para el "N de M"; una segunda consulta (intento 2,
  * por tope lleno) no es otra fuente.
  * @param {Array<object>} fuentes filas de monitoring_run_sources (db.listRunSources)
+ * La segunda consulta sí se mira para decir qué pasó con un tope lleno:
+ * `topeLleno[].segundaEnApify` (lo que falta todavía puede llegar) y
+ * `topeCubierto` (la primera llenó su tope y la segunda, que había quedado
+ * en Apify, se levantó después y lo cubrió).
  * @returns {{ total: number, respondieron: number, fallidas: object[], esperando: object[], parciales: object[],
- *   recuperadas: object[], perdidas: object[], topeLleno: object[], huecos: object[], detalleFallo: object|null,
- *   sinBuscar: string|null, sustantivo: string }}
+ *   recuperadas: object[], perdidas: object[], topeLleno: object[], topeCubierto: object[], huecos: object[],
+ *   detalleFallo: object|null, sinBuscar: string|null, sustantivo: string }}
  */
 function contar(fuentes) {
   const filas = Array.isArray(fuentes) ? fuentes : [];
   const reales = filas.filter((f) => TIPOS_FUENTE.has(f.tipo) && (f.intento || 1) === 1);
   const de = (estado) => reales.filter((f) => f.estado === estado);
   const plataforma = filas.find((f) => f.tipo === 'plataforma');
+  const claveDe = (f) => `${f.tipo}:${f.clave != null ? f.clave : String(f.fuente || '').trim().toLowerCase()}`;
+  const segundaDe = new Map(filas.filter((f) => TIPOS_FUENTE.has(f.tipo) && (f.intento || 1) === 2).map((f) => [claveDe(f), f]));
+  const estadoSegunda = (f) => (segundaDe.get(claveDe(f)) || {}).estado || null;
   return {
     total: reales.length,
     respondieron: reales.filter((f) => f.estado === 'ok' || f.estado === 'parcial').length,
@@ -138,7 +145,8 @@ function contar(fuentes) {
     parciales: de('parcial'),
     recuperadas: de('recuperada'),
     perdidas: de('perdida'),
-    topeLleno: reales.filter((f) => f.topeLleno),
+    topeLleno: reales.filter((f) => f.topeLleno).map((f) => ({ ...f, segundaEnApify: estadoSegunda(f) === 'esperando' })),
+    topeCubierto: reales.filter((f) => !f.topeLleno && estadoSegunda(f) === 'recuperada'),
     huecos: reales.filter((f) => f.huecoDesde),
     detalleFallo: filas.find((f) => f.tipo === 'detalle' && f.estado === 'fallo') || null,
     sinBuscar: plataforma ? plataforma.motivo || 'SIN_FUENTES' : null,
@@ -215,7 +223,11 @@ function resumenFallidas(fuentes, { estado = null } = {}) {
   for (const f of cortadas) lineas.push(`${nombreFuente(f)} · Apify cortó la corrida`);
   for (const f of c.esperando) lineas.push(`${nombreFuente(f)} · sigue en Apify, se levanta en la próxima corrida`);
   for (const f of levantadas) lineas.push(`${nombreFuente(f)} · ${motivoTexto(f.motivo)} · se levantó después`);
-  for (const f of c.topeLleno) lineas.push(`${nombreFuente(f)} · llegó al tope${f.tope ? ` de ${f.tope} resultados` : ''}: puede faltar algo`);
+  const alTope = (f) => `llegó al tope${f.tope ? ` de ${f.tope} resultados` : ''}`;
+  for (const f of c.topeLleno) {
+    lineas.push(`${nombreFuente(f)} · ${alTope(f)}: ${f.segundaEnApify ? 'lo que falta sigue en Apify, se levanta en la próxima corrida' : 'puede faltar algo'}`);
+  }
+  for (const f of c.topeCubierto) lineas.push(`${nombreFuente(f)} · ${alTope(f)} · lo que faltaba se levantó después`);
   for (const f of c.huecos) lineas.push(`${nombreFuente(f)} · estuvo demasiado tiempo sin responder: lo anterior a la ventana máxima no se pidió`);
   if (c.detalleFallo) lineas.push('No se pudo pedir el texto de los resultados nuevos');
 
@@ -301,16 +313,35 @@ function resumenFallidas(fuentes, { estado = null } = {}) {
     const n = c.topeLleno.length;
     const una = c.topeLleno[0];
     const corto = `${n} ${s(n)} ${plural(n, 'llegó', 'llegaron')} al tope`;
-    const titulo = n === 1 ? `${nombreFuente(una)} llegó al tope${una.tope ? ` de ${una.tope} resultados` : ''}` : corto;
+    const titulo = n === 1 ? `${nombreFuente(una)} ${alTope(una)}` : corto;
+    // Si la segunda consulta de todas sigue en Apify, lo que falta todavía
+    // puede llegar: no es "puede faltar algo".
+    const enApify = c.topeLleno.every((f) => f.segundaEnApify);
+    const queFalta = enApify ? 'lo que falta sigue en Apify y se levanta en la próxima corrida' : 'puede faltar algo';
     r = {
       titulo,
       corto,
       chip: corto,
       frase: corto,
-      nota: 'puede faltar algo',
-      tooltip: `${titulo}: puede faltar algo.`,
-      pipeline: `${titulo}: puede faltar algo.`,
+      nota: enApify ? 'lo que falta sigue en Apify' : 'puede faltar algo',
+      tooltip: `${titulo}: ${queFalta}.`,
+      pipeline: `${titulo}: ${queFalta}.`,
       nombres: listar(c.topeLleno.map(nombreFuente)),
+    };
+  } else if (c.topeCubierto.length > 0) {
+    const n = c.topeCubierto.length;
+    const una = c.topeCubierto[0];
+    const corto = `${n} ${s(n)} ${plural(n, 'llegó', 'llegaron')} al tope`;
+    const titulo = n === 1 ? `${nombreFuente(una)} ${alTope(una)}` : corto;
+    r = {
+      titulo,
+      corto,
+      chip: corto,
+      frase: corto,
+      nota: 'lo que faltaba se levantó después',
+      tooltip: `${titulo}: lo que faltaba se levantó en una corrida posterior.`,
+      pipeline: `${titulo}: lo que faltaba se levantó en una corrida posterior.`,
+      nombres: listar(c.topeCubierto.map(nombreFuente)),
     };
   } else if (c.huecos.length > 0) {
     const n = c.huecos.length;
@@ -378,7 +409,10 @@ function resumenParaLog(fuentes) {
   if (c.parciales.length > 0) partes.push(`Apify cortó ${c.parciales.length}: ${c.parciales.map((f) => `${nombreFuente(f)} ${f.motivo || ''}`.trim()).join(', ')}`);
   if (c.recuperadas.length > 0) partes.push(`${c.recuperadas.length} se ${plural(c.recuperadas.length, 'levantó', 'levantaron')} después: ${c.recuperadas.map(nombreFuente).join(', ')}`);
   if (c.esperando.length > 0) partes.push(`${c.esperando.length} ${plural(c.esperando.length, 'sigue', 'siguen')} en Apify: ${c.esperando.map(nombreFuente).join(', ')}`);
-  if (c.topeLleno.length > 0) partes.push(`tope lleno: ${c.topeLleno.map(nombreFuente).join(', ')}`);
+  if (c.topeLleno.length > 0) {
+    partes.push(`tope lleno: ${c.topeLleno.map((f) => `${nombreFuente(f)}${f.segundaEnApify ? ' (la segunda consulta sigue en Apify)' : ''}`).join(', ')}`);
+  }
+  if (c.topeCubierto.length > 0) partes.push(`tope lleno, cubierto después: ${c.topeCubierto.map(nombreFuente).join(', ')}`);
   if (c.huecos.length > 0) partes.push(`hueco por el techo de la ventana: ${c.huecos.map(nombreFuente).join(', ')}`);
   if (c.detalleFallo) partes.push(`falló el detalle (${c.detalleFallo.motivo || 'ERROR'})`);
   return partes.join('; ');
