@@ -238,8 +238,12 @@ describe('el cierre del ciclo dice cómo salió', { concurrency: false }, () => 
       const corrida = ig.corridasHoy.at(-1);
       assert.equal(corrida.estado, 'incompleta');
       assert.equal(corrida.fallidas.titulo, 'Falló 1 de 3 búsquedas');
-      const salida = JSON.stringify({ lastRun, inicio });
-      assert.doesNotMatch(salida, /Bad Gateway|respondió 502|detalle/);
+      // Tampoco por la respuesta de "Actualizar ahora" (lo que devuelve
+      // runCycle): ni el motivo en código de cada fuente.
+      assert.equal(result.porPlataforma.instagram.fuentes, undefined);
+      assert.equal(result.porPlataforma.instagram.newCandidates, 1, 'lo que usa la pantalla sigue viniendo');
+      const salida = JSON.stringify({ lastRun, inicio, result });
+      assert.doesNotMatch(salida, /Bad Gateway|respondió 502|detalle|HTTP_502/);
     } finally {
       restore();
     }

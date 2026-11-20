@@ -546,7 +546,17 @@ async function runCyclePhases(plataformas, runId, trigger, pasada = null) {
 
   lastRunAt = new Date().toISOString();
 
-  return { checked, newCount, porPlataforma };
+  // Lo que devuelve "Actualizar ahora" (POST /api/monitoring/run-now) sale
+  // de acá: sin el detalle por fuente, que trae el motivo en código
+  // (HTTP_502, SIGUE_EN_APIFY…). Lo que falló viaja ya en texto para una
+  // persona por /api/monitoring/status (lastRun.fallidas).
+  const paraAfuera = Object.fromEntries(
+    Object.entries(porPlataforma || {}).map(([red, datos]) => {
+      const { fuentes: _fuentes, ...resto } = datos || {};
+      return [red, resto];
+    })
+  );
+  return { checked, newCount, porPlataforma: paraAfuera };
 }
 
 function startScheduler() {
