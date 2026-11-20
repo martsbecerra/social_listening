@@ -165,6 +165,15 @@ describe('busquedaTope (puro)', () => {
     assert.equal(p.reservar(0.001), false);
     assert.equal(tope.crearPresupuesto({ extraMaxUsd: 0 }).reservar(0.1), false);
     assert.equal(p.reservar(NaN), false);
+    // Lo apartado de una consulta que no llegó a crear una corrida se devuelve.
+    p.liberar(0.985);
+    near(p.reservado(), 1.015);
+    assert.equal(p.reservar(0.5), true);
+    p.liberar(NaN);
+    p.liberar(-1);
+    near(p.reservado(), 1.515);
+    p.liberar(99);
+    assert.equal(p.reservado(), 0, 'nunca queda en negativo');
   });
 
   test('configuración: valores por defecto, del .env y mal escritos (aborta el arranque sin nombrar la variable al usuario)', () => {
@@ -278,6 +287,42 @@ describe('el ciclo: tope por volumen y segunda consulta', { concurrency: false }
       assert.equal(pedidos.filter((p) => p.resultsLimit === 400).length, 1);
       const primeras = filas.filter((f) => f.intento === 1);
       assert.deepEqual(primeras.map((f) => f.topeLleno).sort(), [false, true]);
+    } finally {
+      restore();
+    }
+  });
+
+  test('una segunda consulta que falla sin haber creado una corrida devuelve su lugar en el techo; si la había creado, no', async () => {
+    escribirConfig(['macri', 'gcba']);
+    process.env.SEARCH_EXTRA_MAX_USD_PER_CYCLE = '0.25'; // entra una sola segunda de 400 (hasta 0,215)
+    // «macri» llena primero y su segunda consulta falla; «gcba» llena un rato después.
+    const responder = (conCorrida) => async (term, options, n) => {
+      if (n === 1) {
+        if (term === 'gcba') await new Promise((resolve) => setTimeout(resolve, 40));
+        return { posts: [resultado(term)], meta: llena(100) };
+      }
+      if (term === 'macri') {
+        if (conCorrida) options.onRunStarted({ id: 'run-fallida' });
+        throw Object.assign(new Error('Apify respondió 502: Bad Gateway'), { status: 502 });
+      }
+      return { posts: [], meta: holgada(120, options.resultsLimit) };
+    };
+    const forma = (filas) => filas.map((f) => `${f.fuente} ${f.intento} ${f.estado}${f.topeLleno ? ' lleno' : ''}`).sort();
+
+    // El 502 fue al arrancar la corrida: no costó nada, «gcba» hace la suya.
+    let restore = stubInstagram(responder(false));
+    try {
+      const { filas } = await ciclo();
+      assert.deepEqual(forma(filas), ['gcba 1 ok', 'gcba 2 ok', 'macri 1 ok lleno', 'macri 2 fallo']);
+    } finally {
+      restore();
+    }
+
+    // La corrida se había creado (se paga): su lugar sigue apartado y «gcba» queda con tope lleno.
+    restore = stubInstagram(responder(true));
+    try {
+      const { filas } = await ciclo();
+      assert.deepEqual(forma(filas), ['gcba 1 ok lleno', 'macri 1 ok lleno', 'macri 2 fallo']);
     } finally {
       restore();
     }

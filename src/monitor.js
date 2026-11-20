@@ -1955,6 +1955,15 @@ async function runMonitoringCycle({ plataformas, trigger, pasada = null } = {}) 
         const runId = (err && err.apifyRunId) || apifyRunId;
         const pendiente = Boolean(err && err.runPending && runId);
         actualizarFuente(rowId, { estado: pendiente ? 'esperando' : 'fallo', motivo: motivoDeFallo(err), detalle: err && err.message, apifyRunId: runId }, { startedMs });
+        // Falló sin haber creado una corrida en Apify (un 502 al arrancarla,
+        // o no se llegó a lanzar): no costó nada, así que lo apartado
+        // vuelve al techo y otra búsqueda puede usarlo. Con corrida (falló
+        // después, o sigue en Apify) queda apartado: esa se paga. Salvedad:
+        // un 5xx o un corte al arrancar no garantiza que Apify no la haya
+        // creado; en ese caso doblemente raro el techo puede pasarse por una
+        // consulta (el dueño prefiere pagar de más antes que perder
+        // publicaciones).
+        if (!runId) presupuestoExtra.liberar(costoMax);
         console.warn(
           `[monitor] ${platformId}: la segunda consulta de «${source.fuente}» ${pendiente ? 'no terminó a tiempo y sigue en Apify (se levanta en el próximo ciclo)' : `falló (${(err && err.message) || 'sin detalle'})`}; se usa lo que trajo la primera.`
         );

@@ -204,8 +204,10 @@ function topeRelanzamiento(tope, resultsMax = DEFAULT_RESULTS_MAX) {
 
 /**
  * El techo de gasto de una corrida para las SEGUNDAS consultas. `reservar`
- * aparta lo máximo que puede costar una (si entra) y dice si entró.
- * @returns {{ reservar: (usd: number) => boolean, reservado: () => number, techo: number }}
+ * aparta lo máximo que puede costar una (si entra) y dice si entró;
+ * `liberar` devuelve lo apartado de una que no llegó a crear una corrida en
+ * Apify (no costó nada), para que otra pueda usar ese lugar.
+ * @returns {{ reservar: (usd: number) => boolean, liberar: (usd: number) => void, reservado: () => number, techo: number }}
  */
 function crearPresupuesto({ extraMaxUsd = DEFAULT_EXTRA_MAX_USD } = {}) {
   const techo = Math.max(0, Number(extraMaxUsd) || 0);
@@ -220,6 +222,11 @@ function crearPresupuesto({ extraMaxUsd = DEFAULT_EXTRA_MAX_USD } = {}) {
       if (reservado + costo > techo + 1e-9) return false;
       reservado += costo;
       return true;
+    },
+    liberar(usd) {
+      const costo = Number(usd);
+      if (!Number.isFinite(costo) || costo <= 0) return;
+      reservado = Math.max(0, reservado - costo);
     },
   };
 }
