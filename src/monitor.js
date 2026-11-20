@@ -659,8 +659,6 @@ function removeKeyword(keyword, platformId) {
 function addSearch(term, platformId) {
   requirePlatformId(platformId, 'addSearch');
   const clean = String(term || '').trim();
-  // Un término que se da de alta (aunque haya existido antes) es una fuente nueva.
-  if (clean) forgetSourceMark(platformId, 'busqueda', clean);
   if (!clean) {
     const e = new Error('Búsqueda vacía');
     e.userMessage = 'Escribí un término de búsqueda.';
@@ -683,6 +681,10 @@ function addSearch(term, platformId) {
   const config = all[platformId] || (all[platformId] = { accounts: [], keywords: [] });
   config.searches = cleanList(config.searches);
   if (!config.searches.some((s) => s.toLowerCase() === clean.toLowerCase())) {
+    // Un término que se da de alta (aunque haya existido antes) es una
+    // fuente nueva: se olvida su marca. Uno que YA está configurado la
+    // conserva: volver a escribirlo no le hace perder los días atrasados.
+    forgetSourceMark(platformId, 'busqueda', clean);
     config.searches.push(clean);
     saveConfig(all);
   }

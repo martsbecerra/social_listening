@@ -426,6 +426,13 @@ describe('migración desde la marca de la red', { concurrency: false }, () => {
     monitor.addSearch('macri', 'instagram');
     assert.equal(monitor.detectionWindowFor('instagram', { tipo: 'busqueda', fuente: 'macri' }).origen, 'primera');
 
+    // Agregar de nuevo un término que YA está configurado no cambia la lista
+    // ni le borra la marca: no pierde los días que tenía atrasados.
+    const nueveDias = db.getRefreshState(marca('gcba'));
+    assert.deepEqual(monitor.addSearch(' GCBA ', 'instagram').searches, ['gcba', 'macri']);
+    assert.equal(db.getRefreshState(marca('gcba')), nueveDias);
+    assert.equal(monitor.detectionWindowFor('instagram', { tipo: 'busqueda', fuente: 'gcba' }).origen, 'marca');
+
     const restore = stubInstagram({ macri: [], gcba: [] });
     try {
       await ciclo();
