@@ -248,6 +248,17 @@ describe('flujo asincrónico: el id del run nunca se pierde', { concurrency: fal
     assert.equal(pedidos.filter((p) => p.startsWith('POST')).length, 1, 'no se lanza otro run');
   });
 
+  test('la guarda contra un cuelgue nunca salta antes de que el arranque del run pueda volver: con poco plazo no deja un run sin dueño', () => {
+    // El POST de arranque tiene 90 s de tope propio. Con 1,5 s de plazo la
+    // guarda saltaba a los 31,5 s: si el POST volvía después, el run
+    // quedaba corriendo y pago en una fila que nadie cerraba.
+    assert.equal(apify.asyncGuardMs(1500), 120000);
+    assert.equal(apify.asyncGuardMs(60000), 120000);
+    // Con el plazo de siempre (15 minutos) no cambia nada: plazo + 30 s.
+    assert.equal(apify.asyncGuardMs(900000), 930000);
+    assert.equal(apify.asyncGuardMs(undefined), 120000);
+  });
+
   test('un aviso onRunStarted que tira no frena la llamada', async () => {
     simular();
     const items = await buscar({

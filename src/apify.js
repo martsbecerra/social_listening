@@ -137,6 +137,18 @@ const DATASET_RETRIES = 4;
 // La guarda contra un cuelgue (withTimeout) salta este rato después del
 // plazo propio del flujo asincrónico, que es el que conserva el id del run.
 const ASYNC_GUARD_MS = 30000;
+/**
+ * Cuándo salta esa guarda. Nunca antes de que el POST de arranque pueda
+ * volver o vencer por su propio tope (REAL_COST_REQUEST_TIMEOUT_MS): con
+ * poco plazo (una segunda consulta lanzada en el último minuto de la
+ * espera) y un POST lento, la guarda cerraba la llamada como fallida SIN
+ * run y el run que volvía después quedaba corriendo y pago en una fila que
+ * nadie cerraba ni levantaba. Así, en ese caso raro, la llamada puede pasarse
+ * hasta ese tope del plazo; a cambio queda esperando con su run.
+ */
+function asyncGuardMs(waitMs) {
+  return Math.max(Number(waitMs) || 0, REAL_COST_REQUEST_TIMEOUT_MS) + ASYNC_GUARD_MS;
+}
 // Con menos que esto de plazo no vale la pena arrancar ni seguir esperando.
 const MIN_WAIT_MS = 1000;
 
@@ -332,7 +344,7 @@ async function runActorSync(
     const useAsync = usesRealCost(actorId) || asincronico || waitMs > REQUEST_TIMEOUT_MS;
     const once = () =>
       useAsync
-        ? withTimeout(runActorRealCostOnce(input, actorId, { maxWaitMs: waitMs, runTimeoutSecs, onRunStarted: started }), waitMs + ASYNC_GUARD_MS, target).catch((err) => {
+        ? withTimeout(runActorRealCostOnce(input, actorId, { maxWaitMs: waitMs, runTimeoutSecs, onRunStarted: started }), asyncGuardMs(waitMs), target).catch((err) => {
             // La guarda saltó con el run ya creado: el id no se pierde.
             if (err && err.code === 'TIMEOUT' && !err.apifyRunId && handle.runId) {
               err.apifyRunId = handle.runId;
@@ -936,4 +948,5 @@ module.exports = {
   apifyLimiter,
   APIFY_MAX_CONCURRENT,
   APIFY_CALL_TIMEOUT_MS,
+  asyncGuardMs,
 };
