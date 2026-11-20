@@ -46,7 +46,10 @@ const buscar = (opts = {}) => runWithContext({ runId: 56, phase: 'busqueda' }, (
  * respuestas (status o { status, run }) que se van consumiendo; la última se
  * repite. `dataset`: items, o un status de error.
  */
-function simular({ post = [200], seguimiento = ['SUCCEEDED'], dataset = [{ id: '1' }, { id: '2' }], demoraMs = 20, alSeguir = null } = {}) {
+function simular({ post = [200], seguimiento = ['SUCCEEDED'], dataset = [{ id: '1' }, { id: '2' }], demoraMs = 20, alSeguir = null, cortesDelCuerpo = 0 } = {}) {
+  // Un 200 cuyo cuerpo se corta mientras se lee (lo que tira undici: TypeError "terminated").
+  let cortes = cortesDelCuerpo;
+  const cuerpoCortado = () => ({ ok: true, status: 200, text: async () => '', json: async () => { throw new TypeError('terminated'); } });
   const pedidos = [];
   const tomar = (lista) => (lista.length > 1 ? lista.shift() : lista[0]);
   const run = (status) => ({ data: { id: 'run-x', status, defaultDatasetId: 'ds-x', statusMessage: status === 'FAILED' ? 'Actor crashed' : null } });
@@ -67,6 +70,10 @@ function simular({ post = [200], seguimiento = ['SUCCEEDED'], dataset = [{ id: '
       return typeof r === 'number' ? respond(r, null, `error ${r}`) : respond(200, run(r));
     }
     if (/\/datasets\/ds-x\/items\?/.test(u)) {
+      if (cortes > 0) {
+        cortes -= 1;
+        return cuerpoCortado();
+      }
       const d = Array.isArray(dataset) && typeof dataset[0] === 'number' ? tomar(dataset) : dataset;
       return typeof d === 'number' ? respond(d, null, `error ${d}`) : respond(200, d);
     }
@@ -217,6 +224,28 @@ describe('flujo asincrónico: el id del run nunca se pierde', { concurrency: fal
     });
     assert.equal(pedidos.filter((p) => p.includes('/datasets/')).length, 5, 'la bajada se reintenta');
     assert.equal(ultima().estado, 'esperando');
+  });
+
+  test('el dataset responde 200 pero el cuerpo se corta al leerlo: es un fallo pasajero, se reintenta; si no hay caso, queda esperando con su run', async () => {
+    // Una vez: se reintenta y la llamada devuelve sus resultados.
+    let pedidos = simular({ cortesDelCuerpo: 1 });
+    const items = await buscar();
+    assert.equal(items.length, 2);
+    assert.equal(pedidos.filter((p) => /\/datasets\//.test(p)).length, 2, 'el dataset se pidió de nuevo');
+    assert.equal(ultima().estado, 'ok');
+
+    // Siempre: el run terminó bien y está pago; no se da por fallido.
+    pedidos = simular({ cortesDelCuerpo: Infinity });
+    await assert.rejects(buscar(), (err) => {
+      assert.equal(err.runPending, true);
+      assert.equal(err.apifyRunId, 'run-x');
+      return true;
+    });
+    assert.ok(pedidos.filter((p) => /\/datasets\//.test(p)).length > 1);
+    const fila = ultima();
+    assert.equal(fila.estado, 'esperando');
+    assert.equal(fila.apify_run_id, 'run-x');
+    assert.equal(pedidos.filter((p) => p.startsWith('POST')).length, 1, 'no se lanza otro run');
   });
 
   test('un aviso onRunStarted que tira no frena la llamada', async () => {

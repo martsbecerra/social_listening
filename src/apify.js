@@ -659,7 +659,21 @@ async function apifyRequest(url, { method = 'GET', body, timeoutMs = REQUEST_TIM
     throw e;
   }
 
-  return resp.json();
+  // El cuerpo se lee aparte: fetch() ya resolvió con los headers, y un corte
+  // a mitad del cuerpo (el dataset de una búsqueda honda pesa varios MB) sale
+  // de acá como un TypeError sin tipo. Es un fallo pasajero de red, igual
+  // que el de arriba: quien sigue un run o baja su dataset lo reintenta y,
+  // si no hay caso, la llamada queda esperando con su run y se levanta en
+  // el ciclo siguiente (en vez de darla por fallida y pagarla de nuevo).
+  try {
+    return await resp.json();
+  } catch (err) {
+    const e = new Error(`Error de red al leer la respuesta de Apify: ${(err && err.message) || 'sin detalle'}`);
+    e.userMessage = 'No se pudo conectar con el servicio de extracción. Revisá tu conexión a internet e intentá de nuevo.';
+    if (err && err.name === 'AbortError') e.requestTimeout = true;
+    else e.network = true;
+    throw e;
+  }
 }
 
 /**
