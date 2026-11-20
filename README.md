@@ -104,6 +104,7 @@ social_listening_app/
 │   ├── lastRun.js            # Resumen de la última corrida (traídas, nuevas, guardadas, destacadas, costo) para el Pipeline.
 │   ├── runStatus.js          # Estado de una corrida (ok | incompleta | cortada…) y los textos de qué falló, por fuente.
 │   ├── searchWait.js         # Espera de las búsquedas del monitoreo (SEARCH_WAIT_MS, SEARCH_RUN_TIMEOUT_SECS), validada al arrancar.
+│   ├── deepRun.js            # Corridas hondas: en qué horas del cron las búsquedas miran 7 días (MONITOR_DEEP_HOURS, MONITOR_DEEP_WINDOW).
 │   ├── busquedaTope.js       # Tope de resultados por término y techo de las segundas consultas (SEARCH_RESULTS_MAX, SEARCH_EXTRA_MAX_USD_PER_CYCLE).
 │   ├── stats.js              # Estadísticas: todos los bloques de un período (y el anterior) desde la base.
 │   ├── statsRoutes.js        # GET /api/monitoring/stats.
@@ -1788,12 +1789,46 @@ siguiente.
 
 Con la ventana de 1 día (la de siempre) el actor devuelve una fracción
 chica de lo publicado; con 7 días, cerca del 70 % por pasada, y dos pasadas
-juntas, entre el 91 y el 95 %. Ninguna ventana trae todo de una vez. Esta
-rama deja la ventana mínima como estaba (`MONITOR_MIN_WINDOW=1 day`): subirla
-trae más y cuesta más (se paga cada resultado, también los ya vistos, que
-no se vuelven a clasificar). Con 7 días en las cuatro corridas diarias el
-estimado es de unos US$ 1,3 por corrida; una corrida honda por día y tres
-cortas, cerca de un tercio. Queda para decidir aparte.
+juntas, entre el 91 y el 95 %. Ninguna ventana trae todo de una vez. Y lo
+que se le escapa a la pasada corta no es solo lo chico (comprobación del
+20/11/2026, la corrida #57 de 1 día contra la #56 y la sonda, 477
+publicaciones): trajo 8 de las 10 de más likes y comentarios, pero la mitad
+del decil de arriba (23 de 48) y de las de cuentas de más de 100 mil
+seguidores (17 de 31), y de tres de los seis términos casi nada. Una sola
+pasada honda trajo de 7 a 10 de las 10 de más impacto de su término.
+
+**Corridas hondas.** Una búsqueda de 7 días cuesta bastante más (se paga
+cada resultado, también los ya vistos, que no se vuelven a clasificar), así
+que no todas las corridas son hondas: se elige en qué horas del cron
+(`src/deepRun.js`).
+
+- `MONITOR_DEEP_HOURS=8,16`: las horas (hora local del server, como
+  `MONITOR_CRON`) en las que la corrida programada es honda. Cambiar cuántas
+  hondas hay por día es cambiar este valor ("8", "8,16", "8,12,16,20"). Sin
+  esta variable no hay corridas hondas y todo queda como siempre.
+- `MONITOR_DEEP_WINDOW=7 days`: la ventana honda. En una corrida honda es la
+  ventana mínima de todas las búsquedas, en vez de `MONITOR_MIN_WINDOW`.
+- Si pasaron más de 24 horas desde la última corrida honda terminada (la
+  máquina estuvo apagada, o todavía no hubo ninguna), la próxima corrida
+  programada es honda aunque no sea su hora.
+- "Actualizar ahora" es siempre corta.
+- No cambia nada en pantalla. El log dice de cada corrida si es honda o
+  corta y cuánto se estima que cuestan sus búsquedas, y cuándo es la próxima
+  programada y de qué tipo:
+
+```
+[ciclo] inicio (trigger=cron, plataforma=instagram, honda: ventana mínima de 7 días, por la hora)
+[monitor] instagram: corrida honda (ventana mínima de 7 días, por la hora) · 8 búsquedas · costo estimado US$ 1,38 (como mucho US$ 5,72 si todas llenan su tope, más hasta US$ 2,00 en segundas consultas)
+[ciclo] próxima corrida programada: 20/11 12:00 · corta
+```
+
+Costo estimado (medido en noviembre 2026 con 8 búsquedas): una corrida
+honda, entre US$ 1,2 y 1,5; una corta, unos 0,2. Con hondas a las 8 y a las
+16 y cortas a las 12 y a las 20, entre US$ 85 y 110 por mes en búsquedas
+(con las cuatro cortas eran unos 20). La primera honda llena los topes y
+hace hasta dos segundas consultas (unos US$ 0,5 más, una sola vez); después
+el tope de cada término ya sale de su volumen. A eso se suma clasificar lo
+nuevo, que con las hondas son unas 200 a 260 publicaciones por día.
 
 **Lo que quedó afuera.** Las publicaciones recuperadas a mano de las
 corridas #55 y #56 no se importaron (decisión del dueño); su costo se puede

@@ -836,6 +836,12 @@ if (!monitoringRunsColumns.includes('new_candidates')) {
 if (!monitoringRunsColumns.includes('error_code')) {
   db.exec('ALTER TABLE monitoring_runs ADD COLUMN error_code TEXT');
 }
+// Corridas hondas (src/deepRun.js): 1 si la corrida fue honda (sus búsquedas
+// miraron la ventana honda), 0 si fue corta, NULL en las anteriores y cuando
+// las hondas están apagadas.
+if (!monitoringRunsColumns.includes('honda')) {
+  db.exec('ALTER TABLE monitoring_runs ADD COLUMN honda INTEGER');
+}
 
 // Una fila por consulta de detección de cada ciclo (noviembre 2026,
 // openspec/changes/ventana-por-fuente): qué fuente se consultó, con qué
@@ -1003,8 +1009,22 @@ const lastSearchCallsForTermStmt = db.prepare(`
 // Apify si se sabe (usd_real), si no el estimado (usd).
 const OFFICIAL_ACTOR_SQL = "'apify~instagram-scraper'";
 const insertMonitoringRunStmt = db.prepare(
-  'INSERT INTO monitoring_runs (started_at, "trigger", plataforma) VALUES (@startedAt, @trigger, @plataforma)'
+  'INSERT INTO monitoring_runs (started_at, "trigger", plataforma, honda) VALUES (@startedAt, @trigger, @plataforma, @honda)'
 );
+// La última corrida honda TERMINADA: cerró sin que el ciclo tirara y alguna
+// búsqueda respondió o quedó en Apify (una honda en la que no respondió
+// ninguna no cuenta: no trajo nada). Una corrida sin búsquedas cuenta.
+const getLastFinishedDeepRunAtStmt = db.prepare(`
+  SELECT MAX(r.finished_at) AS at FROM monitoring_runs r
+  WHERE r.honda = 1 AND r.finished_at IS NOT NULL AND r.error_code IS NULL
+    AND (
+      NOT EXISTS (SELECT 1 FROM monitoring_run_sources s WHERE s.run_id = r.id AND s.tipo = 'busqueda')
+      OR EXISTS (
+        SELECT 1 FROM monitoring_run_sources s
+        WHERE s.run_id = r.id AND s.tipo = 'busqueda' AND s.estado IN ('ok', 'parcial', 'esperando', 'recuperada')
+      )
+    )
+`);
 const sumApifyCallsByRunStmt = db.prepare(`
   SELECT phase, COALESCE(actor, ${OFFICIAL_ACTOR_SQL}) AS actor, COUNT(*) AS calls, COALESCE(SUM(items), 0) AS results,
          COALESCE(SUM(usd), 0) AS usd, SUM(usd_real) AS usdReal, SUM(usd_real IS NOT NULL) AS withReal,
@@ -2478,13 +2498,26 @@ function getApifyCall(id) {
 }
 
 /** Abre la fila del ciclo en monitoring_runs. @returns {number} id (el run_id de sus apify_calls). */
-function startMonitoringRun({ trigger, plataforma, startedAt } = {}) {
+function startMonitoringRun({ trigger, plataforma, startedAt, honda = null } = {}) {
   const result = insertMonitoringRunStmt.run({
     startedAt: startedAt || new Date().toISOString(),
     trigger: trigger || 'manual',
     plataforma: plataforma || 'todas',
+    // true / false con las corridas hondas activas; null si están apagadas.
+    honda: honda == null ? null : honda ? 1 : 0,
   });
   return Number(result.lastInsertRowid);
+}
+
+/**
+ * Cuándo terminó la última corrida honda (src/deepRun.js), o null si no
+ * hubo ninguna. Cuenta la que cerró sin que el ciclo tirara y en la que
+ * alguna búsqueda respondió o quedó en Apify.
+ * @returns {string|null}
+ */
+function getLastFinishedDeepRunAt() {
+  const row = getLastFinishedDeepRunAtStmt.get();
+  return row && row.at ? row.at : null;
 }
 
 /**
@@ -3867,6 +3900,7 @@ module.exports = {
   settleApifyCall,
   listApifyRunIdsSince,
   startMonitoringRun,
+  getLastFinishedDeepRunAt,
   finishMonitoringRun,
   getMonitoringRun,
   startRunSource,

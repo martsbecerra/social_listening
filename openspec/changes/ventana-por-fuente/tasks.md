@@ -88,3 +88,15 @@ recuperado de las corridas cortadas) quedó afuera por decisión del dueño.
 - [x] 13.1 `.env.example`
 - [x] 13.2 `CLAUDE.md`, `README.md`
 - [x] 13.3 Suite verde con `IG_ACTOR=apidojo` y `IG_ACTOR=apify`
+
+## Phase 14: textos (al aprobar las capturas, 20/11/2026)
+
+- [x] 14.1 `runStatus.resumenFallidas`: cuando una búsqueda falló y otra sigue en Apify, el título, el chip, la frase y el párrafo del Pipeline nombran las dos (REQ-VPF-06)
+
+## Phase 15: corridas hondas (20/11/2026)
+
+- [x] 15.1 `src/deepRun.js`: `MONITOR_DEEP_HOURS`, `MONITOR_DEEP_WINDOW`, `decidirHonda` (REQ-VPF-17)
+- [x] 15.2 `db.js`: `monitoring_runs.honda`, `getLastFinishedDeepRunAt`
+- [x] 15.3 `monitor.js`: `detectionWindowFor(…, { minWindowMs })`; el ciclo recibe `pasada`; línea del log con el costo estimado (`busquedaTope.estimarResultados`, `costoDeBusquedas`) (REQ-VPF-18)
+- [x] 15.4 `scheduler.js`: `decidirPasada`, `describeNextRun`, la corrida queda registrada como honda; `server.js` valida las variables
+- [x] 15.5 Tests: `corridaHonda.test.js`; `.env.example`, `CLAUDE.md`, `README.md`

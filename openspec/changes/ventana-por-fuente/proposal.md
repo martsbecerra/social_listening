@@ -80,8 +80,8 @@ default 1 día) para decidirlo aparte.
 
 - Importar a la base los resultados recuperados de las corridas cortadas de
   #55 y #56 (decisión del dueño: el hueco del 5 al 15/11 queda sin cubrir)
-- Cambiar la ventana mínima por defecto, o una corrida "honda" por día
-  (depende de la decisión sobre la sonda)
+- Cambiar la ventana mínima por defecto (las corridas hondas, decididas
+  después de la sonda, sí entraron: ver `design.md`, decisión 11)
 - Techo de clasificaciones por corrida; cola persistente para los pendientes
   de detalle; adoptar automáticamente un run cuyo arranque devolvió 5xx
 - Prompt caching del clasificador

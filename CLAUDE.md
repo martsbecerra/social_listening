@@ -250,6 +250,31 @@ su marca.
   `tope_lleno`, la marca avanza y la corrida queda incompleta. El actor no
   devuelve los resultados por fecha: un tope lleno deja afuera una parte de
   cada día, no "lo más viejo".
+- **Corridas hondas** (`src/deepRun.js`, puro; decisión del dueño,
+  20/11/2026): `MONITOR_DEEP_HOURS` (horas del cron, hora local del server:
+  "8,16") y `MONITOR_DEEP_WINDOW` (default 7 días). Sin las horas no hay
+  hondas y todo queda como siempre. En una corrida honda la ventana mínima
+  de las búsquedas (`tipo 'busqueda'`: en X no cambia nada) es la honda en
+  vez de `MONITOR_MIN_WINDOW` (`detectionWindowFor(..., { minWindowMs })`:
+  nunca achica, vale la mayor de las dos). Es honda la corrida PROGRAMADA
+  que cae en una de esas horas o, si pasaron más de 24 h desde la última
+  honda terminada (o no hubo ninguna), la próxima programada; "Actualizar
+  ahora" es siempre corta (`deepRun.decidirHonda`,
+  `scheduler.decidirPasada`). "Terminada" (`db.getLastFinishedDeepRunAt`):
+  cerró sin que el ciclo tirara y alguna búsqueda respondió o quedó en
+  Apify. `monitoring_runs.honda`: 1 | 0 | NULL con las hondas apagadas. Sin
+  cambios de pantalla, lo dice el log: `[ciclo] inicio (…, honda: ventana
+  mínima de 7 días, por la hora)`; `[monitor] instagram: corrida honda (…) ·
+  8 búsquedas · costo estimado US$ X (como mucho US$ Y si todas llenan su
+  tope, más hasta US$ 2,00 en segundas consultas)`; `[ciclo] próxima
+  corrida programada: 20/11 20:00 · corta`; y al arrancar, la línea de la
+  configuración y la próxima corrida. El estimado sale de lo que trajo cada
+  término en consultas de una ventana PARECIDA
+  (`busquedaTope.estimarResultados`: lo que trae una búsqueda no crece
+  parejo con la ventana). Cambiar cuántas hondas hay por día es cambiar
+  `MONITOR_DEEP_HOURS`. Costo medido (noviembre 2026, 8 búsquedas): una
+  honda, entre US$ 1,2 y 1,5; una corta, unos 0,2. `server.js` valida las
+  dos variables al arrancar. Test: `test/corridaHonda.test.js`.
 - **Cuánto dura un ciclo**: con `APIFY_MAX_CONCURRENT` 10 las ocho búsquedas
   corren a la vez; la detección dura como mucho `SEARCH_WAIT_MS`. Después,
   el detalle (hasta 5 min), la clasificación (unos 2 s por posteo nuevo, sin
@@ -258,8 +283,13 @@ su marca.
 - **Lo medido** (sonda autorizada del 16/11/2026, US$ 0,43): con `until` de
   1 día el actor devolvió el 4 % (macri) y el 19 % (GCBA) de lo publicado en
   esas 24 h; con 7 días, el 70 % y el 74 %, en 7 a 11 minutos. Ninguna
-  ventana trae todo en una pasada. `MONITOR_MIN_WINDOW` quedó en 1 día: la
-  ventana mínima y una corrida honda por día se deciden aparte.
+  ventana trae todo en una pasada. `MONITOR_MIN_WINDOW` quedó en 1 día: lo
+  hondo va por las corridas hondas. La pasada corta tampoco alcanza para lo
+  importante (comprobación del 20/11/2026: la #57, de 1 día, contra la #56 y
+  la sonda): trajo 8 de las 10 publicaciones de más likes y comentarios,
+  pero la mitad del decil de arriba (23 de 48) y de las de cuentas de más de
+  100 mil seguidores (17 de 31), y de tres de los seis términos casi nada;
+  una sola pasada honda trajo de 7 a 10 de las 10 de más impacto.
 - `server.js` valida al arrancar `SEARCH_WAIT_MS`, `SEARCH_RUN_TIMEOUT_SECS`,
   `SEARCH_RESULTS_MAX` y `SEARCH_EXTRA_MAX_USD_PER_CYCLE` (como `IG_ACTOR`) y
   muestra una línea con cada grupo y con las tarifas de apidojo en uso.

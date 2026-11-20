@@ -213,3 +213,45 @@ Un día cuya única corrida no tuvo ninguna fuente que respondiera MUST NOT cont
 - GIVEN un archivo con once corridas y sus costos
 - WHEN se corre con `--si`
 - THEN las once filas quedan con su run y su costo real, y la suma coincide
+
+---
+
+### Requirement: REQ-VPF-17 — Corridas hondas por hora
+
+Con `MONITOR_DEEP_HOURS` configurada, la corrida PROGRAMADA que cae en una de esas horas MUST ser honda: la ventana mínima de todas las búsquedas es `MONITOR_DEEP_WINDOW` (default 7 días) en vez de `MONITOR_MIN_WINDOW`. Si pasaron más de 24 h desde la última corrida honda terminada, o no hubo ninguna, la próxima corrida programada MUST ser honda aunque no sea su hora. Una corrida manual ("Actualizar ahora") MUST ser corta. Sin `MONITOR_DEEP_HOURS` el sistema MUST comportarse como antes. Un valor mal escrito MUST abortar el arranque. La pantalla MUST NOT cambiar.
+
+#### Scenario: Honda por la hora
+
+- GIVEN `MONITOR_DEEP_HOURS=8,16` y todas las búsquedas con su marca de hace 4 horas
+- WHEN corre la corrida programada de las 8
+- THEN cada búsqueda pide desde hace 7 días y la corrida queda registrada como honda
+
+#### Scenario: Corta fuera de hora
+
+- GIVEN la misma configuración y una honda terminada hace 4 horas
+- WHEN corre la corrida programada de las 12
+- THEN cada búsqueda pide desde hace 1 día
+
+#### Scenario: Honda atrasada
+
+- GIVEN la última honda terminó hace más de 24 horas
+- WHEN corre la corrida programada de las 20
+- THEN es honda
+
+#### Scenario: Actualizar ahora
+
+- GIVEN una hora honda
+- WHEN alguien aprieta "Actualizar ahora"
+- THEN la corrida es corta y no cuenta como honda
+
+---
+
+### Requirement: REQ-VPF-18 — La corrida dice si es honda y cuánto cuesta
+
+Con las corridas hondas activas, cada corrida MUST dejar en el log si es honda o corta y el costo estimado de sus búsquedas, con el máximo posible. El estimado MUST salir de las consultas recientes de cada término de una ventana parecida a la que se pide.
+
+#### Scenario: Con historia
+
+- GIVEN un término cuya última consulta de 7 días trajo 400 resultados
+- WHEN arranca una corrida honda
+- THEN el estimado de ese término es el de 400 resultados

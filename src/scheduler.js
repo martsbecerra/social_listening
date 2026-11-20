@@ -30,6 +30,7 @@ const { apifyLimiter } = require('./apify');
 const { imageLimiter } = require('./postImages');
 const postImageSync = require('./postImageSync');
 const progress = require('./monitoringProgress');
+const deepRun = require('./deepRun');
 
 // Corridas a las 8, 12, 16 y 20 (hora local del server): sin las de 0 y 4,
 // que costaban lo mismo y casi no traían nada. Configurable con MONITOR_CRON.
@@ -326,6 +327,53 @@ function resumenDelCiclo(runId, { quotaExceeded = false, errorCode = null } = {}
 }
 
 /**
+ * ¿La corrida que arranca en `nowMs` es honda o corta? (src/deepRun.js). Es
+ * honda la programada que cae en una hora de MONITOR_DEEP_HOURS o, si pasaron
+ * más de 24 h desde la última honda terminada, la próxima programada;
+ * "Actualizar ahora" es siempre corta. Nunca tira: si no se puede leer la
+ * última honda, decide solo por la hora.
+ * @returns {{ activas: boolean, honda: boolean, motivo: string|null, motivoTexto: string, windowMs: number|null, windowText: string|null }}
+ */
+function decidirPasada(trigger, nowMs = Date.now()) {
+  const config = deepRun.deepConfig();
+  if (!config.enabled) return { activas: false, honda: false, motivo: null, motivoTexto: '', windowMs: null, windowText: null };
+  let ultima = null;
+  let seSabe = true;
+  try {
+    ultima = db.getLastFinishedDeepRunAt();
+  } catch (err) {
+    seSabe = false;
+    console.error('[ciclo] No se pudo leer la última corrida honda (se decide solo por la hora):', err.message);
+  }
+  const decision = deepRun.decidirHonda({
+    trigger,
+    now: nowMs,
+    // Sin poder leerla, que no parezca atrasada: una honda de más cuesta.
+    lastDeepFinishedAt: seSabe ? ultima : new Date(nowMs).toISOString(),
+    config,
+  });
+  return { activas: true, ...decision, motivoTexto: deepRun.describeMotivo(decision.motivo, ultima) };
+}
+
+/** "20/11 20:00", en la hora local del server (la del cron). */
+function fechaHoraLocal(date) {
+  const dos = (n) => String(n).padStart(2, '0');
+  return `${dos(date.getDate())}/${dos(date.getMonth() + 1)} ${dos(date.getHours())}:${dos(date.getMinutes())}`;
+}
+
+/**
+ * La próxima corrida programada y si va a ser honda o corta, para el log:
+ * "20/11 20:00 · honda (pasaron más de 24 h desde la última honda)". '' con
+ * las hondas apagadas.
+ */
+function describeNextRun(from = new Date()) {
+  const next = getNextRunAt(getCronExpression(), from);
+  const pasada = decidirPasada('cron', next.getTime());
+  if (!pasada.activas) return '';
+  return `${fechaHoraLocal(next)} · ${pasada.honda ? `honda (${pasada.motivoTexto})` : 'corta'}`;
+}
+
+/**
  * Abre la fila del ciclo en monitoring_runs, corre las fases y la cierra con
  * los totales de gasto en Apify (ver src/apifyCost.js), pase lo que pase.
  * El registro nunca frena el ciclo: si la base falla al abrir, el ciclo
@@ -334,11 +382,14 @@ function resumenDelCiclo(runId, { quotaExceeded = false, errorCode = null } = {}
 async function runCycleUnlocked(plataformas, trigger = 'manual') {
   const cycleStartedAt = Date.now();
   const plataformaTexto = plataformas ? plataformas.join(',') : 'todas';
-  console.log(`[ciclo] inicio (trigger=${trigger}, plataforma=${plataformaTexto})`);
+  // Honda o corta (src/deepRun.js): se decide una vez, al arrancar.
+  const pasada = decidirPasada(trigger, cycleStartedAt);
+  const tipoDeCorrida = !pasada.activas ? '' : pasada.honda ? `, honda: ventana mínima de ${pasada.windowText}, ${pasada.motivoTexto}` : ', corta';
+  console.log(`[ciclo] inicio (trigger=${trigger}, plataforma=${plataformaTexto}${tipoDeCorrida})`);
 
   let runId = null;
   try {
-    runId = db.startMonitoringRun({ trigger, plataforma: plataformaTexto });
+    runId = db.startMonitoringRun({ trigger, plataforma: plataformaTexto, honda: pasada.activas ? pasada.honda : null });
     currentRunId = runId;
   } catch (err) {
     console.error('[costo] No se pudo abrir el registro del ciclo:', err.message);
@@ -354,7 +405,7 @@ async function runCycleUnlocked(plataformas, trigger = 'manual') {
   let cycleError = null;
   let result = null;
   try {
-    result = await runCyclePhases(plataformas, runId, trigger);
+    result = await runCyclePhases(plataformas, runId, trigger, pasada);
     newCount = result.newCount;
     newCandidates = Object.values(result.porPlataforma || {}).reduce((sum, p) => sum + (Number(p && p.newCandidates) || 0), 0);
     return result;
@@ -392,6 +443,14 @@ async function runCycleUnlocked(plataformas, trigger = 'manual') {
         cycleError ? `: ${cycleError.message}` : ''
       }${resumen.texto ? ` — ${resumen.texto}` : ''})`
     );
+    // Con las corridas hondas activas: cuándo es la próxima programada y si
+    // va a ser honda (al terminar una honda, el reloj de las 24 h arranca de nuevo).
+    try {
+      const proxima = describeNextRun();
+      if (proxima) console.log(`[ciclo] próxima corrida programada: ${proxima}`);
+    } catch (err) {
+      console.error('[ciclo] No se pudo calcular la próxima corrida:', err.message);
+    }
     // Fotos de los posteos: una sola línea por ciclo (si alguna respuesta
     // trajo link de imagen). El detalle de cada fallo ya lo escribió
     // src/postImages.js.
@@ -441,7 +500,7 @@ function mergeSkipAccounts(...sources) {
 // 'benchmark', 'refresco') para que cada llamada a Apify se registre con
 // su ciclo y su fase (src/usageContext.js). Solo medición: la lógica de
 // cada fase no cambia.
-async function runCyclePhases(plataformas, runId, trigger) {
+async function runCyclePhases(plataformas, runId, trigger, pasada = null) {
   // Fotos que quedaron pendientes en ciclos anteriores (la tanda se cortó o
   // la descarga falló por algo pasajero): se reintentan con el link ya
   // guardado, sin pedirle nada a Apify. Va primero: lo que falle en ESTE
@@ -450,7 +509,7 @@ async function runCyclePhases(plataformas, runId, trigger) {
 
   const { checked, newPosts, scrapedAccounts, porPlataforma } = await runWithContext(
     { runId, phase: 'monitoreo' },
-    () => runMonitoringCycle({ plataformas, trigger })
+    () => runMonitoringCycle({ plataformas, trigger, pasada })
   );
   const newCount = (newPosts || []).length;
 
@@ -518,6 +577,23 @@ function startScheduler() {
       (fuera.length > 0 ? `; ${fuera.join(', ')} fuera del ciclo automático, MONITOR_PLATFORMS para sumarla` : '') +
       ')'
   );
+
+  // Corridas hondas (src/deepRun.js): cuándo es la próxima y de qué tipo, y
+  // un aviso si alguna hora honda no es una hora del cron.
+  const deep = deepRun.deepConfig();
+  if (deep.enabled) {
+    const sinCorrida = deepRun.horasFueraDelCron(deep, getRunHours(cronExpression));
+    if (sinCorrida.length > 0) {
+      console.warn(
+        `[monitor] MONITOR_DEEP_HOURS: el cron no corre a las ${sinCorrida.join(', ')} h; ${sinCorrida.length === 1 ? 'esa hora no va' : 'esas horas no van'} a tener corrida honda.`
+      );
+    }
+    try {
+      console.log(`   Próxima corrida programada: ${describeNextRun()}`);
+    } catch (err) {
+      console.error('[ciclo] No se pudo calcular la próxima corrida:', err.message);
+    }
+  }
 }
 
 module.exports = {
@@ -530,6 +606,8 @@ module.exports = {
   getRunHours,
   getCurrentRunId,
   resumenDelCiclo,
+  decidirPasada,
+  describeNextRun,
   heartbeatDue,
   cronPlatforms,
   DEFAULT_CRON_PLATFORMS,

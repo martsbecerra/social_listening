@@ -116,6 +116,57 @@ function topeParaTermino({ topeDeHoy, tasa = 0, horas = 24, resultsMax = DEFAULT
   return Math.max(base, Math.min(Math.floor(resultsMax), porVolumen));
 }
 
+/**
+ * Cuántos resultados se espera que traiga una búsqueda, por su historia: el
+ * promedio de sus consultas buenas recientes de una ventana PARECIDA (entre
+ * la mitad y el doble de las horas que se piden ahora). Lo que trae una
+ * búsqueda no crece parejo con la ventana (sonda del 16/11/2026: 4
+ * resultados con 1 día, 400 con 7), así que una consulta corta no sirve para
+ * estimar una honda ni al revés; sin ninguna parecida, la tasa del término
+ * por las horas pedidas, que es lo mejor que hay. Nunca más que el tope.
+ * @param {{ calls: Array<{ items: number, maxItems?: number|null, until?: string|null, at: string }>, horas: number, tope: number }} input
+ * @returns {number|null} null sin historia
+ */
+function estimarResultados({ calls, horas, tope }) {
+  const lista = Array.isArray(calls) ? calls : [];
+  const pedidas = Number(horas) > 0 ? Number(horas) : 24;
+  const techo = Number(tope) > 0 ? Math.floor(Number(tope)) : Infinity;
+  const parecidas = lista.filter((call) => {
+    const h = horasPedidas(call && call.until, call && call.at) || 24;
+    return h >= pedidas / 2 && h <= pedidas * 2;
+  });
+  if (parecidas.length > 0) {
+    const promedio = parecidas.reduce((sum, call) => sum + (Number(call.items) || 0), 0) / parecidas.length;
+    return Math.min(techo, Math.round(promedio));
+  }
+  const tasa = tasaTermino(lista);
+  if (tasa <= 0) return null;
+  return Math.min(techo, Math.round(tasa * pedidas));
+}
+
+/**
+ * Costo de las búsquedas de una corrida, antes de lanzarlas: el estimado
+ * (con lo que se espera que traiga cada una) y el techo (todas llenan su
+ * tope). `usdDe(resultados)` es lo que cuesta una búsqueda con esa cantidad
+ * (apifyCost.maxUsdForSearch): se inyecta para que este módulo no cargue
+ * nada. Una búsqueda sin historia cuenta solo su consulta en el estimado.
+ * @param {Array<{ estimado: number|null, limit: number }>} busquedas
+ * @param {(resultados: number) => number} usdDe
+ * @returns {{ estimado: number, techo: number, sinHistoria: number, n: number }}
+ */
+function costoDeBusquedas(busquedas, usdDe) {
+  const lista = Array.isArray(busquedas) ? busquedas : [];
+  let estimado = 0;
+  let techo = 0;
+  let sinHistoria = 0;
+  for (const b of lista) {
+    if (b.estimado == null) sinHistoria += 1;
+    estimado += usdDe(b.estimado == null ? 0 : b.estimado);
+    techo += usdDe(b.limit);
+  }
+  return { estimado, techo, sinHistoria, n: lista.length };
+}
+
 /** El tope de la segunda consulta: 4 veces el de la primera, hasta `resultsMax`. null si ya no hay más que pedir. */
 function topeRelanzamiento(tope, resultsMax = DEFAULT_RESULTS_MAX) {
   const siguiente = Math.min(Math.floor(resultsMax), Math.floor(Number(tope) || 0) * RELAUNCH_FACTOR);
@@ -153,6 +204,8 @@ function describeTopeConfig({ resultsMax, extraMaxUsd } = topeConfig()) {
 }
 
 module.exports = {
+  estimarResultados,
+  costoDeBusquedas,
   DEFAULT_RESULTS_MAX,
   DEFAULT_EXTRA_MAX_USD,
   RELAUNCH_FACTOR,

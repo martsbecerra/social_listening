@@ -171,6 +171,30 @@ function parseMinWindowMs(raw) {
 }
 
 /**
+ * La línea del log de una corrida con las hondas activas (src/deepRun.js):
+ * si es honda o corta y cuánto se estima que cuestan sus búsquedas en Apify.
+ * "[monitor] instagram: corrida honda (ventana mínima de 7 días, por la
+ * hora) · 8 búsquedas · costo estimado US$ 1,42 (como mucho US$ 3,62 si
+ * todas llenan su tope, más hasta US$ 2,00 en segundas consultas)". El
+ * estimado sale de lo que trajo cada término en sus consultas recientes de
+ * una ventana parecida (busquedaTope.estimarResultados).
+ */
+function describirCostoDeLaCorrida(platformId, busquedas, { pasada, esHonda, extraMaxUsd = 0 } = {}) {
+  const usd = (n) => `US$ ${Number(n || 0).toFixed(2).replace('.', ',')}`;
+  const costo = busquedaTope.costoDeBusquedas(busquedas, (resultados) => maxUsdForSearch(resultados));
+  const tipo = esHonda
+    ? `corrida honda (ventana mínima de ${pasada.windowText}${pasada.motivoTexto ? `, ${pasada.motivoTexto}` : ''})`
+    : 'corrida corta';
+  return (
+    `[monitor] ${platformId}: ${tipo} · ${costo.n} ${costo.n === 1 ? 'búsqueda' : 'búsquedas'} · costo estimado ${usd(costo.estimado)} ` +
+    `(como mucho ${usd(costo.techo)} si ${costo.n === 1 ? 'llena' : 'todas llenan'} su tope` +
+    (Number(extraMaxUsd) > 0 ? `, más hasta ${usd(extraMaxUsd)} en segundas consultas` : '') +
+    ')' +
+    (costo.sinHistoria > 0 ? ` · ${costo.sinHistoria} sin historia: ${costo.sinHistoria === 1 ? 'cuenta' : 'cuentan'} solo la consulta` : '')
+  );
+}
+
+/**
  * Clave en refresh_state de la marca de detección de UNA fuente:
  * `detection_last_success:<red>:<tipo>:<clave>` (tipo: busqueda | cuenta |
  * hashtag | keyword; la clave, normalizada como sourceKey). La de la red
@@ -209,13 +233,17 @@ function sourceMarkKey(platformId, tipo, fuente) {
  * reciben los adapters que no entienden otra cosa); `sinceIso` es el
  * instante exacto, y el adapter de apidojo arma su `until` con él.
  *
+ * `minWindowMs`: en una corrida honda (src/deepRun.js) la ventana mínima de
+ * las búsquedas es la honda en vez de MONITOR_MIN_WINDOW. Nunca achica: vale
+ * la mayor de las dos.
+ *
  * @param {string} platformId
- * @param {{ now?: number, tipo?: string|null, fuente?: string|null, cubiertoHasta?: string|null }} [options]
+ * @param {{ now?: number, tipo?: string|null, fuente?: string|null, cubiertoHasta?: string|null, minWindowMs?: number|null }} [options]
  *   `now` inyectable para tests (reloj fijo).
  * @returns {{ lookback: string, windowDays: number, isDefault: boolean, sinceIso: string,
  *   origen: 'primera'|'marca'|'minimo'|'techo', huecoDesde: string|null }}
  */
-function detectionWindowFor(platformId, { now = Date.now(), tipo = null, fuente = null, cubiertoHasta = null } = {}) {
+function detectionWindowFor(platformId, { now = Date.now(), tipo = null, fuente = null, cubiertoHasta = null, minWindowMs = null } = {}) {
   const ceilingMs = now - parseLookbackMaxMs(process.env.MONITOR_LOOKBACK_MAX);
   const key = tipo && fuente ? sourceMarkKey(platformId, tipo, fuente) : `detection_last_success:${platformId}`;
   const markMs = Date.parse(db.getRefreshState(key) || '');
@@ -224,15 +252,18 @@ function detectionWindowFor(platformId, { now = Date.now(), tipo = null, fuente 
 
   let origen = known.length > 0 ? 'marca' : 'primera';
   let sinceMs = known.length > 0 ? Math.max(...known) : now - parseFirstRunLookbackMs(process.env.MONITOR_LOOKBACK);
-  const minMs = now - parseMinWindowMs(process.env.MONITOR_MIN_WINDOW);
+  const minimoMs = Math.max(parseMinWindowMs(process.env.MONITOR_MIN_WINDOW), Number(minWindowMs) > 0 ? Number(minWindowMs) : 0);
+  const minMs = now - minimoMs;
   if (sinceMs > minMs) {
     sinceMs = minMs;
     if (origen === 'marca') origen = 'minimo';
   }
   let huecoDesde = null;
   if (sinceMs < ceilingMs) {
-    // Lo anterior al techo no se pide: si había marca, queda un hueco.
-    if (origen !== 'primera') huecoDesde = new Date(sinceMs).toISOString();
+    // Lo anterior al techo no se pide: si la MARCA estaba más atrás, queda
+    // un hueco. Si lo que pasó el techo fue la ventana mínima (una honda más
+    // larga que el techo), no hay hueco: nadie esperaba esos días.
+    if (origen === 'marca') huecoDesde = new Date(sinceMs).toISOString();
     sinceMs = ceilingMs;
     origen = 'techo';
   }
@@ -1443,7 +1474,13 @@ function notConfiguredError(platform) {
  *   porPlataforma: Object<string, { checked: number, newCount: number, skipped: boolean,
  *     error?: { code: string, message: string } }> }>}
  */
-async function runMonitoringCycle({ plataformas, trigger } = {}) {
+async function runMonitoringCycle({ plataformas, trigger, pasada = null } = {}) {
+  // Corridas hondas (src/deepRun.js, lo decide el scheduler): `pasada` es {
+  // activas, honda, windowMs, windowText, motivoTexto }. En una honda la
+  // ventana mínima de las búsquedas es la honda. Sin `pasada`, o con las
+  // hondas apagadas, todo es como siempre.
+  const hondasActivas = Boolean(pasada && pasada.activas);
+  const esHonda = hondasActivas && Boolean(pasada.honda) && Number(pasada.windowMs) > 0;
   const all = loadConfigAll();
   const limits = monitorLimits();
   const cycleNowMs = Date.now();
@@ -1566,32 +1603,42 @@ async function runMonitoringCycle({ plataformas, trigger } = {}) {
     // para no perder posteos por cantidad en vez de por fecha (ver
     // raiseLimitForWindow): el excedente se paga, no se corta.
     const withWindow = (tipo, fuente, baseLimit) => {
+      // En una corrida honda, la ventana mínima de las búsquedas es la honda.
+      const honda = esHonda && tipo === 'busqueda';
       const window = detectionWindowFor(platformId, {
         tipo,
         fuente,
         now: cycleNowMs,
         cubiertoHasta: tipo === 'busqueda' ? recovery.cubiertoHasta.get(sourceKey(fuente)) || null : null,
+        minWindowMs: honda ? pasada.windowMs : null,
       });
       let limit = window.isDefault ? baseLimit : raiseLimitForWindow(baseLimit, window.windowDays);
       // Una búsqueda: el tope sale además del volumen medido de ESE término
       // (lo que trajo por hora en sus consultas recientes), nunca menos que
       // el de recién. Pedir un tope más alto no cuesta: se paga por resultado.
+      // `estimado`: cuántos resultados se espera que traiga (para la línea
+      // del costo de la corrida); null sin historia.
+      let estimado = null;
       if (tipo === 'busqueda') {
         try {
-          const tasa = busquedaTope.tasaTermino(db.lastSearchCallsForTerm(platformId, fuente, busquedaTope.HISTORY_CALLS));
+          const calls = db.lastSearchCallsForTerm(platformId, fuente, busquedaTope.HISTORY_CALLS);
+          const tasa = busquedaTope.tasaTermino(calls);
           const horas = busquedaTope.horasPedidas(window.sinceIso, cycleNowMs) || 24;
           limit = busquedaTope.topeParaTermino({ topeDeHoy: limit, tasa, horas, resultsMax: topeConfig.resultsMax });
+          estimado = busquedaTope.estimarResultados({ calls, horas, tope: limit });
         } catch (err) {
           console.error(`[monitor] (${platformId}) no se pudo medir el volumen de «${fuente}» (se usa el tope de siempre):`, err.message);
         }
       }
-      if (!window.isDefault) {
+      // En una honda, que todas las búsquedas miren la ventana honda es lo
+      // esperado: lo dice la línea de la corrida, no una por búsqueda.
+      if (!window.isDefault && !(honda && window.origen === 'minimo')) {
         console.log(
           `[monitor] ${platformId} ${tipo} «${fuente}»: retoma desde ${window.sinceIso} (${window.windowDays} días; tope ${limit}, base ${baseLimit})` +
             (window.huecoDesde ? `; no respondía desde ${window.huecoDesde}: lo anterior al techo de la ventana no se pide` : '')
         );
       }
-      return { tipo, fuente, window, baseLimit, limit };
+      return { tipo, fuente, window, baseLimit, limit, estimado };
     };
 
     // Las fuentes de la detección de esta red, todas con la misma forma:
@@ -1624,6 +1671,15 @@ async function runMonitoringCycle({ plataformas, trigger } = {}) {
           }))
         : []),
     ];
+
+    // Con las corridas hondas activas: una línea por red que dice si esta
+    // corrida es honda o corta y cuánto se estima que cuestan sus búsquedas.
+    if (hondasActivas) {
+      const busquedas = sources.filter((source) => source.tipo === 'busqueda');
+      if (busquedas.length > 0) {
+        console.log(describirCostoDeLaCorrida(platformId, busquedas, { pasada, esHonda, extraMaxUsd: topeConfig.extraMaxUsd }));
+      }
+    }
 
     // Cada fuente deja una línea en el progreso (en curso mientras se
     // consulta; al terminar, cuántos posteos trajo y cuántos son nuevos, o
@@ -2151,6 +2207,7 @@ module.exports = {
   monitorLimits,
   searchEnrichLimit,
   detectionWindowFor,
+  describirCostoDeLaCorrida,
   sourceMarkKey,
   sourceKey,
   migrateDetectionMarks,

@@ -261,6 +261,46 @@ frontend no calcula el estado: lo recibe.
   costo real de corridas que la app cortó sin registrar (las once de #55 y
   #56), sin importar publicaciones; sin `--si` solo informa.
 
+### 11. Corridas hondas (20/11/2026)
+
+Decisión del dueño después de la sonda: la ventana mínima no sube para
+todas las corridas; algunas son "hondas".
+
+- `src/deepRun.js` (puro). `MONITOR_DEEP_HOURS` ("8,16": horas del cron,
+  hora local del server) y `MONITOR_DEEP_WINDOW` (default 7 días). Sin las
+  horas no hay hondas y nada cambia.
+- En una corrida honda la ventana mínima de las búsquedas (`tipo
+  'busqueda'`) es la honda en vez de `MONITOR_MIN_WINDOW`:
+  `detectionWindowFor(…, { minWindowMs })`, que nunca achica. El techo
+  sigue valiendo; si la ventana honda pasa el techo no se registra un hueco
+  (el hueco es solo de una marca más vieja que el techo).
+- Es honda la corrida programada que cae en una de esas horas, o la próxima
+  programada si pasaron más de 24 h desde la última honda terminada (o no
+  hubo ninguna). "Actualizar ahora" es siempre corta.
+- "Terminada": la fila de `monitoring_runs` con `honda = 1` que cerró sin
+  `error_code` y en la que alguna búsqueda respondió o quedó en Apify (una
+  honda en la que no respondió ninguna no trajo nada). Una honda incompleta
+  cuenta: lo que quedó en Apify se levanta en la corrida siguiente, y
+  repetir la honda sería pagarla dos veces.
+- Sin cambios de pantalla. El log dice si la corrida es honda y el costo
+  estimado de sus búsquedas; el estimado usa las consultas recientes de
+  cada término de una ventana parecida (entre la mitad y el doble de las
+  horas pedidas), porque lo que trae una búsqueda no crece parejo con la
+  ventana.
+- Costo (datos de la #56 y de la sonda): una pasada de 7 días trae entre
+  250 y 500 resultados por término grande, unos 2.100 a 2.800 entre los
+  ocho: US$ 1,2 a 1,5 por corrida honda. Una corta, unos 0,2. Con hondas a
+  las 8 y a las 16: US$ 85 a 110 por mes en búsquedas. La primera honda
+  llena los topes escalados por la ventana (el tope base por 7) y hace las
+  segundas consultas que entren en el techo; después el tope sale del
+  volumen medido y no hacen falta.
+- Lo que la pasada corta no trae (comprobación del 20/11/2026, #57 contra
+  #56 y la sonda, 477 publicaciones de 6 términos): 99 traídas (21 %); 8 de
+  las 10 de más impacto, 23 de las 48 del decil de arriba, 58 % del impacto
+  total, 17 de las 31 de cuentas de más de 100 mil seguidores; de "macri",
+  GCBA y PDLC, 0, 1 y 2. Una sola pasada honda (macri y GCBA, dos pasadas
+  independientes): 7 a 10 de las 10 de más impacto, 81 a 98 % del impacto.
+
 ## Cuánto puede durar un ciclo
 
 Con `APIFY_MAX_CONCURRENT` 10 las ocho búsquedas corren a la vez. Peor caso
@@ -272,4 +312,5 @@ corriendo a la hora del siguiente, el cron lo saltea (ya era así).
 ## Lo que queda afuera
 
 - La importación de los resultados recuperados de #55 y #56.
-- La ventana mínima por defecto y una corrida honda por día.
+- La ventana mínima por defecto (`MONITOR_MIN_WINDOW` sigue en 1 día: lo
+  hondo va por las corridas hondas, decisión 11).
