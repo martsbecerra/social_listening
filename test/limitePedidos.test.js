@@ -355,10 +355,11 @@ describe('detrás de un proxy (Railway)', () => {
 });
 
 describe('server.js', () => {
-  test('el orden: headers, rechazados, cuerpo de hasta 100 kb, gate, límites de /api, estáticos', () => {
+  test('el orden: headers, /health, rechazados, cuerpo de hasta 100 kb, gate, límites de /api, estáticos', () => {
     const code = fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8');
     const orden = [
       'app.use(securityHeaders())',
+      'healthRoutes.register(app)',
       'app.use(rateLimits.limites().rechazados)',
       "app.use(express.json({ limit: '100kb' }))",
       'app.use(createAuthGate())',

@@ -98,6 +98,7 @@ const { purgeExpiredSessions } = require('./src/auth/session');
 const { createAuthGate } = require('./src/auth/gate');
 const { securityHeaders, errorHandler, installProcessHandlers, trustProxySetting } = require('./src/httpSecurity');
 const rateLimits = require('./src/rateLimits');
+const healthRoutes = require('./src/healthRoutes');
 
 // Una promesa rechazada o una excepción sin manejar: log y exit(1), y quien
 // supervisa el proceso (Railway, scripts/iniciar-con-reinicio.bat) lo
@@ -117,6 +118,11 @@ if (trustProxy) app.set('trust proxy', trustProxy);
 // gate, así también los llevan los 401 y las redirecciones al login. Ver
 // src/httpSecurity.js.
 app.use(securityHeaders());
+
+// GET /health: el chequeo de Railway. Público, sin datos ({ status, db,
+// uptime }), 503 si la base no responde. Antes del límite de pedidos y del
+// gate: sin sesión y sin límite. Ver src/healthRoutes.js.
+healthRoutes.register(app);
 
 // Límite de pedidos rechazados (401 y 403 de /api), por IP y ANTES del gate:
 // una ráfaga de pedidos sin sesión tiene tope. Con una sesión válida no
