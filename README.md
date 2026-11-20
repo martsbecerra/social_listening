@@ -155,7 +155,7 @@ social_listening_app/
 │       ├── x-analysis.js     # Análisis de publicación de X (`/api/x/analyze`).
 │       ├── temasEditor.js    # Temas emergentes editables (antes de copiar/WhatsApp).
 │       ├── monitoring.js     # Monitoreo en vivo (parametrizado por data-platform).
-│       ├── monitoringFeed.js # Vista Feed del Monitoreo (tarjetas en filas completas). Solo Instagram.
+│       ├── monitoringFeed.js # Vista Feed del Monitoreo (tarjetas con scroll infinito y "Volver arriba"). Solo Instagram.
 │       ├── monitoringFeedPopup.js # Pop-up del posteo (feed, flujo y "Se despegaron"). Solo Instagram.
 │       ├── monitoringPanel.js # KPI, fuentes, pulso, pipeline y alertas del Monitoreo. Solo Instagram.
 │       ├── monitoringFlow.js # Flujo en vivo del Monitoreo. Solo Instagram.
@@ -1470,8 +1470,13 @@ vista elegida en ese navegador; sin nada guardado, el Feed.
   el contador "Mostrando N de M publicaciones del período" valen para las
   dos vistas. Si se filtra, se ordena o se cambia de vista con la página
   bajada, los resultados se muestran desde el principio.
-- **Filas completas.** El feed muestra tres filas (según cuántas columnas
-  entran) y, si hay más, la última celda es "+N · Ver 12 más".
+- **Scroll infinito.** El feed arranca con tres filas (según cuántas
+  columnas entran) y, al acercarse al final, suma solo otras tres, hasta
+  terminar la lista: sin botón, sin contador y sin cartel de fin; la última
+  fila puede quedar incompleta y después sigue el pie. En una pantalla alta
+  suma hasta llenarla. Otro filtro u orden (o volver desde la Tabla)
+  arranca otra vez con tres filas. Con la página más abajo que el comienzo
+  del feed aparece el botón redondo "Volver arriba", abajo a la derecha.
 - **Alcance (alto / medio / bajo).** Sale del benchmark que calcula el
   backend para likes y para comentarios, con la regla del colchón (ver
   `src/accountStats.js` más arriba): alto desde 1,5 y medio desde 1,1 sobre

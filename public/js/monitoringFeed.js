@@ -103,7 +103,7 @@ function buildFeedMedia(post, reach) {
   if (imageUrl) {
     const img = document.createElement('img');
     img.alt = '';
-    img.loading = 'lazy'; // son cientos de tarjetas sin paginar
+    img.loading = 'lazy'; // con el scroll pueden llegar a ser cientos de tarjetas
     img.decoding = 'async';
     // La foto abre el pop-up con un clic. Una imagen se puede arrastrar: si
     // el mouse se movía un poco entre apretar y soltar, el navegador
@@ -299,10 +299,12 @@ function feedSorter(order, reachById) {
 // scheduleFeedRender). Solo si el feed es la vista elegida: en la vista
 // Tabla no se arma ninguna tarjeta.
 //
-// Filas completas: a la vista van FEED_ROWS_STEP filas (según cuántas
-// columnas tiene la grilla de verdad) y, si hay más, la última celda es
-// "+N · Ver 12 más", que suma otras tantas. Con otros filtros u otro orden
-// se vuelve a las primeras filas.
+// Scroll infinito: primero van FEED_ROWS_STEP filas (según cuántas columnas
+// tiene la grilla de verdad) y, al acercarse al final del feed, se suman
+// solas otras tantas (feedFill, más abajo), hasta terminar la lista. Sin
+// botón, sin contador y sin cartel de fin: cuando no hay más, sigue el pie.
+// Con otros filtros u otro orden se vuelve a las primeras filas; un redibujo
+// de la misma lista (ignorar, datos nuevos) conserva las ya sumadas.
 // -------------------------------------------------------------------------
 let feedRenderTimer = null;
 // Filtros y orden del último dibujo. Si el siguiente llega con otros, la
@@ -314,6 +316,12 @@ let feedLastQuery = null;
 // tarjetas a la vista: el pop-up abierto desde una tarjeta la recorre
 // entera.
 let feedVisibleIds = [];
+// La misma lista, con los posteos y su alcance: de acá salen las tarjetas
+// que suma el scroll, sin volver a leer ni a ordenar la tabla.
+let feedList = [];
+let feedReachById = new Map();
+// Cuántas tarjetas hay dibujadas: las primeras feedShown de feedList.
+let feedShown = 0;
 const FEED_ROWS_STEP = 3;
 let feedRows = FEED_ROWS_STEP;
 // Columnas del último dibujo: si cambian (otro ancho de ventana), se rehace.
@@ -325,21 +333,20 @@ function feedColumns() {
   return Math.max(1, template.split(' ').filter((part) => part.endsWith('px')).length);
 }
 
-// La última celda cuando hay más de las que entran: "+N" grande, "Ver 12
-// más" (una tanda de filas, o las que queden) y cuántas se ven.
-function buildFeedMore(rest, step, shown, total) {
-  const more = feedNode('button', 'feed-more');
-  more.type = 'button';
-  more.dataset.act = 'more';
-  more.append(
-    feedNode('span', 'n', `+${rest.toLocaleString('es-AR')}`),
-    feedNode('span', 'l', `Ver ${Math.min(rest, step).toLocaleString('es-AR')} más`),
-    feedNode('small', '', `${shown.toLocaleString('es-AR')} de ${total.toLocaleString('es-AR')}`)
-  );
-  return more;
+// El alto de cada tarjeta dibujada como lo pide contain-intrinsic-height: sin
+// los bordes y con decimales (redondeado, la diferencia de cada fila se
+// sumaba).
+function feedCardHeights() {
+  const cards = [...feedContainerEl.querySelectorAll('.feed-card')];
+  if (!cards.length) return [];
+  const style = getComputedStyle(cards[0]);
+  const borders = parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
+  return cards.map((card) => card.getBoundingClientRect().height - borders);
 }
 
-function renderFeed() {
+// "fill": false solo desde setFeedView, que primero vuelve al principio de
+// los resultados y después completa (ver feedFill).
+function renderFeed({ fill = true } = {}) {
   clearTimeout(feedRenderTimer);
   feedRenderTimer = null;
   if (feedCurrentView !== 'feed' || !monitoringTable) return;
@@ -359,18 +366,27 @@ function renderFeed() {
   const reachById = new Map(visible.map((post) => [post.id, postReach(post)]));
   visible.sort(feedSorter(feedOrderEl.value, reachById));
   feedVisibleIds = visible.map((post) => String(post.id));
+  feedList = visible;
+  feedReachById = reachById;
 
   const columns = feedColumns();
+  // Un redibujo de la misma lista (ignorar, un tono corregido, datos nuevos)
+  // rehace todas las tarjetas, y las que quedan lejos de la pantalla tienen
+  // un alto estimado (content-visibility en styles.css): las de arriba se
+  // estiraban o se achicaban y la página se corría, decenas de píxeles por
+  // fila. Cada lugar de la grilla arranca con el alto que tenía; cuando su
+  // tarjeta se dibuja, toma el suyo.
+  const keepHeights = !listChanged && columns === feedLastColumns ? feedCardHeights() : [];
   feedLastColumns = columns;
-  let cap = columns * feedRows;
-  if (visible.length > cap) cap -= 1; // la última celda es "Ver más"
-  const shown = visible.slice(0, cap);
+  const shown = visible.slice(0, columns * feedRows);
+  feedShown = shown.length;
 
   const fragment = document.createDocumentFragment();
-  for (const post of shown) fragment.appendChild(buildFeedCard(post, reachById.get(post.id)));
-  if (visible.length > shown.length) {
-    fragment.appendChild(buildFeedMore(visible.length - shown.length, columns * FEED_ROWS_STEP, shown.length, visible.length));
-  }
+  shown.forEach((post, i) => {
+    const card = buildFeedCard(post, reachById.get(post.id));
+    if (keepHeights[i]) card.style.containIntrinsicHeight = `auto ${keepHeights[i]}px`;
+    fragment.appendChild(card);
+  });
   if (!visible.length) {
     // "No hay publicaciones con esos filtros", o el período vacío con el
     // enlace al siguiente (buildEmptyListLine en monitoring.js).
@@ -379,7 +395,12 @@ function renderFeed() {
     fragment.appendChild(empty);
   }
   feedContainerEl.replaceChildren(fragment);
+  // Primero de vuelta al principio de la lista nueva y recién después, si
+  // falta, más filas: al revés, con la página bajada, se sumaban tandas
+  // antes de volver y no quedaban las primeras filas.
   if (listChanged) feedScrollToStart();
+  if (fill) feedFill();
+  feedUpdateTopButton();
 }
 
 // Los avisos de monitoring.js llegan de a uno por tecla del buscador. Rehacer
@@ -396,6 +417,113 @@ function scheduleFeedRender() {
   clearTimeout(feedRenderTimer);
   feedRenderTimer = setTimeout(renderFeed, FEED_RENDER_DELAY_MS);
 }
+
+// -------------------------------------------------------------------------
+// Scroll infinito. Al acercarse al final del feed se suma otra tanda de
+// filas (FEED_ROWS_STEP × columnas) al final: solo las tarjetas nuevas, sin
+// rehacer las que ya están ni mover la página. En una pantalla alta se suman
+// tandas hasta llenarla o terminar la lista.
+// -------------------------------------------------------------------------
+const feedTabEl = document.getElementById('tab-monitoring');
+const feedReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+// Otra tanda cuando al borde de abajo del feed le falta menos de esta
+// cantidad de pantallas para entrar a la vista.
+const FEED_AHEAD_SCREENS = 1;
+// Seguro por llamada: una pantalla muy alta se llena en pocas tandas; si algo
+// midiera mal, no se dibuja la lista entera de un saque.
+const FEED_MAX_BATCHES = 20;
+// Las tarjetas nuevas entran subiendo y escalonadas, como las .rv, con techo.
+const FEED_RISE_STEP_MS = 35;
+const FEED_RISE_MAX_MS = 300;
+
+// El feed se ve: es la vista elegida y la solapa Monitoreo está abierta.
+// Oculta, la solapa sigue en el layout (invisible: ver
+// #tab-monitoring.tab-panel.hidden en styles.css) y el feed mide como si se
+// viera, así que hay que mirar la clase.
+function feedOnScreen() {
+  return feedCurrentView === 'feed' && !(feedTabEl && feedTabEl.classList.contains('hidden'));
+}
+
+// Otra tanda al final: las tarjetas de feedList que faltan para completar
+// feedRows filas. Entran con feed-rise (styles.css), salvo con movimiento
+// reducido.
+function feedAppendRows(columns) {
+  feedRows += FEED_ROWS_STEP;
+  const next = feedList.slice(feedShown, columns * feedRows);
+  const animate = !feedReducedMotion.matches;
+  const fragment = document.createDocumentFragment();
+  next.forEach((post, i) => {
+    const card = buildFeedCard(post, feedReachById.get(post.id));
+    if (animate) {
+      card.classList.add('feed-rise');
+      card.style.animationDelay = `${Math.min(i * FEED_RISE_STEP_MS, FEED_RISE_MAX_MS)}ms`;
+    }
+    fragment.appendChild(card);
+  });
+  feedContainerEl.appendChild(fragment);
+  feedShown += next.length;
+}
+
+// Suma tandas mientras el final del feed esté cerca y queden posteos. No
+// hace nada si el feed no se ve, si hay un redibujo completo en espera (al
+// terminar vuelve a llamar acá) o si cambió la cantidad de columnas (el
+// redibujo que pide "resize" completa las filas).
+function feedFill() {
+  if (!feedOnScreen() || feedRenderTimer !== null) return;
+  const columns = feedColumns();
+  if (columns !== feedLastColumns) return;
+  for (let i = 0; i < FEED_MAX_BATCHES && feedShown < feedList.length; i += 1) {
+    if (feedContainerEl.getBoundingClientRect().bottom > window.innerHeight * (1 + FEED_AHEAD_SCREENS)) break;
+    feedAppendRows(columns);
+  }
+}
+
+// Terminada la entrada, la tarjeta vuelve a ser como las demás: sin la clase
+// vuelven el hover (que también usa transform) y el aro de "flash", y no
+// queda en una capa propia.
+function feedRiseDone(e) {
+  const card = e.target;
+  if (e.animationName !== 'rise' || !card.classList.contains('feed-rise')) return;
+  card.classList.remove('feed-rise');
+  card.style.animationDelay = '';
+}
+feedContainerEl.addEventListener('animationend', feedRiseDone);
+feedContainerEl.addEventListener('animationcancel', feedRiseDone);
+
+// -------------------------------------------------------------------------
+// "Volver arriba" (#feedTop en instagram.html): aparece cuando la página
+// bajó más allá del comienzo del feed, solo con el feed a la vista (vista
+// Feed, solapa Monitoreo), y lleva al tope de la página. No gasta ni
+// modifica nada.
+// -------------------------------------------------------------------------
+const feedTopEl = document.getElementById('feedTop');
+
+function feedUpdateTopButton() {
+  if (!feedTopEl) return;
+  const show = feedOnScreen() && feedShown > 0 && feedContainerEl.getBoundingClientRect().top < feedBarBottom();
+  feedTopEl.classList.toggle('on', show);
+}
+
+if (feedTopEl) {
+  feedTopEl.addEventListener('click', () => {
+    window.scrollTo({ top: 0, behavior: feedReducedMotion.matches ? 'auto' : 'smooth' });
+    // Arriba el botón se esconde: el foco pasa a la solapa elegida de la
+    // barra superior (si no, caía en <body>) y el Tab sigue desde ahí.
+    const tab = document.querySelector('nav.tabs [role="tab"][aria-selected="true"]');
+    if (tab) tab.focus({ preventScroll: true });
+  });
+}
+
+// Se mira con el scroll (el navegador lo avisa como mucho una vez por
+// cuadro), con otro tamaño de ventana y cuando se abre o se cierra la solapa
+// (main.js le cambia la clase; así también cuando se abre sin mover la
+// página, como desde #publicacion-<id>).
+function feedCheckScroll() {
+  feedFill();
+  feedUpdateTopButton();
+}
+window.addEventListener('scroll', feedCheckScroll, { passive: true });
+if (feedTabEl) new MutationObserver(feedCheckScroll).observe(feedTabEl, { attributes: true, attributeFilter: ['class'] });
 
 // -------------------------------------------------------------------------
 // Interruptor Tabla / Feed.
@@ -425,10 +553,14 @@ function setFeedView(view, { save = true } = {}) {
   }
 
   if (isFeed) {
-    renderFeed();
+    renderFeed({ fill: false });
   } else {
     feedContainerEl.replaceChildren();
     feedLastQuery = null;
+    feedList = [];
+    feedShown = 0;
+    // Al volver al feed se arranca de las primeras filas.
+    feedRows = FEED_ROWS_STEP;
     // La tabla pudo armarse o cambiar mientras estaba oculta: Tabulator
     // necesita redibujarse al volver a verse para calcular bien los anchos.
     if (monitoringTable) monitoringTable.redraw(true);
@@ -439,6 +571,10 @@ function setFeedView(view, { save = true } = {}) {
     // resultados son otros y se muestran desde su principio.
     feedScrollToStart(isFeed ? feedContainerEl : feedTableWrapEl);
   }
+  // Recién ahora, ya en el principio, las filas que falten para llenar la
+  // pantalla.
+  if (isFeed) feedFill();
+  feedUpdateTopButton();
 }
 
 feedViewSegEl.addEventListener('click', (e) => {
@@ -498,20 +634,7 @@ function feedSelectingIn(card) {
   return card.contains(selection.anchorNode) || card.contains(selection.focusNode);
 }
 
-// "Ver 12 más": otra tanda de filas. El foco pasa a la primera tarjeta nueva.
-function showMoreFeed() {
-  const before = feedContainerEl.querySelectorAll('.feed-card').length;
-  feedRows += FEED_ROWS_STEP;
-  renderFeed();
-  const first = feedContainerEl.querySelectorAll('.feed-card')[before];
-  if (first) first.focus({ preventScroll: true });
-}
-
 feedContainerEl.addEventListener('click', (e) => {
-  if (e.target.closest('.feed-more')) {
-    showMoreFeed();
-    return;
-  }
   const card = e.target.closest('.feed-card');
   if (!card) return;
   if (e.target.closest('.feed-head .ico.del')) {
@@ -539,17 +662,18 @@ feedContainerEl.addEventListener('keydown', (e) => {
 });
 
 // Se ignoró un posteo: el feed se rehace con las mismas filas (la que sigue
-// ocupa su lugar y "Ver más" cuenta una menos). Si era la última queda el
-// cartel de "no hay". El pop-up, si estaba abierto, ya pasó al siguiente de
-// su lista (monitoringFeedPopup.js).
+// ocupa su lugar). Si era la última queda el cartel de "no hay". El pop-up,
+// si estaba abierto, ya pasó al siguiente de su lista
+// (monitoringFeedPopup.js).
 function removeFeedCard() {
   renderFeed();
 }
 
 // Con otro ancho la grilla puede tener otra cantidad de columnas: las filas
-// se vuelven a completar.
+// se vuelven a completar. Con otro alto puede faltar otra tanda.
 window.addEventListener('resize', () => {
   if (feedCurrentView === 'feed' && feedContainerEl.firstChild && feedColumns() !== feedLastColumns) scheduleFeedRender();
+  feedCheckScroll();
 });
 
 // Hasta dónde tapa la barra superior, que en escritorio queda fija arriba al
