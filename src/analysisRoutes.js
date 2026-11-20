@@ -164,6 +164,9 @@ function enviarCsv(res, nombre, csv) {
 }
 
 function register(app) {
+  // POST /api/analyze y su confirmación gastan: van al límite de gasto
+  // (RUTAS_GASTO en src/rateLimits.js); el progreso, al de sondeo, y la
+  // foto, al de fotos.
   app.post('/api/analyze', (req, res) => {
     const { url } = req.body || {};
     const guard = checkAnalyzeUrl(url, 'instagram');

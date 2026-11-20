@@ -11,6 +11,8 @@
 //     manejar se loguea y el proceso termina con 1 (Railway, o
 //     scripts/iniciar-con-reinicio.bat, lo levanta de nuevo). Node 22 ya
 //     terminaba en los dos casos; lo que cambia es que queda el log.
+//   - trustProxySetting() (rama rate-limit-y-salud): el `trust proxy` de
+//     Express detrás de Railway, 1 y nunca true (los límites por IP).
 // Sin dependencias de la base: los tests lo cargan solo.
 // ==========================================================================
 
@@ -81,6 +83,21 @@ function securityHeaders({ baseUrl = process.env.APP_BASE_URL } = {}) {
   });
 }
 
+/**
+ * El `trust proxy` de Express: 1 (un salto, el proxy de Railway) con
+ * TRUST_PROXY=1|true o APP_BASE_URL https; si no, false. Nunca `true`: con
+ * true, req.ip sería la primera dirección de X-Forwarded-For, que la escribe
+ * el cliente, y cualquiera saltearía los límites por IP (src/rateLimits.js;
+ * express-rate-limit lo rechaza). Con 1, req.ip es la que agregó el proxy:
+ * la del cliente.
+ * @returns {1|false}
+ */
+function trustProxySetting(env = process.env) {
+  const flag = String(env.TRUST_PROXY || '').trim().toLowerCase();
+  if (flag === '1' || flag === 'true' || isHttpsBaseUrl(env.APP_BASE_URL)) return 1;
+  return false;
+}
+
 function httpStatusOf(err) {
   const status = Number(err && (err.status || err.statusCode));
   return Number.isInteger(status) && status >= 400 && status < 600 ? status : 500;
@@ -126,5 +143,6 @@ module.exports = {
   installProcessHandlers,
   cspDirectives,
   isHttpsBaseUrl,
+  trustProxySetting,
   MAP_TILE_HOSTS,
 };
