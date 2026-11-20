@@ -200,6 +200,8 @@ const plural = (n, uno, muchos) => (n === 1 ? uno : muchos);
  *   pipeline  el párrafo que va debajo de las etapas del Pipeline
  *   nombres   las fuentes, en una lista corta
  *   lineas    una por fuente, con su motivo
+ *   tituloLineas  el título de esa lista ("Búsquedas que fallaron" solo si
+ *             todas lo son; si no, "Qué faltó en esa corrida")
  * null si no hay nada que contar (corrida ok o sin filas).
  * @param {Array<object>} fuentes filas de monitoring_run_sources de esa corrida y esa red
  * @param {{ estado?: string }} [options] `cortada`: la corrida se cortó por la cuota (se dice aunque no haya filas)
@@ -243,6 +245,12 @@ function resumenFallidas(fuentes, { estado = null } = {}) {
   for (const f of c.topeCubierto) lineas.push(`${nombreFuente(f)} · ${alTope(f)} · lo que faltaba se levantó después`);
   for (const f of c.huecos) lineas.push(`${nombreFuente(f)} · estuvo demasiado tiempo sin responder: lo anterior a la ventana máxima no se pidió`);
   if (c.detalleFallo) lineas.push('No se pudo pedir el texto de los resultados nuevos');
+  // El título de esa lista (el tooltip del párrafo del Pipeline): "que
+  // fallaron" solo si todas las líneas son de caídas. Una que sigue en
+  // Apify, una cortada o un tope lleno no fallaron.
+  const sus = s(2);
+  base.tituloLineas =
+    caidas.length > 0 && lineas.length === caidas.length ? `${sus.charAt(0).toUpperCase()}${sus.slice(1)} que fallaron` : 'Qué faltó en esa corrida';
 
   let r = null;
   if (c.sinBuscar != null) {

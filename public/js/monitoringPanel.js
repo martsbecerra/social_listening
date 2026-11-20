@@ -599,7 +599,8 @@ function panelRenderPipeWarn(run) {
   const lineas = fallidas && Array.isArray(fallidas.lineas) ? fallidas.lineas : [];
   panelPipe.warnList.textContent = lineas.length ? ` ${lineas.join('. ')}.` : '';
   if (lineas.length) {
-    panelPipe.warn.dataset.tipTitle = /búsqueda/.test(texto) ? 'Búsquedas que fallaron' : 'Qué faltó en esa corrida';
+    // El título lo decide el backend (runStatus.resumenFallidas): acá no se mira el texto.
+    panelPipe.warn.dataset.tipTitle = (fallidas && fallidas.tituloLineas) || 'Qué faltó en esa corrida';
     panelPipe.warn.dataset.tip = lineas.join('\n');
   } else {
     delete panelPipe.warn.dataset.tipTitle;

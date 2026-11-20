@@ -280,6 +280,15 @@ describe('lo que falló, en textos', () => {
     r = rs.resumenFallidas([fila('a', 'fallo', { motivo: 'QUOTA_EXCEEDED' }), fila('b', 'esperando'), fila('c', 'ok')], { estado: 'cortada' });
     assert.equal(r.pipeline, 'Se cortó por la cuota de Apify: falló 1 de 3 búsquedas y 1 sigue en Apify.');
 
+    // El título de la lista de líneas: "que fallaron" solo si todas son caídas.
+    assert.equal(rs.resumenFallidas(ocho).tituloLineas, 'Qué faltó en esa corrida');
+    assert.equal(rs.resumenFallidas([fila('a', 'fallo', { motivo: 'TIMEOUT' }), fila('b', 'fallo', { motivo: 'HTTP_502' }), fila('c', 'ok')]).tituloLineas, 'Búsquedas que fallaron');
+    assert.equal(rs.resumenFallidas([fila('a', 'esperando'), fila('c', 'ok')]).tituloLineas, 'Qué faltó en esa corrida');
+    assert.equal(rs.resumenFallidas([fila('a', 'parcial', { motivo: 'RUN_TIMED_OUT' }), fila('c', 'ok')]).tituloLineas, 'Qué faltó en esa corrida');
+    assert.equal(rs.resumenFallidas([fila('a', 'ok', { topeLleno: true }), fila('b', 'ok', { topeLleno: true })]).tituloLineas, 'Qué faltó en esa corrida');
+    assert.equal(rs.resumenFallidas([fila('a', 'fallo', { motivo: 'QUOTA_EXCEEDED' })], { estado: 'cortada' }).tituloLineas, 'Búsquedas que fallaron');
+    assert.equal(rs.resumenFallidas([{ tipo: 'cuenta', fuente: 'x', estado: 'fallo', intento: 1, motivo: 'ERROR' }, { tipo: 'keyword', fuente: 'y', estado: 'ok', intento: 1 }]).tituloLineas, 'Fuentes que fallaron');
+
     // Un término que el ciclo salteó porque su corrida ANTERIOR sigue en
     // Apify no falló: se cuenta con las que siguen en Apify.
     const salteada = fila('macri', 'fallo', { motivo: 'SIGUE_EN_APIFY' });
