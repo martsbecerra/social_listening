@@ -38,7 +38,7 @@ const db = require('../src/db');
 const monitor = require('../src/monitor');
 const scheduler = require('../src/scheduler');
 const rs = require('../src/runStatus');
-const { buildLastRun, estadoUltimaCorrida } = require('../src/lastRun');
+const { buildLastRun, estadoUltimaCorrida, estadoDeLaEscucha } = require('../src/lastRun');
 const { armarInicio } = require('../src/inicioRoutes');
 const { runWithContext } = require('../src/usageContext');
 const { getPlatform, listPlatformIds } = require('../src/platforms');
@@ -231,6 +231,21 @@ describe('el cierre del ciclo dice cómo salió', { concurrency: false }, () => 
       assert.equal(estadoUltimaCorrida(['instagram']).estado, 'incompleta');
       assert.equal(estadoUltimaCorrida(['x']), null, 'una red que nunca corrió');
       assert.equal(estadoUltimaCorrida([]), null);
+
+      // El estado de la escucha del inicio: la hora es de cualquier red, y
+      // el estado va solo si es de ESA corrida. Una corrida a mano de X (en
+      // pausa) que termina después no se muestra con lo que falló en la de
+      // Instagram.
+      const horaInstagram = db.getLastFinishedRunAtAny();
+      assert.equal(estadoDeLaEscucha(['instagram'], horaInstagram).estado, 'incompleta');
+      assert.equal(estadoDeLaEscucha(['instagram'], horaInstagram).fallidas.titulo, 'Falló 1 de 3 búsquedas');
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      db.finishMonitoringRun(db.startMonitoringRun({ trigger: 'manual', plataforma: 'x' }), { newPosts: 0 });
+      const horaX = db.getLastFinishedRunAtAny();
+      assert.ok(horaX > horaInstagram);
+      assert.deepEqual(estadoDeLaEscucha(['instagram'], horaX), { estado: null, fallidas: null });
+      assert.deepEqual(estadoDeLaEscucha([], horaX), { estado: null, fallidas: null });
+      assert.equal(estadoUltimaCorrida(['instagram']).estado, 'incompleta', 'la de Instagram sigue siendo la suya');
 
       // Nada crudo sale por la API: ni el texto del error ni el código HTML.
       const inicio = armarInicio({ listPlatformIds, getPlatform, cronPlatforms: () => ['instagram'], nextRunAt: () => new Date(), runHours: () => [8, 12, 16, 20] });

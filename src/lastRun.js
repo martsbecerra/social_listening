@@ -111,4 +111,20 @@ function estadoUltimaCorrida(redes) {
   return ultima ? { finishedAt: ultima.finishedAt, estado: ultima.estado, fallidas: ultima.fallidas } : null;
 }
 
-module.exports = { buildLastRun, estadoUltimaCorrida };
+/**
+ * El estado de la escucha del inicio. La HORA que muestra es la de la última
+ * corrida terminada de cualquier red (`lastRunAt`); el estado y lo que
+ * falló van solo si esa misma corrida es la última de las redes del ciclo
+ * automático. Si la última fue una corrida a mano de una red en pausa, no
+ * se le pega el estado (ni el detalle) de otra corrida: va sin estado.
+ * @param {string[]} redes las redes del cron
+ * @param {string|null} lastRunAt la hora que se muestra
+ * @returns {{ estado: string|null, fallidas: object|null }}
+ */
+function estadoDeLaEscucha(redes, lastRunAt) {
+  const ultima = estadoUltimaCorrida(redes);
+  if (!ultima || !lastRunAt || ultima.finishedAt !== lastRunAt) return { estado: null, fallidas: null };
+  return { estado: ultima.estado, fallidas: ultima.fallidas };
+}
+
+module.exports = { buildLastRun, estadoUltimaCorrida, estadoDeLaEscucha };

@@ -84,7 +84,7 @@ const { processPendingReclamos, processPendingReclamosInBackground, reintentarSi
 const geoReproceso = require('./src/geo/reproceso');
 const accountStats = require('./src/accountStats');
 const postImageRoutes = require('./src/postImageRoutes');
-const { buildLastRun, estadoUltimaCorrida } = require('./src/lastRun');
+const { buildLastRun, estadoDeLaEscucha } = require('./src/lastRun');
 const statsRoutes = require('./src/statsRoutes');
 const publicResumen = require('./src/publicResumen');
 const inicioRoutes = require('./src/inicioRoutes');
@@ -404,11 +404,13 @@ app.get('/api/monitoring/status', (req, res) => {
     }
   }
   // Sin plataforma (el inicio): cómo salió la última corrida de las redes
-  // del ciclo automático. Con plataforma va dentro de lastRun.
+  // del ciclo automático, solo si es la misma de `lastRunAt` (la hora que
+  // se muestra): una corrida a mano de una red en pausa no lleva el estado
+  // de otra. Con plataforma va dentro de lastRun.
   let ultimaDelCron = null;
   if (!plataforma) {
     try {
-      ultimaDelCron = estadoUltimaCorrida(CRON_PLATFORMS);
+      ultimaDelCron = estadoDeLaEscucha(CRON_PLATFORMS, lastRunAt);
     } catch (err) {
       console.error('Error armando el estado de la última corrida:', err.message);
     }
