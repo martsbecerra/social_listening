@@ -236,16 +236,31 @@ function resumenFallidas(fuentes, { estado = null } = {}) {
     const n = caidas.length + levantadas.length;
     const todasLevantadas = levantadas.length === n;
     const nombres = listar([...caidas, ...levantadas].map(nombreFuente));
-    const titulo = `${plural(n, 'Falló', 'Fallaron')} ${n} de ${c.total} ${s(c.total)}`;
+    const fallaron = `${plural(n, 'Falló', 'Fallaron')} ${n} de ${c.total} ${s(c.total)}`;
+    // Las que tampoco respondieron porque siguen en Apify se nombran al
+    // lado ("Falló 1 de 8 búsquedas y 1 sigue en Apify"): así "las 6 que
+    // respondieron" cierra con el total. Las que respondieron a medias
+    // (Apify las cortó, tope lleno) van en las líneas, no en el título.
+    const esp = c.esperando.length;
+    const ySiguen = esp > 0 ? ` y ${esp} ${plural(esp, 'sigue', 'siguen')} en Apify` : '';
+    const titulo = `${fallaron}${ySiguen}`;
     const respondieron = c.respondieron;
     r = {
       titulo,
       corto: titulo,
-      chip: `${n} de ${c.total} ${s(c.total)} ${plural(n, 'falló', 'fallaron')}`,
-      frase: `${plural(n, 'falló', 'fallaron')} ${n} de ${c.total} ${s(c.total)}`,
-      nota: todasLevantadas ? plural(n, 'se levantó después', 'se levantaron después') : plural(n, 'se retoma sola', 'se retoman solas'),
+      chip: `${n} de ${c.total} ${s(c.total)} ${plural(n, 'falló', 'fallaron')}${ySiguen}`,
+      frase: `${plural(n, 'falló', 'fallaron')} ${n} de ${c.total} ${s(c.total)}${ySiguen}`,
+      nota:
+        esp > 0
+          ? 'se retoman solas'
+          : todasLevantadas
+            ? plural(n, 'se levantó después', 'se levantaron después')
+            : plural(n, 'se retoma sola', 'se retoman solas'),
       tooltip:
-        `${titulo}: ${nombres}.\n` +
+        `${fallaron}: ${nombres}.\n` +
+        (esp > 0
+          ? `${esp} ${plural(esp, 'sigue', 'siguen')} en Apify: ${listar(c.esperando.map(nombreFuente))}; ${plural(esp, 'se levanta', 'se levantan')} en la próxima corrida.\n`
+          : '') +
         (todasLevantadas
           ? plural(n, 'Su resultado se levantó en una corrida posterior.', 'Sus resultados se levantaron en una corrida posterior.')
           : plural(n, 'Retoma desde la última vez que anduvo.', 'Cada una retoma desde la última vez que anduvo.')),

@@ -189,8 +189,19 @@ describe('lo que falló, en textos', () => {
       fila('gobierno porteño', 'ok', { topeLleno: true, tope: 120 }),
       fila('macri', 'ok'),
     ]);
-    assert.equal(r.titulo, 'Falló 1 de 5 búsquedas');
-    assert.equal(r.pipeline, 'Falló 1 de 5 búsquedas: traídas, nuevas y relevantes son de las 3 que respondieron.');
+    // La que sigue en Apify tampoco respondió: se nombra al lado, y así
+    // "las 3 que respondieron" cierra con el total (5 - 1 - 1).
+    assert.equal(r.titulo, 'Falló 1 de 5 búsquedas y 1 sigue en Apify');
+    assert.equal(r.corto, 'Falló 1 de 5 búsquedas y 1 sigue en Apify');
+    assert.equal(r.chip, '1 de 5 búsquedas falló y 1 sigue en Apify');
+    assert.equal(r.frase, 'falló 1 de 5 búsquedas y 1 sigue en Apify');
+    assert.equal(r.nota, 'se retoman solas');
+    assert.equal(r.pipeline, 'Falló 1 de 5 búsquedas y 1 sigue en Apify: traídas, nuevas y relevantes son de las 3 que respondieron.');
+    assert.equal(
+      r.tooltip,
+      'Falló 1 de 5 búsquedas: «GCBA».\n1 sigue en Apify: «gobierno de la ciudad»; se levanta en la próxima corrida.\nRetoma desde la última vez que anduvo.'
+    );
+    assert.equal(r.nombres, '«GCBA»');
     assert.deepEqual(r.lineas, [
       '«GCBA» · Apify respondió con un error (502)',
       '«jorgemacri» · Apify cortó la corrida',
@@ -201,6 +212,67 @@ describe('lo que falló, en textos', () => {
       rs.resumenParaLog([fila('GCBA', 'fallo', { motivo: 'HTTP_502' }), fila('jorgemacri', 'parcial', { motivo: 'RUN_TIMED_OUT' }), fila('macri', 'recuperada', { motivo: 'TIMEOUT' })]),
       'falló 1 de 3 búsquedas: «GCBA» HTTP_502; Apify cortó 1: «jorgemacri» RUN_TIMED_OUT; 1 se levantó después: «macri»'
     );
+  });
+
+  test('una búsqueda falló y otra sigue en Apify: el texto nombra las dos (también en plural, levantadas y con la cuota)', () => {
+    // El caso de la captura aprobada el 20/11/2026: 8 búsquedas, una falló,
+    // otra sigue en Apify, una cortada por Apify y una con el tope lleno.
+    const ocho = [
+      fila('GCBA', 'fallo', { motivo: 'HTTP_502' }),
+      fila('gobierno de la ciudad', 'esperando', { motivo: 'TIMEOUT' }),
+      fila('jorgemacri', 'parcial', { motivo: 'RUN_TIMED_OUT' }),
+      fila('gobierno porteño', 'ok', { topeLleno: true, tope: 120 }),
+      fila('macri', 'ok'),
+      fila('blacri', 'ok'),
+      fila('blackri', 'ok'),
+      fila('policía de la ciudad', 'ok'),
+    ];
+    let r = rs.resumenFallidas(ocho);
+    assert.equal(r.pipeline, 'Falló 1 de 8 búsquedas y 1 sigue en Apify: traídas, nuevas y relevantes son de las 6 que respondieron.');
+    assert.equal(r.titulo, 'Falló 1 de 8 búsquedas y 1 sigue en Apify');
+    assert.equal(r.deLasQueRespondieron, 'de las 6 búsquedas que respondieron');
+    assert.deepEqual({ fallidas: r.fallidas, esperando: r.esperando, respondieron: r.respondieron, total: r.total }, { fallidas: 1, esperando: 1, respondieron: 6, total: 8 });
+
+    // En plural, de los dos lados.
+    r = rs.resumenFallidas([
+      fila('a', 'fallo', { motivo: 'TIMEOUT' }),
+      fila('b', 'fallo', { motivo: 'HTTP_502' }),
+      fila('c', 'esperando'),
+      fila('d', 'esperando'),
+      fila('e', 'esperando'),
+      fila('f', 'ok'),
+    ]);
+    assert.equal(r.titulo, 'Fallaron 2 de 6 búsquedas y 3 siguen en Apify');
+    assert.equal(r.chip, '2 de 6 búsquedas fallaron y 3 siguen en Apify');
+    assert.equal(r.frase, 'fallaron 2 de 6 búsquedas y 3 siguen en Apify');
+    assert.equal(r.pipeline, 'Fallaron 2 de 6 búsquedas y 3 siguen en Apify: traídas, nuevas y relevantes son de la 1 que respondió.');
+    assert.equal(
+      r.tooltip,
+      'Fallaron 2 de 6 búsquedas: «a» y «b».\n3 siguen en Apify: «c», «d» y «e»; se levantan en la próxima corrida.\nCada una retoma desde la última vez que anduvo.'
+    );
+
+    // No respondió ninguna: una falló y la otra sigue en Apify.
+    r = rs.resumenFallidas([fila('a', 'fallo', { motivo: 'TIMEOUT' }), fila('b', 'esperando')]);
+    assert.equal(r.pipeline, 'Falló 1 de 2 búsquedas y 1 sigue en Apify: no respondió ninguna.');
+
+    // Una que falló y se levantó después, con otra que sigue en Apify.
+    r = rs.resumenFallidas([fila('a', 'recuperada', { motivo: 'TIMEOUT' }), fila('b', 'esperando'), fila('c', 'ok')]);
+    assert.equal(r.titulo, 'Falló 1 de 3 búsquedas y 1 sigue en Apify');
+    assert.equal(r.nota, 'se retoman solas');
+    assert.equal(
+      r.tooltip,
+      'Falló 1 de 3 búsquedas: «a».\n1 sigue en Apify: «b»; se levanta en la próxima corrida.\nSu resultado se levantó en una corrida posterior.'
+    );
+
+    // Cortada por la cuota: la frase de lo que falló también nombra las dos.
+    r = rs.resumenFallidas([fila('a', 'fallo', { motivo: 'QUOTA_EXCEEDED' }), fila('b', 'esperando'), fila('c', 'ok')], { estado: 'cortada' });
+    assert.equal(r.pipeline, 'Se cortó por la cuota de Apify: falló 1 de 3 búsquedas y 1 sigue en Apify.');
+
+    // Sin ninguna esperando, los textos de siempre.
+    r = rs.resumenFallidas([fila('a', 'fallo', { motivo: 'TIMEOUT' }), fila('b', 'ok')]);
+    assert.equal(r.titulo, 'Falló 1 de 2 búsquedas');
+    assert.equal(r.pipeline, 'Falló 1 de 2 búsquedas: traídas, nuevas y relevantes son de la 1 que respondió.');
+    assert.equal(r.tooltip, 'Falló 1 de 2 búsquedas: «a».\nRetoma desde la última vez que anduvo.');
   });
 
   test('cortada por la cuota: se dice siempre, con lo que falló si se sabe', () => {
