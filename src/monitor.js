@@ -1248,6 +1248,9 @@ function horaArgentina(iso) {
 // Una corrida que quedó esperando y no se pudo leer en todo este tiempo se
 // da por perdida: Apify ya no la guarda.
 const PENDING_LOST_AFTER_MS = 7 * DAY_MS;
+// Hasta cuándo se vuelve a leer una corrida ya levantada a la que le
+// quedaron resultados sin procesar (ver cerrarRecuperadas).
+const RECOVER_REREAD_MS = 2 * DAY_MS;
 
 /**
  * La consulta cerrada anterior a `row` de esa misma búsqueda (primer
@@ -1352,6 +1355,8 @@ async function recoverPendingSearchRuns(platform, platformId, { searches = [] } 
           nuevos: contarNuevos(posts, platformId),
           runStatus: r.runStatus || null,
           segundaParcial,
+          // Los que llegaron sin texto: necesitan el detalle para evaluarse.
+          sinTexto: posts.filter((post) => post && post.sourceType === 'search' && !hasCaption(post)),
         });
         // Solo una corrida que terminó bien cubre hasta su lanzamiento: de
         // una que Apify cortó puede faltar algo, y se vuelve a pedir (salvo
@@ -1409,9 +1414,32 @@ async function recoverPendingSearchRuns(platform, platformId, { searches = [] } 
  * de procesar sus posteos: la fila pasa a `recuperada` (o `parcial` si Apify
  * había cortado la corrida) y su llamada en apify_calls a una llamada buena
  * con lo que trajo. Nunca tira.
+ *
+ * Una fila NO se cierra si a su corrida le quedaron resultados sin texto
+ * sin procesar (el detalle falló, o quedaron fuera de su tope: ni guardados
+ * ni anotados): sigue `esperando` y el ciclo siguiente vuelve a leer su
+ * dataset, que es gratis; lo ya decidido no se repite. Hasta
+ * RECOVER_REREAD_MS desde su lanzamiento, y solo si esta red puede pedir el
+ * detalle (`puedeDetallar`). Antes se cerraba igual y esos resultados no
+ * volvían: la búsqueda siguiente ya miraba desde el lanzamiento de esta.
  */
-function cerrarRecuperadas(recovery, { platformId, runId }) {
-  for (const { row, estado, rawItems, nuevos, runStatus, segundaParcial } of recovery.recuperadas) {
+function cerrarRecuperadas(recovery, { platformId, runId, puedeDetallar = false }) {
+  for (const { row, estado, rawItems, nuevos, runStatus, segundaParcial, sinTexto } of recovery.recuperadas) {
+    if (puedeDetallar && Array.isArray(sinTexto) && sinTexto.length > 0 && Date.now() - Date.parse(row.startedAt) <= RECOVER_REREAD_MS) {
+      let quedan = 0;
+      try {
+        quedan = sinTexto.filter((post) => isNewPost(post, platformId)).length;
+      } catch (err) {
+        console.error(`[monitor] (${platformId}) no se pudo revisar lo levantado de «${row.fuente}»:`, err.message);
+      }
+      if (quedan > 0) {
+        console.warn(
+          `[monitor] ${platformId}: de la búsqueda «${row.fuente}» que se levantó de Apify ` +
+            `${quedan === 1 ? 'quedó 1 resultado sin texto' : `quedaron ${quedan} resultados sin texto`} sin procesar: su corrida se vuelve a leer en el próximo ciclo.`
+        );
+        continue;
+      }
+    }
     const ahora = new Date().toISOString();
     // La corrida levantada había llenado su tope: quedó afuera una parte de
     // cada día de su ventana. La marca avanza igual (como en el camino
@@ -2168,7 +2196,11 @@ async function runMonitoringCycle({ plataformas, trigger, pasada = null } = {}) 
 
     // Los posteos de las búsquedas levantadas ya pasaron por la tubería:
     // recién ahora sus filas dejan de estar pendientes.
-    cerrarRecuperadas(recovery, { platformId, runId: cycleRunId });
+    cerrarRecuperadas(recovery, {
+      platformId,
+      runId: cycleRunId,
+      puedeDetallar: typeof platform.fetchPostDetails === 'function' && searchEnrichLimit() > 0,
+    });
 
     // Cuentas trackeadas cuyo perfil se scrapeó de verdad en este ciclo (no
     // las de hashtag/keyword: ahí solo se pesca el posteo puntual que

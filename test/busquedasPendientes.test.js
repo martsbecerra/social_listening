@@ -302,6 +302,61 @@ describe('una búsqueda que no termina a tiempo queda esperando y el ciclo sigui
     }
   });
 
+  test('a una corrida levantada le quedan resultados sin texto sin procesar (falló el detalle): no se cierra, se vuelve a leer y entran en el ciclo siguiente', async () => {
+    const conTexto = resultado('macri', 'La gestión pintó la escuela');
+    const sinTexto = { ...resultado('macri', ''), postedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString() };
+    const fila = db.startRunSource({ runId: 1, plataforma: 'instagram', tipo: 'busqueda', fuente: 'macri', clave: 'macri', estado: 'esperando', motivo: 'TIMEOUT', actor: APIDOJO, apifyRunId: 'run-st', tope: 300 });
+    const recuperar = { 'run-st': () => ({ estado: 'ok', posts: [{ ...conTexto }, { ...sinTexto }], rawItems: 2, runStatus: 'SUCCEEDED' }) };
+    const avisos = [];
+    console.warn = (...a) => avisos.push(a.join(' '));
+
+    // Ciclo 1: el detalle falla. Lo que tenía texto entra; lo otro, no.
+    let restore = stubInstagram({ buscar: { macri: [], gcba: [] }, recuperar });
+    instagram.fetchPostDetails = async () => {
+      throw Object.assign(new Error('Apify respondió 502: Bad Gateway'), { status: 502 });
+    };
+    try {
+      await ciclo();
+      assert.ok(guardado(conTexto.id));
+      assert.ok(!guardado(sinTexto.id));
+      assert.equal(db.getSearchSeen(sinTexto.id, 'instagram'), null);
+      assert.equal(db.getRunSource(fila).estado, 'esperando', 'no se cierra: le quedó algo sin procesar');
+      assert.ok(avisos.some((a) => /«macri» que se levantó de Apify quedó 1 resultado sin texto sin procesar/.test(a)));
+    } finally {
+      restore();
+    }
+
+    // Ciclo 2: se vuelve a leer (gratis), el detalle anda y entra lo que faltaba. Nada se clasifica dos veces.
+    clasificados.length = 0;
+    restore = stubInstagram({ buscar: { macri: [], gcba: [] }, recuperar });
+    instagram.fetchPostDetails = async () => [{ ...sinTexto, caption: 'La gestión podó los árboles' }];
+    try {
+      const segundo = await ciclo();
+      assert.deepEqual(llamadas.recuperar.map((r) => r.apifyRunId), ['run-st']);
+      assert.ok(guardado(sinTexto.id));
+      assert.deepEqual(clasificados, ['La gestión podó los árboles'], 'el que ya estaba guardado no se vuelve a clasificar');
+      const cerrada = db.getRunSource(fila);
+      assert.equal(cerrada.estado, 'recuperada');
+      assert.equal(cerrada.recuperadaEn, segundo.runId);
+    } finally {
+      restore();
+    }
+
+    // Pasados dos días del lanzamiento ya no se insiste: se cierra con lo que entró.
+    const otroSinTexto = resultado('gcba', '');
+    const vieja = db.startRunSource({ runId: 1, plataforma: 'instagram', tipo: 'busqueda', fuente: 'gcba', clave: 'gcba', estado: 'esperando', motivo: 'TIMEOUT', actor: APIDOJO, apifyRunId: 'run-vieja', startedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString() });
+    restore = stubInstagram({ buscar: { macri: [], gcba: [] }, recuperar: { 'run-vieja': { estado: 'ok', posts: [otroSinTexto], rawItems: 1, runStatus: 'SUCCEEDED' } } });
+    instagram.fetchPostDetails = async () => {
+      throw Object.assign(new Error('Apify respondió 502: Bad Gateway'), { status: 502 });
+    };
+    try {
+      await ciclo();
+      assert.equal(db.getRunSource(vieja).estado, 'recuperada');
+    } finally {
+      restore();
+    }
+  });
+
   test('un término cuya corrida Apify corta siempre después de la espera: a la segunda cortada seguida la marca avanza y deja de pedirse toda la ventana', async () => {
     // Es la regla de "parcial dos veces seguidas", que en su ciclo no se
     // veía: la corrida quedaba `esperando` y recién al levantarla, `parcial`.
