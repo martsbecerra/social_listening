@@ -421,6 +421,25 @@ describe('el ciclo en una corrida honda', { concurrency: false }, () => {
     }
   });
 
+  test('muchas cortas entre dos hondas no borran lo aprendido en la honda: el tope sigue saliendo del volumen del término', async () => {
+    alDia();
+    // "gcba": una honda que llenó 700 de 700 y, después, ocho consultas
+    // cortas ("Actualizar ahora" varias veces en el día) que trajeron 3.
+    const dia = (ms) => new Date(Date.now() - ms).toISOString().slice(0, 10);
+    const llamada = (input, items) =>
+      apifyCost.recordApifyCall({ runId: null, phase: 'busqueda', plataforma: 'instagram', actor: apifyCost.APIDOJO_ACTOR, input: { keywords: ['gcba'], ...input }, ok: true, items });
+    llamada({ maxItems: 700, until: dia(SIETE_DIAS) }, 700);
+    for (let i = 0; i < 8; i += 1) llamada({ maxItems: 100, until: dia(DAY_MS) }, 3);
+    const restore = stubInstagram();
+    try {
+      await ciclo({ plataformas: ['instagram'], trigger: 'cron', pasada: HONDA });
+      // Con las últimas 6 consultas solas (todas cortas) el tope volvía a 100 × 7.
+      assert.equal(pedido('gcba').resultsLimit, 2000, 'el doble de lo que suele traer, hasta el máximo');
+    } finally {
+      restore();
+    }
+  });
+
   test('en X, las cuentas no cambian con la honda: es de las búsquedas', async () => {
     escribirConfig({ searches: [] }, { accounts: ['jorgemacri'], keywords: [] });
     alDia(['jorgemacri'], 'x', 'cuenta');
@@ -462,6 +481,20 @@ describe('estimado de resultados y costo de las búsquedas (puro)', () => {
     assert.equal(busquedaTope.estimarResultados({ calls: [corta(12)], horas: HORAS_HONDA, tope: 700 }), Math.round((12 / HORAS_CORTA) * HORAS_HONDA));
     // Solo una que no trajo nada: sin tasa, no hay de dónde estimar.
     assert.equal(busquedaTope.estimarResultados({ calls: [corta(0)], horas: HORAS_HONDA, tope: 700 }), null);
+  });
+
+  test('historiaPara: las últimas 6 y, de las más viejas, hasta 3 de una ventana parecida a la que se pide', () => {
+    const cortas = Array.from({ length: 8 }, (_, i) => corta(i + 1));
+    // De la más nueva a la más vieja: 8 cortas, 4 hondas y una corta más.
+    const todas = [...cortas, honda(400), honda(300), honda(200), honda(100), corta(99)];
+    const paraHonda = busquedaTope.historiaPara({ calls: todas, horas: HORAS_HONDA });
+    assert.deepEqual(paraHonda.map((c) => c.items), [1, 2, 3, 4, 5, 6, 400, 300, 200]);
+    assert.equal(busquedaTope.estimarResultados({ calls: paraHonda, horas: HORAS_HONDA, tope: 700 }), 300, 'el estimado sale de las hondas');
+    const paraCorta = busquedaTope.historiaPara({ calls: todas, horas: HORAS_CORTA });
+    assert.deepEqual(paraCorta.map((c) => c.items), [1, 2, 3, 4, 5, 6, 7, 8, 99]);
+    assert.deepEqual(busquedaTope.historiaPara({ calls: cortas.slice(0, 3), horas: HORAS_HONDA }).map((c) => c.items), [1, 2, 3]);
+    assert.deepEqual(busquedaTope.historiaPara({ calls: null, horas: HORAS_HONDA }), []);
+    assert.equal(busquedaTope.consultasParecidas({ calls: todas, horas: HORAS_HONDA }).length, 4);
   });
 
   test('costoDeBusquedas: el estimado, el techo y cuántas van sin historia', () => {

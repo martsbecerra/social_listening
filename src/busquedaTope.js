@@ -31,6 +31,12 @@ const DEFAULT_EXTRA_MAX_USD = 2;
 const RELAUNCH_FACTOR = 4;
 // Cuántas consultas recientes del término se miran para medir su volumen.
 const HISTORY_CALLS = 6;
+// Además de esas, hasta cuántas consultas MÁS VIEJAS de una ventana parecida
+// a la que se pide ahora: sin ellas, seis cortas seguidas ("Actualizar
+// ahora" entre dos hondas) borraban lo aprendido en la honda y el tope
+// volvía al de siempre. Y cuántas consultas del término se leen para elegir.
+const HISTORY_SIMILAR = 3;
+const HISTORY_SCAN = 60;
 const HOUR_MS = 60 * 60 * 1000;
 
 function invalid(name, raw, hint) {
@@ -117,6 +123,32 @@ function topeParaTermino({ topeDeHoy, tasa = 0, horas = 24, resultsMax = DEFAULT
 }
 
 /**
+ * Las consultas de una ventana PARECIDA a la que se pide: entre la mitad y
+ * el doble de esas horas. Una sin `until` (anterior a noviembre 2026) se
+ * toma como de 24 h.
+ */
+function consultasParecidas({ calls, horas }) {
+  const lista = Array.isArray(calls) ? calls : [];
+  const pedidas = Number(horas) > 0 ? Number(horas) : 24;
+  return lista.filter((call) => {
+    const h = horasPedidas(call && call.until, call && call.at) || 24;
+    return h >= pedidas / 2 && h <= pedidas * 2;
+  });
+}
+
+/**
+ * La historia de un término para la consulta que se va a pedir: sus últimas
+ * HISTORY_CALLS consultas buenas y, de las más viejas, hasta HISTORY_SIMILAR
+ * de una ventana parecida. `calls` viene de la más nueva a la más vieja.
+ */
+function historiaPara({ calls, horas }) {
+  const lista = Array.isArray(calls) ? calls : [];
+  const recientes = lista.slice(0, HISTORY_CALLS);
+  const viejasParecidas = consultasParecidas({ calls: lista.slice(HISTORY_CALLS), horas }).slice(0, HISTORY_SIMILAR);
+  return [...recientes, ...viejasParecidas];
+}
+
+/**
  * Cuántos resultados se espera que traiga una búsqueda, por su historia: el
  * promedio de sus consultas buenas recientes de una ventana PARECIDA (entre
  * la mitad y el doble de las horas que se piden ahora). Lo que trae una
@@ -131,10 +163,7 @@ function estimarResultados({ calls, horas, tope }) {
   const lista = Array.isArray(calls) ? calls : [];
   const pedidas = Number(horas) > 0 ? Number(horas) : 24;
   const techo = Number(tope) > 0 ? Math.floor(Number(tope)) : Infinity;
-  const parecidas = lista.filter((call) => {
-    const h = horasPedidas(call && call.until, call && call.at) || 24;
-    return h >= pedidas / 2 && h <= pedidas * 2;
-  });
+  const parecidas = consultasParecidas({ calls: lista, horas: pedidas });
   if (parecidas.length > 0) {
     const promedio = parecidas.reduce((sum, call) => sum + (Number(call.items) || 0), 0) / parecidas.length;
     return Math.min(techo, Math.round(promedio));
@@ -210,6 +239,10 @@ module.exports = {
   DEFAULT_EXTRA_MAX_USD,
   RELAUNCH_FACTOR,
   HISTORY_CALLS,
+  HISTORY_SIMILAR,
+  HISTORY_SCAN,
+  consultasParecidas,
+  historiaPara,
   resolveTopeConfig,
   topeConfig,
   horasPedidas,

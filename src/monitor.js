@@ -1733,9 +1733,11 @@ async function runMonitoringCycle({ plataformas, trigger, pasada = null } = {}) 
       let estimado = null;
       if (tipo === 'busqueda') {
         try {
-          const calls = db.lastSearchCallsForTerm(platformId, fuente, busquedaTope.HISTORY_CALLS);
-          const tasa = busquedaTope.tasaTermino(calls);
           const horas = busquedaTope.horasPedidas(window.sinceIso, cycleNowMs) || 24;
+          // Las últimas consultas del término y, de las más viejas, algunas
+          // de una ventana parecida a esta (ver busquedaTope.historiaPara).
+          const calls = busquedaTope.historiaPara({ calls: db.lastSearchCallsForTerm(platformId, fuente, busquedaTope.HISTORY_SCAN), horas });
+          const tasa = busquedaTope.tasaTermino(calls);
           limit = busquedaTope.topeParaTermino({ topeDeHoy: limit, tasa, horas, resultsMax: topeConfig.resultsMax });
           estimado = busquedaTope.estimarResultados({ calls, horas, tope: limit });
         } catch (err) {
