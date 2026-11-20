@@ -419,17 +419,23 @@ async function anaPoll() {
       anaSetError('Se cerró la sesión. Volvé a entrar para ver cómo terminó el análisis.');
       return;
     }
-    // Un corte de red o un error del servidor: se vuelve a preguntar, más
-    // despacio, con un tope.
+    // Un corte de red, un error del servidor o el límite de pedidos (429,
+    // src/rateLimits.js): se vuelve a preguntar, más despacio, con un tope.
+    // Con un 429 el texto es el del servidor, no el de un servidor caído.
     anaPollFails += 1;
+    const limite = err.status === 429;
     if (anaPollFails >= ANA_POLL_MAX_FAILS) {
       anaStopFollow();
-      anaSetError('Se perdió la conexión con el servidor. Recargá la página más tarde: si el análisis terminó bien, va a estar en Recientes.');
+      anaSetError(
+        limite
+          ? 'Demasiados pedidos: se dejó de consultar el avance. Recargá la página en unos minutos: si el análisis terminó bien, va a estar en Recientes.'
+          : 'Se perdió la conexión con el servidor. Recargá la página más tarde: si el análisis terminó bien, va a estar en Recientes.'
+      );
       return;
     }
     // Una sola vez: #anaError es role="alert" y reescribirlo cada 3 s lo
     // haría leer de nuevo.
-    if (anaPollFails === 1) anaSetError('Sin respuesta del servidor; se vuelve a intentar…');
+    if (anaPollFails === 1) anaSetError(limite ? `${err.message} Se vuelve a intentar solo.` : 'Sin respuesta del servidor; se vuelve a intentar…');
     anaPollTimer = setTimeout(anaPoll, ANA_POLL_RETRY_MS);
     return;
   }
