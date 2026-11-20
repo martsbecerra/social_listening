@@ -193,6 +193,13 @@ describe('el ciclo: tope por volumen y segunda consulta', { concurrency: false }
     assert.equal(ultimas[0].maxItems, 50);
     assert.equal(ultimas[0].until, '2026-11-15');
     assert.equal(db.lastSearchCallsForTerm('instagram', 'gcba', 1).length, 1);
+    // Mayúsculas acentuadas y Ñ: el término se compara como lo escribe una persona.
+    call('POLICÍA DE LA CIUDAD', 40);
+    call('policía de la ciudad', 41);
+    call('Ñuñoa', 7);
+    assert.deepEqual(db.lastSearchCallsForTerm('instagram', 'Policía de la Ciudad').map((c) => c.items), [41, 40]);
+    assert.deepEqual(db.lastSearchCallsForTerm('instagram', 'POLICÍA DE LA CIUDAD').map((c) => c.items), [41, 40]);
+    assert.deepEqual(db.lastSearchCallsForTerm('instagram', 'ñuñoa').map((c) => c.items), [7]);
     assert.deepEqual(db.lastSearchCallsForTerm('x', 'gcba'), []);
     assert.throws(() => db.lastSearchCallsForTerm(undefined, 'gcba'), /falta plataforma/);
   });

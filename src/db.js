@@ -1002,13 +1002,19 @@ const listFailedCallsWithoutRunStmt = db.prepare(
 );
 const settleApifyCallStmt = db.prepare('UPDATE apify_calls SET apify_run_id = @apifyRunId, usd_real = @usdReal WHERE id = @id AND apify_run_id IS NULL');
 const listApifyRunIdsSinceStmt = db.prepare('SELECT DISTINCT apify_run_id AS id FROM apify_calls WHERE apify_run_id IS NOT NULL AND at >= ?');
-// Las últimas búsquedas buenas de un término (sin distinguir mayúsculas ni
-// espacios de más), para medir su volumen (src/busquedaTope.js).
-const lastSearchCallsForTermStmt = db.prepare(`
-  SELECT items, max_items AS maxItems, until, at FROM apify_calls
-  WHERE plataforma = @plataforma AND query_type = 'search' AND ok = 1 AND lower(trim(target)) = @term
+// Las últimas búsquedas buenas de una red, para medir el volumen de un
+// término (src/busquedaTope.js). El término se compara en JS
+// (lastSearchCallsForTerm): el lower() de SQLite no pasa a minúsculas las
+// letras acentuadas ("POLICÍA" quedaba "policÍa" y nunca encontraba su
+// historia).
+const lastSearchCallsStmt = db.prepare(`
+  SELECT id, target, items, max_items AS maxItems, until, at FROM apify_calls
+  WHERE plataforma = @plataforma AND query_type = 'search' AND ok = 1
   ORDER BY id DESC LIMIT @limit
 `);
+// Cuántas búsquedas buenas de la red se recorren para encontrar las de un
+// término: con 8 búsquedas y 4 corridas por día, más de un mes.
+const SEARCH_HISTORY_SCAN = 1500;
 // Las sumas van por fase Y por actor: el actor oficial se valúa por
 // resultados (tres tarifas), apidojo por consulta. usdBest = lo que cobró
 // Apify si se sabe (usd_real), si no el estimado (usd).
@@ -2486,9 +2492,15 @@ function listApifyRunIdsSince(sinceIso) {
  */
 function lastSearchCallsForTerm(plataforma, term, limit = 6) {
   requirePlataforma(plataforma, 'lastSearchCallsForTerm');
-  return lastSearchCallsForTermStmt
-    .all({ plataforma, term: String(term ?? '').trim().toLowerCase(), limit: Math.max(1, Math.floor(Number(limit)) || 6) })
-    .map((row) => ({ items: Number(row.items) || 0, maxItems: row.maxItems == null ? null : Number(row.maxItems), until: row.until, at: row.at }));
+  const buscado = String(term ?? '').trim().toLowerCase();
+  const max = Math.max(1, Math.floor(Number(limit)) || 6);
+  const out = [];
+  for (const row of lastSearchCallsStmt.all({ plataforma, limit: SEARCH_HISTORY_SCAN })) {
+    if (String(row.target ?? '').trim().toLowerCase() !== buscado) continue;
+    out.push({ items: Number(row.items) || 0, maxItems: row.maxItems == null ? null : Number(row.maxItems), until: row.until, at: row.at });
+    if (out.length >= max) break;
+  }
+  return out;
 }
 
 /** La corrida de Apify de esa llamada ya no existe: la fila queda `perdida` (sigue fallida). @returns {number} filas cambiadas */
