@@ -319,9 +319,13 @@ function closeApifyCall(id, call) {
  * y guarda usageTotalUsd; después recalcula el usd de los ciclos afectados.
  * Solo toca llamadas de hace más de `minAgeMs` (Apify asienta el cobro con
  * demora: leído al terminar el run da 0 o le faltan los posteos extra) y de
- * menos de `maxAgeDays`. Un run que todavía figura en 0 habiendo cobrado
- * eventos se deja pendiente para la próxima pasada. NUNCA tira: lo que
- * falle queda pendiente.
+ * menos de `maxAgeDays`. Esa antigüedad se mide dos veces: la de la fila
+ * (que se abre al ARRANCAR el run) y, si Apify dice cuándo terminó, la del
+ * fin del run. Una búsqueda larga llega al cierre de su ciclo con la fila
+ * vieja y el run recién terminado: si se leyera ahí, quedaría guardado un
+ * cobro a medias (la consulta sin sus posteos) que después nadie corrige.
+ * Un run que todavía figura en 0 habiendo cobrado eventos se deja pendiente
+ * para la próxima pasada. NUNCA tira: lo que falle queda pendiente.
  * @param {{ minAgeMs?: number, maxAgeDays?: number, limit?: number, now?: number,
  *   fetchRunCost?: (runId: string) => Promise<{status: string, usdReal: number|null, chargedEventCounts: object|null}> }} [options]
  * @returns {Promise<{ checked: number, updated: number, pending: number, failed: number, usdReal: number, usdEstimado: number }>}
@@ -343,7 +347,9 @@ async function reconcileRealCosts({ minAgeMs = 10 * 60 * 1000, maxAgeDays = 7, l
       try {
         const run = await fetcher(row.apifyRunId);
         const charged = Object.values(run.chargedEventCounts || {}).some((n) => Number(n) > 0);
-        const settled = TERMINAL.includes(run.status) && run.usdReal != null && !(run.usdReal === 0 && charged);
+        const fin = Date.parse(run.finishedAt || '');
+        const recienTerminado = Number.isFinite(fin) && now - fin < minAgeMs;
+        const settled = TERMINAL.includes(run.status) && run.usdReal != null && !(run.usdReal === 0 && charged) && !recienTerminado;
         if (!settled) {
           totals.pending += 1;
           continue;

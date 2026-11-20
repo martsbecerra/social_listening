@@ -472,8 +472,10 @@ async function runCycleUnlocked(plataformas, trigger = 'manual') {
       }
       console.log(formatCycleCostLine(closed, extra));
     }
-    // Costo real de las llamadas de ciclos ANTERIORES (las de este todavía
-    // no están asentadas en Apify): lecturas gratis de la API, nunca tira.
+    // Costo real de las llamadas cuyo run terminó hace más de 10 minutos
+    // (Apify asienta el cobro con demora): casi siempre las de ciclos
+    // anteriores; las de este que terminaron recién quedan para el próximo.
+    // Lecturas gratis de la API, nunca tira.
     const reconciled = await reconcileRealCosts();
     if (reconciled.updated > 0) {
       console.log(

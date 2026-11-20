@@ -373,6 +373,19 @@ describe('costo de Apify', { concurrency: false }, () => {
     // Un run en 0 sin eventos cobrados (perfil inexistente que no cobró nada) sí se da por asentado.
     const zero = await apifyCost.reconcileRealCosts({ now, fetchRunCost: async () => ({ status: 'SUCCEEDED', usdReal: 0, chargedEventCounts: {} }) });
     assert.equal(zero.updated, 2);
+
+    // Una búsqueda larga: su fila tiene 20 minutos (se abre al ARRANCAR el
+    // run) pero el run terminó hace 1. Apify todavía muestra el cobro a
+    // medias (la consulta, sin sus posteos): no se toma, porque ese valor
+    // quedaría fijo. Diez minutos después del fin del run, sí.
+    call('r-recien-terminado', minutesAgo(20));
+    const costoDe = (usdReal) => async () => ({ status: 'SUCCEEDED', usdReal, chargedEventCounts: { 'search-query': 1 }, finishedAt: minutesAgo(1) });
+    const temprano = await apifyCost.reconcileRealCosts({ now, fetchRunCost: costoDe(0.015) });
+    assert.deepEqual([temprano.checked, temprano.updated, temprano.pending], [1, 0, 1]);
+    const realDe = (id) => allCalls().find((r) => r.apify_run_id === id).usd_real;
+    assert.equal(realDe('r-recien-terminado'), null);
+    await apifyCost.reconcileRealCosts({ now: now + 10 * 60 * 1000, fetchRunCost: costoDe(0.215) });
+    near(realDe('r-recien-terminado'), 0.215);
   });
 
   test('monitoring_runs: los totales suman las apify_calls del ciclo por fase y actor, prefieren el costo real y marcan la cuota; la línea [costo] incluye busqueda', () => {
