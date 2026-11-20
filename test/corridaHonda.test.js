@@ -440,6 +440,32 @@ describe('el ciclo en una corrida honda', { concurrency: false }, () => {
     }
   });
 
+  test('la primera honda: el estimado sale de las cortas y la línea avisa que puede quedar corto', async () => {
+    escribirConfig({ searches: ['veredas', 'baches'] });
+    alDia(['veredas', 'baches']);
+    // Lo que hay en la base antes de la primera honda: consultas cortas (las
+    // anteriores a la rama ni siquiera tienen `until`: se toman como de 24 h).
+    const corta = (term, items, input = {}) =>
+      apifyCost.recordApifyCall({ runId: null, phase: 'busqueda', plataforma: 'instagram', actor: apifyCost.APIDOJO_ACTOR, input: { keywords: [term], ...input }, ok: true, items });
+    corta('veredas', 2);
+    corta('veredas', 1);
+    const restore = stubInstagram({ veredas: [], baches: [] });
+    try {
+      await ciclo({ plataformas: ['instagram'], trigger: 'cron', pasada: HONDA });
+      const l = linea('[monitor] instagram: corrida honda');
+      assert.match(l, / · 1 sin historia: cuenta solo la consulta · 1 sin consultas de esa ventana: el estimado puede quedar corto$/, l);
+      // Con una honda ya en la historia, no hace falta el aviso.
+      corta('veredas', 300, { maxItems: 700, until: new Date(Date.now() - SIETE_DIAS).toISOString().slice(0, 10) });
+      lineas.length = 0;
+      alDia(['veredas', 'baches']);
+      await ciclo({ plataformas: ['instagram'], trigger: 'cron', pasada: HONDA });
+      assert.doesNotMatch(linea('[monitor] instagram: corrida honda'), /sin consultas de esa ventana/);
+    } finally {
+      restore();
+      escribirConfig({ searches: ['macri', 'gcba'] });
+    }
+  });
+
   test('en X, las cuentas no cambian con la honda: es de las búsquedas', async () => {
     escribirConfig({ searches: [] }, { accounts: ['jorgemacri'], keywords: [] });
     alDia(['jorgemacri'], 'x', 'cuenta');
@@ -509,9 +535,12 @@ describe('estimado de resultados y costo de las búsquedas (puro)', () => {
     );
     assert.equal(r.n, 3);
     assert.equal(r.sinHistoria, 1);
+    assert.equal(r.sinVentanaParecida, 0);
+    // Las extrapoladas (con estimado, pero de consultas de otra ventana) se cuentan aparte.
+    assert.equal(busquedaTope.costoDeBusquedas([{ estimado: 15, limit: 700, extrapolado: true }, { estimado: null, limit: 700, extrapolado: true }, { estimado: 300, limit: 700 }], usd).sinVentanaParecida, 1);
     assert.ok(Math.abs(r.estimado - (0.215 + 0.015 + 0.015)) < 1e-9);
     assert.ok(Math.abs(r.techo - (0.415 + 0.19 + 0.065)) < 1e-9);
-    assert.deepEqual(busquedaTope.costoDeBusquedas([], usd), { estimado: 0, techo: 0, sinHistoria: 0, n: 0 });
+    assert.deepEqual(busquedaTope.costoDeBusquedas([], usd), { estimado: 0, techo: 0, sinHistoria: 0, sinVentanaParecida: 0, n: 0 });
   });
 });
 

@@ -190,7 +190,10 @@ function describirCostoDeLaCorrida(platformId, busquedas, { pasada, esHonda, ext
     `(como mucho ${usd(costo.techo)} si ${costo.n === 1 ? 'llena' : 'todas llenan'} su tope` +
     (Number(extraMaxUsd) > 0 ? `, más hasta ${usd(extraMaxUsd)} en segundas consultas` : '') +
     ')' +
-    (costo.sinHistoria > 0 ? ` · ${costo.sinHistoria} sin historia: ${costo.sinHistoria === 1 ? 'cuenta' : 'cuentan'} solo la consulta` : '')
+    (costo.sinHistoria > 0 ? ` · ${costo.sinHistoria} sin historia: ${costo.sinHistoria === 1 ? 'cuenta' : 'cuentan'} solo la consulta` : '') +
+    // Sin ninguna consulta de una ventana parecida el estimado sale de las
+    // de otra ventana (en la primera honda, de las cortas): queda corto.
+    (costo.sinVentanaParecida > 0 ? ` · ${costo.sinVentanaParecida} sin consultas de esa ventana: el estimado puede quedar corto` : '')
   );
 }
 
@@ -1731,6 +1734,7 @@ async function runMonitoringCycle({ plataformas, trigger, pasada = null } = {}) 
       // `estimado`: cuántos resultados se espera que traiga (para la línea
       // del costo de la corrida); null sin historia.
       let estimado = null;
+      let extrapolado = false;
       if (tipo === 'busqueda') {
         try {
           const horas = busquedaTope.horasPedidas(window.sinceIso, cycleNowMs) || 24;
@@ -1740,6 +1744,7 @@ async function runMonitoringCycle({ plataformas, trigger, pasada = null } = {}) 
           const tasa = busquedaTope.tasaTermino(calls);
           limit = busquedaTope.topeParaTermino({ topeDeHoy: limit, tasa, horas, resultsMax: topeConfig.resultsMax });
           estimado = busquedaTope.estimarResultados({ calls, horas, tope: limit });
+          extrapolado = estimado != null && busquedaTope.consultasParecidas({ calls, horas }).length === 0;
         } catch (err) {
           console.error(`[monitor] (${platformId}) no se pudo medir el volumen de «${fuente}» (se usa el tope de siempre):`, err.message);
         }
@@ -1752,7 +1757,7 @@ async function runMonitoringCycle({ plataformas, trigger, pasada = null } = {}) 
             (window.huecoDesde ? `; no respondía desde ${window.huecoDesde}: lo anterior al techo de la ventana no se pide` : '')
         );
       }
-      return { tipo, fuente, window, baseLimit, limit, estimado };
+      return { tipo, fuente, window, baseLimit, limit, estimado, extrapolado };
     };
 
     // Las fuentes de la detección de esta red, todas con la misma forma:

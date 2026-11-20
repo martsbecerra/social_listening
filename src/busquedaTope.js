@@ -179,21 +179,26 @@ function estimarResultados({ calls, horas, tope }) {
  * tope). `usdDe(resultados)` es lo que cuesta una búsqueda con esa cantidad
  * (apifyCost.maxUsdForSearch): se inyecta para que este módulo no cargue
  * nada. Una búsqueda sin historia cuenta solo su consulta en el estimado.
- * @param {Array<{ estimado: number|null, limit: number }>} busquedas
+ * `sinVentanaParecida`: las que tienen estimado pero EXTRAPOLADO (ninguna
+ * consulta suya de una ventana parecida: la tasa de las cortas por las horas
+ * de una honda, que queda varias veces por debajo de lo real).
+ * @param {Array<{ estimado: number|null, limit: number, extrapolado?: boolean }>} busquedas
  * @param {(resultados: number) => number} usdDe
- * @returns {{ estimado: number, techo: number, sinHistoria: number, n: number }}
+ * @returns {{ estimado: number, techo: number, sinHistoria: number, sinVentanaParecida: number, n: number }}
  */
 function costoDeBusquedas(busquedas, usdDe) {
   const lista = Array.isArray(busquedas) ? busquedas : [];
   let estimado = 0;
   let techo = 0;
   let sinHistoria = 0;
+  let sinVentanaParecida = 0;
   for (const b of lista) {
     if (b.estimado == null) sinHistoria += 1;
+    else if (b.extrapolado) sinVentanaParecida += 1;
     estimado += usdDe(b.estimado == null ? 0 : b.estimado);
     techo += usdDe(b.limit);
   }
-  return { estimado, techo, sinHistoria, n: lista.length };
+  return { estimado, techo, sinHistoria, sinVentanaParecida, n: lista.length };
 }
 
 /** El tope de la segunda consulta: 4 veces el de la primera, hasta `resultsMax`. null si ya no hay más que pedir. */
