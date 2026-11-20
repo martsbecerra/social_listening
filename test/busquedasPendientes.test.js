@@ -276,6 +276,50 @@ describe('una búsqueda que no termina a tiempo queda esperando y el ciclo sigui
     }
   });
 
+  test('un término cuya corrida Apify corta siempre después de la espera: a la segunda cortada seguida la marca avanza y deja de pedirse toda la ventana', async () => {
+    // Es la regla de "parcial dos veces seguidas", que en su ciclo no se
+    // veía: la corrida quedaba `esperando` y recién al levantarla, `parcial`.
+    const alDia = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString();
+    db.setRefreshState('detection_last_success:instagram', alDia);
+    db.setRefreshState('detection_por_fuente:instagram', alDia);
+    const marca = monitor.sourceMarkKey('instagram', 'busqueda', 'macri');
+    const cincoDias = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
+    db.setRefreshState(marca, cincoDias);
+    const desde = [];
+    let n = 0;
+    const buscar = {
+      macri: (options) => {
+        n += 1;
+        desde.push(options.sinceIso);
+        options.onRunStarted({ id: `run-corte-${n}` });
+        throw pendiente(`run-corte-${n}`);
+      },
+      gcba: [],
+    };
+    const cortada = { estado: 'parcial', posts: [], rawItems: 0, runStatus: 'TIMED-OUT' };
+    const restore = stubInstagram({ buscar, recuperar: { 'run-corte-1': cortada, 'run-corte-2': cortada, 'run-corte-3': cortada } });
+    const avisos = [];
+    console.warn = (...a) => avisos.push(a.join(' '));
+    try {
+      const uno = await ciclo();
+      const dos = await ciclo();
+      const filaUno = uno.filas.find((f) => f.fuente === 'macri');
+      const filaDos = dos.filas.find((f) => f.fuente === 'macri');
+      assert.equal(db.getRunSource(filaUno.id).estado, 'parcial', 'la primera, levantada a medias');
+      assert.equal(db.getRefreshState(marca), cincoDias, 'primera cortada: no avanza, se vuelve a pedir todo');
+      assert.deepEqual(desde, [cincoDias, cincoDias]);
+      assert.ok(!avisos.some((a) => /parcial dos veces seguidas/.test(a)));
+
+      await ciclo();
+      assert.equal(db.getRunSource(filaDos.id).estado, 'parcial', 'la pérdida queda registrada en su fila');
+      assert.equal(db.getRefreshState(marca), filaDos.startedAt, 'segunda cortada seguida: la marca llega al lanzamiento de esa corrida');
+      assert.ok(Date.parse(desde[2]) > Date.parse(cincoDias) + 3 * 24 * 60 * 60 * 1000, 'y este ciclo ya no pide los cinco días');
+      assert.ok(avisos.some((a) => /«macri» quedó parcial dos veces seguidas/.test(a)));
+    } finally {
+      restore();
+    }
+  });
+
   test('una consulta que quedó abierta por una caída del proceso, sin corrida de Apify: fallo; un término que ya no está configurado: no se levanta', async () => {
     const abierta = db.startRunSource({ runId: 1, plataforma: 'instagram', tipo: 'busqueda', fuente: 'macri', clave: 'macri' });
     const conRun = db.startRunSource({ runId: 1, plataforma: 'instagram', tipo: 'busqueda', fuente: 'gcba', clave: 'gcba', actor: APIDOJO, apifyRunId: 'run-caida' });

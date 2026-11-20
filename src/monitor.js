@@ -1238,6 +1238,16 @@ function horaArgentina(iso) {
 const PENDING_LOST_AFTER_MS = 7 * DAY_MS;
 
 /**
+ * La consulta cerrada anterior a `row` de esa misma búsqueda (primer
+ * intento). No cuentan las que siguen esperando ni los ciclos que la
+ * saltearon porque su corrida seguía en Apify: no fueron otro intento.
+ */
+function intentoAnterior(platformId, row) {
+  const previas = db.lastRunSourcesForKey({ plataforma: platformId, tipo: row.tipo, clave: row.clave, limit: 8 });
+  return previas.find((f) => f.id < row.id && f.estado !== 'esperando' && !(f.estado === 'fallo' && f.motivo === 'SIGUE_EN_APIFY')) || null;
+}
+
+/**
  * Levanta las búsquedas que un ciclo anterior dejó esperando en Apify (la
  * corrida no terminó dentro de SEARCH_WAIT_MS, o el proceso se cayó con la
  * consulta abierta). Va al empezar la detección de la red, bajo el candado
@@ -1306,10 +1316,33 @@ async function recoverPendingSearchRuns(platform, platformId, { searches = [] } 
       if (r && (r.estado === 'ok' || r.estado === 'parcial')) {
         const posts = Array.isArray(r.posts) ? r.posts : [];
         out.candidates.push(...posts);
-        out.recuperadas.push({ row, estado: r.estado, rawItems: r.rawItems != null ? r.rawItems : posts.length, nuevos: contarNuevos(posts, platformId), runStatus: r.runStatus || null });
+        // Apify la cortó, y el intento anterior de ese término también
+        // había quedado cortado: es la regla de "parcial dos veces
+        // seguidas" (advanceSourceMarks), que acá no llega sola porque en
+        // su ciclo esta corrida quedó `esperando`, no `parcial`. Sin esto,
+        // un término cuya corrida Apify corta siempre (una ventana muy
+        // larga) se relanzaba y se pagaba entero en cada ciclo.
+        let segundaParcial = false;
+        if (r.estado === 'parcial' && (row.intento || 1) === 1) {
+          try {
+            const previa = intentoAnterior(platformId, row);
+            segundaParcial = Boolean(previa && previa.estado === 'parcial');
+          } catch (err) {
+            console.error(`[monitor] (${platformId}) no se pudo leer el intento anterior de «${row.fuente}»:`, err.message);
+          }
+        }
+        out.recuperadas.push({
+          row,
+          estado: r.estado,
+          rawItems: r.rawItems != null ? r.rawItems : posts.length,
+          nuevos: contarNuevos(posts, platformId),
+          runStatus: r.runStatus || null,
+          segundaParcial,
+        });
         // Solo una corrida que terminó bien cubre hasta su lanzamiento: de
-        // una que Apify cortó puede faltar algo, y se vuelve a pedir.
-        if (r.estado === 'ok') {
+        // una que Apify cortó puede faltar algo, y se vuelve a pedir (salvo
+        // la segunda cortada seguida: ahí se sigue desde su lanzamiento).
+        if (r.estado === 'ok' || segundaParcial) {
           const previo = out.cubiertoHasta.get(row.clave);
           if (!previo || row.startedAt > previo) out.cubiertoHasta.set(row.clave, row.startedAt);
         }
@@ -1358,7 +1391,7 @@ async function recoverPendingSearchRuns(platform, platformId, { searches = [] } 
  * con lo que trajo. Nunca tira.
  */
 function cerrarRecuperadas(recovery, { platformId, runId }) {
-  for (const { row, estado, rawItems, nuevos, runStatus } of recovery.recuperadas) {
+  for (const { row, estado, rawItems, nuevos, runStatus, segundaParcial } of recovery.recuperadas) {
     const ahora = new Date().toISOString();
     actualizarFuente(row.id, {
       estado: estado === 'ok' ? 'recuperada' : 'parcial',
@@ -1370,8 +1403,12 @@ function cerrarRecuperadas(recovery, { platformId, runId }) {
       finishedAt: row.finishedAt || ahora,
     });
     // Lo levantado ya está procesado: la marca de esa fuente llega, como
-    // mínimo, hasta el lanzamiento de esa corrida.
-    if (estado === 'ok') {
+    // mínimo, hasta el lanzamiento de esa corrida. Una cortada no avanza,
+    // salvo la segunda seguida (para que la ventana no crezca sin fin).
+    if (segundaParcial) {
+      console.warn(`[monitor] ${platformId}: ${row.tipo} «${row.fuente}» quedó parcial dos veces seguidas: la marca avanza igual y lo que faltó queda registrado.`);
+    }
+    if (estado === 'ok' || segundaParcial) {
       try {
         db.advanceRefreshState(sourceMarkKey(platformId, row.tipo, row.fuente), row.startedAt);
       } catch (err) {
