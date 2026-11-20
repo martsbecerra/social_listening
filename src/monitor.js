@@ -365,17 +365,22 @@ function keywordSourceType(keyword) {
  *     queda con la del inicio de la ventana que se intentó: el reintento
  *     pide más, no arranca de cero;
  *   - una fuente salteada (su corrida anterior sigue en Apify): no avanza.
+ *   - `retener`: claves de búsquedas que respondieron pero cuyos posteos no
+ *     se terminaron de procesar (falló el detalle de sus resultados sin
+ *     texto): no avanzan, la corrida siguiente vuelve a pedir esa ventana.
+ *     Lo ya guardado o anotado no se reclasifica; el techo de la ventana
+ *     (MONITOR_LOOKBACK_MAX) acota cuánto puede crecer.
  * Nunca tira.
  * @returns {boolean} true si TODAS las fuentes avanzaron al inicio del ciclo
  */
-function advanceSourceMarks(platformId, outcomes, cycleNowMs) {
+function advanceSourceMarks(platformId, outcomes, cycleNowMs, { retener = new Set() } = {}) {
   const cycleIso = new Date(cycleNowMs).toISOString();
   let todas = true;
   for (const outcome of outcomes) {
     try {
       const { tipo, fuente, window } = outcome.source;
       const key = sourceMarkKey(platformId, tipo, fuente);
-      let avanza = outcome.estado === 'ok';
+      let avanza = outcome.estado === 'ok' && !(tipo === 'busqueda' && retener.has(sourceKey(fuente)));
       if (outcome.estado === 'parcial') {
         const previas = db.lastRunSourcesForKey({ plataforma: platformId, tipo, clave: sourceKey(fuente), limit: 2 });
         avanza = previas.length >= 2 && previas[1].estado === 'parcial';
@@ -1034,12 +1039,15 @@ function markSearchSeen(post, platformId, outcome, { motivo = null, llmUsd = nul
  *
  * Modifica `postsById` (el Map del dedupe intra-ciclo): reemplaza cada
  * posteo enriquecido por su versión con texto.
- * @returns {Promise<{ enriched: Set<string>, platformError: Error|null, stats: object|null }>}
+ * @returns {Promise<{ enriched: Set<string>, failedIds: Set<string>, platformError: Error|null, stats: object|null }>}
  *   `enriched`: ids a los que hay que anotarles el resultado de la
- *   evaluación; `stats` null si no había resultados de búsqueda sin texto.
+ *   evaluación; `failedIds`: los del lote cuyo detalle no se pudo pedir (no
+ *   quedan guardados ni anotados: el ciclo no avanza la marca de las
+ *   búsquedas que los trajeron); `stats` null si no había resultados de
+ *   búsqueda sin texto.
  */
 async function enrichSearchResults(platform, platformId, postsById) {
-  const out = { enriched: new Set(), platformError: null, stats: null };
+  const out = { enriched: new Set(), failedIds: new Set(), platformError: null, stats: null };
   if (typeof platform.fetchPostDetails !== 'function') return out;
 
   const candidates = [];
@@ -1086,6 +1094,7 @@ async function enrichSearchResults(platform, platformId, postsById) {
   } catch (err) {
     actualizarFuente(detalleRow, { estado: 'fallo', motivo: motivoDeFallo(err), detalle: err && err.message }, { startedMs: detalleStartedMs });
     stats.failed = true;
+    for (const post of batch) out.failedIds.add(String(post.id));
     progress.setPhaseSummary('Detalle de búsquedas', { detail: 'falló', ok: false });
     if (isPlatformError(err)) {
       out.platformError = err;
@@ -2172,8 +2181,21 @@ async function runMonitoringCycle({ plataformas, trigger, pasada = null } = {}) 
 
     // Marcas de detección, ANTES de cualquier throw: cada fuente avanza
     // según cómo le fue (ver advanceSourceMarks). Los posteos de las que
-    // respondieron ya quedaron guardados o anotados arriba.
-    const todasAvanzaron = advanceSourceMarks(platformId, outcomes, cycleNowMs);
+    // respondieron ya quedaron guardados o anotados arriba, salvo los
+    // resultados sin texto cuyo detalle no se pudo pedir: las búsquedas que
+    // los trajeron no avanzan, para que la corrida siguiente los vuelva a
+    // traer (con la ventana mínima de siempre ya no entraban).
+    const retener = new Set();
+    if (enrichment.failedIds.size > 0) {
+      for (const outcome of outcomes) {
+        if (!outcome.ok || outcome.source.tipo !== 'busqueda') continue;
+        if (outcome.posts.some((post) => post && enrichment.failedIds.has(String(post.id)))) retener.add(sourceKey(outcome.source.fuente));
+      }
+      if (retener.size > 0) {
+        console.warn(`[monitor] ${platformId}: falló el detalle de resultados nuevos de ${retener.size} búsqueda(s): su marca no avanza y la próxima corrida vuelve a pedir esa ventana.`);
+      }
+    }
+    const todasAvanzaron = advanceSourceMarks(platformId, outcomes, cycleNowMs, { retener });
 
     if (platformError) {
       const saved = porPlataforma[platformId].newCount;

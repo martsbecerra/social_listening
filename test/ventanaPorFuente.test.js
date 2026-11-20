@@ -339,6 +339,48 @@ describe('el ciclo: cada búsqueda retoma desde su última detección exitosa', 
     }
   });
 
+  test('si falla el detalle de los resultados sin texto, la búsqueda que los trajo no avanza: la corrida siguiente vuelve a pedir esa ventana y los guarda', async () => {
+    alDia();
+    const red = db.getRefreshState(RED);
+    const seisDias = casi(6);
+    db.setRefreshState(marca('macri'), seisDias);
+    db.setRefreshState(marca('gcba'), hace(4 * HOUR_MS));
+    // Un resultado nuevo de hace 5 días que llega sin texto: hay que pedirle el detalle.
+    const sinTexto = { id: 'sin-texto-1', account: 'alguien', url: 'https://www.instagram.com/p/sinTexto1/', caption: '', hashtagsText: '', likes: null, comments: null, postedAt: hace(5 * DAY_MS), postType: 'imagen', followers: null, sourceType: 'search', sourceQuery: 'macri' };
+    let detalleAnda = false;
+    const restore = stubInstagram(
+      { macri: (options) => (Date.parse(options.sinceIso) <= Date.parse(sinTexto.postedAt) ? [{ ...sinTexto }] : []), gcba: [] },
+      {
+        fetchPostDetails: async () => {
+          if (!detalleAnda) throw ERROR_502();
+          return [{ ...sinTexto, caption: 'La Ciudad arregló la plaza' }];
+        },
+      }
+    );
+    try {
+      const antes = Date.now();
+      const { runId } = await ciclo();
+      assert.equal(pedido('macri').lookback, '6 days');
+      assert.equal(db.listRunSources({ runId, plataforma: 'instagram' }).find((f) => f.tipo === 'detalle').estado, 'fallo');
+      assert.ok(!db.findExistingPostId(sinTexto.id, sinTexto.url), 'no se guardó');
+      assert.equal(db.getSearchSeen(sinTexto.id, 'instagram'), null, 'ni quedó anotado');
+      assert.equal(db.getRefreshState(marca('macri')), seisDias, 'la marca de «macri» no avanza: sus resultados no se terminaron de procesar');
+      assert.ok(cerca(db.getRefreshState(marca('gcba')), antes), 'la de «gcba», que no trajo nada de ese lote, sí');
+      assert.equal(db.getRefreshState(RED), red, 'y la de la red tampoco');
+
+      // La corrida siguiente, con el detalle andando: pide la misma ventana y lo guarda.
+      detalleAnda = true;
+      pedidos.length = 0;
+      const despues = Date.now();
+      await ciclo();
+      assert.equal(pedido('macri').sinceIso, seisDias);
+      assert.ok(db.findExistingPostId(sinTexto.id, sinTexto.url), 'ahora sí');
+      assert.ok(cerca(db.getRefreshState(marca('macri')), despues));
+    } finally {
+      restore();
+    }
+  });
+
   test('si el techo recorta la ventana, la fila registra el hueco y la corrida queda incompleta', async () => {
     alDia();
     const vieja = hace(45 * DAY_MS);
