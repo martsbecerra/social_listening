@@ -527,6 +527,34 @@ describe('X: cuentas, hashtags y keywords con su propia marca', { concurrency: f
   });
 });
 
+describe('X: la primera migración', { concurrency: false }, () => {
+  test('cuentas y hashtags heredan la marca de la red; las keywords no (el código anterior las pedía siempre con MONITOR_LOOKBACK)', async () => {
+    escribirConfig({ searches: [] }, { accounts: ['jorgemacri'], keywords: ['#caba', 'Jorge Macri'] });
+    // X en pausa: su marca de red es del último "Actualizar ahora", hace 20 días. Sin testigo: nunca migró.
+    db.setRefreshState('detection_last_success:x', casi(20));
+    const originals = { isConfigured: x.isConfigured, scrapeAccount: x.scrapeAccount, scrapeHashtag: x.scrapeHashtag, scrapeKeyword: x.scrapeKeyword };
+    const vistos = {};
+    x.isConfigured = () => true;
+    x.scrapeAccount = async (cuenta, { lookback }) => ((vistos.cuenta = lookback), []);
+    x.scrapeHashtag = async (tag, { lookback }) => ((vistos.hashtag = lookback), []);
+    x.scrapeKeyword = async (keyword, { lookback }) => ((vistos.keyword = lookback), []);
+    try {
+      const { runId } = await ciclo({ plataformas: ['x'], trigger: 'manual' });
+      assert.deepEqual(vistos, { cuenta: '20 days', hashtag: '20 days', keyword: '1 day' });
+      assert.equal(db.listRunSources({ runId, plataforma: 'x' }).find((f) => f.tipo === 'keyword').huecoDesde, null);
+
+      // Si después corre código anterior en el medio, una keyword que ya
+      // tiene su marca sí se alinea con la de la red (como las demás).
+      db.setRefreshState(marca('Jorge Macri', 'keyword', 'x'), hace(6 * DAY_MS));
+      db.setRefreshState('detection_last_success:x', casi(2));
+      await ciclo({ plataformas: ['x'], trigger: 'manual' });
+      assert.equal(vistos.keyword, '2 days');
+    } finally {
+      Object.assign(x, originals);
+    }
+  });
+});
+
 describe('db: marcas en refresh_state', { concurrency: false }, () => {
   test('advanceRefreshState solo avanza (nunca retrocede ni guarda una fecha del futuro); initRefreshState no pisa una fecha válida', () => {
     const k = 'detection_test:a';

@@ -288,6 +288,8 @@ function detectionWindowFor(platformId, { now = Date.now(), tipo = null, fuente 
  * anterior: la primera corrida después del cambio no pide más atrás que la
  * que habría corrido sin él (decisión del dueño, 16/11/2026: el hueco que
  * dejaron las corridas caídas de noviembre queda sin cubrir a propósito).
+ * La excepción son las keywords de X, que el código anterior pedía siempre
+ * con MONITOR_LOOKBACK: no heredan la marca de la red, arrancan como nuevas.
  *
  * Después, `detection_por_fuente:<red>` guarda el valor de la marca de la
  * red que este código vio o escribió por última vez. Si no coincide con la
@@ -305,7 +307,12 @@ function migrateDetectionMarks(platformId, sources) {
     let movidas = 0;
     if (Number.isFinite(Date.parse(network))) {
       for (const { tipo, fuente } of sources) {
-        if (db.advanceRefreshState(sourceMarkKey(platformId, tipo, fuente), network)) movidas += 1;
+        const key = sourceMarkKey(platformId, tipo, fuente);
+        // Las keywords (X) nunca usaron la marca de la red: iban siempre con
+        // MONITOR_LOOKBACK. Una que todavía no tiene marca propia queda como
+        // fuente nueva y pide eso mismo, no los días de la marca de la red.
+        if (tipo === 'keyword' && !Number.isFinite(Date.parse(db.getRefreshState(key) || ''))) continue;
+        if (db.advanceRefreshState(key, network)) movidas += 1;
       }
     }
     db.setRefreshState(flagKey, network);
