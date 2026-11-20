@@ -627,7 +627,9 @@ async function addKeyword(keyword, platformId) {
   }
   const all = loadConfigAll();
   const config = all[platformId] || (all[platformId] = { accounts: [], keywords: [] });
-  if (!config.keywords.some((k) => k.toLowerCase() === clean.toLowerCase())) {
+  // Repetida = misma fuente: mismo tipo (hashtag o texto) y misma clave. Dos
+  // que solo difieren en un "@" de adelante compartirían marca y fila.
+  if (!config.keywords.some((k) => mismaFuente(k, clean, keywordSourceType))) {
     config.keywords.push(clean);
     saveConfig(all);
   }
@@ -636,10 +638,13 @@ async function addKeyword(keyword, platformId) {
 
 function removeKeyword(keyword, platformId) {
   requirePlatformId(platformId, 'removeKeyword');
-  forgetSourceMark(platformId, keywordSourceType(keyword), keyword);
   const all = loadConfigAll();
   const config = all[platformId] || (all[platformId] = { accounts: [], keywords: [] });
   config.keywords = config.keywords.filter((k) => k.toLowerCase() !== String(keyword).toLowerCase());
+  // La marca se olvida si ya no queda ninguna keyword con esa clave.
+  if (!config.keywords.some((k) => mismaFuente(k, keyword, keywordSourceType))) {
+    forgetSourceMark(platformId, keywordSourceType(keyword), keyword);
+  }
   saveConfig(all);
   return config;
 }
@@ -680,7 +685,10 @@ function addSearch(term, platformId) {
   const all = loadConfigAll();
   const config = all[platformId] || (all[platformId] = { accounts: [], keywords: [] });
   config.searches = cleanList(config.searches);
-  if (!config.searches.some((s) => s.toLowerCase() === clean.toLowerCase())) {
+  // Repetido = misma clave (sourceKey): «gcba» y «#gcba» compartirían la
+  // marca y la fila; si uno fallaba y el otro respondía, el que falló perdía
+  // sus días.
+  if (!config.searches.some((s) => mismaFuente(s, clean))) {
     // Un término que se da de alta (aunque haya existido antes) es una
     // fuente nueva: se olvida su marca. Uno que YA está configurado la
     // conserva: volver a escribirlo no le hace perder los días atrasados.
@@ -693,12 +701,15 @@ function addSearch(term, platformId) {
 
 function removeSearch(term, platformId) {
   requirePlatformId(platformId, 'removeSearch');
-  forgetSourceMark(platformId, 'busqueda', term);
   const all = loadConfigAll();
   const config = all[platformId];
   if (config && Array.isArray(config.searches)) {
     config.searches = config.searches.filter((s) => s.toLowerCase() !== String(term).toLowerCase());
     saveConfig(all);
+  }
+  // La marca se olvida si ya no queda ningún término con esa clave.
+  if (!cleanList(config && config.searches).some((s) => mismaFuente(s, term))) {
+    forgetSourceMark(platformId, 'busqueda', term);
   }
   return loadConfig(platformId);
 }
@@ -1138,6 +1149,31 @@ function sourceKey(fuente) {
   return String(fuente ?? '').trim().toLowerCase().replace(/^[@#]/, '');
 }
 
+/** Dos entradas de una lista de la config son la misma fuente: misma clave y, si la lista mezcla tipos, mismo tipo. */
+function mismaFuente(a, b, tipoDe = null) {
+  return sourceKey(a) === sourceKey(b) && (!tipoDe || tipoDe(a) === tipoDe(b));
+}
+
+/**
+ * Una lista de fuentes sin repetidas por clave (se queda con la primera).
+ * Desde la pantalla no se pueden cargar, pero el archivo se edita a mano:
+ * dos con la misma clave compartirían marca, fila y corrida pendiente.
+ */
+function sinFuentesRepetidas(lista, platformId, nombre) {
+  const vistas = new Set();
+  const out = [];
+  for (const fuente of lista) {
+    const clave = sourceKey(fuente);
+    if (vistas.has(clave)) {
+      console.warn(`[monitor] ${platformId}: ${nombre} «${fuente}» repite la clave de otra de la lista: no se consulta (sacala del archivo de configuración).`);
+      continue;
+    }
+    vistas.add(clave);
+    out.push(fuente);
+  }
+  return out;
+}
+
 /** Abre la fila de una consulta de detección. Nunca tira: sin fila el ciclo sigue (devuelve null). */
 function abrirFuente(fields) {
   try {
@@ -1525,12 +1561,14 @@ async function runMonitoringCycle({ plataformas, trigger, pasada = null } = {}) 
     }
 
     const { accounts, keywords } = config;
-    const searches = cleanList(config.searches);
+    const searches = sinFuentesRepetidas(cleanList(config.searches), platformId, 'la búsqueda');
     const hashtagTags = keywords.filter((k) => k.startsWith('#')).map((k) => k.slice(1));
     const textKeywords = keywords.filter((k) => !k.startsWith('#'));
     // Para filtrar por substring usamos la lista completa de keywords, sin el "#".
     const plainKeywords = keywords.map((k) => (k.startsWith('#') ? k.slice(1) : k));
     const canSearchKeywords = typeof platform.scrapeKeyword === 'function';
+    // Las keywords de texto que se consultan (solo donde el adapter las busca: X).
+    const keywordsToSearch = canSearchKeywords ? sinFuentesRepetidas(textKeywords, platformId, 'la palabra clave') : [];
     // Qué fuentes consulta la detección de esta plataforma, según lo que
     // declara su adapter (ver platforms/index.js). Instagram (desde
     // septiembre 2026) no consulta perfiles de cuentas trackeadas ni recorre
@@ -1563,7 +1601,7 @@ async function runMonitoringCycle({ plataformas, trigger, pasada = null } = {}) 
     const configuredSources = [
       ...accountsToScrape.map((fuente) => ({ tipo: 'cuenta', fuente })),
       ...hashtagsToScrape.map((fuente) => ({ tipo: 'hashtag', fuente })),
-      ...(canSearchKeywords ? textKeywords.map((fuente) => ({ tipo: 'keyword', fuente })) : []),
+      ...keywordsToSearch.map((fuente) => ({ tipo: 'keyword', fuente })),
       ...(canSearch ? searches.map((fuente) => ({ tipo: 'busqueda', fuente })) : []),
     ];
     migrateDetectionMarks(platformId, configuredSources);
@@ -1582,7 +1620,7 @@ async function runMonitoringCycle({ plataformas, trigger, pasada = null } = {}) 
     const searchesSkipped = searches.filter((term) => recovery.saltear.has(sourceKey(term)));
 
     const detectionTotal =
-      accountsToScrape.length + hashtagsToScrape.length + (canSearchKeywords ? textKeywords.length : 0) + (canSearch ? searchesToRun.length : 0);
+      accountsToScrape.length + hashtagsToScrape.length + keywordsToSearch.length + (canSearch ? searchesToRun.length : 0);
     // En pantalla: "Buscando posteos nuevos · 5 de 8 listas" (las fuentes
     // corren en paralelo, no hay "la búsqueda actual"). La fase no deja
     // resumen propio: sus líneas son las de cada fuente (lanzarFuente).
@@ -1656,13 +1694,11 @@ async function runMonitoringCycle({ plataformas, trigger, pasada = null } = {}) 
         label: `#${tag}`,
         run: (options) => platform.scrapeHashtag(tag, options),
       })),
-      ...(canSearchKeywords
-        ? textKeywords.map((keyword) => ({
-            ...withWindow('keyword', keyword, limits.search),
-            label: `«${keyword}»`,
-            run: (options) => platform.scrapeKeyword(keyword, options),
-          }))
-        : []),
+      ...keywordsToSearch.map((keyword) => ({
+        ...withWindow('keyword', keyword, limits.search),
+        label: `«${keyword}»`,
+        run: (options) => platform.scrapeKeyword(keyword, options),
+      })),
       // Cada búsqueda va en la fase 'busqueda' del registro de gasto
       // (src/apifyCost.js), heredando el ciclo del contexto del scheduler.
       ...(canSearch

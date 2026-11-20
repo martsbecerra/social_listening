@@ -445,6 +445,49 @@ describe('migración desde la marca de la red', { concurrency: false }, () => {
   });
 });
 
+describe('dos fuentes con la misma clave', { concurrency: false }, () => {
+  test('«gcba» y «#gcba» son la misma fuente: la segunda no entra, y sacar una que no está no le borra la marca a la otra', async () => {
+    alDia();
+    const tresDias = hace(3 * DAY_MS);
+    db.setRefreshState(marca('gcba'), tresDias);
+    assert.deepEqual(monitor.addSearch('#gcba', 'instagram').searches, ['macri', 'gcba'], 'comparten clave: no se agrega');
+    assert.equal(db.getRefreshState(marca('gcba')), tresDias);
+    assert.deepEqual(monitor.removeSearch('#GCBA', 'instagram').searches, ['macri', 'gcba'], 'no estaba: no saca nada');
+    assert.equal(db.getRefreshState(marca('gcba')), tresDias, 'y la marca de «gcba» sigue');
+  });
+
+  test('si el archivo trae las dos (editado a mano), el ciclo consulta una sola y lo avisa', async () => {
+    alDia();
+    escribirConfig({ searches: ['gcba', '#gcba', 'macri'] });
+    const avisos = [];
+    console.warn = (...a) => avisos.push(a.join(' '));
+    const restore = stubInstagram({ macri: [], gcba: [], '#gcba': [] });
+    try {
+      const { runId } = await ciclo();
+      assert.deepEqual(pedidos.map((p) => p.term).sort(), ['gcba', 'macri']);
+      assert.equal(db.listRunSources({ runId, plataforma: 'instagram' }).filter((f) => f.clave === 'gcba').length, 1);
+      assert.ok(avisos.some((a) => /«#gcba» repite la clave/.test(a)));
+    } finally {
+      restore();
+    }
+  });
+
+  test('keywords: «@jorgemacri» y «jorgemacri» son la misma; «#caba» y «caba» no (una es un hashtag)', async () => {
+    escribirConfig({ searches: [] }, { accounts: [], keywords: ['jorgemacri', 'caba'] });
+    const originals = { validateHashtag: x.validateHashtag };
+    x.validateHashtag = async () => true;
+    try {
+      assert.deepEqual((await monitor.addKeyword('@JorgeMacri', 'x')).keywords, ['jorgemacri', 'caba']);
+      assert.deepEqual((await monitor.addKeyword('#caba', 'x')).keywords, ['jorgemacri', 'caba', '#caba']);
+      db.setRefreshState(marca('caba', 'keyword', 'x'), hace(2 * DAY_MS));
+      monitor.removeKeyword('#caba', 'x');
+      assert.ok(db.getRefreshState(marca('caba', 'keyword', 'x')), 'sacar el hashtag no toca la marca de la keyword');
+    } finally {
+      Object.assign(x, originals);
+    }
+  });
+});
+
 describe('X: cuentas, hashtags y keywords con su propia marca', { concurrency: false }, () => {
   test('cada fuente de X recibe su ventana; la que falla no avanza y las demás sí', async () => {
     escribirConfig({ searches: [] }, { accounts: ['jorgemacri'], keywords: ['#caba', 'macri'] });
