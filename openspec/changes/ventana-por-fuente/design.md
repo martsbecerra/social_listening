@@ -240,7 +240,8 @@ minutos: sin la espera larga de esta rama se cortaría a los 300 s.
 - `src/busquedaTope.js` (puro). Tope de una búsqueda = min(`SEARCH_RESULTS_MAX`
   (2000), max(el de hoy: `raiseLimitForWindow(base, días)`, 2 × tasa ×
   horas pedidas)), con la tasa = el máximo de resultados por hora de las
-  últimas 6 consultas buenas de ese término (el doble si esa consulta llenó
+  últimas 6 consultas buenas de ese término, más hasta 3 más viejas de una
+  ventana parecida (decisión 12; el doble si esa consulta llenó
   su tope). Nunca menor que el de hoy.
 - Con el tope lleno: una segunda consulta de la misma ventana con 4 × el
   tope (hasta el máximo), si entra en `SEARCH_EXTRA_MAX_USD_PER_CYCLE`
@@ -289,8 +290,9 @@ todas las corridas; algunas son "hondas".
   ventana.
 - Costo (datos de la #56 y de la sonda): una pasada de 7 días trae entre
   250 y 500 resultados por término grande, unos 2.100 a 2.800 entre los
-  ocho: US$ 1,2 a 1,5 por corrida honda. Una corta, unos 0,2. Con hondas a
-  las 8 y a las 16: US$ 85 a 110 por mes en búsquedas. La primera honda
+  ocho: US$ 1,2 a 1,5 por corrida honda. Una corta, unos 0,13 (promedio de
+  25 resultados en las 53 cortas del piloto; la más cara, 0,17). Con hondas
+  a las 8 y a las 16: US$ 80 a 110 por mes en búsquedas. La primera honda
   llena los topes escalados por la ventana (el tope base por 7) y hace las
   segundas consultas que entren en el techo; después el tope sale del
   volumen medido y no hacen falta.
@@ -300,6 +302,58 @@ todas las corridas; algunas son "hondas".
   total, 17 de las 31 de cuentas de más de 100 mil seguidores; de "macri",
   GCBA y PDLC, 0, 1 y 2. Una sola pasada honda (macri y GCBA, dos pasadas
   independientes): 7 a 10 de las 10 de más impacto, 81 a 98 % del impacto.
+  Recalculado aparte desde los crudos (revisión del 20/11), con todo lo
+  conocido de esas horas (478): 100 traídas (21 %), 7 de las 10 de más
+  impacto, 24 de las 48 del decil, 59 % del impacto, 17 de 31 de cuentas
+  grandes, 41 de las 120 de más de 1.000 interacciones. Las dos cuentas
+  difieren en una publicación de borde; la conclusión es la misma. La #57
+  fue una corta excepcional (105 resultados; mediana de las cortas, 19).
+
+### 12. Revisión por áreas antes del PR (20/11/2026)
+
+Cinco revisores (ventana por fuente, runs de Apify que no se pierden, tope
+y segunda consulta, estado de la corrida, pasada honda) y un agente por
+hallazgo intentando refutarlo: 20 confirmados, todos reproducidos con el
+código de la rama; un commit por arreglo. Lo que cambió de diseño:
+
+- **Parcial dos veces seguidas, también al levantar.** Con la espera (15
+  min) menor que el corte de Apify (60 min), una corrida que Apify corta
+  nunca sale `parcial` en su ciclo: queda `esperando`. Al levantarla
+  cortada se mira el intento anterior de ese término
+  (`monitor.intentoAnterior`); si también fue parcial, se sigue desde su
+  lanzamiento y la marca avanza.
+- **La marca no avanza si falló el detalle** de los resultados sin texto de
+  esa búsqueda (`advanceSourceMarks`, `retener`): REQ-VPF-09 pedía "y sus
+  posteos se procesaron". No hay regla de "a la segunda avanza": el techo
+  de la ventana acota cuánto puede crecer y lo ya decidido no se reclasifica.
+- **Una levantada no se cierra con resultados sin procesar**: sigue
+  `esperando` y se relee (gratis) hasta 2 días desde su lanzamiento.
+- **Una levantada que llenó su tope queda con `tope_lleno`.** No se vuelve
+  a pedir su ventana (sería pagar de nuevo la primera consulta): la marca
+  avanza y queda dicho. Pedirla de nuevo queda como decisión del dueño.
+- **Tope lleno y su segunda consulta**: mientras la segunda espera en
+  Apify la corrida dice "lo que falta sigue en Apify"; si al levantarla no
+  llenó su tope, la primera deja de estar marcada y dice "lo que faltaba se
+  levantó en una corrida posterior" (la corrida sigue incompleta: no lo
+  trajo cuando corrió). Textos de pantalla nuevos.
+- **Historia de un término**: las últimas 6 consultas más hasta 3 más
+  viejas de una ventana parecida (`busquedaTope.historiaPara`).
+- **Techo de las segundas consultas**: se devuelve lo apartado de una que
+  falló sin crear una corrida. Un 5xx al arrancar no garantiza que Apify no
+  la haya creado: en ese caso doblemente raro el techo puede pasarse por
+  una consulta (se eligió no perder publicaciones).
+- **Misma clave, misma fuente**: «gcba» y «#gcba» no pueden convivir en la
+  lista de búsquedas (ni «@x» y «x» en las keywords de texto).
+- **Keywords de X en la migración**: no heredan la marca de la red
+  (REQ-VPF-10: no pedir más atrás que el código anterior, que las pedía
+  siempre con `MONITOR_LOOKBACK`).
+- **Estado de la escucha del inicio**: la hora sigue siendo la de la última
+  corrida de cualquier red; el estado va solo si es de esa misma corrida.
+- **Costo real**: se concilia 10 minutos después de que terminó el run, no
+  de que se abrió su fila.
+- En `src/apify.js`: un corte al leer el cuerpo de una respuesta es un
+  fallo pasajero de red; la guarda no salta antes de que el POST de
+  arranque pueda volver.
 
 ## Cuánto puede durar un ciclo
 

@@ -180,11 +180,26 @@ su marca.
   benchmark, el refresco o las fotos NO la marcan. `resumenFallidas` arma
   los textos para una persona (`titulo`, `chip`, `frase`, `nota`, `tooltip`,
   `pipeline`, `lineas`…) y `resumenParaLog`, la cola de `[ciclo] fin`. Una
-  búsqueda que Apify cortó es "Apify cortó N", no "falló". El frontend no
-  calcula el estado: lo recibe (`lastRunEstado` y `lastRunFallidas` en
+  búsqueda que Apify cortó es "Apify cortó N", no "falló". Tampoco "falló"
+  un término que el ciclo salteó porque su corrida anterior sigue en Apify
+  (fila `fallo` + `SIGUE_EN_APIFY`): se cuenta y se nombra con las que
+  siguen en Apify. Una que se levantó después A MEDIAS (`parcial` con
+  `recuperada_en`) cuenta como levantada, no como "respondió", en su
+  corrida original. Un tope lleno dice qué pasó con su segunda consulta:
+  "lo que falta sigue en Apify" mientras espera y "lo que faltaba se
+  levantó en una corrida posterior" si la cubrió (`topeLleno[].segundaEnApify`
+  y `topeCubierto` de `contar`). `tituloLineas` es el título de la lista de
+  líneas ("Búsquedas que fallaron" solo si todas lo son; si no, "Qué faltó
+  en esa corrida"): el frontend no lo decide mirando el texto. El frontend
+  no calcula el estado: lo recibe (`lastRunEstado` y `lastRunFallidas` en
   `/api/monitoring/status`; `estado`, `fallidas` y `recuperadas` en
   `lastRun`; `estado` y `fallidas` por corrida en `/api/inicio`), siempre
-  con el motivo en texto para una persona, nunca el error crudo.
+  con el motivo en texto para una persona, nunca el error crudo: la
+  respuesta de `POST /api/monitoring/run-now` tampoco trae el motivo en
+  código de cada fuente (el scheduler le saca `fuentes`). En el inicio (sin
+  plataforma) la hora es la de la última corrida de cualquier red y el
+  estado va solo si es de ESA corrida (`lastRun.estadoDeLaEscucha`): una
+  corrida a mano de una red en pausa no se muestra con lo que falló en otra.
 - **Ventana y marca por fuente** (`monitor.detectionWindowFor(red, { tipo,
   fuente, now, cubiertoHasta })`): la marca es
   `detection_last_success:<red>:<tipo>:<clave>` en `refresh_state`
@@ -198,8 +213,13 @@ su marca.
   detección de la red: ok → inicio del ciclo; fallo, esperando o salteada →
   no avanza (una fuente sin marca que falla queda con la marca en el inicio
   de su ventana); recuperada → max(marca, lanzamiento de esa corrida);
-  parcial → no avanza la primera vez y sí la segunda seguida; tope lleno sin
-  cubrir → avanza y queda registrado. La marca de la red
+  parcial → no avanza la primera vez y sí la segunda seguida (también si la
+  corrida quedó `esperando` y se la ve cortada recién al levantarla: se
+  mira el intento anterior de ese término, `intentoAnterior`); tope lleno
+  sin cubrir → avanza y queda registrado; si falló el detalle de los
+  resultados sin texto, las búsquedas de este ciclo que los trajeron NO
+  avanzan (`advanceSourceMarks`, `retener`): la corrida siguiente vuelve a
+  pedir esa ventana. La marca de la red
   (`detection_last_success:<red>`) se sigue escribiendo, solo cuando TODAS
   las fuentes avanzaron: es la que usa el código anterior si se vuelve
   atrás. Migración (`migrateDetectionMarks`, marca
@@ -208,9 +228,16 @@ su marca.
   no pide más atrás que la que habría corrido sin el cambio (decisión del
   dueño: el hueco del 5 al 15/11/2026 queda sin cubrir); si el valor
   guardado no coincide con la marca de la red, corrió código anterior en el
-  medio y cada fuente pasa a max(su marca, la de la red). Sacar una fuente,
-  o darla de alta de nuevo, borra su marca (`forgetSourceMark`); las de
-  fuentes que ya no están se limpian al empezar el ciclo.
+  medio y cada fuente pasa a max(su marca, la de la red). La excepción son
+  las keywords de X, que el código anterior pedía siempre con
+  `MONITOR_LOOKBACK`: una sin marca propia no hereda la de la red, arranca
+  como fuente nueva. Sacar una fuente, o darla de alta de nuevo, borra su
+  marca (`forgetSourceMark`); agregar un término que YA está configurado no
+  la toca. Dos entradas con la misma clave son la misma fuente («gcba» y
+  «#gcba»; en las keywords, además, del mismo tipo): la segunda no entra
+  (`addSearch`, `addKeyword`) y, si el archivo trae las dos, el ciclo
+  consulta una sola y lo avisa. Las marcas de fuentes que ya no están se
+  limpian al empezar el ciclo.
 - **`until` y `applyWindow`** (`instagramApidojo.js`): `until` es el día UTC
   en que arranca la ventana (`untilDateFor`, desde el `sinceIso`), calculado
   una vez por consulta; `applyWindow(posts, until)` se queda con todo lo
@@ -236,20 +263,38 @@ su marca.
   se reintenta en el ciclo siguiente y, a los 7 días, `perdida`; el término
   ya no está configurado → `sin_fuente`. La fila se cierra DESPUÉS de
   procesar sus posteos (`cerrarRecuperadas`): si el ciclo se corta en el
-  medio, el siguiente la vuelve a levantar. No hay limitador propio para las
+  medio, el siguiente la vuelve a levantar. Y NO se cierra si le quedaron
+  resultados sin texto sin procesar (falló el detalle, o quedaron fuera de
+  su tope): sigue `esperando` y el ciclo siguiente relee su dataset, gratis,
+  hasta 2 días desde su lanzamiento (`RECOVER_REREAD_MS`). Una levantada
+  que había llenado su tope queda con `tope_lleno` (la marca avanza igual:
+  no se vuelve a pagar esa ventana). No hay limitador propio para las
   búsquedas (no anidan llamadas); la recuperación son lecturas, sin cola.
+  En `src/apify.js`: un corte al leer el cuerpo de una respuesta 200 es un
+  fallo pasajero de red (se reintenta y, si no hay caso, la llamada queda
+  `esperando` con su run, no `error`), y la guarda contra un cuelgue nunca
+  salta antes de que el POST de arranque pueda volver (`asyncGuardMs`: con
+  poco plazo dejaba un run corriendo sin dueño).
 - **Tope por término** (`src/busquedaTope.js`, puro): tope =
   min(`SEARCH_RESULTS_MAX` (2000), max(`raiseLimitForWindow(base, días)`, 2
   × tasa × horas pedidas)), con la tasa = el máximo de resultados por hora
-  de las últimas 6 consultas buenas de ese término
-  (`db.lastSearchCallsForTerm`; el doble si esa consulta llenó su tope).
+  de las consultas buenas de ese término: las últimas 6 y, de las más
+  viejas, hasta 3 de una ventana parecida a la que se pide
+  (`busquedaTope.historiaPara` sobre `db.lastSearchCallsForTerm`, que
+  compara el término en JS: el `lower()` de SQLite no baja las mayúsculas
+  acentuadas; el doble si esa consulta llenó su tope). Sin las parecidas,
+  seis cortas seguidas borraban lo aprendido en la honda.
   Nunca menor que el de antes. Con el tope lleno, UNA segunda consulta de la
   misma ventana con 4 × el tope (`intento` 2), si su costo máximo
   (`apifyCost.maxUsdForSearch`) entra en `SEARCH_EXTRA_MAX_USD_PER_CYCLE`
   (2,00; 0 las apaga), que cubre solo esas segundas consultas; si no entra,
-  `tope_lleno`, la marca avanza y la corrida queda incompleta. El actor no
-  devuelve los resultados por fecha: un tope lleno deja afuera una parte de
-  cada día, no "lo más viejo".
+  `tope_lleno`, la marca avanza y la corrida queda incompleta. Una segunda
+  consulta que falla sin haber creado una corrida en Apify devuelve su
+  lugar en el techo (`presupuesto.liberar`). Si la segunda queda en Apify y
+  al levantarla no llenó su tope, la primera deja de estar marcada
+  (`db.clearTopeLlenoPrimerIntento`). El actor no devuelve los resultados
+  por fecha: un tope lleno deja afuera una parte de cada día, no "lo más
+  viejo".
 - **Corridas hondas** (`src/deepRun.js`, puro; decisión del dueño,
   20/11/2026): `MONITOR_DEEP_HOURS` (horas del cron, hora local del server:
   "8,16") y `MONITOR_DEEP_WINDOW` (default 7 días). Sin las horas no hay
@@ -271,25 +316,36 @@ su marca.
   configuración y la próxima corrida. El estimado sale de lo que trajo cada
   término en consultas de una ventana PARECIDA
   (`busquedaTope.estimarResultados`: lo que trae una búsqueda no crece
-  parejo con la ventana). Cambiar cuántas hondas hay por día es cambiar
-  `MONITOR_DEEP_HOURS`. Costo medido (noviembre 2026, 8 búsquedas): una
-  honda, entre US$ 1,2 y 1,5; una corta, unos 0,2. `server.js` valida las
-  dos variables al arrancar. Test: `test/corridaHonda.test.js`.
+  parejo con la ventana); sin ninguna parecida se extrapola de las que hay
+  y la línea lo avisa ("N sin consultas de esa ventana: el estimado puede
+  quedar corto": pasa en la primera honda). Cambiar cuántas hondas hay por
+  día es cambiar `MONITOR_DEEP_HOURS`. Costo medido (noviembre 2026, 8
+  búsquedas): una honda, entre US$ 1,2 y 1,5; una corta, unos 0,13 (la más
+  cara, 0,17). El costo real (`usd_real`) se concilia recién 10 minutos
+  después de que TERMINÓ el run (`apifyCost.reconcileRealCosts`): una
+  búsqueda honda corre más que eso y leída al cerrar su ciclo dejaba
+  guardado un cobro a medias. `server.js` valida las dos variables al
+  arrancar. Test: `test/corridaHonda.test.js`.
 - **Cuánto dura un ciclo**: con `APIFY_MAX_CONCURRENT` 10 las ocho búsquedas
   corren a la vez; la detección dura como mucho `SEARCH_WAIT_MS`. Después,
   el detalle (hasta 5 min), la clasificación (unos 2 s por posteo nuevo, sin
   techo) y benchmark y refresco como siempre. Si un ciclo sigue corriendo a
   la hora del siguiente, el cron lo saltea.
-- **Lo medido** (sonda autorizada del 16/11/2026, US$ 0,43): con `until` de
-  1 día el actor devolvió el 4 % (macri) y el 19 % (GCBA) de lo publicado en
-  esas 24 h; con 7 días, el 70 % y el 74 %, en 7 a 11 minutos. Ninguna
-  ventana trae todo en una pasada. `MONITOR_MIN_WINDOW` quedó en 1 día: lo
-  hondo va por las corridas hondas. La pasada corta tampoco alcanza para lo
-  importante (comprobación del 20/11/2026: la #57, de 1 día, contra la #56 y
-  la sonda): trajo 8 de las 10 publicaciones de más likes y comentarios,
-  pero la mitad del decil de arriba (23 de 48) y de las de cuentas de más de
-  100 mil seguidores (17 de 31), y de tres de los seis términos casi nada;
-  una sola pasada honda trajo de 7 a 10 de las 10 de más impacto.
+- **Lo medido** (sonda autorizada del 16/11/2026, US$ 0,43; recalculado
+  aparte el 20/11): con `until` de 1 día el actor devolvió entre el 3 y el
+  5 % (macri) y entre el 15 y el 20 % (GCBA) de lo conocido de esas 24 h;
+  con 7 días, cerca del 70 % de lo que se estima que existe (tres cuartos
+  de lo conocido), en 7 a 11 minutos. Ninguna ventana trae todo en una
+  pasada. `MONITOR_MIN_WINDOW` quedó en 1 día: lo hondo va por las corridas
+  hondas. La pasada corta tampoco alcanza para lo importante (comprobación
+  del 20/11/2026: la #57, de 1 día, contra todo lo conocido de esas horas,
+  unas 480 publicaciones): trajo 7 u 8 de las 10 de más likes y
+  comentarios, pero la mitad del decil de arriba y de las de cuentas de más
+  de 100 mil seguidores (17 de 31), un tercio de las de más de 1.000
+  interacciones, y de tres de los seis términos casi nada; y fue una corta
+  excepcional (105 resultados; la mediana de las cortas es 19). Una sola
+  pasada honda trajo de 7 a 10 de las 10 de más impacto y del 70 al 85 % de
+  todo: la segunda honda del día suma rapidez, no cobertura final.
 - `server.js` valida al arrancar `SEARCH_WAIT_MS`, `SEARCH_RUN_TIMEOUT_SECS`,
   `SEARCH_RESULTS_MAX` y `SEARCH_EXTRA_MAX_USD_PER_CYCLE` (como `IG_ACTOR`) y
   muestra una línea con cada grupo y con las tarifas de apidojo en uso.

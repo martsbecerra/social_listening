@@ -1781,21 +1781,30 @@ siguiente.
 **Lo que está medido y todavía no se decidió.** Sonda autorizada del
 16/11/2026 (US$ 0,43), búsquedas "macri" y "GCBA":
 
-| Ventana pedida | De lo publicado en las últimas 24 h, trajo | Tardó | Costó |
+| Ventana pedida | De lo conocido de las últimas 24 h, trajo | Tardó | Costó |
 |---|---|---|---|
-| 1 día | 4 % y 19 % | 27 y 84 s | 0,017 y 0,021 |
+| 1 día | 3 a 5 % y 15 a 20 % | 27 y 84 s | 0,017 y 0,021 |
 | 3 días | 10 % y 2 % | 62 y 20 s | 0,025 y 0,015 |
-| 7 días | 70 % y 74 % | 7 y 11 min | 0,21 y 0,14 |
+| 7 días | cerca del 75 % | 7 y 11 min | 0,21 y 0,14 |
+
+(Los rangos son de dos cuentas hechas por separado, con universos apenas
+distintos. "Lo conocido" es la unión de todas las pasadas: lo que el actor
+no devuelve nunca no se ve, así que los porcentajes son techos.)
 
 Con la ventana de 1 día (la de siempre) el actor devuelve una fracción
-chica de lo publicado; con 7 días, cerca del 70 % por pasada, y dos pasadas
-juntas, entre el 91 y el 95 %. Ninguna ventana trae todo de una vez. Y lo
-que se le escapa a la pasada corta no es solo lo chico (comprobación del
-20/11/2026, la corrida #57 de 1 día contra la #56 y la sonda, 477
-publicaciones): trajo 8 de las 10 de más likes y comentarios, pero la mitad
-del decil de arriba (23 de 48) y de las de cuentas de más de 100 mil
-seguidores (17 de 31), y de tres de los seis términos casi nada. Una sola
-pasada honda trajo de 7 a 10 de las 10 de más impacto de su término.
+chica de lo publicado; con 7 días, cerca del 70 % de lo que se estima que
+existe por pasada, y dos pasadas juntas, entre el 91 y el 95 %. Ninguna
+ventana trae todo de una vez. Y lo que se le escapa a la pasada corta no es
+solo lo chico (comprobación del 20/11/2026, la corrida #57 de 1 día contra
+todo lo conocido de esas horas, unas 480 publicaciones): trajo 7 u 8 de las
+10 de más likes y comentarios, pero la mitad del decil de arriba y de las
+de cuentas de más de 100 mil seguidores (17 de 31), un tercio de las de más
+de 1.000 interacciones, y de tres de los seis términos casi nada. Y la #57
+fue una corta excepcional: trajo 105 resultados, cuando la mediana de las
+cortas del piloto es 19. Una sola pasada honda trajo de 7 a 10 de las 10 de
+más impacto de su término y del 70 al 85 % de todo: una segunda honda en el
+día suma rapidez (lo que una pasada no trajo aparece en la siguiente), no
+cobertura final.
 
 **Corridas hondas.** Una búsqueda de 7 días cuesta bastante más (se paga
 cada resultado, también los ya vistos, que no se vuelven a clasificar), así
@@ -1823,12 +1832,43 @@ que no todas las corridas son hondas: se elige en qué horas del cron
 ```
 
 Costo estimado (medido en noviembre 2026 con 8 búsquedas): una corrida
-honda, entre US$ 1,2 y 1,5; una corta, unos 0,2. Con hondas a las 8 y a las
-16 y cortas a las 12 y a las 20, entre US$ 85 y 110 por mes en búsquedas
-(con las cuatro cortas eran unos 20). La primera honda llena los topes y
-hace hasta dos segundas consultas (unos US$ 0,5 más, una sola vez); después
-el tope de cada término ya sale de su volumen. A eso se suma clasificar lo
-nuevo, que con las hondas son unas 200 a 260 publicaciones por día.
+honda, entre US$ 1,2 y 1,5; una corta, unos 0,13 (la más cara, 0,17). Con
+hondas a las 8 y a las 16 y cortas a las 12 y a las 20, entre US$ 80 y 110
+por mes en búsquedas (con las cuatro cortas eran unos 16 a 20); cada honda
+diaria son unos US$ 37 a 41 por mes. La primera honda llena los topes y
+hace hasta dos segundas consultas (unos US$ 0,5 más, una sola vez; esa
+corrida queda "incompleta", con dos o tres búsquedas en "tope lleno");
+después el tope de cada término ya sale de su volumen. A eso se suma
+clasificar lo nuevo: la primera honda manda al modelo casi todo lo de 7
+días (unas 1.900 publicaciones, más de una hora) y después son unas 200 a
+350 por día. En esa primera honda el log avisa que el estimado puede quedar
+corto ("N sin consultas de esa ventana"): todavía no hay ninguna consulta
+de 7 días de la que sacarlo.
+
+**Lo que corrigió la revisión antes del PR** (20/11/2026, por áreas, con un
+segundo agente intentando refutar cada hallazgo; 20 confirmados, un commit
+por arreglo):
+
+- *Marcas*: agregar una búsqueda que ya está no le borra la marca; dos
+  términos con la misma clave («gcba» y «#gcba») son la misma fuente; las
+  keywords de X no heredan la marca de la red; si falla el detalle de los
+  resultados sin texto, la búsqueda que los trajo no avanza.
+- *Lo que queda en Apify*: una corrida que Apify corta siempre también
+  cuenta para "parcial dos veces seguidas"; una levantada que había llenado
+  su tope queda marcada; no se cierra si le quedaron resultados sin
+  procesar; un corte al leer la respuesta de Apify se reintenta en vez de
+  pagar de nuevo; la guarda no deja un run sin dueño; el costo real no se
+  concilia con el run recién terminado.
+- *Tope*: la historia de un término incluye consultas de una ventana
+  parecida (seis cortas no borran la honda) y no depende del `lower()` de
+  SQLite; una segunda consulta que no llegó a arrancar devuelve su lugar en
+  el techo; un tope lleno dice si lo que falta sigue en Apify o ya se
+  levantó.
+- *Textos*: un término salteado porque sigue en Apify no cuenta como
+  "falló"; una levantada a medias no cuenta como "respondió"; el tooltip
+  del Pipeline no dice "que fallaron" si nada falló; en el inicio el estado
+  es el de la corrida de esa hora; "Actualizar ahora" no devuelve motivos
+  en código; el log avisa cuando el costo estimado sale extrapolado.
 
 **Lo que quedó afuera.** Las publicaciones recuperadas a mano de las
 corridas #55 y #56 no se importaron (decisión del dueño); su costo se puede

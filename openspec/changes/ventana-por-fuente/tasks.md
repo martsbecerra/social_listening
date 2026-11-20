@@ -100,3 +100,14 @@ recuperado de las corridas cortadas) quedó afuera por decisión del dueño.
 - [x] 15.3 `monitor.js`: `detectionWindowFor(…, { minWindowMs })`; el ciclo recibe `pasada`; línea del log con el costo estimado (`busquedaTope.estimarResultados`, `costoDeBusquedas`) (REQ-VPF-18)
 - [x] 15.4 `scheduler.js`: `decidirPasada`, `describeNextRun`, la corrida queda registrada como honda; `server.js` valida las variables
 - [x] 15.5 Tests: `corridaHonda.test.js`; `.env.example`, `CLAUDE.md`, `README.md`
+
+## Phase 16: revisión por áreas antes del PR (20/11/2026)
+
+Cinco revisores y un agente por hallazgo intentando refutarlo; 20 confirmados, un commit por arreglo (design.md, decisión 12).
+
+- [x] 16.1 Marcas: `addSearch` no borra la marca de un término que ya está; misma clave = misma fuente (`addSearch`, `addKeyword`, `removeSearch`, `removeKeyword`, el ciclo); las keywords de X no heredan la marca de la red; si falla el detalle, la búsqueda que trajo esos resultados no avanza
+- [x] 16.2 Lo levantado de Apify: la segunda cortada seguida cuenta; `tope_lleno` en la fila levantada; no se cierra con resultados sin texto sin procesar (hasta 2 días)
+- [x] 16.3 `src/apify.js` y costo: el corte al leer el cuerpo es un fallo pasajero; `asyncGuardMs`; la conciliación espera 10 minutos desde el fin del run
+- [x] 16.4 Tope: `busquedaTope.historiaPara` y `consultasParecidas`; `lastSearchCallsForTerm` compara en JS; `presupuesto.liberar`; `db.clearTopeLlenoPrimerIntento`; el aviso "sin consultas de esa ventana" en la línea del costo
+- [x] 16.5 Estado y textos: salteada = sigue en Apify; levantada a medias = levantada; tope lleno con su segunda consulta; `tituloLineas`; `lastRun.estadoDeLaEscucha`; la respuesta de "Actualizar ahora" sin `fuentes`
+- [x] 16.6 Tests de cada arreglo en `ventanaPorFuente`, `busquedasPendientes`, `topeBusqueda`, `estadoCorrida`, `fuentesPorCorrida`, `apifyCorridaCortada`, `apifyCosts` y `corridaHonda`; suite verde con los dos actores (1010)
