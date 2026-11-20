@@ -141,13 +141,18 @@ function contar(fuentes) {
   // Apify no falló: sigue en Apify. Su fila es `fallo` (deja la corrida
   // incompleta), pero se cuenta y se nombra con las que esperan.
   const salteada = (f) => f.estado === 'fallo' && f.motivo === 'SIGUE_EN_APIFY';
+  // Una búsqueda que quedó en Apify y se levantó después A MEDIAS (Apify la
+  // había cortado) queda `parcial` con `recuperadaEn`: en ESTA corrida no
+  // respondió, igual que una levantada completa (`recuperada`). Lo que dejó
+  // se clasificó y se contó en la corrida que la levantó.
+  const levantadaDespues = (f) => f.recuperadaEn != null;
   return {
     total: reales.length,
-    respondieron: reales.filter((f) => f.estado === 'ok' || f.estado === 'parcial').length,
+    respondieron: reales.filter((f) => f.estado === 'ok' || (f.estado === 'parcial' && !levantadaDespues(f))).length,
     fallidas: de('fallo').filter((f) => !salteada(f)),
     esperando: [...de('esperando'), ...reales.filter(salteada)],
-    parciales: de('parcial'),
-    recuperadas: de('recuperada'),
+    parciales: de('parcial').filter((f) => !levantadaDespues(f)),
+    recuperadas: reales.filter((f) => f.estado === 'recuperada' || (f.estado === 'parcial' && levantadaDespues(f))),
     perdidas: de('perdida'),
     topeLleno: reales.filter((f) => f.topeLleno).map((f) => ({ ...f, segundaEnApify: estadoSegunda(f) === 'esperando' })),
     topeCubierto: reales.filter((f) => !f.topeLleno && estadoSegunda(f) === 'recuperada'),
@@ -228,7 +233,9 @@ function resumenFallidas(fuentes, { estado = null } = {}) {
   for (const f of c.esperando) {
     lineas.push(`${nombreFuente(f)} · ${f.estado === 'fallo' ? motivoTexto(f.motivo) : 'sigue en Apify, se levanta en la próxima corrida'}`);
   }
-  for (const f of levantadas) lineas.push(`${nombreFuente(f)} · ${motivoTexto(f.motivo)} · se levantó después`);
+  for (const f of levantadas) {
+    lineas.push(`${nombreFuente(f)} · ${motivoTexto(f.motivo)} · se levantó después${f.estado === 'parcial' ? ', a medias (Apify la había cortado)' : ''}`);
+  }
   const alTope = (f) => `llegó al tope${f.tope ? ` de ${f.tope} resultados` : ''}`;
   for (const f of c.topeLleno) {
     lineas.push(`${nombreFuente(f)} · ${alTope(f)}: ${f.segundaEnApify ? 'lo que falta sigue en Apify, se levanta en la próxima corrida' : 'puede faltar algo'}`);

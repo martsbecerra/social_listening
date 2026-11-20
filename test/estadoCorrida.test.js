@@ -264,6 +264,18 @@ describe('lo que falló, en textos', () => {
       'Falló 1 de 3 búsquedas: «a».\n1 sigue en Apify: «b»; se levanta en la próxima corrida.\nSu resultado se levantó en una corrida posterior.'
     );
 
+    // Una que quedó en Apify y se levantó después A MEDIAS (Apify la había
+    // cortado): en esta corrida no respondió, como una levantada completa.
+    const aMedias = [fila('macri', 'parcial', { motivo: 'TIMEOUT', recuperadaEn: 12 }), fila('gcba', 'fallo', { motivo: 'HTTP_502' }), fila('blacri', 'ok')];
+    r = rs.resumenFallidas(aMedias);
+    assert.equal(r.pipeline, 'Fallaron 2 de 3 búsquedas: traídas, nuevas y relevantes son de la 1 que respondió.');
+    assert.equal(r.deLasQueRespondieron, 'de la 1 búsqueda que respondió');
+    assert.ok(r.lineas.includes('«macri» · no respondió a tiempo (la búsqueda siguió en Apify) · se levantó después, a medias (Apify la había cortado)'));
+    assert.ok(!r.lineas.includes('«macri» · Apify cortó la corrida'));
+    // Cortada DENTRO de la corrida (sin recuperadaEn): esa sí respondió, a medias.
+    r = rs.resumenFallidas([fila('macri', 'parcial', { motivo: 'RUN_TIMED_OUT' }), fila('gcba', 'fallo', { motivo: 'HTTP_502' }), fila('blacri', 'ok')]);
+    assert.equal(r.pipeline, 'Falló 1 de 3 búsquedas: traídas, nuevas y relevantes son de las 2 que respondieron.');
+
     // Cortada por la cuota: la frase de lo que falló también nombra las dos.
     r = rs.resumenFallidas([fila('a', 'fallo', { motivo: 'QUOTA_EXCEEDED' }), fila('b', 'esperando'), fila('c', 'ok')], { estado: 'cortada' });
     assert.equal(r.pipeline, 'Se cortó por la cuota de Apify: falló 1 de 3 búsquedas y 1 sigue en Apify.');
