@@ -52,11 +52,10 @@
 // run (GET /v2/actor-runs/{id}: usageTotalUsd, chargedEventCounts). Para el
 // actor apidojo, que cobra por consulta y con descuentos por plan que no
 // conocemos de antemano, las llamadas van por el flujo asincrónico:
-// POST /acts/{id}/runs?waitForFinish=60 (arranca el run y espera hasta 60 s
-// en la misma request), GET del run hasta que termine (dentro de
-// REQUEST_TIMEOUT_MS) y GET de los items del dataset. Dos o tres requests
-// en vez de una, sin costo extra: la fila de apify_calls queda con el
-// apify_run_id. El costo NO se lee al terminar: Apify asienta el cobro con
+// POST /acts/{id}/runs (arranca el run y vuelve enseguida con su id), GET
+// del run hasta que termine (dentro del plazo de la llamada) y GET de los
+// items del dataset. Tres requests en vez de una, sin costo extra: la fila
+// de apify_calls queda con el apify_run_id. El costo NO se lee al terminar: Apify asienta el cobro con
 // demora (en el ciclo real del 2026-09-18, leído al terminar el run, 10 de
 // 29 llamadas daban 0 y a las demás les faltaban los posteos extra; minutos
 // después estaba completo). usd_real se concilia más tarde con
@@ -68,11 +67,32 @@
 // no tienen usd_real. Los comentarios del análisis (COMMENTS_ACTOR) van
 // siempre por el asincrónico: con miles de comentarios pasan los 300 s del
 // sincrónico.
+//
+// EL ID DEL RUN NUNCA SE PIERDE (noviembre 2026, ventana-por-fuente)
+// --------------------------------------------------------------------------
+// Hasta noviembre 2026 una llamada que pasaba su tope se cortaba con un
+// Promise.race: el run seguía en Apify, se cobraba, y la app no guardaba ni
+// su id (corridas #55 y #56 del piloto: diez búsquedas cortadas que
+// terminaron bien, US$ 1,57 sin registrar y sus resultados perdidos). Ahora,
+// en el flujo asincrónico:
+//   - el POST que arranca el run no espera; apenas vuelve, la fila de
+//     apify_calls se ABRE con el id (estado en_curso) y se avisa a quien
+//     llamó (onRunStarted). Si el proceso muere ahí, el gasto ya quedó;
+//   - el seguimiento tiene plazo propio; un 5xx, 408, 429, corte de red o
+//     tiempo agotado de ESA lectura se reintenta (los dos 502 de la #56
+//     tiraron búsquedas cuyo run siguió y terminó bien);
+//   - al vencer el plazo el error lleva apifyRunId y runPending: el run NO
+//     se aborta, quien llamó puede levantarlo después (fetchRun,
+//     fetchDatasetItems);
+//   - un run que Apify cortó (FAILED, ABORTED, TIMED-OUT) entrega lo que
+//     dejó en el dataset (err.partialItems), que igual se cobró;
+//   - el POST nunca se reintenta por su cuenta (crearía otro run pago): el
+//     único reintento es el del 402 por runs simultáneos, que no creó nada.
 // ==========================================================================
 
 const { createLimiter } = require('./concurrencyLimiter');
 const { getContext } = require('./usageContext');
-const { recordApifyCall, describeInput } = require('./apifyCost');
+const { recordApifyCall, openApifyCall, closeApifyCall, describeInput } = require('./apifyCost');
 
 // Nombre del actor en la API (el "/" se escribe como "~")
 const APIFY_ACTOR = 'apify~instagram-scraper';
@@ -103,6 +123,34 @@ const CONCURRENT_RUNS_ERROR = 'concurrent-runs-limit-exceeded';
 const REAL_COST_WAIT_SECS = 60;
 const REAL_COST_REQUEST_TIMEOUT_MS = 90000;
 const TERMINAL_STATUSES = ['SUCCEEDED', 'FAILED', 'ABORTED', 'TIMED-OUT'];
+// Reintentos de una lectura del seguimiento (o del dataset) que falló por
+// algo pasajero: esperas crecientes, y la última se repite mientras quede
+// plazo. APIFY_POLL_RETRY_MS (solo para tests) las deja todas en ese valor.
+const POLL_RETRY_DELAYS_MS = [5000, 10000, 20000, 30000];
+function pollRetryDelayMs(attempt) {
+  const fixed = parseDelayMs(process.env.APIFY_POLL_RETRY_MS, null);
+  if (fixed != null) return fixed;
+  return POLL_RETRY_DELAYS_MS[Math.min(attempt, POLL_RETRY_DELAYS_MS.length - 1)];
+}
+// Cuántas veces se reintenta bajar el dataset de un run ya terminado.
+const DATASET_RETRIES = 4;
+// La guarda contra un cuelgue (withTimeout) salta este rato después del
+// plazo propio del flujo asincrónico, que es el que conserva el id del run.
+const ASYNC_GUARD_MS = 30000;
+/**
+ * Cuándo salta esa guarda. Nunca antes de que el POST de arranque pueda
+ * volver o vencer por su propio tope (REAL_COST_REQUEST_TIMEOUT_MS): con
+ * poco plazo (una segunda consulta lanzada en el último minuto de la
+ * espera) y un POST lento, la guarda cerraba la llamada como fallida SIN
+ * run y el run que volvía después quedaba corriendo y pago en una fila que
+ * nadie cerraba ni levantaba. Así, en ese caso raro, la llamada puede pasarse
+ * hasta ese tope del plazo; a cambio queda esperando con su run.
+ */
+function asyncGuardMs(waitMs) {
+  return Math.max(Number(waitMs) || 0, REAL_COST_REQUEST_TIMEOUT_MS) + ASYNC_GUARD_MS;
+}
+// Con menos que esto de plazo no vale la pena arrancar ni seguir esperando.
+const MIN_WAIT_MS = 1000;
 
 // Cuelgue de ~30 minutos visto en vivo (Cambio G): timeout de seguridad por
 // llamada, aparte del REQUEST_TIMEOUT_MS de cada request HTTP individual —
@@ -182,7 +230,9 @@ function isConcurrentRunsError(err) {
  * La duración se mide desde que la llamada obtiene su lugar en la cola.
  *
  * @param {object} input - La configuración (input) que espera el actor.
- * @param {{ actorId?: string, plataforma: string, onQueued?: () => void, onAcquired?: () => void, timeoutMs?: number }} options -
+ * @param {{ actorId?: string, plataforma: string, onQueued?: () => void, onAcquired?: () => void, timeoutMs?: number,
+ *   asincronico?: boolean, deadlineAt?: number, runTimeoutSecs?: number, recuperable?: boolean,
+ *   onRunStarted?: (run: { id: string, datasetId: string|null }) => void }} options -
  *   Actor a correr. Por defecto el oficial (la publicación del análisis,
  *   abajo, no lo pasa); los adapters de src/platforms/ pasan el suyo, así
  *   este módulo queda genérico. plataforma: para la fila de apify_calls,
@@ -193,9 +243,32 @@ function isConcurrentRunsError(err) {
  *   APIFY_CALL_TIMEOUT_MS si no se pasa; uno mayor que REQUEST_TIMEOUT_MS
  *   va siempre por el flujo asincrónico (el sincrónico de Apify corta a
  *   los 300 s) y espera el run hasta ese tope.
+ *   asincronico: fuerza el flujo asincrónico (las búsquedas del monitoreo:
+ *   necesitan el id del run aunque APIFY_REAL_COST=0). deadlineAt: instante
+ *   (ms) hasta el que se espera, en vez de timeoutMs; se mide cuando la
+ *   llamada consigue su cupo, y si ya pasó NO se lanza nada (error code
+ *   NO_LANZADA, sin fila: no hubo llamada). runTimeoutSecs: tope del run en
+ *   Apify (lo corta Apify, no esta app). recuperable: quien llama va a
+ *   levantar después un run que no se llegó a esperar (la fila queda
+ *   `esperando` en vez de `error`) y usa lo que deje un run cortado
+ *   (`parcial`). onRunStarted: aviso apenas Apify devuelve el run.
  * @returns {Promise<Array>} Lista de items scrapeados.
  */
-async function runActorSync(input, { actorId = APIFY_ACTOR, plataforma, onQueued, onAcquired, timeoutMs = APIFY_CALL_TIMEOUT_MS } = {}) {
+async function runActorSync(
+  input,
+  {
+    actorId = APIFY_ACTOR,
+    plataforma,
+    onQueued,
+    onAcquired,
+    timeoutMs = APIFY_CALL_TIMEOUT_MS,
+    asincronico = false,
+    deadlineAt = null,
+    runTimeoutSecs = null,
+    recuperable = false,
+    onRunStarted = null,
+  } = {}
+) {
   if (typeof plataforma !== 'string' || !plataforma.trim()) {
     throw new Error('runActorSync: falta plataforma (instagram | x); no hay default.');
   }
@@ -208,37 +281,79 @@ async function runActorSync(input, { actorId = APIFY_ACTOR, plataforma, onQueued
         /* el aviso no frena la llamada */
       }
     }
+    // Con vencimiento compartido (las búsquedas de un ciclo): lo que queda
+    // se mide recién acá, con el cupo en la mano. Si ya venció no se le pide
+    // nada a Apify.
+    let waitMs = timeoutMs;
+    if (deadlineAt != null) {
+      waitMs = Number(deadlineAt) - Date.now();
+      if (!(waitMs >= MIN_WAIT_MS)) {
+        const e = new Error(`Apify: no se lanzó la consulta${target ? ` (${target})` : ''}: venció la espera antes de conseguir cupo.`);
+        e.code = 'NO_LANZADA';
+        e.userMessage = 'No se llegó a lanzar la consulta: venció la espera de esta corrida.';
+        throw e;
+      }
+    }
     const context = getContext();
     const phase = (context && context.phase) || 'desconocida';
     const startedAt = Date.now();
-    const record = ({ items, error, run }) =>
-      recordApifyCall({
-        runId: context && context.runId != null ? context.runId : null,
-        analisisId: context && context.analisisId != null ? context.analisisId : null,
-        phase,
-        plataforma,
-        actor: actorId,
-        input,
-        items: Array.isArray(items) ? items.length : 0,
+    const base = {
+      runId: context && context.runId != null ? context.runId : null,
+      analisisId: context && context.analisisId != null ? context.analisisId : null,
+      phase,
+      plataforma,
+      actor: actorId,
+      input,
+    };
+    // En el flujo asincrónico la fila se abre cuando Apify devuelve el run
+    // (ver encabezado) y acá solo se cierra; en el sincrónico se registra al
+    // final, como siempre.
+    const handle = { runId: null, datasetId: null, rowId: null };
+    const record = ({ items, error, run }) => {
+      const pending = Boolean(error && error.runPending);
+      const partial = error && Array.isArray(error.partialItems) ? error.partialItems.length : 0;
+      const call = {
+        ...base,
+        items: error ? partial : Array.isArray(items) ? items.length : 0,
         ok: !error,
         error: error ? describeError(error) : null,
         durationMs: Date.now() - startedAt,
         // usd_real queda vacío acá a propósito: se concilia después (ver encabezado).
-        apifyRunId: run ? run.id : (error && error.apifyRunId) || null,
-      });
-    // once() respeta APIFY_CALL_TIMEOUT_MS por intento (Cambio G: un cuelgue
-    // real de ~30 min sin timeout mató el proceso a mano). No cuenta como
-    // "de plataforma" (ver platforms/errors.js): una sola cuenta/hashtag con
+        apifyRunId: run ? run.id : (error && error.apifyRunId) || handle.runId || null,
+        estado: !error ? 'ok' : recuperable && pending ? 'esperando' : recuperable && partial > 0 ? 'parcial' : 'error',
+      };
+      if (handle.rowId != null) closeApifyCall(handle.rowId, call);
+      else recordApifyCall(call);
+    };
+    const started = (run) => {
+      handle.runId = run.id;
+      handle.datasetId = run.datasetId || null;
+      handle.rowId = openApifyCall({ ...base, apifyRunId: run.id });
+      if (typeof onRunStarted === 'function') {
+        try {
+          onRunStarted({ id: run.id, datasetId: run.datasetId || null });
+        } catch {
+          /* el aviso no frena la llamada */
+        }
+      }
+    };
+    // once() respeta el tope por intento (Cambio G: un cuelgue real de ~30
+    // min sin timeout mató el proceso a mano). No cuenta como "de
+    // plataforma" (ver platforms/errors.js): una sola cuenta/hashtag con
     // timeout se loguea y se sigue, no tira abajo el resto del ciclo.
-    const largo = timeoutMs > REQUEST_TIMEOUT_MS;
+    const useAsync = usesRealCost(actorId) || asincronico || waitMs > REQUEST_TIMEOUT_MS;
     const once = () =>
-      withTimeout(
-        usesRealCost(actorId) || largo
-          ? runActorRealCostOnce(input, actorId, { maxWaitMs: Math.max(REQUEST_TIMEOUT_MS, timeoutMs) })
-          : runActorSyncOnce(input, actorId).then((items) => ({ items, run: null })),
-        timeoutMs,
-        target
-      );
+      useAsync
+        ? withTimeout(runActorRealCostOnce(input, actorId, { maxWaitMs: waitMs, runTimeoutSecs, onRunStarted: started }), asyncGuardMs(waitMs), target).catch((err) => {
+            // La guarda saltó con el run ya creado: el id no se pierde.
+            if (err && err.code === 'TIMEOUT' && !err.apifyRunId && handle.runId) {
+              err.apifyRunId = handle.runId;
+              err.datasetId = handle.datasetId;
+              err.runPending = true;
+            }
+            throw err;
+          })
+        : withTimeout(runActorSyncOnce(input, actorId).then((items) => ({ items, run: null })), waitMs, target);
 
     console.log(`[apify] → fase=${phase} target=${target || '(sin target)'} actor=${actorId}`);
     let result;
@@ -258,7 +373,10 @@ async function runActorSync(input, { actorId = APIFY_ACTOR, plataforma, onQueued
     } catch (err) {
       const durationMs = Date.now() - startedAt;
       if (err.code === 'TIMEOUT') {
-        console.error(`[apify] ← TIMEOUT target=${target || '(sin target)'} tras ${durationMs}ms (tope ${timeoutMs}ms)`);
+        console.error(
+          `[apify] ← TIMEOUT target=${target || '(sin target)'} tras ${durationMs}ms (tope ${Math.round(waitMs)}ms)` +
+            (err.apifyRunId ? `; el run ${err.apifyRunId} sigue en Apify${recuperable ? ' y se levanta después' : ''}` : '')
+        );
       } else {
         console.error(`[apify] ← error target=${target || '(sin target)'} en ${durationMs}ms: ${describeError(err)}`);
       }
@@ -284,68 +402,203 @@ async function runActorSyncOnce(input, actorId) {
   return apifyRequest(`${APIFY_BASE}/acts/${actorId}/run-sync-get-dataset-items?token=${token}`, { method: 'POST', body: input });
 }
 
-/**
- * Flujo asincrónico (ver encabezado): arranca el run y espera hasta 60 s,
- * sigue esperando de a 60 s hasta `maxWaitMs` (REQUEST_TIMEOUT_MS si no se
- * pasa) y baja los items del dataset. Devuelve el id del run para conciliar
- * el costo después. Un run que no termina en SUCCEEDED tira con el estado y
- * el statusMessage de Apify (y err.apifyRunId, para la fila de apify_calls).
- * @returns {Promise<{ items: Array, run: { id: string } }>}
- */
-async function runActorRealCostOnce(input, actorId, { maxWaitMs = REQUEST_TIMEOUT_MS } = {}) {
-  const token = encodeURIComponent(process.env.APIFY_API_TOKEN);
-  const t0 = Date.now();
-  // Los endpoints de runs envuelven el objeto en { data: ... }; el de items
-  // del dataset devuelve la lista pelada.
-  const unwrap = (body) => (body && typeof body === 'object' && !Array.isArray(body) && body.data ? body.data : body);
-  const opts = { timeoutMs: REAL_COST_REQUEST_TIMEOUT_MS };
+const unwrapRun = (body) => (body && typeof body === 'object' && !Array.isArray(body) && body.data ? body.data : body);
 
-  let run = unwrap(
-    await apifyRequest(`${APIFY_BASE}/acts/${actorId}/runs?token=${token}&waitForFinish=${REAL_COST_WAIT_SECS}`, { ...opts, method: 'POST', body: input })
+/** ¿Vale la pena reintentar esa lectura? 5xx, 408, 429, corte de red o tiempo agotado de la request. */
+function isTransientReadError(err) {
+  if (!err) return false;
+  if (err.network || err.requestTimeout) return true;
+  const status = Number(err.status);
+  return status >= 500 || status === 408 || status === 429;
+}
+
+/** El error de "se dejó de esperar": el run sigue en Apify con su id. */
+function pendingRunError(run, maxWaitMs, cause) {
+  const e = new Error(
+    `Apify: se superó la espera (${Math.round(maxWaitMs)}ms); el run ${run.id} sigue en ${run.status || 'curso'}` +
+      (cause ? ` (última lectura: ${describeError(cause)})` : '')
+  );
+  e.code = 'TIMEOUT';
+  e.userMessage = 'La consulta a Apify tardó demasiado y se dejó de esperar. Probá de nuevo en unos minutos.';
+  e.apifyRunId = run.id;
+  e.datasetId = run.defaultDatasetId || null;
+  e.runPending = true;
+  return e;
+}
+
+/**
+ * Los items de un dataset, con reintento de los fallos pasajeros. Lectura
+ * de la API: no cuesta ni pasa por la cola.
+ * @param {string} datasetId
+ * @param {{ retries?: number }} [options]
+ * @returns {Promise<Array>}
+ */
+async function fetchDatasetItems(datasetId, { retries = DATASET_RETRIES } = {}) {
+  const token = encodeURIComponent(process.env.APIFY_API_TOKEN);
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      const items = await apifyRequest(`${APIFY_BASE}/datasets/${encodeURIComponent(datasetId)}/items?token=${token}`, { timeoutMs: REAL_COST_REQUEST_TIMEOUT_MS });
+      return Array.isArray(items) ? items : [];
+    } catch (err) {
+      if (!isTransientReadError(err) || attempt >= retries) throw err;
+      await sleep(pollRetryDelayMs(attempt));
+    }
+  }
+}
+
+/**
+ * Flujo asincrónico (ver encabezado): arranca el run sin esperar, lo sigue
+ * de a 60 s hasta `maxWaitMs` (REQUEST_TIMEOUT_MS si no se pasa) y baja los
+ * items del dataset. Devuelve el id del run para conciliar el costo después.
+ * Errores, siempre con err.apifyRunId si el run llegó a existir:
+ *   - venció la espera (o el dataset de un run terminado no se pudo bajar):
+ *     code TIMEOUT y runPending, el run se puede levantar después;
+ *   - el run no terminó en SUCCEEDED: el estado y el statusMessage de
+ *     Apify, runStatus y partialItems (lo que dejó, [] si no se pudo leer);
+ *   - una lectura rechazada sin vuelta (401, 403, 404): tal cual.
+ * @param {{ maxWaitMs?: number, runTimeoutSecs?: number|null, onRunStarted?: (run: { id: string, datasetId: string|null }) => void }} [options]
+ * @returns {Promise<{ items: Array, run: { id: string, datasetId: string|null } }>}
+ */
+async function runActorRealCostOnce(input, actorId, { maxWaitMs = REQUEST_TIMEOUT_MS, runTimeoutSecs = null, onRunStarted = null } = {}) {
+  const token = encodeURIComponent(process.env.APIFY_API_TOKEN);
+  const deadline = Date.now() + maxWaitMs;
+  const secs = Math.floor(Number(runTimeoutSecs));
+  const timeoutParam = Number.isFinite(secs) && secs > 0 ? `&timeout=${secs}` : '';
+
+  // Sin waitForFinish: el POST vuelve enseguida con el id. No se reintenta
+  // (un segundo POST sería otro run pago).
+  let run = unwrapRun(
+    await apifyRequest(`${APIFY_BASE}/acts/${actorId}/runs?token=${token}${timeoutParam}`, { timeoutMs: REAL_COST_REQUEST_TIMEOUT_MS, method: 'POST', body: input })
   );
   if (!run || !run.id) {
     const e = new Error('Apify no devolvió el run al arrancar el actor.');
     e.userMessage = 'El servicio de extracción (Apify) no confirmó la corrida. Intentá de nuevo en unos minutos.';
     throw e;
   }
-  while (!TERMINAL_STATUSES.includes(run.status)) {
-    if (Date.now() - t0 > maxWaitMs) {
-      const e = new Error(`Apify tardó demasiado en responder (run ${run.id} sigue en ${run.status}).`);
-      e.userMessage = 'La extracción tardó demasiado. Probá de nuevo en unos minutos.';
-      e.apifyRunId = run.id;
-      throw e;
+  if (typeof onRunStarted === 'function') {
+    try {
+      onRunStarted({ id: run.id, datasetId: run.defaultDatasetId || null });
+    } catch {
+      /* el aviso no frena la llamada */
     }
-    run = unwrap(await apifyRequest(`${APIFY_BASE}/actor-runs/${run.id}?token=${token}&waitForFinish=${REAL_COST_WAIT_SECS}`, opts));
   }
+
+  let retries = 0;
+  let lastReadError = null;
+  while (!TERMINAL_STATUSES.includes(run.status)) {
+    const remaining = deadline - Date.now();
+    if (remaining < MIN_WAIT_MS) throw pendingRunError(run, maxWaitMs, lastReadError);
+    const waitSecs = Math.max(1, Math.min(REAL_COST_WAIT_SECS, Math.floor(remaining / 1000)));
+    try {
+      const next = unwrapRun(
+        await apifyRequest(`${APIFY_BASE}/actor-runs/${run.id}?token=${token}&waitForFinish=${waitSecs}`, { timeoutMs: (waitSecs + 30) * 1000 })
+      );
+      if (next && next.id) run = next;
+      retries = 0;
+      lastReadError = null;
+    } catch (err) {
+      if (!isTransientReadError(err)) {
+        err.apifyRunId = run.id;
+        throw err;
+      }
+      lastReadError = err;
+      const delay = pollRetryDelayMs(retries);
+      retries += 1;
+      if (Date.now() + delay >= deadline) throw pendingRunError(run, maxWaitMs, err);
+      console.warn(`[apify] el seguimiento del run ${run.id} falló (${describeError(err).slice(0, 80)}); se reintenta en ${delay} ms.`);
+      await sleep(delay);
+    }
+  }
+
   if (run.status !== 'SUCCEEDED') {
     const e = new Error(`El run ${run.id} de Apify terminó en ${run.status}${run.statusMessage ? `: ${run.statusMessage}` : ''}`);
     e.userMessage = `La corrida de Apify terminó en ${run.status}. Revisá el run ${run.id} en la consola de Apify.`;
     e.apifyRunId = run.id;
+    e.runStatus = run.status;
+    // Lo que alcanzó a dejar en el dataset se cobró igual: que no se pierda.
+    e.partialItems = [];
+    if (run.defaultDatasetId) {
+      try {
+        e.partialItems = await fetchDatasetItems(run.defaultDatasetId, { retries: 1 });
+      } catch {
+        /* sin lectura: queda vacío */
+      }
+    }
     throw e;
   }
-  const items = await apifyRequest(`${APIFY_BASE}/datasets/${run.defaultDatasetId}/items?token=${token}`, opts);
-  return { items: Array.isArray(items) ? items : [], run: { id: run.id } };
+
+  let items;
+  try {
+    items = await fetchDatasetItems(run.defaultDatasetId);
+  } catch (err) {
+    // El run terminó bien y sus resultados siguen en Apify: se puede levantar después.
+    if (isTransientReadError(err)) throw pendingRunError(run, maxWaitMs, err);
+    err.apifyRunId = run.id;
+    throw err;
+  }
+  return { items, run: { id: run.id, datasetId: run.defaultDatasetId || null } };
 }
 
 /**
- * Lo que Apify cobró por un run ya terminado: GET /v2/actor-runs/{id}
- * (usageTotalUsd, chargedEventCounts). Es una lectura de la API, no un run:
- * no cuesta ni pasa por la cola. La usa apifyCost.reconcileRealCosts
- * minutos después de que el run terminó, cuando el cobro ya está asentado.
- * @returns {Promise<{ id: string, status: string, usdReal: number|null, chargedEventCounts: object|null, finishedAt: string|null }>}
+ * Un run de Apify tal como está ahora: GET /v2/actor-runs/{id}. Lectura de
+ * la API: no cuesta ni pasa por la cola. Un 404 tira con err.status 404 (el
+ * run ya no existe).
+ * @returns {Promise<{ id: string, status: string|null, datasetId: string|null, statusMessage: string|null,
+ *   startedAt: string|null, finishedAt: string|null, usdReal: number|null, chargedEventCounts: object|null }>}
  */
-async function fetchRunCost(runId) {
+async function fetchRun(runId) {
   const token = encodeURIComponent(process.env.APIFY_API_TOKEN);
-  const body = await apifyRequest(`${APIFY_BASE}/actor-runs/${encodeURIComponent(runId)}?token=${token}`, { timeoutMs: 30000 });
-  const run = body && typeof body === 'object' && body.data ? body.data : body || {};
+  const run = unwrapRun(await apifyRequest(`${APIFY_BASE}/actor-runs/${encodeURIComponent(runId)}?token=${token}`, { timeoutMs: 30000 })) || {};
   const usd = Number(run.usageTotalUsd);
   return {
     id: run.id || runId,
     status: run.status || null,
+    datasetId: run.defaultDatasetId || null,
+    statusMessage: run.statusMessage || null,
+    startedAt: run.startedAt || null,
+    finishedAt: run.finishedAt || null,
     usdReal: run.usageTotalUsd !== undefined && run.usageTotalUsd !== null && Number.isFinite(usd) ? usd : null,
     chargedEventCounts: run.chargedEventCounts || null,
-    finishedAt: run.finishedAt || null,
   };
+}
+
+/**
+ * Las corridas de un actor en Apify, de la más nueva a la más vieja, hasta
+ * `sinceMs`. Lecturas de la API (GET /v2/acts/{id}/runs): no cuestan ni
+ * pasan por la cola. Sirve para encontrar corridas que la app no registró.
+ * @returns {Promise<{ id: string, status: string|null, startedAt: string|null, finishedAt: string|null, usdReal: number|null }[]>}
+ */
+async function listActorRuns(actorId, { sinceMs = 0, max = 2000 } = {}) {
+  const token = encodeURIComponent(process.env.APIFY_API_TOKEN);
+  const out = [];
+  for (let offset = 0; offset < max; offset += 250) {
+    const body = unwrapRun(await apifyRequest(`${APIFY_BASE}/acts/${actorId}/runs?token=${token}&desc=true&limit=250&offset=${offset}`, { timeoutMs: 30000 }));
+    const items = (body && Array.isArray(body.items) && body.items) || [];
+    for (const run of items) {
+      if (sinceMs && Date.parse(run.startedAt) < sinceMs) return out;
+      const usd = Number(run.usageTotalUsd);
+      out.push({
+        id: run.id,
+        status: run.status || null,
+        startedAt: run.startedAt || null,
+        finishedAt: run.finishedAt || null,
+        usdReal: run.usageTotalUsd !== undefined && run.usageTotalUsd !== null && Number.isFinite(usd) ? usd : null,
+      });
+    }
+    if (items.length < 250) break;
+  }
+  return out;
+}
+
+/**
+ * Lo que Apify cobró por un run ya terminado (usageTotalUsd,
+ * chargedEventCounts). La usa apifyCost.reconcileRealCosts minutos después
+ * de que el run terminó, cuando el cobro ya está asentado.
+ * @returns {Promise<{ id: string, status: string, usdReal: number|null, chargedEventCounts: object|null, finishedAt: string|null }>}
+ */
+async function fetchRunCost(runId) {
+  const { id, status, usdReal, chargedEventCounts, finishedAt } = await fetchRun(runId);
+  return { id, status, usdReal, chargedEventCounts, finishedAt };
 }
 
 /**
@@ -373,10 +626,12 @@ async function apifyRequest(url, { method = 'GET', body, timeoutMs = REQUEST_TIM
     if (err.name === 'AbortError') {
       const e = new Error('Apify tardó demasiado en responder.');
       e.userMessage = 'La extracción tardó demasiado. Puede que la publicación tenga muchísimos comentarios. Probá de nuevo o con otra publicación.';
+      e.requestTimeout = true;
       throw e;
     }
     const e = new Error(`Error de red al llamar a Apify: ${err.message}`);
     e.userMessage = 'No se pudo conectar con el servicio de extracción. Revisá tu conexión a internet e intentá de nuevo.';
+    e.network = true;
     throw e;
   } finally {
     clearTimeout(timer);
@@ -385,6 +640,7 @@ async function apifyRequest(url, { method = 'GET', body, timeoutMs = REQUEST_TIM
   if (!resp.ok) {
     const text = await resp.text().catch(() => '');
     const e = new Error(`Apify respondió ${resp.status}: ${text}`);
+    e.status = resp.status;
     // `code` tipificado (ver src/platforms/errors.js): el monitoreo distingue
     // un error de la plataforma entera (clave, cuota, rate limit), que tiene
     // que llegarle al usuario, de un fallo puntual de una fuente. La cuota
@@ -415,7 +671,21 @@ async function apifyRequest(url, { method = 'GET', body, timeoutMs = REQUEST_TIM
     throw e;
   }
 
-  return resp.json();
+  // El cuerpo se lee aparte: fetch() ya resolvió con los headers, y un corte
+  // a mitad del cuerpo (el dataset de una búsqueda honda pesa varios MB) sale
+  // de acá como un TypeError sin tipo. Es un fallo pasajero de red, igual
+  // que el de arriba: quien sigue un run o baja su dataset lo reintenta y,
+  // si no hay caso, la llamada queda esperando con su run y se levanta en
+  // el ciclo siguiente (en vez de darla por fallida y pagarla de nuevo).
+  try {
+    return await resp.json();
+  } catch (err) {
+    const e = new Error(`Error de red al leer la respuesta de Apify: ${(err && err.message) || 'sin detalle'}`);
+    e.userMessage = 'No se pudo conectar con el servicio de extracción. Revisá tu conexión a internet e intentá de nuevo.';
+    if (err && err.name === 'AbortError') e.requestTimeout = true;
+    else e.network = true;
+    throw e;
+  }
 }
 
 /**
@@ -669,10 +939,14 @@ module.exports = {
   ANALISIS_COMMENTS_TIMEOUT_MS,
   runActorSync,
   fetchRunCost,
+  fetchRun,
+  fetchDatasetItems,
+  listActorRuns,
   mapApifyError,
   isQuotaExceededError,
   // Para tests y diagnóstico: el limitador único del proceso y su tope.
   apifyLimiter,
   APIFY_MAX_CONCURRENT,
   APIFY_CALL_TIMEOUT_MS,
+  asyncGuardMs,
 };

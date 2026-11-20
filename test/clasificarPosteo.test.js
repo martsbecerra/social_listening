@@ -233,6 +233,46 @@ describe('clasificarPosteo: una sola llamada, con schema', { concurrency: false 
       console.error = originalError;
     }
   });
+
+  test('onUsage: avisa lo que gastó la llamada, también si falló, sin cambiar el resultado; un error del aviso no frena nada', async () => {
+    const original = llm.requestStructuredAnalysis;
+    const usos = [];
+    const originalError = console.error;
+    console.error = () => {};
+    try {
+      llm.requestStructuredAnalysis = async (req) => ({ parsed: modeloDeReglas(req.userPrompt), usage: { inputTokens: 1500, outputTokens: 80, costUsd: 0.0038 }, attempts: 1 });
+      const conAviso = await classifier.clasificarPosteo('Jorge Macri inauguró una escuela', { onUsage: (u) => usos.push(u) });
+      const sinAviso = await classifier.clasificarPosteo('Jorge Macri inauguró una escuela');
+      assert.deepEqual(conAviso, sinAviso, 'el resultado tiene la misma forma con o sin aviso');
+      assert.deepEqual(usos, [{ inputTokens: 1500, outputTokens: 80, costUsd: 0.0038 }]);
+
+      // Un intento fallido también se cobra: lo gastado viaja en el error.
+      llm.requestStructuredAnalysis = async () => {
+        const e = new Error('OpenRouter falló: HTTP 500');
+        e.isApiFailure = true;
+        e.tokenUsage = { inputTokens: 1500, outputTokens: 0, costUsd: 0.003 };
+        throw e;
+      };
+      const caido = await classifier.clasificarPosteo('Jorge Macri inauguró una escuela', { onUsage: (u) => usos.push(u) });
+      assert.equal(caido.unclassified, true);
+      assert.equal(usos.length, 2);
+      assert.equal(usos[1].costUsd, 0.003);
+
+      // El aviso que tira no rompe la clasificación; sin caption no hay llamada ni aviso.
+      llm.requestStructuredAnalysis = async (req) => ({ parsed: modeloDeReglas(req.userPrompt), usage: { inputTokens: 1, outputTokens: 1, costUsd: 0.001 }, attempts: 1 });
+      const igual = await classifier.clasificarPosteo('Jorge Macri inauguró una escuela', {
+        onUsage: () => {
+          throw new Error('aviso roto');
+        },
+      });
+      assert.equal(igual.relevant, true);
+      await classifier.clasificarPosteo('   ', { onUsage: (u) => usos.push(u) });
+      assert.equal(usos.length, 2);
+    } finally {
+      llm.requestStructuredAnalysis = original;
+      console.error = originalError;
+    }
+  });
 });
 
 describe('evaluateRelevance: el modelo decide, la keyword es una pista', { concurrency: false }, () => {

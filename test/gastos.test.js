@@ -68,6 +68,19 @@ llamada(runManual, '2026-09-26T21:51:00.000Z', { phase: 'busqueda', queryType: '
   w.close();
 }
 
+// Lo que decidió el monitoreo sobre los resultados de esas búsquedas
+// (search_seen): uno que trajeron los dos términos y se descartó, uno solo
+// de "jorge macri" que se guardó, uno solo de "ciudad" sin texto, y uno
+// anterior al período.
+const visto = (postId, extra) => db.markSearchSeen({ postId, plataforma: 'instagram', firstSeenAt: '2026-09-25T23:05:00.000Z', ...extra });
+visto('p1', { term: 'jorge macri', terminos: ['jorge macri', 'Ciudad'], outcome: 'descartado', llmUsd: 0.01, runId: runCron });
+visto('p2', { term: 'jorge macri', terminos: ['jorge macri'], outcome: 'guardado', llmUsd: 0.012, runId: runCron });
+visto('p3', { term: 'ciudad', outcome: 'sin_caption' });
+visto('p4', { term: 'ciudad', terminos: ['ciudad'], outcome: 'descartado', llmUsd: 0.5, firstSeenAt: '2026-09-23T11:02:00.000Z' });
+// En la corrida cron una búsqueda falló: es una corrida incompleta.
+db.startRunSource({ runId: runCron, plataforma: 'instagram', tipo: 'busqueda', fuente: 'jorge macri', clave: 'jorge macri', estado: 'ok', finishedAt: '2026-09-25T23:01:00.000Z' });
+db.startRunSource({ runId: runCron, plataforma: 'instagram', tipo: 'busqueda', fuente: 'otra', clave: 'otra', estado: 'fallo', motivo: 'TIMEOUT', finishedAt: '2026-09-25T23:06:00.000Z' });
+
 // Sin corrida: validación de una cuenta agregada a mano.
 llamada(null, '2026-09-26T12:00:00.000Z', { phase: 'validacion', queryType: 'user', target: 'nueva', items: 1, usd: 0.005, usdReal: 0.005, apifyRunId: 'r10' });
 
@@ -219,11 +232,12 @@ describe('scripts/gastos.js', { concurrency: false }, () => {
     const texto = lines.join('\n');
     assert.match(texto, /Período: 25\/09\/2026 19:00 → 26\/09\/2026 19:00 \(últimas 24 horas\)/);
     assert.match(texto, /== 1\. Por corrida\n/);
-    assert.match(texto, new RegExp(`#${runCron}\\s+25/09 20:00\\s+25/09 20:31\\s+31 min\\s+7\\s+117\\s+0\\.128\\s+0\\.114\\*`));
+    assert.match(texto, new RegExp(`#${runCron}~\\s+25/09 20:00\\s+25/09 20:31\\s+31 min\\s+7\\s+117\\s+0\\.128\\s+0\\.114\\*`));
     assert.match(texto, new RegExp(`#${runManual}\\*!\\s+26/09 18:50\\s+-\\s+en curso\\s+1\\s+20\\s+0\\.015\\s+0\\.000\\*`));
     assert.match(texto, /total\s+8\s+137\s+0\.143\s+0\.114\*/);
     assert.match(texto, /\* = corrida manual/);
     assert.match(texto, /! = alguna llamada cortó por la cuota/);
+    assert.match(texto, /~ = alguna búsqueda falló o llegó al tope \(corrida incompleta\)/);
     assert.match(texto, /== 2\. Por corrida y fase/);
     assert.match(texto, new RegExp(`#${runCron}  25/09 20:00 → 25/09 20:31 · cron · instagram · 5 posteos nuevos`));
     assert.match(texto, new RegExp(`#${runManual}  26/09 18:50 → en curso · manual · instagram · 0 posteos nuevos`));
@@ -231,9 +245,14 @@ describe('scripts/gastos.js', { concurrency: false }, () => {
     assert.match(texto, /detalle\s+1\s+30\s+0\.069\s+0\.069\n/);
     assert.match(texto, /otras \(monitoreo\)\s+1\s+30\s+0\.015\s+0\.015/);
     assert.match(texto, /== 3\. Por término de búsqueda/);
-    assert.match(texto, /jorge macri\s+2\s+45\s+0\.033\s+0\.019\*/);
-    assert.match(texto, /ciudad\s+1\s+10\s+0\.015\s+0\.000\*/);
-    assert.match(texto, /total \(2 términos\)\s+3\s+55\s+0\.048\s+0\.019\*/);
+    // término · consultas · resultados · nuevos · únicos · guardados ·
+    // descartados · sin evaluar · US$ Apify (real + estimado de lo que falta
+    // conciliar) · US$ modelo (el de un posteo de dos términos, repartido).
+    assert.match(texto, /término\s+cons\.\s*result\.\s+nuevos\s+únicos\s+guard\.\s+desc\.\s+s\/ev\.\s+Apify\s+modelo/);
+    assert.match(texto, /jorge macri\s+2\s+45\s+2\s+1\s+1\s+1\s+0\s+0\.034\*\s+0\.017/);
+    assert.match(texto, /ciudad\s+1\s+10\s+2\s+1\s+0\s+1\s+1\s+0\.015\*\s+0\.005/);
+    assert.match(texto, /total \(2\)\s+3\s+55\s+3\s+2\s+1\s+1\s+1\s+0\.049\*\s+0\.022/);
+    assert.doesNotMatch(texto, /Base anterior a noviembre 2026/);
     assert.match(texto, /== 4\. Total del período/);
     assert.match(texto, /corridas: 2 \(1 cron, 1 manuales\) · posteos nuevos: 5/);
     assert.match(texto, /llamadas: 10 \(1 fallidas\) · resultados: 148/);
@@ -249,13 +268,57 @@ describe('scripts/gastos.js', { concurrency: false }, () => {
     assert.match(vacio, /llamadas: 0 \(0 fallidas\) · resultados: 0/);
   });
 
+  test('rendimiento por término: nuevos, únicos, guardados, descartados y costo del modelo; un término con mayúsculas es el mismo', () => {
+    const r = gastos.buildReport({ desdeIso: DESDE, now: NOW });
+    const de = (termino) => r.terminos.find((t) => t.termino === termino);
+    const macri = de('jorge macri');
+    assert.deepEqual(
+      [macri.nuevos, macri.unicos, macri.guardados, macri.descartados, macri.sinEvaluar],
+      [2, 1, 1, 1, 0]
+    );
+    near(macri.usdModelo, 0.005 + 0.012, 'la mitad del que trajeron los dos términos, más el propio');
+    const ciudad = de('ciudad');
+    assert.deepEqual([ciudad.nuevos, ciudad.unicos, ciudad.guardados, ciudad.descartados, ciudad.sinEvaluar], [2, 1, 0, 1, 1]);
+    near(ciudad.usdModelo, 0.005);
+    assert.equal(r.rendimiento.completo, true);
+    assert.deepEqual(
+      [r.rendimiento.total.nuevos, r.rendimiento.total.unicos, r.rendimiento.total.guardados, r.rendimiento.total.descartados, r.rendimiento.total.sinEvaluar],
+      [3, 2, 1, 1, 1],
+      'el total cuenta cada posteo una vez'
+    );
+    near(r.rendimiento.total.usdModelo, 0.022);
+    assert.equal(r.corridas.find((c) => c.id === runCron).incompleta, true);
+    assert.equal(r.corridas.find((c) => c.id === runManual).incompleta, false);
+
+    // Una base anterior a noviembre 2026 (search_seen sin las columnas nuevas, sin la tabla de fuentes): avisa y no tira.
+    const viejaPath = path.join(tmp, 'vieja.db');
+    const vieja = new DatabaseSync(viejaPath);
+    vieja.exec(`
+      CREATE TABLE monitoring_runs (id INTEGER PRIMARY KEY, started_at TEXT, finished_at TEXT, "trigger" TEXT, plataforma TEXT, new_posts INTEGER, quota_exceeded INTEGER);
+      CREATE TABLE apify_calls (id INTEGER PRIMARY KEY, at TEXT, run_id INTEGER, phase TEXT, plataforma TEXT, target TEXT, items INTEGER, ok INTEGER, error TEXT, usd REAL, actor TEXT, query_type TEXT, usd_real REAL, apify_run_id TEXT);
+      CREATE TABLE search_seen (post_id TEXT, plataforma TEXT, url TEXT, term TEXT, outcome TEXT, first_seen_at TEXT);
+      INSERT INTO monitoring_runs VALUES (1, '2026-09-25T23:00:00.000Z', '2026-09-25T23:10:00.000Z', 'cron', 'instagram', 0, 0);
+      INSERT INTO apify_calls VALUES (1, '2026-09-25T23:01:00.000Z', 1, 'busqueda', 'instagram', 'macri', 4, 1, NULL, 0.015, '${APIDOJO}', 'search', 0.017, 'r');
+      INSERT INTO search_seen VALUES ('a', 'instagram', NULL, 'macri', 'descartado', '2026-09-25T23:02:00.000Z');
+    `);
+    vieja.close();
+    const rv = gastos.buildReport({ dbPath: viejaPath, desdeIso: DESDE, now: NOW });
+    assert.equal(rv.rendimiento.completo, false);
+    assert.equal(rv.terminos[0].descartados, 1);
+    assert.equal(rv.corridas[0].incompleta, false);
+    const textoViejo = gastos.render(rv).join('\n');
+    assert.match(textoViejo, /macri\s+1\s+4\s+1\s+1\s+0\s+1\s+0\s+0\.017\s+-/);
+    assert.match(textoViejo, /Base anterior a noviembre 2026/);
+    for (const line of gastos.render(rv)) if (!line.startsWith('Base:')) assert.ok(line.length <= gastos.ANCHO_MAX, line);
+  });
+
   test('como proceso aparte: imprime las cuatro tablas, --ayuda muestra el uso y un --desde inválido sale con 1', () => {
     const env = { ...process.env, MONITORING_DB_PATH: DB_PATH };
     const salida = execFileSync(process.execPath, [SCRIPT, '--desde', '2026-09-25 20:00'], { env, encoding: 'utf8' });
     for (const titulo of ['== 1. Por corrida', '== 2. Por corrida y fase', '== 3. Por término de búsqueda', '== 4. Total del período']) {
       assert.ok(salida.includes(titulo), titulo);
     }
-    assert.ok(salida.includes(`#${runCron} `), 'la corrida cron del 25/09 20:00 entra (inicio == desde)');
+    assert.ok(salida.includes(`#${runCron}~ `), 'la corrida cron del 25/09 20:00 entra (inicio == desde), marcada incompleta');
     assert.ok(salida.includes('jorge macri'));
     assert.ok(!salida.includes('(últimas 24 horas)'));
 

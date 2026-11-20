@@ -188,11 +188,23 @@ function logClassifierFailure(err) {
  * @param {{ platformLabel?: string, pista?: object|null }} [options]
  *   platformLabel: etiqueta de la red para el prompt; pista: cómo llegó el
  *   posteo (ver renderContexto), va como contexto para el modelo.
+ *   onUsage: aviso con lo que gastó la llamada al modelo ({ inputTokens,
+ *   outputTokens, costUsd… }), también si falló; lo usa el monitoreo para
+ *   anotar el costo de cada clasificación. No cambia el resultado y un error
+ *   suyo no frena nada.
  * @returns {Promise<{ relevant: boolean, title: string|null, sentiment: string|null, tema: string|null, motivo: string|null, unclassified?: true }>}
  *   tema: una de TEMAS (nombre canónico de la categoría); null solo si no
  *   se pudo clasificar.
  */
-async function clasificarPosteo(caption, { platformLabel = DEFAULT_PLATFORM_LABEL, pista = null } = {}) {
+async function clasificarPosteo(caption, { platformLabel = DEFAULT_PLATFORM_LABEL, pista = null, onUsage = null } = {}) {
+  const avisarUso = (usage) => {
+    if (typeof onUsage !== 'function' || !usage) return;
+    try {
+      onUsage(usage);
+    } catch {
+      /* el aviso no frena la clasificación */
+    }
+  };
   if (!caption || !caption.trim()) {
     // Nada que evaluar; quien llama decide qué hacer con un posteo sin texto
     // (evaluateRelevance ni siquiera llega acá). El backfill sí puede llegar
@@ -201,7 +213,7 @@ async function clasificarPosteo(caption, { platformLabel = DEFAULT_PLATFORM_LABE
   }
 
   try {
-    const { parsed } = await llm.requestStructuredAnalysis({
+    const { parsed, usage } = await llm.requestStructuredAnalysis({
       system: systemPrompt(platformLabel),
       userPrompt: buildUserPrompt(caption, { pista, platformLabel }),
       schema: CLASIFICACION_SCHEMA,
@@ -209,6 +221,7 @@ async function clasificarPosteo(caption, { platformLabel = DEFAULT_PLATFORM_LABE
       maxTokens: MAX_TOKENS,
       timeoutMs: TIMEOUT_MS,
     });
+    avisarUso(usage);
 
     if (!parsed || typeof parsed.relevant !== 'boolean') {
       throw new Error('el modelo no devolvió un campo "relevant" booleano');
@@ -229,6 +242,8 @@ async function clasificarPosteo(caption, { platformLabel = DEFAULT_PLATFORM_LABE
 
     return { relevant: true, title, sentiment, tema, motivo };
   } catch (err) {
+    // Un intento fallido también se cobra (err.tokenUsage, ver src/llm/errors.js).
+    avisarUso(err && err.tokenUsage);
     logClassifierFailure(err);
     return unclassifiedResult();
   }

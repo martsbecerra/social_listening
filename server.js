@@ -23,11 +23,17 @@ require('dotenv').config();
 const { resolveIgActor } = require('./src/platforms/igActor');
 const { resolveRefreshMode } = require('./src/refreshMode');
 const { resolveReachRule, describeReachRule } = require('./src/reachRule');
+const { resolveSearchWait, describeSearchWait } = require('./src/searchWait');
+const { resolveTopeConfig, describeTopeConfig } = require('./src/busquedaTope');
+const { resolveDeepConfig, describeDeepConfig } = require('./src/deepRun');
 const { resolveSessionConfig, describeSessionConfig } = require('./src/auth/sessionConfig');
 const { resolveBackfillMax } = require('./src/backfillConfig');
 try {
   resolveIgActor();
   resolveRefreshMode();
+  resolveSearchWait();
+  resolveTopeConfig();
+  resolveDeepConfig();
   resolveReachRule();
   resolveSessionConfig();
   resolveBackfillMax();
@@ -78,7 +84,7 @@ const { processPendingReclamos, processPendingReclamosInBackground, reintentarSi
 const geoReproceso = require('./src/geo/reproceso');
 const accountStats = require('./src/accountStats');
 const postImageRoutes = require('./src/postImageRoutes');
-const { buildLastRun } = require('./src/lastRun');
+const { buildLastRun, estadoDeLaEscucha } = require('./src/lastRun');
 const statsRoutes = require('./src/statsRoutes');
 const publicResumen = require('./src/publicResumen');
 const inicioRoutes = require('./src/inicioRoutes');
@@ -397,6 +403,18 @@ app.get('/api/monitoring/status', (req, res) => {
       console.error('Error armando el resumen de la última corrida:', err.message);
     }
   }
+  // Sin plataforma (el inicio): cómo salió la última corrida de las redes
+  // del ciclo automático, solo si es la misma de `lastRunAt` (la hora que
+  // se muestra): una corrida a mano de una red en pausa no lleva el estado
+  // de otra. Con plataforma va dentro de lastRun.
+  let ultimaDelCron = null;
+  if (!plataforma) {
+    try {
+      ultimaDelCron = estadoDeLaEscucha(CRON_PLATFORMS, lastRunAt);
+    } catch (err) {
+      console.error('Error armando el estado de la última corrida:', err.message);
+    }
+  }
   let model = null;
   try {
     model = getAnalysisModel();
@@ -410,6 +428,10 @@ app.get('/api/monitoring/status', (req, res) => {
     lastRunAt,
     runHours: getRunHours(),
     lastRun,
+    // ok | incompleta | cortada, y qué falló en textos para una persona
+    // (src/runStatus.js). Nunca el error crudo.
+    lastRunEstado: plataforma ? (lastRun ? lastRun.estado : null) : ultimaDelCron ? ultimaDelCron.estado : null,
+    lastRunFallidas: plataforma ? (lastRun ? lastRun.fallidas : null) : ultimaDelCron ? ultimaDelCron.fallidas : null,
     model,
   });
 });
@@ -653,6 +675,10 @@ const server = app.listen(PORT, () => {
       resolveRefreshMode() === 'url' ? 'por URL con apify~instagram-scraper, 0,0023 usd por posteo' : 'por perfil con el actor del monitoreo'
     })`
   );
+  console.log(`   Tarifas de apidojo (APIDOJO_*, usd estimado hasta conciliar el real): ${require('./src/apifyCost').describeApidojoRates()}`);
+  console.log(`   Búsquedas (SEARCH_WAIT_MS, SEARCH_RUN_TIMEOUT_SECS): ${describeSearchWait(resolveSearchWait())}`);
+  console.log(`   Tope de las búsquedas (SEARCH_RESULTS_MAX, SEARCH_EXTRA_MAX_USD_PER_CYCLE): ${describeTopeConfig(resolveTopeConfig())}`);
+  console.log(`   Corridas hondas (MONITOR_DEEP_HOURS, MONITOR_DEEP_WINDOW): ${describeDeepConfig(resolveDeepConfig())}`);
   console.log(`   Alcance (REACH_*): ${describeReachRule(resolveReachRule())}`);
   console.log(
     `   Límites del análisis: COMMENTS_LIMIT (Apify, comentarios y respuestas)=${resolveCommentsLimit()}, COMMENTS_ANALYSIS_LIMIT (modelo)=${resolveMaxCommentsLimit()}, en tandas de ${BATCH_SIZE}; pide confirmación con más de ${confirmarDesde()} comentarios · X: X_COMMENTS_ANALYSIS_LIMIT=${resolveXMaxItems()}`

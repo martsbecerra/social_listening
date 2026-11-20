@@ -123,10 +123,21 @@ function homeRenderState(el, red) {
     return;
   }
   const last = Date.parse(red.lastRunAt);
-  if (Number.isFinite(last)) el.dataset.tip = `Última corrida terminada: ${homeWhenText(red.lastRunAt)}`;
+  // Cómo salió esa corrida (lo calcula el backend, src/runStatus.js): si no
+  // salió del todo bien, el tooltip dice qué pasó.
+  const run = red.lastRun;
+  const noOk = Boolean(run && HOME_WARN_STATES.includes(run.estado));
+  if (Number.isFinite(last)) {
+    const queFallo = noOk ? ` · ${run.fallidas && run.fallidas.frase ? run.fallidas.frase : run.estado}.` : '';
+    el.dataset.tip = `Última corrida terminada: ${homeWhenText(red.lastRunAt)}${queFallo}`;
+  }
   if (!red.enCron) {
     el.classList.add('pause');
     text.textContent = 'en pausa';
+  } else if (Number.isFinite(last) && Date.now() - last < HOME_FRESH_MS && noOk) {
+    // El ámbar va solo en el punto (como "en pausa").
+    el.classList.add('warn');
+    text.textContent = run.estado;
   } else if (Number.isFinite(last) && Date.now() - last < HOME_FRESH_MS) {
     el.classList.add('live');
     text.textContent = 'escuchando';
@@ -261,10 +272,17 @@ function homeTick() {
 // nombre es largo para el lugar que hay entre dos horas].
 const HOME_RUN_STATES = {
   ok: ['ok', 'terminada'],
+  // Terminó, pero alguna búsqueda falló, sigue en Apify o llenó su tope.
+  incompleta: ['part', 'incompleta'],
   cortada: ['cut', 'cortada'],
   'en curso': ['live', 'en curso'],
   interrumpida: ['stop', 'interrumpida', 'se cayó'],
 };
+
+// Los estados de una corrida que terminó pero no del todo bien.
+const HOME_WARN_STATES = ['incompleta', 'cortada'];
+// Cuántas fuentes caídas se nombran en un tooltip antes de "… y N más".
+const HOME_TIP_LINES = 4;
 
 function homeRunName(run) {
   return (HOME_RUN_STATES[run.estado] || ['', run.estado])[1];
@@ -275,12 +293,22 @@ function homeRunTip(run) {
   if (run.trigger === 'manual') parts[0] = `A mano · ${parts[0]}`;
   if (run.estado === 'cortada') parts.push('Se cortó por la cuota de Apify.');
   if (run.estado === 'interrumpida') parts.push('Arrancó y no terminó: el proceso se cortó en el medio.');
-  if (run.estado === 'ok' || run.estado === 'cortada') {
+  // Qué faltó (run.fallidas, ya escrito por el backend): el título y una
+  // línea por fuente, las primeras.
+  const fallidas = run.fallidas;
+  if (fallidas && run.estado === 'incompleta') {
+    const lineas = Array.isArray(fallidas.lineas) ? fallidas.lineas : [];
+    parts.push(lineas.length ? `${fallidas.titulo}:` : `${fallidas.titulo}.`);
+    parts.push(...lineas.slice(0, HOME_TIP_LINES));
+    if (lineas.length > HOME_TIP_LINES) parts.push(`… y ${lineas.length - HOME_TIP_LINES} más`);
+  }
+  if (run.estado === 'ok' || run.estado === 'cortada' || run.estado === 'incompleta') {
     // Sin números: la corrida fue de varias redes y los suyos son de todas.
+    const deLasQue = fallidas && fallidas.deLasQueRespondieron ? ` (${fallidas.deLasQueRespondieron})` : '';
     parts.push(
       run.nuevas === null && run.guardadas === null
         ? 'Corrida de varias redes: sus números no son solo de esta.'
-        : `${homeCount(run.nuevas)} nuevas · ${homeCount(run.guardadas)} relevantes guardadas`
+        : `${homeCount(run.nuevas)} nuevas · ${homeCount(run.guardadas)} relevantes guardadas${deLasQue}`
     );
   }
   return parts.join('\n');
@@ -320,7 +348,7 @@ function homeRenderTrack() {
       if (cls) el.classList.add(cls);
       small.textContent = run.estado === 'ok' && Number.isFinite(run.nuevas) ? `${HOME_INT.format(run.nuevas)} nuevas` : short || name;
       el.dataset.tip = homeRunTip(run);
-      state = name;
+      state = run.estado === 'incompleta' && run.fallidas && run.fallidas.frase ? `${name}, ${run.fallidas.frase}` : name;
     } else if (hour < nowHours - 0.25) {
       el.classList.add('miss');
       small.textContent = 'no corrió';
@@ -339,6 +367,8 @@ function homeRenderTrack() {
   runs.forEach((run, i) => {
     if (used.has(i)) return;
     const el = homeNode('span', 'run extra');
+    // Una corrida a mano que no salió del todo bien: su puntito, en ámbar.
+    if (HOME_WARN_STATES.includes(run.estado)) el.classList.add(HOME_RUN_STATES[run.estado][0]);
     el.style.left = `${(homeArHours(Date.parse(run.startedAt)) / 24) * 100}%`;
     el.dataset.tip = homeRunTip(run);
     track.appendChild(el);
@@ -387,7 +417,7 @@ function homeRenderLastRun() {
     return el;
   };
   const list = [
-    chip(homeCount(run.fetched), 'traídas', 'Resultados de las búsquedas de esa corrida.'),
+    chip(homeCount(run.fetched), 'traídas', `Resultados de las búsquedas de esa corrida.${run.recuperadas ? `\n${run.recuperadas}` : ''}`),
     chip(
       homeCount(run.newCandidates),
       'nuevas',
@@ -400,6 +430,22 @@ function homeRenderLastRun() {
     usd.appendChild(homeNode('b', '', `US$ ${HOME_USD.format(run.usd)}`));
     usd.dataset.tip = 'Costo estimado de Apify de esa corrida.';
     list.push(usd);
+  }
+  // Si la corrida no salió del todo bien: un chip más, con su punto ámbar,
+  // con qué pasó; la lista de fuentes, en el tooltip y para el lector.
+  if (HOME_WARN_STATES.includes(run.estado)) {
+    const fallidas = run.fallidas;
+    const warn = homeNode('span', 'warn');
+    const dot = homeNode('i');
+    dot.setAttribute('aria-hidden', 'true');
+    warn.append(dot, fallidas && fallidas.chip ? fallidas.chip : run.estado);
+    const lineas = fallidas && Array.isArray(fallidas.lineas) ? fallidas.lineas : [];
+    if (lineas.length) {
+      warn.dataset.tip = lineas.join('\n');
+      warn.tabIndex = 0;
+      warn.appendChild(homeNode('span', 'sr', `: ${lineas.join('. ')}.`));
+    }
+    list.push(warn);
   }
   chips.replaceChildren(...list);
 }

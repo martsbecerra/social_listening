@@ -25,10 +25,12 @@ const { refreshStaleAccountStats, benchmarkLimiter } = require('./accountStats')
 const { refreshPostMetrics, refreshLimiter } = require('./metricsRefresh');
 const { runWithContext } = require('./usageContext');
 const { formatCycleCostLine, reconcileRealCosts } = require('./apifyCost');
+const { estadoCorrida, resumenParaLog, resumenFallidas } = require('./runStatus');
 const { apifyLimiter } = require('./apify');
 const { imageLimiter } = require('./postImages');
 const postImageSync = require('./postImageSync');
 const progress = require('./monitoringProgress');
+const deepRun = require('./deepRun');
 
 // Corridas a las 8, 12, 16 y 20 (hora local del server): sin las de 0 y 4,
 // que costaban lo mismo y casi no traían nada. Configurable con MONITOR_CRON.
@@ -51,6 +53,12 @@ const DEFAULT_CRON_PLATFORMS = ['instagram'];
 // activo mientras corre un ciclo, sin flag de DEBUG (a propósito).
 const HEARTBEAT_STALE_MS = 15000;
 const HEARTBEAT_CHECK_MS = 15000;
+// Desde noviembre 2026 las búsquedas pueden esperar hasta SEARCH_WAIT_MS (15
+// min) a que su corrida termine en Apify: es una espera normal, no un
+// cuelgue. Pasado el primer minuto sin actividad el aviso baja a uno por
+// minuto, para no llenar el log con sesenta líneas iguales.
+const HEARTBEAT_QUIET_AFTER_MS = 60000;
+const HEARTBEAT_QUIET_EVERY_MS = 60000;
 
 // Momento en que terminó la última corrida (cron o "Actualizar ahora"), para
 // el pie de página. En memoria nomás: si el server reinicia, vuelve a null
@@ -226,17 +234,32 @@ function formatActiveTargets(limiter) {
 }
 
 /**
+ * ¿Toca avisar? Con menos de HEARTBEAT_STALE_MS sin actividad, no. El primer
+ * minuto, en cada chequeo. Después, una vez por minuto: `sinceLastLogMs` es
+ * cuánto pasó desde el último aviso.
+ */
+function heartbeatDue(idleMs, sinceLastLogMs) {
+  if (idleMs < HEARTBEAT_STALE_MS) return false;
+  if (idleMs < HEARTBEAT_QUIET_AFTER_MS) return true;
+  return sinceLastLogMs >= HEARTBEAT_QUIET_EVERY_MS;
+}
+
+/**
  * Mientras corre un ciclo: si pasan HEARTBEAT_STALE_MS sin que se registre
  * ningún tick de progreso, loguea la fase actual y qué está activo en cada
  * limitador. Se repite cada vez que el chequeo encuentra que sigue sin
- * actividad — mientras el cuelgue continúe, sigue avisando.
+ * actividad — mientras el cuelgue continúe, sigue avisando: cada 15 s el
+ * primer minuto y después una vez por minuto (ver heartbeatDue).
  */
 function startHeartbeat() {
+  let lastLogAt = 0;
   return setInterval(() => {
     const lastActivityAt = progress.getLastActivityAt();
     if (lastActivityAt == null) return;
-    const idleMs = Date.now() - lastActivityAt;
-    if (idleMs < HEARTBEAT_STALE_MS) return;
+    const now = Date.now();
+    const idleMs = now - lastActivityAt;
+    if (!heartbeatDue(idleMs, now - lastLogAt)) return;
+    lastLogAt = now;
 
     const current = progress.getProgress();
     const faseTexto = current ? `${current.phase} (${current.done}/${current.total}, ${current.percent}%)` : '(ninguna fase activa)';
@@ -258,6 +281,98 @@ function getCurrentRunId() {
   return currentRunId;
 }
 
+// De menos a más grave: el estado del ciclo es el peor de sus redes.
+const ORDEN_ESTADO = ['ok', 'incompleta', 'cortada'];
+
+/**
+ * Cómo salió el ciclo, mirando las consultas de detección que dejó cada red
+ * (monitoring_run_sources, src/runStatus.js): `ok`, `incompleta` (alguna
+ * fuente falló, quedó esperando en Apify, llenó su tope…) o `cortada`
+ * (cuota). `texto` es el detalle para el log, por red. Nunca tira.
+ * `nota`: lo mismo para la pantalla (la línea que cierra el recuadro de
+ * progreso), de la red a la que peor le fue: { label, detail } o null.
+ * @returns {{ estado: string, texto: string, porPlataforma: Object<string, string>, nota: {label: string, detail: string}|null }}
+ */
+function resumenDelCiclo(runId, { quotaExceeded = false, errorCode = null } = {}) {
+  const out = { estado: 'ok', texto: '', porPlataforma: {}, nota: null };
+  try {
+    const run = { id: runId, finishedAt: new Date().toISOString(), quotaExceeded, errorCode };
+    const porRed = new Map();
+    for (const fila of runId != null ? db.listRunSourcesOfRun(runId) : []) {
+      if (!porRed.has(fila.plataforma)) porRed.set(fila.plataforma, []);
+      porRed.get(fila.plataforma).push(fila);
+    }
+    const textos = [];
+    const peor = (estado) => {
+      if (ORDEN_ESTADO.indexOf(estado) > ORDEN_ESTADO.indexOf(out.estado)) out.estado = estado;
+    };
+    if (porRed.size === 0) peor(estadoCorrida(run, []));
+    for (const [red, filas] of porRed) {
+      const estado = estadoCorrida(run, filas);
+      out.porPlataforma[red] = estado;
+      const antes = out.estado;
+      peor(estado);
+      if (estado !== 'ok' && (!out.nota || out.estado !== antes)) {
+        const fallidas = resumenFallidas(filas, { estado });
+        if (fallidas) out.nota = { label: fallidas.corto, detail: fallidas.nota };
+      }
+      const texto = resumenParaLog(filas);
+      if (texto) textos.push(`${red}: ${texto}`);
+    }
+    out.texto = textos.join(' | ');
+  } catch (err) {
+    console.error('[ciclo] No se pudo calcular el estado de la corrida:', err.message);
+  }
+  return out;
+}
+
+/**
+ * ¿La corrida que arranca en `nowMs` es honda o corta? (src/deepRun.js). Es
+ * honda la programada que cae en una hora de MONITOR_DEEP_HOURS o, si pasaron
+ * más de 24 h desde la última honda terminada, la próxima programada;
+ * "Actualizar ahora" es siempre corta. Nunca tira: si no se puede leer la
+ * última honda, decide solo por la hora.
+ * @returns {{ activas: boolean, honda: boolean, motivo: string|null, motivoTexto: string, windowMs: number|null, windowText: string|null }}
+ */
+function decidirPasada(trigger, nowMs = Date.now()) {
+  const config = deepRun.deepConfig();
+  if (!config.enabled) return { activas: false, honda: false, motivo: null, motivoTexto: '', windowMs: null, windowText: null };
+  let ultima = null;
+  let seSabe = true;
+  try {
+    ultima = db.getLastFinishedDeepRunAt();
+  } catch (err) {
+    seSabe = false;
+    console.error('[ciclo] No se pudo leer la última corrida honda (se decide solo por la hora):', err.message);
+  }
+  const decision = deepRun.decidirHonda({
+    trigger,
+    now: nowMs,
+    // Sin poder leerla, que no parezca atrasada: una honda de más cuesta.
+    lastDeepFinishedAt: seSabe ? ultima : new Date(nowMs).toISOString(),
+    config,
+  });
+  return { activas: true, ...decision, motivoTexto: deepRun.describeMotivo(decision.motivo, ultima) };
+}
+
+/** "20/11 20:00", en la hora local del server (la del cron). */
+function fechaHoraLocal(date) {
+  const dos = (n) => String(n).padStart(2, '0');
+  return `${dos(date.getDate())}/${dos(date.getMonth() + 1)} ${dos(date.getHours())}:${dos(date.getMinutes())}`;
+}
+
+/**
+ * La próxima corrida programada y si va a ser honda o corta, para el log:
+ * "20/11 20:00 · honda (pasaron más de 24 h desde la última honda)". '' con
+ * las hondas apagadas.
+ */
+function describeNextRun(from = new Date()) {
+  const next = getNextRunAt(getCronExpression(), from);
+  const pasada = decidirPasada('cron', next.getTime());
+  if (!pasada.activas) return '';
+  return `${fechaHoraLocal(next)} · ${pasada.honda ? `honda (${pasada.motivoTexto})` : 'corta'}`;
+}
+
 /**
  * Abre la fila del ciclo en monitoring_runs, corre las fases y la cierra con
  * los totales de gasto en Apify (ver src/apifyCost.js), pase lo que pase.
@@ -267,11 +382,14 @@ function getCurrentRunId() {
 async function runCycleUnlocked(plataformas, trigger = 'manual') {
   const cycleStartedAt = Date.now();
   const plataformaTexto = plataformas ? plataformas.join(',') : 'todas';
-  console.log(`[ciclo] inicio (trigger=${trigger}, plataforma=${plataformaTexto})`);
+  // Honda o corta (src/deepRun.js): se decide una vez, al arrancar.
+  const pasada = decidirPasada(trigger, cycleStartedAt);
+  const tipoDeCorrida = !pasada.activas ? '' : pasada.honda ? `, honda: ventana mínima de ${pasada.windowText}, ${pasada.motivoTexto}` : ', corta';
+  console.log(`[ciclo] inicio (trigger=${trigger}, plataforma=${plataformaTexto}${tipoDeCorrida})`);
 
   let runId = null;
   try {
-    runId = db.startMonitoringRun({ trigger, plataforma: plataformaTexto });
+    runId = db.startMonitoringRun({ trigger, plataforma: plataformaTexto, honda: pasada.activas ? pasada.honda : null });
     currentRunId = runId;
   } catch (err) {
     console.error('[costo] No se pudo abrir el registro del ciclo:', err.message);
@@ -285,8 +403,9 @@ async function runCycleUnlocked(plataformas, trigger = 'manual') {
   // una); null si el ciclo se cayó antes de contarlos.
   let newCandidates = null;
   let cycleError = null;
+  let result = null;
   try {
-    const result = await runCyclePhases(plataformas, runId, trigger);
+    result = await runCyclePhases(plataformas, runId, trigger, pasada);
     newCount = result.newCount;
     newCandidates = Object.values(result.porPlataforma || {}).reduce((sum, p) => sum + (Number(p && p.newCandidates) || 0), 0);
     return result;
@@ -296,26 +415,67 @@ async function runCycleUnlocked(plataformas, trigger = 'manual') {
   } finally {
     currentRunId = null;
     clearInterval(heartbeat);
-    progress.endCycle();
+    // Primero se cierra la fila del ciclo (con el código del error, si tiró):
+    // el estado de la corrida se calcula con eso y con lo que dejó cada fuente.
+    const errorCode = cycleError ? String(cycleError.code || 'ERROR') : null;
+    let closed = null;
+    if (runId != null) {
+      try {
+        closed = db.finishMonitoringRun(runId, { newPosts: newCount, newCandidates, errorCode });
+      } catch (err) {
+        console.error('[costo] No se pudo cerrar el registro del ciclo:', err.message);
+      }
+    }
+    const resumen = resumenDelCiclo(runId, { quotaExceeded: Boolean(closed && closed.quotaExceeded), errorCode });
+    // Quien disparó la corrida (run-now) recibe cómo salió.
+    if (result) {
+      result.estado = resumen.estado;
+      result.estadoPorPlataforma = resumen.porPlataforma;
+    }
+    // La pantalla cierra el recuadro con cómo salió y, si no salió del todo
+    // bien, con qué pasó ("Fallaron 2 de 8 búsquedas · se retoman solas").
+    if (resumen.nota) progress.addCycleNote({ label: resumen.nota.label, detail: resumen.nota.detail });
+    progress.endCycle({ estado: cycleError ? null : resumen.estado });
+    // "ok" solo si todas las fuentes respondieron: antes una corrida con
+    // seis de ocho búsquedas caídas cerraba como resultado=ok.
     console.log(
-      `[ciclo] fin (duración ${formatDurationMs(Date.now() - cycleStartedAt)}, resultado=${cycleError ? 'error' : 'ok'}${
+      `[ciclo] fin (duración ${formatDurationMs(Date.now() - cycleStartedAt)}, resultado=${cycleError ? 'error' : resumen.estado}${
         cycleError ? `: ${cycleError.message}` : ''
-      })`
+      }${resumen.texto ? ` — ${resumen.texto}` : ''})`
     );
+    // Con las corridas hondas activas: cuándo es la próxima programada y si
+    // va a ser honda (al terminar una honda, el reloj de las 24 h arranca de nuevo).
+    try {
+      const proxima = describeNextRun();
+      if (proxima) console.log(`[ciclo] próxima corrida programada: ${proxima}`);
+    } catch (err) {
+      console.error('[ciclo] No se pudo calcular la próxima corrida:', err.message);
+    }
     // Fotos de los posteos: una sola línea por ciclo (si alguna respuesta
     // trajo link de imagen). El detalle de cada fallo ya lo escribió
     // src/postImages.js.
     const fotos = postImageSync.formatCycleSummary(postImageSync.takeCycleSummary());
     if (fotos) console.log(fotos);
-    if (runId != null) {
+    if (closed) {
+      // Además del gasto en Apify: las búsquedas que quedaron esperando (su
+      // costo llega cuando se concilie) y lo que clasificó el modelo.
+      let extra = {};
       try {
-        console.log(formatCycleCostLine(db.finishMonitoringRun(runId, { newPosts: newCount, newCandidates })));
+        const clasificado = db.sumSearchSeenByRun(runId);
+        extra = {
+          esperando: db.listRunSourcesOfRun(runId).filter((f) => f.estado === 'esperando').length,
+          clasificaciones: clasificado.n,
+          clasificacionesUsd: clasificado.usd,
+        };
       } catch (err) {
-        console.error('[costo] No se pudo cerrar el registro del ciclo:', err.message);
+        console.error('[costo] No se pudo contar lo pendiente del ciclo:', err.message);
       }
+      console.log(formatCycleCostLine(closed, extra));
     }
-    // Costo real de las llamadas de ciclos ANTERIORES (las de este todavía
-    // no están asentadas en Apify): lecturas gratis de la API, nunca tira.
+    // Costo real de las llamadas cuyo run terminó hace más de 10 minutos
+    // (Apify asienta el cobro con demora): casi siempre las de ciclos
+    // anteriores; las de este que terminaron recién quedan para el próximo.
+    // Lecturas gratis de la API, nunca tira.
     const reconciled = await reconcileRealCosts();
     if (reconciled.updated > 0) {
       console.log(
@@ -342,7 +502,7 @@ function mergeSkipAccounts(...sources) {
 // 'benchmark', 'refresco') para que cada llamada a Apify se registre con
 // su ciclo y su fase (src/usageContext.js). Solo medición: la lógica de
 // cada fase no cambia.
-async function runCyclePhases(plataformas, runId, trigger) {
+async function runCyclePhases(plataformas, runId, trigger, pasada = null) {
   // Fotos que quedaron pendientes en ciclos anteriores (la tanda se cortó o
   // la descarga falló por algo pasajero): se reintentan con el link ya
   // guardado, sin pedirle nada a Apify. Va primero: lo que falle en ESTE
@@ -351,7 +511,7 @@ async function runCyclePhases(plataformas, runId, trigger) {
 
   const { checked, newPosts, scrapedAccounts, porPlataforma } = await runWithContext(
     { runId, phase: 'monitoreo' },
-    () => runMonitoringCycle({ plataformas, trigger })
+    () => runMonitoringCycle({ plataformas, trigger, pasada })
   );
   const newCount = (newPosts || []).length;
 
@@ -388,7 +548,17 @@ async function runCyclePhases(plataformas, runId, trigger) {
 
   lastRunAt = new Date().toISOString();
 
-  return { checked, newCount, porPlataforma };
+  // Lo que devuelve "Actualizar ahora" (POST /api/monitoring/run-now) sale
+  // de acá: sin el detalle por fuente, que trae el motivo en código
+  // (HTTP_502, SIGUE_EN_APIFY…). Lo que falló viaja ya en texto para una
+  // persona por /api/monitoring/status (lastRun.fallidas).
+  const paraAfuera = Object.fromEntries(
+    Object.entries(porPlataforma || {}).map(([red, datos]) => {
+      const { fuentes: _fuentes, ...resto } = datos || {};
+      return [red, resto];
+    })
+  );
+  return { checked, newCount, porPlataforma: paraAfuera };
 }
 
 function startScheduler() {
@@ -419,6 +589,23 @@ function startScheduler() {
       (fuera.length > 0 ? `; ${fuera.join(', ')} fuera del ciclo automático, MONITOR_PLATFORMS para sumarla` : '') +
       ')'
   );
+
+  // Corridas hondas (src/deepRun.js): cuándo es la próxima y de qué tipo, y
+  // un aviso si alguna hora honda no es una hora del cron.
+  const deep = deepRun.deepConfig();
+  if (deep.enabled) {
+    const sinCorrida = deepRun.horasFueraDelCron(deep, getRunHours(cronExpression));
+    if (sinCorrida.length > 0) {
+      console.warn(
+        `[monitor] MONITOR_DEEP_HOURS: el cron no corre a las ${sinCorrida.join(', ')} h; ${sinCorrida.length === 1 ? 'esa hora no va' : 'esas horas no van'} a tener corrida honda.`
+      );
+    }
+    try {
+      console.log(`   Próxima corrida programada: ${describeNextRun()}`);
+    } catch (err) {
+      console.error('[ciclo] No se pudo calcular la próxima corrida:', err.message);
+    }
+  }
 }
 
 module.exports = {
@@ -430,6 +617,10 @@ module.exports = {
   getNextRunAt,
   getRunHours,
   getCurrentRunId,
+  resumenDelCiclo,
+  decidirPasada,
+  describeNextRun,
+  heartbeatDue,
   cronPlatforms,
   DEFAULT_CRON_PLATFORMS,
 };

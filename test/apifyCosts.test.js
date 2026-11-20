@@ -94,14 +94,24 @@ describe('costo de Apify', { concurrency: false }, () => {
     assert.equal(q(null, { directUrls: [{ url: 'https://www.instagram.com/explore/tags/caba/' }] }), 'hashtag');
 
     const rates = apifyCost.getApidojoRates();
-    assert.deepEqual(rates, { user: 0.005, hashtag: 0.015, search: 0.015, post: 0.005, item: 0.0005, included: { user: 10, hashtag: 30, search: 20 } });
+    assert.deepEqual(rates, { user: 0.005, hashtag: 0.015, search: 0.015, post: 0.005, item: 0.0005, included: { user: 10, hashtag: 30, search: 0 } });
     near(apifyCost.usdForApidojo('user', 10), 0.005);
     near(apifyCost.usdForApidojo('user', 0), 0.005, 'sin posteos igual se paga la consulta');
     near(apifyCost.usdForApidojo('user', 15), 0.0075);
     near(apifyCost.usdForApidojo('hashtag', 30), 0.015);
     near(apifyCost.usdForApidojo('hashtag', 45), 0.0225);
-    near(apifyCost.usdForApidojo('search', 50), 0.03);
-    near(apifyCost.usdForApidojo('search', 2), 0.015);
+    // La búsqueda no tiene posteos incluidos: se cobra desde el primero
+    // (medido en noviembre 2026: 0,015 + 0,0005 por resultado).
+    near(apifyCost.usdForApidojo('search', 50), 0.04);
+    near(apifyCost.usdForApidojo('search', 2), 0.016);
+    near(apifyCost.usdForApidojo('search', 0), 0.015);
+    near(apifyCost.maxUsdForSearch(500), 0.265, 'el techo de una búsqueda con tope 500');
+    near(apifyCost.maxUsdForSearch(0), 0.015);
+    process.env.APIDOJO_INCLUDED_SEARCH = '20';
+    near(apifyCost.usdForApidojo('search', 50), 0.03, 'el .env puede volver a los 20 incluidos');
+    near(apifyCost.maxUsdForSearch(50), 0.03);
+    delete process.env.APIDOJO_INCLUDED_SEARCH;
+    assert.match(apifyCost.describeApidojoRates(), /búsqueda 0,015 con 0 · posteo de más 0,0005/);
     near(apifyCost.usdForApidojo('post', 1), 0.005);
     near(apifyCost.usdForApidojo('post', 40), 0.005, 'posteo suelto: tarifa plana');
     near(apifyCost.usdForApidojo('cualquiera', 12), 0.006, 'tipo desconocido se valúa como perfil');
@@ -201,7 +211,8 @@ describe('costo de Apify', { concurrency: false }, () => {
     const runObject = (status, extra = {}) => ({ data: { id: 'run-1', status, defaultDatasetId: 'ds-1', ...extra } });
     global.fetch = async (url, options = {}) => {
       requests.push({ method: options.method || 'GET', url });
-      if (/\/acts\/apidojo~instagram-scraper-api\/runs\?token=token-de-test&waitForFinish=60$/.test(url)) {
+      // El arranque no espera (sin waitForFinish): vuelve enseguida con el id del run.
+      if (/\/acts\/apidojo~instagram-scraper-api\/runs\?token=token-de-test$/.test(url)) {
         assert.equal(options.method, 'POST');
         assert.deepEqual(JSON.parse(options.body), { startUrls: ['https://www.instagram.com/clavescom/'], maxItems: 15 });
         if (firstPostStatus === 402) {
@@ -224,7 +235,7 @@ describe('costo de Apify', { concurrency: false }, () => {
       assert.deepEqual(
         requests.map((r) => `${r.method} ${r.url.replace(/token=[^&]+/, 'token=***')}`),
         [
-          'POST https://api.apify.com/v2/acts/apidojo~instagram-scraper-api/runs?token=***&waitForFinish=60',
+          'POST https://api.apify.com/v2/acts/apidojo~instagram-scraper-api/runs?token=***',
           'GET https://api.apify.com/v2/actor-runs/run-1?token=***&waitForFinish=60',
           'GET https://api.apify.com/v2/datasets/ds-1/items?token=***',
         ]
@@ -243,19 +254,24 @@ describe('costo de Apify', { concurrency: false }, () => {
       assert.equal(row.apify_run_id, 'run-1');
 
       // El run termina en FAILED: rechaza con el estado y el mensaje de Apify; la fila queda fallida con el run id.
+      // Lo que alcanzó a dejar en el dataset se lee igual (se cobró): viaja en el error y la fila lo cuenta.
       requests.length = 0;
       statusAfterWait = 'FAILED';
       await assert.rejects(runActorSync(input, { actorId: APIDOJO, plataforma: 'instagram' }), (err) => {
         assert.match(err.message, /run run-1 de Apify terminó en FAILED: Actor crashed/);
         assert.match(err.userMessage, /terminó en FAILED/);
+        assert.equal(err.runStatus, 'FAILED');
+        assert.equal(err.partialItems.length, 12);
         return true;
       });
       row = lastCall();
       assert.equal(row.ok, 0);
-      assert.equal(row.usd, 0);
+      assert.equal(row.estado, 'error', 'quien llamó no dijo que usa lo parcial');
+      assert.equal(row.items, 12);
+      near(row.usd, 0.005 + 2 * 0.0005, 'lo que dejó se cobró');
       assert.equal(row.usd_real, null);
       assert.equal(row.apify_run_id, 'run-1');
-      assert.equal(requests.length, 2, 'sin lectura de items');
+      assert.equal(requests.length, 3, 'arranque, seguimiento y lo que dejó el dataset');
       statusAfterWait = 'SUCCEEDED';
 
       // 402 por runs simultáneos al arrancar el run: mismo reintento único que el sincrónico.
@@ -357,6 +373,19 @@ describe('costo de Apify', { concurrency: false }, () => {
     // Un run en 0 sin eventos cobrados (perfil inexistente que no cobró nada) sí se da por asentado.
     const zero = await apifyCost.reconcileRealCosts({ now, fetchRunCost: async () => ({ status: 'SUCCEEDED', usdReal: 0, chargedEventCounts: {} }) });
     assert.equal(zero.updated, 2);
+
+    // Una búsqueda larga: su fila tiene 20 minutos (se abre al ARRANCAR el
+    // run) pero el run terminó hace 1. Apify todavía muestra el cobro a
+    // medias (la consulta, sin sus posteos): no se toma, porque ese valor
+    // quedaría fijo. Diez minutos después del fin del run, sí.
+    call('r-recien-terminado', minutesAgo(20));
+    const costoDe = (usdReal) => async () => ({ status: 'SUCCEEDED', usdReal, chargedEventCounts: { 'search-query': 1 }, finishedAt: minutesAgo(1) });
+    const temprano = await apifyCost.reconcileRealCosts({ now, fetchRunCost: costoDe(0.015) });
+    assert.deepEqual([temprano.checked, temprano.updated, temprano.pending], [1, 0, 1]);
+    const realDe = (id) => allCalls().find((r) => r.apify_run_id === id).usd_real;
+    assert.equal(realDe('r-recien-terminado'), null);
+    await apifyCost.reconcileRealCosts({ now: now + 10 * 60 * 1000, fetchRunCost: costoDe(0.215) });
+    near(realDe('r-recien-terminado'), 0.215);
   });
 
   test('monitoring_runs: los totales suman las apify_calls del ciclo por fase y actor, prefieren el costo real y marcan la cuota; la línea [costo] incluye busqueda', () => {
@@ -375,8 +404,8 @@ describe('costo de Apify', { concurrency: false }, () => {
     const run = db.finishMonitoringRun(runId, { newPosts: 4 });
     assert.equal(run.calls, 5);
     assert.equal(run.results, 65);
-    // oficial 30 res × 2.3/1000 = 0.069; búsqueda 0.015 (20 incluidos); benchmark: real 0.008 en vez del estimado 0.0075; refresco fallido 0.
-    near(run.usd, 0.069 + 0.015 + 0.008);
+    // oficial 30 res × 2.3/1000 = 0.069; búsqueda 0.015 + 20 × 0.0005 (sin incluidos); benchmark: real 0.008 en vez del estimado 0.0075; refresco fallido 0.
+    near(run.usd, 0.069 + 0.025 + 0.008);
     assert.equal(run.quotaExceeded, true);
     assert.deepEqual(Object.keys(run.porFase).sort(), ['benchmark', 'busqueda', 'monitoreo', 'refresco']);
     assert.equal(run.porFase.monitoreo.results, 30);
@@ -396,13 +425,13 @@ describe('costo de Apify', { concurrency: false }, () => {
     assert.equal(saved.newPosts, 4);
     assert.equal(saved.calls, 5);
     assert.equal(saved.results, 65);
-    near(saved.usd, 0.092);
+    near(saved.usd, 0.102);
     assert.equal(saved.quotaExceeded, true);
     assert.ok(saved.finishedAt >= saved.startedAt);
 
     assert.equal(
       apifyCost.formatCycleCostLine(run),
-      `[costo] ciclo #${runId}: 5 llamadas, 65 resultados ≈ US$ 0.09 (monitoreo 30 · busqueda 20 · benchmark 15 · refresco 0)`
+      `[costo] ciclo #${runId}: 5 llamadas, 65 resultados ≈ US$ 0.10 (monitoreo 30 · busqueda 20 · benchmark 15 · refresco 0)`
     );
     // Un ciclo sin llamadas también cierra bien.
     const empty = db.finishMonitoringRun(db.startMonitoringRun({ trigger: 'manual', plataforma: 'x' }), { newPosts: 0 });
@@ -420,14 +449,14 @@ describe('costo de Apify', { concurrency: false }, () => {
     call(0.1, 'analisis', OFICIAL, { directUrls: ['https://www.instagram.com/p/x/'], resultsType: 'comments' }, 100);
     call(3, 'monitoreo', OFICIAL, { directUrls: ['u'], resultsType: 'posts' }, 700);
     call(3, 'busqueda', APIDOJO, { keywords: ['jorge macri'] }, 20, { usdReal: 0.014 });
-    call(3, 'busqueda', APIDOJO, { keywords: ['larreta'] }, 40); // sin real: estimado 0.015 + 20×0.0005 = 0.025
+    call(3, 'busqueda', APIDOJO, { keywords: ['larreta'] }, 40); // sin real: estimado 0.015 + 40×0.0005 = 0.035 (sin incluidos)
     call(10, 'benchmark', OFICIAL, { directUrls: ['u'], resultsType: 'posts' }, 1000, { ok: false, error: 'x' });
     call(40, 'refresco', APIDOJO, { startUrls: ['https://www.instagram.com/a/'] }, 15, { usdReal: 0.0075 });
 
     const after = apifyCost.summarizeCosts({ days: 30, now });
     assert.equal(after.plan, 'starter');
     assert.deepEqual(after.rates, { free: 2.7, starter: 2.3, scale: 1.9 });
-    assert.deepEqual(after.apidojoRates.included, { user: 10, hashtag: 30, search: 20 });
+    assert.deepEqual(after.apidojoRates.included, { user: 10, hashtag: 30, search: 0 });
     assert.deepEqual(after.actores, { oficial: 'apify/instagram-scraper', apidojo: 'apidojo/instagram-scraper-api' });
 
     const d = (key, sel) => sel(after[key]) - sel(before[key]);
@@ -436,12 +465,12 @@ describe('costo de Apify', { concurrency: false }, () => {
     assert.equal(d('ultimos7', (w) => w.oficial.results), 800);
     assert.equal(d('ultimos7', (w) => w.apidojo.results), 60);
     assert.equal(d('ultimos7', (w) => w.apidojo.calls), 2);
-    near(d('ultimos7', (w) => w.apidojo.usdEstimado), 0.015 + 0.025);
+    near(d('ultimos7', (w) => w.apidojo.usdEstimado), 0.025 + 0.035);
     near(d('ultimos7', (w) => w.apidojo.usdReal || 0), 0.014);
     assert.equal(d('ultimos7', (w) => w.apidojo.callsConReal), 1);
-    near(d('ultimos7', (w) => w.apidojo.usd), 0.014 + 0.025, 'real donde existe, si no estimado');
-    near(d('ultimos7', (w) => w.usd.starter), (800 * 2.3) / 1000 + 0.039, 'total por plan = oficial por plan + apidojo');
-    near(d('ultimos7', (w) => w.usd.free), (800 * 2.7) / 1000 + 0.039);
+    near(d('ultimos7', (w) => w.apidojo.usd), 0.014 + 0.035, 'real donde existe, si no estimado');
+    near(d('ultimos7', (w) => w.usd.starter), (800 * 2.3) / 1000 + 0.049, 'total por plan = oficial por plan + apidojo');
+    near(d('ultimos7', (w) => w.usd.free), (800 * 2.7) / 1000 + 0.049);
 
     assert.equal(after.ventana.days, 30);
     assert.equal(d('ventana', (w) => w.results), 1860, 'la de 40 días queda afuera de 30');
@@ -455,7 +484,7 @@ describe('costo de Apify', { concurrency: false }, () => {
     near(bench.usd.starter, bench.oficial.usd.starter + bench.apidojo.usd);
     const busq = after.ventana.porFase.busqueda;
     assert.equal(busq.calls - (before.ventana.porFase.busqueda || { calls: 0 }).calls, 2);
-    near(busq.usd.starter - (before.ventana.porFase.busqueda || { usd: { starter: 0 } }).usd.starter, 0.039);
+    near(busq.usd.starter - (before.ventana.porFase.busqueda || { usd: { starter: 0 } }).usd.starter, 0.049);
     near(after.ventana.usd.starter, after.ventana.oficial.usd.starter + after.ventana.apidojo.usd);
 
     const wide = apifyCost.summarizeCosts({ days: 60, now });

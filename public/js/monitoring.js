@@ -1821,6 +1821,10 @@ async function loadNextRun() {
 // con la hora y la duración, suma el resultado al final de la lista y se va
 // solo a los 9 s (antes, con "Ocultar"; si el mouse o el foco están encima,
 // espera). Si falló, queda a la vista hasta "Ocultar" o el próximo ciclo.
+// Una corrida que terminó pero no del todo bien (el backend dice `estado`:
+// incompleta o cortada; alguna búsqueda falló, sigue en Apify o llenó su
+// tope) cierra en ámbar, "! Corrida incompleta", con la línea de qué pasó
+// antes del resultado, y tampoco se va sola.
 // --------------------------------------------------------------------
 const PROGRESS_POLL_MS = 1500;
 const PROGRESS_HIDE_MS = 9000;
@@ -1838,7 +1842,9 @@ let progressSeenRunning = false;
 // rehacerla, las rueditas de lo que está en curso vuelven a empezar).
 let progressLinesDrawn = '';
 
-const PROGRESS_LINE_STATES = ['ok', 'err', 'run'];
+const PROGRESS_LINE_STATES = ['ok', 'err', 'run', 'wait'];
+// Cómo lo dice un lector de pantalla (el punto de color no se lee).
+const PROGRESS_LINE_SPOKEN = { err: 'Falló', run: 'En curso', wait: 'Pendiente' };
 
 // Cada línea: su punto (bien, con error o en curso), de qué se trata y cómo
 // salió. Todo entra por textContent: los términos de búsqueda y las cuentas
@@ -1864,7 +1870,7 @@ function drawProgressLines(lines) {
       detail.textContent = line.detail || '';
       li.append(icon, label, detail);
       // Para un lector de pantalla, el estado va en palabras.
-      if (state !== 'ok') li.setAttribute('aria-label', `${state === 'err' ? 'Falló' : 'En curso'}: ${label.textContent} · ${detail.textContent}`);
+      if (state !== 'ok') li.setAttribute('aria-label', `${PROGRESS_LINE_SPOKEN[state]}: ${label.textContent} · ${detail.textContent}`);
       return li;
     })
   );
@@ -1946,7 +1952,7 @@ function startMonitorLoading() {
   clearTimeout(progressHideTimer);
   progressHideTimer = null;
   monitoringStatusCard.classList.remove('leaving');
-  monitoringProgressEl.classList.remove('done', 'failed');
+  monitoringProgressEl.classList.remove('done', 'failed', 'warn');
   monitoringStatusIconEl.className = 'spinner';
   monitoringStatusIconEl.textContent = '';
   monitoringProgressHideEl.classList.add('hidden');
@@ -1992,10 +1998,13 @@ function appendProgressSummary(text) {
 }
 
 // Deja el recuadro en su estado final: "✓ Corrida terminada · 16:02 · 3 min
-// 12 s" con las líneas y el resultado (se va solo a los 9 s), o "✕ La
-// corrida falló" con el error (queda hasta "Ocultar"). "text": el resultado
-// o el mensaje de error.
-async function finishMonitorLoading(ok, text) {
+// 12 s" con las líneas y el resultado (se va solo a los 9 s); "! Corrida
+// incompleta" (o "cortada") con lo mismo, en ámbar, que queda hasta
+// "Ocultar"; o "✕ La corrida falló" con el error (también queda). "text": el
+// resultado o el mensaje de error. "estado": cómo salió la corrida según el
+// backend (ok | incompleta | cortada); si el cierre del progreso lo trae,
+// vale ese.
+async function finishMonitorLoading(ok, text, estado = null) {
   clearInterval(progressPollTimer);
   progressPollTimer = null;
 
@@ -2007,22 +2016,28 @@ async function finishMonitorLoading(ok, text) {
     try {
       const resp = await fetch(withPlataforma('/api/monitoring/progress'), slAuto());
       const data = resp.ok ? await resp.json() : null;
-      if (data && data.finished) drawProgressLines(data.lines);
+      if (data && data.finished) {
+        drawProgressLines(data.lines);
+        if (data.estado) estado = data.estado;
+      }
     } catch (err) {
       // Sin el cierre quedan las últimas líneas que se llegaron a ver.
     }
   }
   if (ok) setProgressPercent(100);
   progressWaiting = false;
-  monitoringProgressEl.classList.add(ok ? 'done' : 'failed');
-  monitoringStatusIconEl.className = ok ? 'run-progress-mark' : 'run-progress-mark err';
-  monitoringStatusIconEl.textContent = ok ? '✓' : '✕';
+  // Terminó, pero no del todo bien: no es un error ni un "listo".
+  const warn = ok && (estado === 'incompleta' || estado === 'cortada');
+  monitoringProgressEl.classList.add(!ok ? 'failed' : warn ? 'warn' : 'done');
+  monitoringStatusIconEl.className = !ok ? 'run-progress-mark err' : warn ? 'run-progress-mark warn' : 'run-progress-mark';
+  monitoringStatusIconEl.textContent = !ok ? '✕' : warn ? '!' : '✓';
   if (monitoringProgressPctEl) monitoringProgressPctEl.textContent = '';
   if (ok) {
     const when = `${HIGHLIGHT_TIME.format(new Date())} · ${formatRunDuration(Date.now() - progressStartedAt)}`;
-    setProgressHead('Corrida terminada', when);
+    setProgressHead(warn ? (estado === 'cortada' ? 'Corrida cortada' : 'Corrida incompleta') : 'Corrida terminada', when);
     appendProgressSummary(text);
-    scheduleProgressHide();
+    // Una corrida incompleta queda a la vista hasta "Ocultar".
+    if (!warn) scheduleProgressHide();
   } else {
     setProgressHead('La corrida falló', text);
   }
@@ -2048,7 +2063,7 @@ async function runNow() {
 
     if (!resp.ok) throw new Error(data.error || 'Ocurrió un error inesperado.');
 
-    await finishMonitorLoading(true, monitorDoneText(data));
+    await finishMonitorLoading(true, monitorDoneText(data), data.estado || null);
     const posts = await loadPosts();
     if (posts) newIds = posts.filter((post) => !idsBefore.has(post.id)).map((post) => post.id);
     if (monitoringTable) monitoringTable.setPage(1);

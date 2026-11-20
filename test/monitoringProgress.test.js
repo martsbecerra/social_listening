@@ -126,7 +126,7 @@ describe('monitoringProgress', () => {
 // Lo que dibuja la pantalla de "Actualizar ahora" (getView): la fase con su
 // contador y las últimas líneas, ya escritas para una persona.
 describe('monitoringProgress: líneas para la pantalla', () => {
-  const TERMS = ['macri', 'blackri', 'blacri', 'GCBA', 'PDLC', 'gobierno de la ciudad', 'gobierno porteño', 'jorgemacri'];
+  const TERMS = ['macri', 'blackri', 'blacri', 'GCBA', 'policía de la ciudad', 'gobierno de la ciudad', 'gobierno porteño', 'jorgemacri'];
   const run = (label, detail = 'buscando…') => ({ state: 'run', label, detail });
   const ok = (label, detail) => ({ state: 'ok', label, detail });
   const err = (label, detail) => ({ state: 'err', label, detail });
@@ -167,7 +167,7 @@ describe('monitoringProgress: líneas para la pantalla', () => {
 
     // Con 3 en curso o menos, se nombran todas.
     for (const term of ['blackri', 'blacri', 'macri', 'jorgemacri', 'GCBA']) finish(term, '3 encontrados, ninguno nuevo');
-    assert.deepEqual(lines().filter((l) => l.state === 'run'), [run('«PDLC»'), run('«gobierno de la ciudad»'), run('«gobierno porteño»')]);
+    assert.deepEqual(lines().filter((l) => l.state === 'run'), [run('«policía de la ciudad»'), run('«gobierno de la ciudad»'), run('«gobierno porteño»')]);
   });
 
   test('lo terminado va arriba, en el orden en que terminó, con su resultado; una búsqueda que falla sale con ✕', () => {
@@ -180,18 +180,18 @@ describe('monitoringProgress: líneas para la pantalla', () => {
       ok('«blackri»', '3 encontrados, ninguno nuevo'),
       ok('«macri»', '50 encontrados, 6 nuevos'),
       run('«GCBA»'),
-      run('«PDLC»'),
+      run('«policía de la ciudad»'),
       run('y 3 más'),
     ]);
 
-    finish('PDLC', 'falló', false);
+    finish('policía de la ciudad', 'falló', false);
     finish('GCBA', '50 encontrados, 2 nuevos');
     // Seis líneas como mucho: tres en curso dejan lugar para las tres
     // últimas que terminaron (las más viejas salen de la vista).
     assert.equal(progress.VIEW_MAX_LINES, 6);
     assert.deepEqual(lines(), [
       ok('«macri»', '50 encontrados, 6 nuevos'),
-      err('«PDLC»', 'falló'),
+      err('«policía de la ciudad»', 'falló'),
       ok('«GCBA»', '50 encontrados, 2 nuevos'),
       run('«gobierno de la ciudad»'),
       run('«gobierno porteño»'),
@@ -203,7 +203,7 @@ describe('monitoringProgress: líneas para la pantalla', () => {
     finish('gobierno porteño', '41 encontrados, 1 nuevo');
     assert.deepEqual(lines(), [
       ok('«macri»', '50 encontrados, 6 nuevos'),
-      err('«PDLC»', 'falló'),
+      err('«policía de la ciudad»', 'falló'),
       ok('«GCBA»', '50 encontrados, 2 nuevos'),
       ok('«jorgemacri»', '28 encontrados, ninguno nuevo'),
       ok('«gobierno de la ciudad»', '37 encontrados, 2 nuevos'),
@@ -270,6 +270,8 @@ describe('monitoringProgress: líneas para la pantalla', () => {
     assert.equal(progress.getProgress(), null, 'getProgress sigue siendo solo del ciclo en curso');
     assert.deepEqual(progress.getView(), {
       finished: true,
+      // Cómo salió la corrida lo dice quien cierra el ciclo; sin eso, null.
+      estado: null,
       // La búsqueda que nunca terminó no va al cierre.
       lines: [ok('«macri»', '50 encontrados, 6 nuevos'), ok('Métricas', '148 actualizadas, 2 sin respuesta')],
     });
@@ -281,6 +283,82 @@ describe('monitoringProgress: líneas para la pantalla', () => {
     assert.equal(progress.getView(), null);
     progress.startPhase('Buscando posteos nuevos', 1, { suffix: 'listas', summary: false });
     assert.deepEqual(progress.getView().lines, []);
+  });
+
+  test('una línea puede quedar pendiente (ámbar), cambiar su rótulo al cerrar y cambiar su texto mientras corre', () => {
+    const wait = (label, detail) => ({ state: 'wait', label, detail });
+    progress.startCycle();
+    progress.startPhase('Buscando posteos nuevos', 4, { suffix: 'listas', summary: false });
+    for (const term of ['macri', 'gcba', 'jorgemacri', 'gobierno porteño']) progress.startItem(`b:${term}`, `«${term}»`, 'buscando…');
+
+    // La búsqueda llenó su tope y se pide más: el texto cambia, sigue en curso.
+    progress.updateItem('b:gcba', 'tope lleno · se pide más…');
+    assert.deepEqual(lines().find((l) => l.label === '«gcba»'), run('«gcba»', 'tope lleno · se pide más…'));
+    progress.updateItem('no-existe', 'nada'); // no hace nada
+
+    progress.finishItem('b:macri', { state: 'wait', detail: 'sigue en Apify' });
+    progress.finishItem('b:gcba', { state: 'wait', label: '«gcba» · Apify la cortó', detail: '140 encontrados, 22 nuevos' });
+    progress.finishItem('b:jorgemacri', { ok: false, detail: 'falló · error 502' });
+    progress.finishItem('b:gobierno porteño', { state: 'wait', label: '«gobierno porteño» · tope lleno: puede faltar algo', detail: '120 encontrados, 18 nuevos' });
+    assert.deepEqual(lines(), [
+      wait('«macri»', 'sigue en Apify'),
+      wait('«gcba» · Apify la cortó', '140 encontrados, 22 nuevos'),
+      err('«jorgemacri»', 'falló · error 502'),
+      wait('«gobierno porteño» · tope lleno: puede faltar algo', '120 encontrados, 18 nuevos'),
+    ]);
+    // Un estado que no existe no rompe: vale ok / error.
+    progress.startItem('z', '«z»', 'buscando…');
+    progress.finishItem('z', { state: 'raro', ok: true, detail: 'bien' });
+    assert.deepEqual(lines().at(-1), ok('«z»', 'bien'));
+  });
+
+  test('una búsqueda que tarda dice cuánto lleva recién a los 2 minutos; "y N más" dice siempre "buscando…"', () => {
+    progress.startCycle();
+    progress.startPhase('Buscando posteos nuevos', 4, { suffix: 'listas', summary: false });
+    const t0 = Date.now();
+    for (const term of ['a', 'b', 'c', 'd']) progress.startItem(term, `«${term}» · desde 04/11 16:00`, 'buscando…');
+    progress.updateItem('a', 'tope lleno · se pide más…');
+    const originalNow = Date.now;
+    try {
+      Date.now = () => t0 + 119 * 1000;
+      assert.deepEqual(lines().map((l) => l.detail), ['tope lleno · se pide más…', 'buscando…', 'buscando…']);
+      Date.now = () => t0 + 6 * 60 * 1000 + 30 * 1000;
+      assert.deepEqual(lines(), [
+        run('«a» · desde 04/11 16:00', 'tope lleno · se pide más… · 6 min'),
+        run('«b» · desde 04/11 16:00', 'buscando… · 6 min'),
+        run('y 2 más', 'buscando…'),
+      ]);
+    } finally {
+      Date.now = originalNow;
+    }
+  });
+
+  test('el cierre lleva cómo salió la corrida y, si no salió del todo bien, la nota del ciclo como última línea', () => {
+    progress.startCycle();
+    progress.startPhase('Buscando posteos nuevos', 2, { suffix: 'listas', summary: false });
+    progress.startItem('a', '«macri»', 'buscando…');
+    progress.finishItem('a', { ok: false, detail: 'falló · error 502' });
+    progress.tick(1, { ok: false });
+    progress.addCycleNote({ label: 'Falló 1 de 2 búsquedas', detail: 'se retoma sola' });
+    progress.startPhase('Refrescando métricas', 3);
+    progress.tick(3);
+    progress.setPhaseSummary('Refrescando métricas', { label: 'Métricas', detail: '3 actualizadas' });
+    // Con el ciclo en curso la nota todavía no se ve.
+    assert.ok(!lines().some((l) => l.label === 'Falló 1 de 2 búsquedas'));
+    progress.endCycle({ estado: 'incompleta' });
+    assert.deepEqual(progress.getView(), {
+      finished: true,
+      estado: 'incompleta',
+      lines: [err('«macri»', 'falló · error 502'), ok('Métricas', '3 actualizadas'), { state: 'wait', label: 'Falló 1 de 2 búsquedas', detail: 'se retoma sola' }],
+    });
+
+    // Una corrida que salió bien: sin nota.
+    progress.startCycle();
+    progress.startPhase('Buscando posteos nuevos', 1, { suffix: 'listas', summary: false });
+    progress.addCycleNote({});
+    progress.endCycle({ estado: 'ok' });
+    assert.deepEqual(progress.getView(), { finished: true, estado: 'ok', lines: [] });
+    assert.doesNotThrow(() => progress.addCycleNote({ label: 'sin ciclo' }));
   });
 
   test('sin ciclo, las líneas no hacen nada ni tiran; cerrar algo que no está en curso tampoco', () => {

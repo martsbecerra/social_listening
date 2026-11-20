@@ -9321,3 +9321,85 @@ body.login-page {
     transform: scaleY(0.52);
   }
 }
+
+/* ---------- corrida incompleta (noviembre 2026, ventana-por-fuente) ----------
+   Una corrida con búsquedas caídas, que siguen en Apify o que llenaron su
+   tope ya no figura "ok": el recuadro de progreso, la barra superior, el
+   Pipeline y el inicio lo dicen. El ámbar va en puntos, anillos y bordes
+   (--c5); el texto ámbar (--warn-ink) solo sobre --surface, donde pasa
+   4,5:1: sobre --surface2 no llega en claro. */
+
+/* Recuadro de progreso: una línea pendiente (ni bien ni mal). */
+.run-progress-list li.wait .i {
+  background: var(--c5);
+}
+.run-progress-list li.wait .d {
+  color: var(--warn-ink);
+}
+/* El cierre de una corrida incompleta: "!" en tinta ámbar dentro de un anillo. */
+.run-progress-mark.warn {
+  background: transparent;
+  box-shadow: inset 0 0 0 2px var(--c5);
+  color: var(--warn-ink);
+}
+.run-progress.warn .progress-fill {
+  background: var(--c5);
+}
+.run-progress.warn .progress-fill::after {
+  display: none;
+}
+
+/* Estado de la escucha: incompleta o cortada, punto ámbar quieto. */
+.top .live.warn i {
+  background: var(--c5);
+  box-shadow: none;
+  animation: none;
+}
+
+/* Pipeline: qué faltó, debajo de las etapas (sobre --surface). */
+.pipe-warn {
+  margin: 12px 0 0;
+  color: var(--warn-ink);
+  font-size: 12.5px;
+  line-height: 1.45;
+  text-align: center;
+  border-radius: 6px;
+}
+.pipe-warn[hidden] {
+  display: none;
+}
+
+/* Inicio: la tarjeta de la red (el ámbar, solo en el punto). */
+.pl .st.warn i {
+  background: var(--c5);
+  animation: none;
+}
+/* Línea de las 24 h: incompleta = borde ámbar y la mitad izquierda rellena,
+   sin la tilde de terminada. */
+.tl24 .run.part {
+  border-color: var(--c5);
+  background: linear-gradient(90deg, var(--c5) 50%, var(--surface) 50%);
+  color: transparent;
+}
+.tl24 .run.part small {
+  color: var(--warn-ink);
+}
+/* Una corrida a mano incompleta o cortada: su puntito, en ámbar. */
+.tl24 .run.extra.part,
+.tl24 .run.extra.cut {
+  background: var(--c5);
+}
+/* "Última corrida": el chip de lo que falló, con su punto. */
+.lastrun .chips span.warn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fg2);
+}
+.lastrun .chips span.warn i {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--c5);
+}

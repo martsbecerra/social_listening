@@ -39,6 +39,20 @@
 //                 credenciales inválidas, el error sale con `code` (ver
 //                 platforms/errors.js): el orquestador lo trata como error
 //                 de la plataforma entera, no de esa fuente.
+//                 El orquestador pasa además, y cada adapter usa lo que
+//                 entiende (lo demás lo ignora): `sinceIso` (el instante
+//                 exacto desde el que pide esa fuente; `lookback` es lo
+//                 mismo redondeado a días), `deadlineAt` (hasta cuándo se
+//                 espera, uno para todas las fuentes de la red),
+//                 `onRunStarted({ id })` (el id de la corrida, si la fuente
+//                 es una corrida que se puede levantar después) y
+//                 `onMeta({ rawItems, maxItems, until, parcial })` (lo que
+//                 devolvió la consulta). Un error con `runPending` y
+//                 `apifyRunId` dice que la corrida sigue y no se esperó más.
+//   recoverSearchRun({ actor, apifyRunId, termino, desdeIso })   [opcional]
+//                 Levanta una búsqueda que quedó esperando: { estado: ok |
+//                 parcial | corriendo | perdida | desconocido, posts }.
+//                 Nunca tira.
 //   normalizePost(raw, { account, sourceType, sourceQuery })
 //                 → { id, account, url, caption, hashtagsText, likes,
 //                     comments, postedAt, postType, followers, imageUrl,

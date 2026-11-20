@@ -696,6 +696,10 @@ const setRefreshStateStmt = db.prepare(`
   INSERT INTO refresh_state (key, value) VALUES (@key, @value)
   ON CONFLICT(key) DO UPDATE SET value = excluded.value
 `);
+const deleteRefreshStateStmt = db.prepare('DELETE FROM refresh_state WHERE key = ?');
+// Por prefijo con substr, nunca LIKE: una clave puede traer "%" o "_" (un
+// término de búsqueda es texto libre).
+const listRefreshStateByPrefixStmt = db.prepare('SELECT key, value FROM refresh_state WHERE substr(key, 1, length(@prefix)) = @prefix ORDER BY key');
 
 // Resultados de la búsqueda por palabra clave de Instagram a los que ya se
 // les pidió el detalle (ver enrichSearchResults en src/monitor.js). La
@@ -717,18 +721,42 @@ db.exec(`
     PRIMARY KEY (post_id, plataforma)
   )
 `);
+// Desde noviembre 2026 (openspec/changes/ventana-por-fuente) la tabla anota
+// TODO lo que decidió el clasificador sobre un resultado de búsqueda, se
+// haya pagado o no su detalle (las búsquedas ya traen el texto): así un
+// descartado no se vuelve a clasificar en cada corrida. Columnas nuevas, las
+// cinco anulables (las filas anteriores no las tienen): posted_at (la fecha
+// de publicación, para contarlo en su día), motivo (el del modelo), llm_usd
+// (lo que costó esa clasificación, estimado), run_id (la corrida que lo
+// decidió) y terminos (JSON: todos los términos que lo trajeron; el primero
+// es `term`, el del motivo).
+const searchSeenColumns = db.prepare('PRAGMA table_info(search_seen)').all().map((c) => c.name);
+for (const [col, type] of [['posted_at', 'TEXT'], ['motivo', 'TEXT'], ['llm_usd', 'REAL'], ['run_id', 'INTEGER'], ['terminos', 'TEXT']]) {
+  if (!searchSeenColumns.includes(col)) db.exec(`ALTER TABLE search_seen ADD COLUMN ${col} ${type}`);
+}
 const getSearchSeenStmt = db.prepare(`
-  SELECT post_id AS postId, plataforma, url, term, outcome, first_seen_at AS firstSeenAt
+  SELECT post_id AS postId, plataforma, url, term, outcome, first_seen_at AS firstSeenAt,
+         posted_at AS postedAt, motivo, llm_usd AS llmUsd, run_id AS runId, terminos
   FROM search_seen WHERE post_id = ? AND plataforma = ?
 `);
-// first_seen_at no se pisa: es la fecha del primer detalle pagado, la que
-// cuenta para la purga.
+// first_seen_at no se pisa: es la fecha de la primera decisión, la que
+// cuenta para la purga. `term` tampoco (es el del motivo). Lo demás se
+// completa si llega: un dato nuevo pisa, uno ausente conserva el guardado.
 const markSearchSeenStmt = db.prepare(`
-  INSERT INTO search_seen (post_id, plataforma, url, term, outcome, first_seen_at)
-  VALUES (@postId, @plataforma, @url, @term, @outcome, @firstSeenAt)
-  ON CONFLICT(post_id, plataforma) DO UPDATE SET outcome = excluded.outcome
+  INSERT INTO search_seen (post_id, plataforma, url, term, outcome, first_seen_at, posted_at, motivo, llm_usd, run_id, terminos)
+  VALUES (@postId, @plataforma, @url, @term, @outcome, @firstSeenAt, @postedAt, @motivo, @llmUsd, @runId, @terminos)
+  ON CONFLICT(post_id, plataforma) DO UPDATE SET
+    outcome = excluded.outcome,
+    posted_at = COALESCE(excluded.posted_at, posted_at),
+    motivo = COALESCE(excluded.motivo, motivo),
+    llm_usd = COALESCE(excluded.llm_usd, llm_usd),
+    run_id = COALESCE(excluded.run_id, run_id),
+    terminos = COALESCE(excluded.terminos, terminos)
 `);
+const setSearchSeenTermsStmt = db.prepare('UPDATE search_seen SET terminos = @terminos WHERE post_id = @postId AND plataforma = @plataforma');
 const purgeSearchSeenStmt = db.prepare('DELETE FROM search_seen WHERE first_seen_at < ?');
+// Lo que decidió el clasificador en una corrida (para la línea de costo del ciclo).
+const sumSearchSeenByRunStmt = db.prepare('SELECT COUNT(*) AS n, SUM(llm_usd) AS usd FROM search_seen WHERE run_id = ?');
 
 // Gasto en Apify (ver src/apifyCost.js): una fila por llamada a runActorSync
 // (src/apify.js) y una por ciclo de monitoreo (src/scheduler.js). Apify
@@ -769,6 +797,16 @@ for (const [col, type] of [['actor', 'TEXT'], ['query_type', 'TEXT'], ['usd_real
 // así el gasto de Apify de cada análisis es la suma de sus filas. null en
 // todo lo demás (monitoreo, validación, scripts).
 if (!apifyCallsColumns.includes('analisis_id')) db.exec('ALTER TABLE apify_calls ADD COLUMN analisis_id INTEGER');
+// Desde noviembre 2026 (openspec/changes/ventana-por-fuente): cómo quedó la
+// llamada (`estado`: en_curso | ok | error | esperando | parcial |
+// recuperada | perdida; NULL en las filas anteriores, que se leen por `ok`),
+// y lo que se le pidió al actor (`max_items`, `until`). `esperando`: la app
+// dejó de esperar el run, que sigue en Apify con su id guardado, y alguien
+// lo va a levantar; al levantarlo la fila pasa a `recuperada` con ok = 1 y
+// sus resultados, así las sumas de siempre siguen valiendo.
+for (const [col, type] of [['estado', 'TEXT'], ['max_items', 'INTEGER'], ['until', 'TEXT']]) {
+  if (!apifyCallsColumns.includes(col)) db.exec(`ALTER TABLE apify_calls ADD COLUMN ${col} ${type}`);
+}
 db.exec('CREATE INDEX IF NOT EXISTS idx_apify_calls_analisis_id ON apify_calls(analisis_id)');
 // Una fila por ciclo (cron o "Actualizar ahora"); los totales se completan
 // al terminar sumando las filas de apify_calls con ese run_id.
@@ -793,17 +831,211 @@ const monitoringRunsColumns = db.prepare('PRAGMA table_info(monitoring_runs)').a
 if (!monitoringRunsColumns.includes('new_candidates')) {
   db.exec('ALTER TABLE monitoring_runs ADD COLUMN new_candidates INTEGER');
 }
-const insertApifyCallStmt = db.prepare(`
-  INSERT INTO apify_calls (at, run_id, phase, plataforma, actor, query_type, target, results_type, items, ok, error, duration_ms, usd, usd_real, apify_run_id, analisis_id)
-  VALUES (@at, @runId, @phase, @plataforma, @actor, @queryType, @target, @resultsType, @items, @ok, @error, @durationMs, @usd, @usdReal, @apifyRunId, @analisisId)
+// Si el ciclo entero tiró (un error de plataforma en una corrida manual),
+// el código del error: la corrida no fue "ok" (src/runStatus.js).
+if (!monitoringRunsColumns.includes('error_code')) {
+  db.exec('ALTER TABLE monitoring_runs ADD COLUMN error_code TEXT');
+}
+// Corridas hondas (src/deepRun.js): 1 si la corrida fue honda (sus búsquedas
+// miraron la ventana honda), 0 si fue corta, NULL en las anteriores y cuando
+// las hondas están apagadas.
+if (!monitoringRunsColumns.includes('honda')) {
+  db.exec('ALTER TABLE monitoring_runs ADD COLUMN honda INTEGER');
+}
+
+// Una fila por consulta de detección de cada ciclo (noviembre 2026,
+// openspec/changes/ventana-por-fuente): qué fuente se consultó, con qué
+// ventana y tope, cómo terminó y, si fue una corrida de Apify, su id. Es a
+// la vez el registro de qué falló en una corrida (src/runStatus.js calcula
+// el estado al leer) y la cola de las corridas que siguen en Apify y hay que
+// levantar (estado `esperando`). tipo: busqueda | cuenta | hashtag | keyword
+// | detalle (el detalle de los resultados nuevos) | plataforma (no se buscó
+// nada: el motivo dice por qué). `clave` es la fuente normalizada, la misma
+// de la marca de detección. `intento` 2 es la segunda consulta por tope
+// lleno. `detalle` es el texto crudo del error, acotado: sirve al log y a
+// los scripts y NUNCA sale por la API. Sin CHECK en `estado` (ver
+// src/runStatus.js para los valores).
+db.exec(`
+  CREATE TABLE IF NOT EXISTS monitoring_run_sources (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id INTEGER,
+    plataforma TEXT NOT NULL,
+    tipo TEXT NOT NULL,
+    fuente TEXT,
+    clave TEXT,
+    intento INTEGER NOT NULL DEFAULT 1,
+    estado TEXT NOT NULL,
+    motivo TEXT,
+    detalle TEXT,
+    actor TEXT,
+    apify_run_id TEXT,
+    desde_iso TEXT,
+    until TEXT,
+    tope INTEGER,
+    items INTEGER,
+    nuevos INTEGER,
+    tope_lleno INTEGER NOT NULL DEFAULT 0,
+    hueco_desde TEXT,
+    recuperada_en INTEGER,
+    recuperada_at TEXT,
+    started_at TEXT NOT NULL,
+    finished_at TEXT,
+    duracion_ms INTEGER
+  )
 `);
+db.exec('CREATE INDEX IF NOT EXISTS idx_run_sources_run ON monitoring_run_sources(run_id, plataforma)');
+db.exec('CREATE INDEX IF NOT EXISTS idx_run_sources_estado ON monitoring_run_sources(plataforma, estado)');
+const insertRunSourceStmt = db.prepare(`
+  INSERT INTO monitoring_run_sources
+    (run_id, plataforma, tipo, fuente, clave, intento, estado, motivo, detalle, actor, apify_run_id, desde_iso, until, tope, items, nuevos,
+     tope_lleno, hueco_desde, started_at, finished_at, duracion_ms)
+  VALUES
+    (@runId, @plataforma, @tipo, @fuente, @clave, @intento, @estado, @motivo, @detalle, @actor, @apifyRunId, @desdeIso, @until, @tope, @items, @nuevos,
+     @topeLleno, @huecoDesde, @startedAt, @finishedAt, @duracionMs)
+`);
+const getRunSourceStmt = db.prepare('SELECT * FROM monitoring_run_sources WHERE id = ?');
+const listRunSourcesStmt = db.prepare('SELECT * FROM monitoring_run_sources WHERE run_id = ? AND plataforma = ? ORDER BY id');
+const listRunSourcesAllStmt = db.prepare('SELECT * FROM monitoring_run_sources WHERE run_id = ? ORDER BY id');
+// Las búsquedas que una corrida levantó de corridas anteriores.
+const listRunSourcesRecoveredInStmt = db.prepare('SELECT * FROM monitoring_run_sources WHERE recuperada_en = ? AND plataforma = ? ORDER BY id');
+const listPendingRunSourcesStmt = db.prepare(
+  "SELECT * FROM monitoring_run_sources WHERE plataforma = ? AND estado IN ('esperando', 'en curso') ORDER BY id"
+);
+// La segunda consulta de una búsqueda se levantó después y cubrió lo que
+// faltaba: la primera de esa corrida deja de estar marcada como tope lleno.
+const clearTopeLlenoPrimerIntentoStmt = db.prepare(
+  'UPDATE monitoring_run_sources SET tope_lleno = 0 WHERE run_id = ? AND plataforma = ? AND tipo = ? AND clave = ? AND intento = 1 AND tope_lleno = 1'
+);
+const lastRunSourcesForKeyStmt = db.prepare(
+  "SELECT * FROM monitoring_run_sources WHERE plataforma = ? AND tipo = ? AND clave = ? AND intento = 1 AND estado <> 'en curso' ORDER BY id DESC LIMIT ?"
+);
+// Completado ÚNICO de las corridas anteriores a la tabla (marca
+// `fuentes_por_corrida_backfill` en refresh_state): una fila por cada
+// consulta de detección que quedó en apify_calls (las búsquedas; y, en las
+// corridas viejas de Instagram, los perfiles y hashtags de la fase
+// monitoreo), `fallo` si la llamada falló. Así las corridas que ya estaban
+// en la base dicen la verdad: las que tuvieron búsquedas caídas pasan a
+// "incompleta". En una transacción; si algo falla no queda nada a medias y
+// se reintenta en el próximo arranque.
+if (!getRefreshStateStmt.get('fuentes_por_corrida_backfill')) {
+  const { motivoDeFallo } = require('./runStatus');
+  const TIPO_POR_CONSULTA = { search: 'busqueda', user: 'cuenta', hashtag: 'hashtag' };
+  const fuenteDe = (call) => {
+    const target = String(call.target || '');
+    if (call.query_type === 'hashtag') return decodeURIComponent((/\/explore\/tags\/([^/?#]+)/.exec(target) || [])[1] || target);
+    if (call.query_type === 'user') return (/instagram\.com\/([^/?#]+)/.exec(target) || [])[1] || target;
+    return target;
+  };
+  db.exec('BEGIN');
+  try {
+    const llamadas = db
+      .prepare(
+        `SELECT c.* FROM apify_calls c
+         WHERE c.run_id IS NOT NULL AND c.phase IN ('monitoreo', 'busqueda') AND c.query_type IN ('search', 'user', 'hashtag')
+           AND EXISTS (SELECT 1 FROM monitoring_runs r WHERE r.id = c.run_id)
+           AND NOT EXISTS (SELECT 1 FROM monitoring_run_sources s WHERE s.run_id = c.run_id)
+         ORDER BY c.id`
+      )
+      .all();
+    for (const call of llamadas) {
+      const fuente = fuenteDe(call);
+      const finMs = Date.parse(call.at);
+      const inicio = Number.isFinite(finMs) && call.duration_ms != null ? new Date(finMs - call.duration_ms).toISOString() : call.at;
+      insertRunSourceStmt.run({
+        runId: call.run_id,
+        plataforma: call.plataforma,
+        tipo: TIPO_POR_CONSULTA[call.query_type],
+        fuente,
+        clave: String(fuente).trim().toLowerCase().replace(/^[@#]/, ''),
+        intento: 1,
+        estado: call.ok ? 'ok' : 'fallo',
+        motivo: call.ok ? null : motivoDeFallo(call.error),
+        detalle: call.ok || !call.error ? null : String(call.error).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200),
+        actor: call.actor,
+        apifyRunId: call.apify_run_id,
+        desdeIso: null,
+        until: call.until ?? null,
+        tope: call.max_items ?? null,
+        items: call.items,
+        nuevos: null,
+        topeLleno: 0,
+        huecoDesde: null,
+        startedAt: inicio,
+        finishedAt: call.at,
+        duracionMs: call.duration_ms,
+      });
+    }
+    setRefreshStateStmt.run({ key: 'fuentes_por_corrida_backfill', value: new Date().toISOString() });
+    db.exec('COMMIT');
+    if (llamadas.length > 0) console.log(`[db] fuentes por corrida: ${llamadas.length} consulta(s) de corridas anteriores registradas.`);
+  } catch (err) {
+    db.exec('ROLLBACK');
+    console.error('[db] No se pudieron registrar las fuentes de las corridas anteriores (se reintenta en el próximo arranque):', err.message);
+  }
+}
+const insertApifyCallStmt = db.prepare(`
+  INSERT INTO apify_calls (at, run_id, phase, plataforma, actor, query_type, target, results_type, items, ok, error, duration_ms, usd, usd_real, apify_run_id, analisis_id, estado, max_items, until)
+  VALUES (@at, @runId, @phase, @plataforma, @actor, @queryType, @target, @resultsType, @items, @ok, @error, @durationMs, @usd, @usdReal, @apifyRunId, @analisisId, @estado, @maxItems, @until)
+`);
+// Cierre de una fila abierta al arrancar el run (apifyCost.openApifyCall).
+const closeApifyCallStmt = db.prepare(`
+  UPDATE apify_calls
+  SET items = @items, ok = @ok, error = @error, duration_ms = @durationMs, usd = @usd, estado = @estado
+  WHERE id = @id
+`);
+const getApifyCallStmt = db.prepare('SELECT * FROM apify_calls WHERE id = ?');
+// Una llamada que quedó esperando (o abierta) y cuyo resultado se levantó
+// después: pasa a contar como una llamada buena, con lo que trajo.
+const markApifyCallRecoveredStmt = db.prepare(`
+  UPDATE apify_calls SET ok = 1, error = NULL, items = @items, usd = @usd, estado = 'recuperada'
+  WHERE apify_run_id = @apifyRunId AND estado IN ('esperando', 'en_curso')
+`);
+const markApifyCallLostStmt = db.prepare(`
+  UPDATE apify_calls SET estado = 'perdida' WHERE apify_run_id = @apifyRunId AND estado IN ('esperando', 'en_curso')
+`);
+const listApifyCallsByApifyRunStmt = db.prepare('SELECT * FROM apify_calls WHERE apify_run_id = ? ORDER BY id');
+// Asiento de una corrida que la app cortó sin registrar (scripts/costo-apify.js
+// --asentar): las llamadas fallidas y sin run de un ciclo, y la escritura del
+// run y de su costo real en una de ellas.
+const listFailedCallsWithoutRunStmt = db.prepare(
+  'SELECT id, target, query_type AS queryType, phase, error FROM apify_calls WHERE run_id = ? AND ok = 0 AND apify_run_id IS NULL ORDER BY id'
+);
+const settleApifyCallStmt = db.prepare('UPDATE apify_calls SET apify_run_id = @apifyRunId, usd_real = @usdReal WHERE id = @id AND apify_run_id IS NULL');
+const listApifyRunIdsSinceStmt = db.prepare('SELECT DISTINCT apify_run_id AS id FROM apify_calls WHERE apify_run_id IS NOT NULL AND at >= ?');
+// Las últimas búsquedas buenas de una red, para medir el volumen de un
+// término (src/busquedaTope.js). El término se compara en JS
+// (lastSearchCallsForTerm): el lower() de SQLite no pasa a minúsculas las
+// letras acentuadas ("POLICÍA" quedaba "policÍa" y nunca encontraba su
+// historia).
+const lastSearchCallsStmt = db.prepare(`
+  SELECT id, target, items, max_items AS maxItems, until, at FROM apify_calls
+  WHERE plataforma = @plataforma AND query_type = 'search' AND ok = 1
+  ORDER BY id DESC LIMIT @limit
+`);
+// Cuántas búsquedas buenas de la red se recorren para encontrar las de un
+// término: con 8 búsquedas y 4 corridas por día, más de un mes.
+const SEARCH_HISTORY_SCAN = 1500;
 // Las sumas van por fase Y por actor: el actor oficial se valúa por
 // resultados (tres tarifas), apidojo por consulta. usdBest = lo que cobró
 // Apify si se sabe (usd_real), si no el estimado (usd).
 const OFFICIAL_ACTOR_SQL = "'apify~instagram-scraper'";
 const insertMonitoringRunStmt = db.prepare(
-  'INSERT INTO monitoring_runs (started_at, "trigger", plataforma) VALUES (@startedAt, @trigger, @plataforma)'
+  'INSERT INTO monitoring_runs (started_at, "trigger", plataforma, honda) VALUES (@startedAt, @trigger, @plataforma, @honda)'
 );
+// La última corrida honda TERMINADA: cerró sin que el ciclo tirara y alguna
+// búsqueda respondió o quedó en Apify (una honda en la que no respondió
+// ninguna no cuenta: no trajo nada). Una corrida sin búsquedas cuenta.
+const getLastFinishedDeepRunAtStmt = db.prepare(`
+  SELECT MAX(r.finished_at) AS at FROM monitoring_runs r
+  WHERE r.honda = 1 AND r.finished_at IS NOT NULL AND r.error_code IS NULL
+    AND (
+      NOT EXISTS (SELECT 1 FROM monitoring_run_sources s WHERE s.run_id = r.id AND s.tipo = 'busqueda')
+      OR EXISTS (
+        SELECT 1 FROM monitoring_run_sources s
+        WHERE s.run_id = r.id AND s.tipo = 'busqueda' AND s.estado IN ('ok', 'parcial', 'esperando', 'recuperada')
+      )
+    )
+`);
 const sumApifyCallsByRunStmt = db.prepare(`
   SELECT phase, COALESCE(actor, ${OFFICIAL_ACTOR_SQL}) AS actor, COUNT(*) AS calls, COALESCE(SUM(items), 0) AS results,
          COALESCE(SUM(usd), 0) AS usd, SUM(usd_real) AS usdReal, SUM(usd_real IS NOT NULL) AS withReal,
@@ -814,7 +1046,7 @@ const sumApifyCallsByRunStmt = db.prepare(`
 const finishMonitoringRunStmt = db.prepare(`
   UPDATE monitoring_runs
   SET finished_at = @finishedAt, new_posts = @newPosts, new_candidates = @newCandidates, calls = @calls, results = @results,
-      usd = @usd, quota_exceeded = @quotaExceeded
+      usd = @usd, quota_exceeded = @quotaExceeded, error_code = @errorCode
   WHERE id = @id
 `);
 const getMonitoringRunStmt = db.prepare('SELECT * FROM monitoring_runs WHERE id = ?');
@@ -872,9 +1104,10 @@ const listPostsForStatsStmt = db.prepare(`
 `);
 // Las menciones por término de Estadísticas cuentan también lo que no quedó:
 // los ignorados (por posted_at, como el resto) y los resultados de búsqueda
-// descartados. search_seen no guarda posted_at: los descartados van por
-// first_seen_at, el día en que se pagó su detalle (con la ventana dinámica
-// de la detección, el mismo día de la publicación o el siguiente).
+// descartados, por su fecha de publicación (search_seen.posted_at, desde
+// noviembre 2026). Las filas anteriores no la tienen: van por first_seen_at,
+// el día en que se decidieron (con la ventana de la detección, el mismo día
+// de la publicación o el siguiente).
 const listIgnoredPostsForStatsStmt = db.prepare(`
   SELECT matched_reason FROM detected_posts
   WHERE plataforma = ? AND ignored = 1 AND posted_at >= ? AND posted_at < ?
@@ -882,7 +1115,7 @@ const listIgnoredPostsForStatsStmt = db.prepare(`
 const countDiscardedSearchesForStatsStmt = db.prepare(`
   SELECT term, COUNT(*) AS n FROM search_seen
   WHERE plataforma = ? AND outcome = 'descartado' AND term IS NOT NULL
-    AND first_seen_at >= ? AND first_seen_at < ?
+    AND COALESCE(posted_at, first_seen_at) >= ? AND COALESCE(posted_at, first_seen_at) < ?
   GROUP BY term
 `);
 // Rastros de corridas de una plataforma en un rango, para contar en cuántos
@@ -891,15 +1124,38 @@ const countDiscardedSearchesForStatsStmt = db.prepare(`
 // monitoring_runs existe recién desde el 23/9/2026, también cuándo se
 // detectó un posteo (visible o ignorado) o se vio un resultado de búsqueda:
 // eso solo pasa en una corrida.
-const listRunTracesForStatsStmt = db.prepare(`
-  SELECT started_at AS t FROM monitoring_runs
-  WHERE finished_at IS NOT NULL AND started_at >= ? AND started_at < ?
-    AND (plataforma = 'todas' OR (',' || plataforma || ',') LIKE ('%,' || ? || ',%'))
+// Desde noviembre 2026 (openspec/changes/ventana-por-fuente) una corrida que
+// no detectó nada en esa red NO es un rastro: no se buscó nada (una fila
+// `plataforma` en monitoring_run_sources) o no respondió ninguna de sus
+// fuentes (ni se levantó después). Antes, un día cuya única corrida tenía
+// todas las búsquedas caídas contaba como "día con corridas" y con cero
+// publicaciones. Una corrida sin filas (anterior a la tabla) cuenta como
+// siempre. La tabla se crea más abajo: por eso el statement se prepara al
+// usarlo (ver listRunTracesForStats).
+const LIST_RUN_TRACES_FOR_STATS_SQL = `
+  SELECT r.started_at AS t FROM monitoring_runs r
+  WHERE r.finished_at IS NOT NULL AND r.started_at >= @desde AND r.started_at < @hasta
+    AND (r.plataforma = 'todas' OR (',' || r.plataforma || ',') LIKE ('%,' || @plataforma || ',%'))
+    AND NOT EXISTS (
+      SELECT 1 FROM monitoring_run_sources s WHERE s.run_id = r.id AND s.plataforma = @plataforma AND s.tipo = 'plataforma'
+    )
+    AND (
+      NOT EXISTS (
+        SELECT 1 FROM monitoring_run_sources s
+        WHERE s.run_id = r.id AND s.plataforma = @plataforma AND s.tipo IN ('busqueda', 'cuenta', 'hashtag', 'keyword')
+      )
+      OR EXISTS (
+        SELECT 1 FROM monitoring_run_sources s
+        WHERE s.run_id = r.id AND s.plataforma = @plataforma AND s.tipo IN ('busqueda', 'cuenta', 'hashtag', 'keyword')
+          AND s.estado IN ('ok', 'parcial', 'recuperada')
+      )
+    )
   UNION
-  SELECT detected_at FROM detected_posts WHERE plataforma = ? AND detected_at >= ? AND detected_at < ?
+  SELECT detected_at FROM detected_posts WHERE plataforma = @plataforma AND detected_at >= @desde AND detected_at < @hasta
   UNION
-  SELECT first_seen_at FROM search_seen WHERE plataforma = ? AND first_seen_at >= ? AND first_seen_at < ?
-`);
+  SELECT first_seen_at FROM search_seen WHERE plataforma = @plataforma AND first_seen_at >= @desde AND first_seen_at < @hasta
+`;
+let listRunTracesForStatsStmt = null;
 // El primer posteo visible de la plataforma: antes de ese día no hay datos,
 // que no es lo mismo que un día sin publicaciones.
 const getFirstPostedAtStmt = db.prepare(
@@ -930,7 +1186,7 @@ const countReclamosEnMapaStmt = db.prepare(`
 // Las corridas de una plataforma que arrancaron en un rango, terminadas o no:
 // la línea de 24 h del inicio (src/inicioRoutes.js).
 const listRunsBetweenStmt = db.prepare(`
-  SELECT id, started_at, finished_at, "trigger", plataforma, new_candidates, new_posts, quota_exceeded FROM monitoring_runs
+  SELECT id, started_at, finished_at, "trigger", plataforma, new_candidates, new_posts, quota_exceeded, error_code FROM monitoring_runs
   WHERE started_at >= ? AND started_at < ?
     AND (plataforma = 'todas' OR (',' || plataforma || ',') LIKE ('%,' || ? || ',%'))
   ORDER BY started_at
@@ -958,6 +1214,13 @@ const listApifyCallsPendingRealCostStmt = db.prepare(`
   ORDER BY id LIMIT @limit
 `);
 const setApifyCallRealCostStmt = db.prepare('UPDATE apify_calls SET usd_real = @usdReal WHERE id = @id');
+// Después de levantar una llamada de un ciclo ya cerrado: sus totales.
+const recomputeMonitoringRunTotalsStmt = db.prepare(`
+  UPDATE monitoring_runs
+  SET usd = (SELECT COALESCE(SUM(COALESCE(usd_real, usd)), 0) FROM apify_calls WHERE run_id = @id),
+      results = (SELECT COALESCE(SUM(items), 0) FROM apify_calls WHERE run_id = @id)
+  WHERE id = @id
+`);
 const recomputeMonitoringRunUsdStmt = db.prepare(`
   UPDATE monitoring_runs
   SET usd = (SELECT COALESCE(SUM(COALESCE(usd_real, usd)), 0) FROM apify_calls WHERE run_id = @id)
@@ -2148,18 +2411,130 @@ function insertApifyCall(row) {
     usdReal: row.usdReal == null || !Number.isFinite(Number(row.usdReal)) ? null : Number(row.usdReal),
     apifyRunId: row.apifyRunId ?? null,
     analisisId: row.analisisId ?? null,
+    estado: row.estado ?? null,
+    maxItems: row.maxItems == null || !Number.isFinite(Number(row.maxItems)) ? null : Math.floor(Number(row.maxItems)),
+    until: row.until ?? null,
   });
   return Number(result.lastInsertRowid);
 }
 
+/**
+ * Cierra una fila de apify_calls que se abrió al arrancar el run: lo que
+ * trajo, cómo terminó y el usd estimado. No toca el run, la fase ni usd_real.
+ * @returns {number} filas cambiadas (0 si el id no existe)
+ */
+function closeApifyCall(id, { items = 0, ok = false, error = null, durationMs = null, usd = 0, estado = null } = {}) {
+  return closeApifyCallStmt.run({
+    id,
+    items: Number(items) || 0,
+    ok: ok ? 1 : 0,
+    error: error ?? null,
+    durationMs: durationMs == null ? null : Math.round(durationMs),
+    usd: Number(usd) || 0,
+    estado: estado ?? null,
+  }).changes;
+}
+
+/**
+ * La llamada de esa corrida de Apify quedó esperando y su resultado se
+ * levantó después: pasa a ok con lo que trajo (`items`) y su usd estimado,
+ * estado `recuperada`, y se recalculan los totales del ciclo que la lanzó.
+ * Solo toca filas que estaban `esperando` o `en_curso`.
+ * @returns {number} filas cambiadas
+ */
+function markApifyCallRecovered(apifyRunId, { items = 0, usd = 0 } = {}) {
+  if (!apifyRunId) return 0;
+  const changed = markApifyCallRecoveredStmt.run({ apifyRunId: String(apifyRunId), items: Number(items) || 0, usd: Number(usd) || 0 }).changes;
+  if (changed > 0) {
+    for (const row of listApifyCallsByApifyRunStmt.all(String(apifyRunId))) {
+      if (row.run_id != null) recomputeMonitoringRunTotalsStmt.run({ id: row.run_id });
+    }
+  }
+  return changed;
+}
+
+/** Las llamadas fallidas y sin run de Apify de un ciclo (candidatas a un asiento). */
+function listFailedCallsWithoutRun(runId) {
+  return listFailedCallsWithoutRunStmt.all(Number(runId)).map((row) => ({ ...row }));
+}
+
+/** ¿Hay alguna llamada registrada con ese run de Apify? */
+function hasApifyRun(apifyRunId) {
+  return listApifyCallsByApifyRunStmt.all(String(apifyRunId)).length > 0;
+}
+
+/**
+ * Anota en UNA llamada fallida y sin run el run de Apify que en realidad
+ * corrió y lo que cobró, y recalcula el usd de su ciclo. No toca nada más
+ * de la fila (sigue fallida: sus resultados no se usaron).
+ * @returns {number} filas cambiadas (0 si ya tenía run)
+ */
+function settleApifyCall(id, { apifyRunId, usdReal }) {
+  const usd = Number(usdReal);
+  if (!apifyRunId || !Number.isFinite(usd) || usd < 0) throw new Error('settleApifyCall: falta el run o el costo');
+  const changed = settleApifyCallStmt.run({ id: Number(id), apifyRunId: String(apifyRunId), usdReal: usd }).changes;
+  if (changed > 0) {
+    const row = getApifyCallStmt.get(Number(id));
+    if (row && row.run_id != null) recomputeMonitoringRunUsdStmt.run({ id: row.run_id });
+  }
+  return changed;
+}
+
+/** Los runs de Apify que la app tiene registrados en llamadas desde `sinceIso`. @returns {Set<string>} */
+function listApifyRunIdsSince(sinceIso) {
+  return new Set(listApifyRunIdsSinceStmt.all(sinceIso).map((row) => row.id));
+}
+
+/**
+ * Las últimas búsquedas buenas de un término en esa red (las recuperadas
+ * también): cuánto trajo cada una, con qué tope y desde qué día.
+ * @returns {{ items: number, maxItems: number|null, until: string|null, at: string }[]}
+ */
+function lastSearchCallsForTerm(plataforma, term, limit = 6) {
+  requirePlataforma(plataforma, 'lastSearchCallsForTerm');
+  const buscado = String(term ?? '').trim().toLowerCase();
+  const max = Math.max(1, Math.floor(Number(limit)) || 6);
+  const out = [];
+  for (const row of lastSearchCallsStmt.all({ plataforma, limit: SEARCH_HISTORY_SCAN })) {
+    if (String(row.target ?? '').trim().toLowerCase() !== buscado) continue;
+    out.push({ items: Number(row.items) || 0, maxItems: row.maxItems == null ? null : Number(row.maxItems), until: row.until, at: row.at });
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+/** La corrida de Apify de esa llamada ya no existe: la fila queda `perdida` (sigue fallida). @returns {number} filas cambiadas */
+function markApifyCallLost(apifyRunId) {
+  if (!apifyRunId) return 0;
+  return markApifyCallLostStmt.run({ apifyRunId: String(apifyRunId) }).changes;
+}
+
+/** Una fila de apify_calls tal cual, o null. Para los tests y los scripts. */
+function getApifyCall(id) {
+  return getApifyCallStmt.get(id) || null;
+}
+
 /** Abre la fila del ciclo en monitoring_runs. @returns {number} id (el run_id de sus apify_calls). */
-function startMonitoringRun({ trigger, plataforma, startedAt } = {}) {
+function startMonitoringRun({ trigger, plataforma, startedAt, honda = null } = {}) {
   const result = insertMonitoringRunStmt.run({
     startedAt: startedAt || new Date().toISOString(),
     trigger: trigger || 'manual',
     plataforma: plataforma || 'todas',
+    // true / false con las corridas hondas activas; null si están apagadas.
+    honda: honda == null ? null : honda ? 1 : 0,
   });
   return Number(result.lastInsertRowid);
+}
+
+/**
+ * Cuándo terminó la última corrida honda (src/deepRun.js), o null si no
+ * hubo ninguna. Cuenta la que cerró sin que el ciclo tirara y en la que
+ * alguna búsqueda respondió o quedó en Apify.
+ * @returns {string|null}
+ */
+function getLastFinishedDeepRunAt() {
+  const row = getLastFinishedDeepRunAtStmt.get();
+  return row && row.at ? row.at : null;
 }
 
 /**
@@ -2172,7 +2547,7 @@ function startMonitoringRun({ trigger, plataforma, startedAt } = {}) {
  *   porFase: Object<string, {calls: number, results: number, usd: number,
  *     porActor: Object<string, {calls: number, results: number, usd: number, usdReal: number|null, withReal: number}>}> }}
  */
-function finishMonitoringRun(id, { newPosts = 0, newCandidates = null, finishedAt } = {}) {
+function finishMonitoringRun(id, { newPosts = 0, newCandidates = null, finishedAt, errorCode = null } = {}) {
   const byPhaseActor = sumApifyCallsByRunStmt.all(id);
   const totals = { calls: 0, results: 0, usd: 0, quotaExceeded: false };
   const porFase = {};
@@ -2196,6 +2571,7 @@ function finishMonitoringRun(id, { newPosts = 0, newCandidates = null, finishedA
     results: totals.results,
     usd: totals.usd,
     quotaExceeded: totals.quotaExceeded ? 1 : 0,
+    errorCode: errorCode ? String(errorCode).slice(0, 60) : null,
   });
   return { id, ...totals, porFase };
 }
@@ -2213,7 +2589,168 @@ function monitoringRunFromRow(row) {
     results: row.results,
     usd: row.usd,
     quotaExceeded: Boolean(row.quota_exceeded),
+    errorCode: row.error_code ?? null,
   };
+}
+
+function runSourceFromRow(row) {
+  return {
+    id: Number(row.id),
+    runId: row.run_id == null ? null : Number(row.run_id),
+    plataforma: row.plataforma,
+    tipo: row.tipo,
+    fuente: row.fuente,
+    clave: row.clave,
+    intento: Number(row.intento) || 1,
+    estado: row.estado,
+    motivo: row.motivo,
+    detalle: row.detalle,
+    actor: row.actor,
+    apifyRunId: row.apify_run_id,
+    desdeIso: row.desde_iso,
+    until: row.until,
+    tope: row.tope == null ? null : Number(row.tope),
+    items: row.items == null ? null : Number(row.items),
+    nuevos: row.nuevos == null ? null : Number(row.nuevos),
+    topeLleno: Boolean(row.tope_lleno),
+    huecoDesde: row.hueco_desde,
+    recuperadaEn: row.recuperada_en == null ? null : Number(row.recuperada_en),
+    recuperadaAt: row.recuperada_at,
+    startedAt: row.started_at,
+    finishedAt: row.finished_at,
+    duracionMs: row.duracion_ms == null ? null : Number(row.duracion_ms),
+  };
+}
+
+const RUN_SOURCE_COLUMNS = {
+  estado: 'estado',
+  motivo: 'motivo',
+  detalle: 'detalle',
+  actor: 'actor',
+  apifyRunId: 'apify_run_id',
+  desdeIso: 'desde_iso',
+  until: 'until',
+  tope: 'tope',
+  items: 'items',
+  nuevos: 'nuevos',
+  topeLleno: 'tope_lleno',
+  huecoDesde: 'hueco_desde',
+  recuperadaEn: 'recuperada_en',
+  recuperadaAt: 'recuperada_at',
+  finishedAt: 'finished_at',
+  duracionMs: 'duracion_ms',
+};
+
+/** El texto crudo de un error para la columna `detalle`: una línea, sin HTML, hasta 200 caracteres. */
+function cleanSourceDetail(text) {
+  if (text === undefined || text === null || text === '') return null;
+  return String(text).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200) || null;
+}
+
+/**
+ * Abre la fila de una consulta de detección. `runId` puede ser null (el
+ * ciclo no pudo abrir su fila): la consulta se registra igual, para que una
+ * corrida que quede esperando se pueda levantar.
+ * @returns {number} id de la fila
+ */
+function startRunSource({ runId = null, plataforma, tipo, fuente = null, clave = null, intento = 1, estado = 'en curso', motivo = null, detalle = null,
+  actor = null, apifyRunId = null, desdeIso = null, until = null, tope = null, items = null, nuevos = null, topeLleno = false, huecoDesde = null,
+  startedAt, finishedAt = null, duracionMs = null } = {}) {
+  requirePlataforma(plataforma, 'startRunSource');
+  const result = insertRunSourceStmt.run({
+    runId: runId == null ? null : Number(runId),
+    plataforma,
+    tipo: String(tipo),
+    fuente: fuente == null ? null : String(fuente),
+    clave: clave == null ? null : String(clave),
+    intento: Number(intento) || 1,
+    estado: String(estado),
+    motivo: motivo ?? null,
+    detalle: cleanSourceDetail(detalle),
+    actor: actor ?? null,
+    apifyRunId: apifyRunId ?? null,
+    desdeIso: desdeIso ?? null,
+    until: until ?? null,
+    tope: tope == null ? null : Math.floor(Number(tope)),
+    items: items == null ? null : Math.floor(Number(items)),
+    nuevos: nuevos == null ? null : Math.floor(Number(nuevos)),
+    topeLleno: topeLleno ? 1 : 0,
+    huecoDesde: huecoDesde ?? null,
+    startedAt: startedAt || new Date().toISOString(),
+    finishedAt: finishedAt ?? null,
+    duracionMs: duracionMs == null ? null : Math.round(Number(duracionMs)),
+  });
+  return Number(result.lastInsertRowid);
+}
+
+/**
+ * Cambia lo que venga en `fields` de una fila de monitoring_run_sources
+ * (estado, motivo, detalle, apifyRunId, items, nuevos, topeLleno,
+ * huecoDesde, recuperadaEn, recuperadaAt, finishedAt, duracionMs…). Lo que
+ * no viene no se toca. @returns {number} filas cambiadas
+ */
+function updateRunSource(id, fields = {}) {
+  const sets = [];
+  const params = { id };
+  for (const [key, column] of Object.entries(RUN_SOURCE_COLUMNS)) {
+    if (!Object.hasOwn(fields, key) || fields[key] === undefined) continue;
+    let value = fields[key];
+    if (key === 'detalle') value = cleanSourceDetail(value);
+    else if (key === 'topeLleno') value = value ? 1 : 0;
+    else if (['tope', 'items', 'nuevos', 'recuperadaEn', 'duracionMs'].includes(key)) value = value == null ? null : Math.round(Number(value));
+    sets.push(`${column} = @${key}`);
+    params[key] = value ?? null;
+  }
+  if (sets.length === 0) return 0;
+  return db.prepare(`UPDATE monitoring_run_sources SET ${sets.join(', ')} WHERE id = @id`).run(params).changes;
+}
+
+function getRunSource(id) {
+  const row = getRunSourceStmt.get(id);
+  return row ? runSourceFromRow(row) : null;
+}
+
+/** Las consultas de detección de una corrida para una red, en el orden en que se lanzaron. */
+function listRunSources({ runId, plataforma }) {
+  requirePlataforma(plataforma, 'listRunSources');
+  if (runId == null) return [];
+  return listRunSourcesStmt.all(Number(runId), plataforma).map(runSourceFromRow);
+}
+
+/** Todas las consultas de detección de una corrida, de todas sus redes (el cierre del ciclo). */
+function listRunSourcesOfRun(runId) {
+  if (runId == null) return [];
+  return listRunSourcesAllStmt.all(Number(runId)).map(runSourceFromRow);
+}
+
+/** Las búsquedas de esa red que quedaron esperando en una corrida anterior y que ESTA corrida levantó. */
+function listRunSourcesRecoveredIn({ runId, plataforma }) {
+  requirePlataforma(plataforma, 'listRunSourcesRecoveredIn');
+  if (runId == null) return [];
+  return listRunSourcesRecoveredInStmt.all(Number(runId), plataforma).map(runSourceFromRow);
+}
+
+/** Las consultas de una red que quedaron esperando (o abiertas por un proceso que se cayó): la cola de lo que hay que levantar. */
+function listPendingRunSources(plataforma) {
+  requirePlataforma(plataforma, 'listPendingRunSources');
+  return listPendingRunSourcesStmt.all(plataforma).map(runSourceFromRow);
+}
+
+/**
+ * Saca la marca de "tope lleno" de la primera consulta de una fuente en una
+ * corrida (cuando su segunda consulta, levantada después, lo cubrió).
+ * @returns {number} filas cambiadas
+ */
+function clearTopeLlenoPrimerIntento({ runId, plataforma, tipo, clave }) {
+  requirePlataforma(plataforma, 'clearTopeLlenoPrimerIntento');
+  if (runId == null || clave == null) return 0;
+  return clearTopeLlenoPrimerIntentoStmt.run(Number(runId), plataforma, String(tipo), String(clave)).changes;
+}
+
+/** Las últimas `limit` consultas cerradas de una fuente (primer intento), de la más nueva a la más vieja. */
+function lastRunSourcesForKey({ plataforma, tipo, clave, limit = 2 }) {
+  requirePlataforma(plataforma, 'lastRunSourcesForKey');
+  return lastRunSourcesForKeyStmt.all(plataforma, String(tipo), String(clave), Math.max(1, Math.floor(Number(limit)) || 2)).map(runSourceFromRow);
 }
 
 function getMonitoringRun(id) {
@@ -2232,7 +2769,11 @@ function getLastFinishedRun(plataforma) {
   const row = getLastFinishedRunStmt.get(plataforma);
   if (!row) return null;
   const detection = sumDetectionItemsStmt.get(row.id, plataforma);
-  return { ...monitoringRunFromRow(row), fetched: detection.calls > 0 ? detection.items : null };
+  return {
+    ...monitoringRunFromRow(row),
+    fetched: detection.calls > 0 ? detection.items : null,
+    fuentes: listRunSourcesStmt.all(row.id, plataforma).map(runSourceFromRow),
+  };
 }
 
 /** Posteos no ignorados de esa plataforma con detected_at entre fromIso y toIso (inclusive). */
@@ -2304,15 +2845,16 @@ function countDiscardedSearchesForStats({ plataforma, desdeIso, hastaIso }) {
 /**
  * Instantes (ISO) que muestran que hubo una corrida de la plataforma entre
  * desdeIso (incluido) y hastaIso (excluido): el arranque de las corridas
- * terminadas y, para lo anterior a monitoring_runs, las detecciones de
+ * terminadas que detectaron algo o al menos consultaron una fuente que
+ * respondió (una corrida con todas sus fuentes caídas, o que no buscó nada,
+ * no cuenta) y, para lo anterior a monitoring_runs, las detecciones de
  * posteos y de resultados de búsqueda. Sin repetidos.
  * @returns {string[]}
  */
 function listRunTracesForStats({ plataforma, desdeIso, hastaIso }) {
   requirePlataforma(plataforma, 'listRunTracesForStats');
-  return listRunTracesForStatsStmt
-    .all(desdeIso, hastaIso, plataforma, plataforma, desdeIso, hastaIso, plataforma, desdeIso, hastaIso)
-    .map((row) => row.t);
+  if (!listRunTracesForStatsStmt) listRunTracesForStatsStmt = db.prepare(LIST_RUN_TRACES_FOR_STATS_SQL);
+  return listRunTracesForStatsStmt.all({ plataforma, desde: desdeIso, hasta: hastaIso }).map((row) => row.t);
 }
 
 /** @returns {string|null} posted_at (ISO) del primer posteo visible de la plataforma, o null si no hay ninguno. */
@@ -2371,6 +2913,9 @@ function listRunsBetween({ plataforma, desdeIso, hastaIso }) {
     newCandidates: row.new_candidates === null || row.new_candidates === undefined ? null : Number(row.new_candidates),
     newPosts: Number(row.new_posts) || 0,
     quotaExceeded: Boolean(row.quota_exceeded),
+    errorCode: row.error_code ?? null,
+    // Las consultas de detección de esa corrida en ESTA red (src/runStatus.js).
+    fuentes: listRunSourcesStmt.all(row.id, plataforma).map(runSourceFromRow),
   }));
 }
 
@@ -2412,11 +2957,43 @@ function sumApifyCallsSince(sinceIso) {
   return sumApifyCallsSinceStmt.all(sinceIso);
 }
 
-/** @returns {{postId: string, plataforma: string, url: string|null, term: string|null, outcome: string, firstSeenAt: string}|null} */
+/** Lista de términos sin vacíos ni repetidos (sin distinguir mayúsculas), en el orden en que llegan. */
+function mergeSearchTerms(...lists) {
+  const out = [];
+  const seen = new Set();
+  for (const list of lists) {
+    for (const raw of Array.isArray(list) ? list : []) {
+      const term = String(raw ?? '').trim();
+      const key = term.toLowerCase();
+      if (!term || seen.has(key)) continue;
+      seen.add(key);
+      out.push(term);
+    }
+  }
+  return out;
+}
+
+/** El JSON de search_seen.terminos como lista; algo roto o vacío es una lista vacía. */
+function parseSearchTerms(raw) {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return mergeSearchTerms(Array.isArray(parsed) ? parsed : []);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * @returns {{postId: string, plataforma: string, url: string|null, term: string|null, outcome: string, firstSeenAt: string,
+ *   postedAt: string|null, motivo: string|null, llmUsd: number|null, runId: number|null, terminos: string[]}|null}
+ *   terminos: todos los términos que trajeron el posteo; en una fila anterior a la columna, solo `term`.
+ */
 function getSearchSeen(postId, plataforma) {
   requirePlataforma(plataforma, 'getSearchSeen');
   const row = getSearchSeenStmt.get(String(postId), plataforma);
-  return row ? { ...row } : null;
+  if (!row) return null;
+  return { ...row, terminos: mergeSearchTerms(row.term ? [row.term] : [], parseSearchTerms(row.terminos)) };
 }
 
 function isSearchSeen(postId, plataforma) {
@@ -2424,17 +3001,58 @@ function isSearchSeen(postId, plataforma) {
   return Boolean(getSearchSeenStmt.get(String(postId), plataforma));
 }
 
-/** Anota un resultado de búsqueda al que ya se le pidió el detalle. Si ya estaba, solo cambia el outcome. */
-function markSearchSeen({ postId, plataforma, url = null, term = null, outcome, firstSeenAt }) {
+/**
+ * Anota lo que se decidió sobre un resultado de búsqueda. Si ya estaba,
+ * cambia el outcome, completa lo que llegue (fecha de publicación, motivo,
+ * costo, corrida) y SUMA los términos; nunca pisa first_seen_at ni `term`.
+ */
+function markSearchSeen({ postId, plataforma, url = null, term = null, outcome, firstSeenAt, postedAt = null, motivo = null, llmUsd = null, runId = null, terminos = null }) {
   requirePlataforma(plataforma, 'markSearchSeen');
+  const previo = getSearchSeenStmt.get(String(postId), plataforma);
+  const lista = mergeSearchTerms(previo && previo.term ? [previo.term] : [], previo ? parseSearchTerms(previo.terminos) : [], term ? [term] : [], terminos);
+  const usd = Number(llmUsd);
   markSearchSeenStmt.run({
     postId: String(postId),
     plataforma,
     url: url || null,
-    term: term || null,
+    term: term || lista[0] || null,
     outcome: String(outcome),
     firstSeenAt: firstSeenAt || new Date().toISOString(),
+    postedAt: postedAt || null,
+    motivo: motivo ? String(motivo).slice(0, 500) : null,
+    llmUsd: llmUsd != null && Number.isFinite(usd) ? usd : null,
+    runId: runId == null ? null : Number(runId),
+    terminos: lista.length > 0 ? JSON.stringify(lista) : null,
   });
+}
+
+/**
+ * Suma términos a un resultado ya anotado (otra búsqueda lo volvió a traer).
+ * Sin fila no hace nada: los términos son de lo ya decidido.
+ * @returns {boolean} true si la lista cambió
+ */
+function addSearchSeenTerms(postId, plataforma, terminos) {
+  requirePlataforma(plataforma, 'addSearchSeenTerms');
+  const previo = getSearchSeenStmt.get(String(postId), plataforma);
+  if (!previo) return false;
+  const antes = mergeSearchTerms(previo.term ? [previo.term] : [], parseSearchTerms(previo.terminos));
+  const lista = mergeSearchTerms(antes, terminos);
+  if (lista.length === antes.length && previo.terminos) return false;
+  if (lista.length === 0) return false;
+  setSearchSeenTermsStmt.run({ postId: String(postId), plataforma, terminos: JSON.stringify(lista) });
+  return lista.length !== antes.length;
+}
+
+/**
+ * Cuántos resultados de búsqueda decidió el clasificador en esa corrida
+ * (guardados y descartados) y lo que costó, estimado; `usd` null si ninguno
+ * informó su costo. De todas las redes de la corrida.
+ * @returns {{ n: number, usd: number|null }}
+ */
+function sumSearchSeenByRun(runId) {
+  if (runId == null) return { n: 0, usd: null };
+  const row = sumSearchSeenByRunStmt.get(Number(runId));
+  return { n: Number(row.n) || 0, usd: row.usd == null ? null : Number(row.usd) };
 }
 
 /** Borra los vistos anteriores a olderThanIso. @returns {number} filas borradas */
@@ -2449,6 +3067,39 @@ function getRefreshState(key) {
 
 function setRefreshState(key, value) {
   setRefreshStateStmt.run({ key, value });
+}
+
+/** Borra una clave de refresh_state. @returns {number} filas borradas */
+function deleteRefreshState(key) {
+  return deleteRefreshStateStmt.run(String(key)).changes;
+}
+
+/** Las claves de refresh_state que empiezan con `prefix` (comparación exacta, sin comodines). */
+function listRefreshStateByPrefix(prefix) {
+  return listRefreshStateByPrefixStmt.all({ prefix: String(prefix) }).map((row) => ({ key: row.key, value: row.value }));
+}
+
+/**
+ * Una marca de tiempo (ISO) que solo avanza: guarda `iso` si la clave no
+ * existe, si lo guardado no es una fecha o si `iso` es posterior. Nunca
+ * retrocede ni guarda una fecha del futuro (se recorta a ahora).
+ * @returns {boolean} true si cambió
+ */
+function advanceRefreshState(key, iso, { now = Date.now() } = {}) {
+  let ms = Date.parse(iso);
+  if (!Number.isFinite(ms)) return false;
+  if (ms > now) ms = now;
+  const actual = Date.parse(getRefreshState(key) || '');
+  if (Number.isFinite(actual) && actual >= ms) return false;
+  setRefreshState(key, new Date(ms).toISOString());
+  return true;
+}
+
+/** Guarda `iso` solo si la clave no tiene una fecha válida todavía. @returns {boolean} true si la guardó */
+function initRefreshState(key, iso) {
+  if (Number.isFinite(Date.parse(getRefreshState(key) || '')) || !Number.isFinite(Date.parse(iso))) return false;
+  setRefreshState(key, new Date(Date.parse(iso)).toISOString());
+  return true;
 }
 
 /**
@@ -3256,14 +3907,39 @@ module.exports = {
   updateFollowersForAccount,
   getRefreshState,
   setRefreshState,
+  deleteRefreshState,
+  listRefreshStateByPrefix,
+  advanceRefreshState,
+  initRefreshState,
   getSearchSeen,
   isSearchSeen,
   markSearchSeen,
+  addSearchSeenTerms,
   purgeSearchSeen,
   insertApifyCall,
+  closeApifyCall,
+  getApifyCall,
+  markApifyCallRecovered,
+  markApifyCallLost,
+  lastSearchCallsForTerm,
+  sumSearchSeenByRun,
+  listFailedCallsWithoutRun,
+  hasApifyRun,
+  settleApifyCall,
+  listApifyRunIdsSince,
   startMonitoringRun,
+  getLastFinishedDeepRunAt,
   finishMonitoringRun,
   getMonitoringRun,
+  startRunSource,
+  updateRunSource,
+  getRunSource,
+  listRunSources,
+  listRunSourcesOfRun,
+  listPendingRunSources,
+  listRunSourcesRecoveredIn,
+  lastRunSourcesForKey,
+  clearTopeLlenoPrimerIntento,
   getLastFinishedRunAt,
   getLastFinishedRunAtAny,
   getLastFinishedRun,
