@@ -64,6 +64,9 @@ const progress = require('./monitoringProgress');
 const { resolveBackfillMax } = require('./backfillConfig');
 const db = require('./db');
 const { syncPostImages } = require('./postImageSync');
+// Por el objeto del módulo: los tests stubean imageForModel.
+const postImages = require('./postImages');
+const clasificadorFoto = require('./clasificadorFoto');
 
 // MONITORING_CONFIG_PATH: solo para tests (tempfile), mismo patrón que
 // MONITORING_DB_PATH en db.js. En runtime normal es config/monitoring.json.
@@ -829,15 +832,27 @@ function pickMetrics(platform, post) {
  *
  * @param {object} post posteo normalizado por el adapter
  * @param {string[]} keywords keywords planas (sin "#") de la plataforma
- * @param {{ platform?: object, onUsage?: (usage: object) => void }} [options]
+ * @param {{ platform?: object, onUsage?: (usage: object) => void, presupuestoFoto?: object }} [options]
  *   platform: el adapter, para etiquetar el prompt. onUsage: aviso con lo
  *   que gastó la llamada al modelo (ver classifier.clasificarPosteo).
+ *   presupuestoFoto: el tope de llamadas con foto del ciclo.
+ *
+ * La foto como respaldo (ver classifier.clasificarPosteo): la portada se
+ * baja recién si el clasificador la pide (postImages.imageForModel, del
+ * imageUrl que ya trajo la búsqueda o el detalle). Un posteo sin texto entra
+ * al modelo solo si el detalle confirmó que no tiene texto
+ * (sinTextoConfirmado, ver enrichSearchResults); uno al que todavía no se le
+ * pidió el detalle sigue esperándolo. Lo decidido con la foto lleva
+ * " · con foto" en el motivo.
  */
-async function evaluateRelevance(post, keywords, { platform, onUsage } = {}) {
+async function evaluateRelevance(post, keywords, { platform, onUsage, presupuestoFoto = null } = {}) {
   const platformLabel = platform && platform.label ? platform.label : undefined;
   const text = `${post.caption || ''} ${post.hashtagsText || ''}`.trim();
+  const plataforma = platform && platform.id ? platform.id : null;
+  const obtenerImagen = post.imageUrl && plataforma ? () => postImages.imageForModel({ plataforma, id: post.id, url: post.imageUrl }) : null;
+  const sinTexto = !post.caption || !post.caption.trim();
 
-  if (!post.caption || !post.caption.trim()) {
+  if (sinTexto && !(post.sinTextoConfirmado && obtenerImagen)) {
     if (post.sourceType === 'account') {
       // Sin texto no hay de qué sacar un tema: el de fallback, igual que el
       // clasificador con un caption vacío.
@@ -881,7 +896,12 @@ async function evaluateRelevance(post, keywords, { platform, onUsage } = {}) {
   };
   // El autor va siempre (línea AUTOR): una cuenta de otro país es una señal
   // de afuera para el modelo, como @populares_sevilla.
-  const result = await clasificarPosteo(post.caption, { platformLabel, pista, autor: post.account, onUsage });
+  const result = await clasificarPosteo(post.caption, { platformLabel, pista, autor: post.account, onUsage, obtenerImagen, presupuestoFoto });
+
+  // Sin texto y sin portada (no se pudo bajar o se gastó el tope): no hubo
+  // decisión del modelo, como antes de la foto de respaldo.
+  if (sinTexto && !result.conFoto) return { relevant: false, sinTexto: true };
+  const conFoto = result.conFoto ? ' · con foto' : '';
 
   // Motivo base, con los textos de siempre según origen y coincidencia.
   const origen =
@@ -916,9 +936,9 @@ async function evaluateRelevance(post, keywords, { platform, onUsage } = {}) {
   // en el log el porqué, que es lo único que sobrevive de un descartado.
   if (!result.relevant) {
     console.log(
-      `[clasificador] descartado (${platformLabel || 'sin red'}) @${post.account || '?'} ${post.url || ''}: ${result.motivo || 'sin motivo'}`
+      `[clasificador] descartado (${platformLabel || 'sin red'}) @${post.account || '?'} ${post.url || ''}: ${result.motivo || 'sin motivo'}${conFoto}`
     );
-    return { relevant: false, motivo: result.motivo || null };
+    return result.conFoto ? { relevant: false, motivo: result.motivo || null, conFoto: true } : { relevant: false, motivo: result.motivo || null };
   }
 
   return {
@@ -927,7 +947,8 @@ async function evaluateRelevance(post, keywords, { platform, onUsage } = {}) {
     sentiment: result.sentiment,
     tema: result.tema,
     motivo: result.motivo || null,
-    matchedReason: result.motivo ? `${base} · ${result.motivo}` : base,
+    matchedReason: `${result.motivo ? `${base} · ${result.motivo}` : base}${conFoto}`,
+    ...(result.conFoto ? { conFoto: true } : {}),
   };
 }
 
@@ -964,6 +985,21 @@ function postCodeOf(url) {
 function isNewPost(post, platformId) {
   if (!post || !post.url) return false;
   return !db.findExistingPostId(post.id, post.url) && !db.isSearchSeen(post.id, platformId);
+}
+
+/** La config de la foto de respaldo (src/clasificadorFoto.js); mal escrita, apagada (la valida server.js al arrancar). */
+function fotoConfig() {
+  try {
+    return clasificadorFoto.resolveFotoConfig();
+  } catch {
+    return { habilitada: false, maxPorCiclo: 0 };
+  }
+}
+
+/** ¿Hay foto de respaldo? (CLASIFICAR_CON_FOTO y un tope mayor que 0) */
+function fotoDeRespaldoEncendida() {
+  const c = fotoConfig();
+  return c.habilitada && c.maxPorCiclo > 0;
 }
 
 /** La cuenta de un posteo como en cuentas_excluidas (minúsculas, sin @); '' si no se sabe. */
@@ -1150,14 +1186,21 @@ async function enrichSearchResults(platform, platformId, postsById) {
       markSearchSeen(post, platformId, 'sin_detalle');
       continue;
     }
-    if (!hasCaption(detail)) {
+    // Sin texto: con la foto de respaldo encendida y una portada, sigue a la
+    // clasificación (el modelo mira la imagen; si al final no se consigue,
+    // guardarEvaluado lo anota sin_caption). Si no, sin_caption, como antes.
+    const imageUrl = detail.imageUrl || post.imageUrl || null;
+    const sinTexto = !hasCaption(detail);
+    if (sinTexto && !(imageUrl && fotoDeRespaldoEncendida())) {
       stats.noCaption += 1;
       markSearchSeen(post, platformId, 'sin_caption');
       continue;
     }
+    if (sinTexto) stats.noCaptionConFoto = (stats.noCaptionConFoto || 0) + 1;
     postsById.set(post.id, {
       ...post,
-      caption: detail.caption,
+      ...(sinTexto ? { sinTextoConfirmado: true } : {}),
+      caption: sinTexto ? '' : detail.caption,
       hashtagsText: detail.hashtagsText || post.hashtagsText || '',
       likes: detail.likes ?? post.likes ?? null,
       comments: detail.comments ?? post.comments ?? null,
@@ -1166,7 +1209,7 @@ async function enrichSearchResults(platform, platformId, postsById) {
       postedAt: post.postedAt || detail.postedAt || null,
       // Link de la imagen (ver src/postImages.js): el del detalle, que es la
       // imagen entera; el resultado de búsqueda trae una versión más chica.
-      imageUrl: detail.imageUrl || post.imageUrl || null,
+      imageUrl,
     });
     out.enriched.add(post.id);
     stats.enriched += 1;
@@ -1563,10 +1606,16 @@ function addSearchTerms(post, platformId, termsById) {
 function guardarEvaluado(post, evaluation, { platform, platformId, terminos = null, llmUsd = null, runId = null }) {
   const anotar = (outcome) => {
     if (post.sourceType !== 'search') return;
-    markSearchSeen(post, platformId, outcome, { motivo: evaluation.motivo || null, llmUsd, runId, terminos });
+    // Lo decidido con la portada lo dice también en search_seen.
+    const motivo = evaluation.conFoto ? `${evaluation.motivo || 'sin motivo'} · con foto` : evaluation.motivo || null;
+    markSearchSeen(post, platformId, outcome, { motivo, llmUsd, runId, terminos });
   };
   if (!evaluation.relevant) {
-    if (hasCaption(post)) anotar('descartado');
+    // Con texto, o sin texto pero decidido con la foto: lo decidió el modelo.
+    if (hasCaption(post) || evaluation.conFoto) anotar('descartado');
+    // Sin texto confirmado por el detalle y sin portada: como antes de la
+    // foto de respaldo, sin_caption (no se vuelve a pedir).
+    else if (post.sinTextoConfirmado) anotar('sin_caption');
     return null;
   }
 
@@ -2146,6 +2195,8 @@ async function runMonitoringCycle({ plataformas, trigger, pasada = null } = {}) 
     // la búsqueda ya trae la cuenta, antes del detalle (no se paga); si no,
     // después, cuando el detalle la trae (más abajo).
     const excluidas = cuentasExcluidasDe(platformId);
+    // El tope de llamadas con foto de respaldo de esta red en este ciclo.
+    const presupuestoFoto = clasificadorFoto.crearPresupuestoFoto(fotoDeRespaldoEncendida() ? fotoConfig().maxPorCiclo : 0);
     const excluidasPorCuenta = new Map();
     const excluir = (post, motivo) => {
       if (post.sourceType === 'search') markSearchSeen(post, platformId, 'excluido', { motivo: `Cuenta excluida: ${motivo}`, runId: (getContext() || {}).runId ?? null });
@@ -2221,7 +2272,7 @@ async function runMonitoringCycle({ plataformas, trigger, pasada = null } = {}) 
         const cost = Number(usage && usage.costUsd);
         if (usage && usage.costUsd != null && Number.isFinite(cost)) llmUsd = (llmUsd || 0) + cost;
       };
-      const evaluation = await evaluateRelevance(post, plainKeywords, { platform, onUsage });
+      const evaluation = await evaluateRelevance(post, plainKeywords, { platform, onUsage, presupuestoFoto });
       progress.tick();
       if (evaluation.relevant) relevantNew += 1;
       else discardedNew += 1;
@@ -2251,6 +2302,13 @@ async function runMonitoringCycle({ plataformas, trigger, pasada = null } = {}) 
       console.log(
         `[monitor] ${platformId}: ${plural(totalExcluidas, 'publicación', 'publicaciones')} de cuentas excluidas, ` +
           `descartadas sin pasar por el modelo (${[...excluidasPorCuenta].map(([c, n]) => `@${c}: ${n}`).join(', ')})`
+      );
+    }
+    if (presupuestoFoto.usadas > 0 || presupuestoFoto.agotado) {
+      porPlataforma[platformId].clasificacionesConFoto = presupuestoFoto.usadas;
+      console.log(
+        `[monitor] ${platformId}: ${plural(presupuestoFoto.usadas, 'clasificación', 'clasificaciones')} con la foto de respaldo` +
+          (presupuestoFoto.agotado ? ` (se llegó al tope de CLASIFICADOR_FOTO_MAX=${presupuestoFoto.limite}: las demás, solo con el texto)` : '')
       );
     }
 
@@ -2377,6 +2435,7 @@ async function backfillSinCandado(platformId, max) {
   let classified = 0;
   let temasCompletados = 0;
   let stillPending = 0;
+  const presupuestoFoto = clasificadorFoto.crearPresupuestoFoto(fotoDeRespaldoEncendida() ? fotoConfig().maxPorCiclo : 0);
 
   if (todos.length > 0) {
     console.log(
@@ -2390,8 +2449,15 @@ async function backfillSinCandado(platformId, max) {
 
     // Sin pista: el origen ya quedó en matched_reason. El modelo también
     // devuelve relevant, pero desde acá no se borra nada ya guardado. El
-    // autor sí va (línea AUTOR), como en el ciclo.
-    const r = await clasificarPosteo(row.caption, { platformLabel: platform.label, autor: row.account });
+    // autor sí va (línea AUTOR), como en el ciclo. La foto de respaldo, de la
+    // copia guardada (los posteos guardados tienen su foto; sin copia, solo
+    // el texto), con el mismo tope por invocación que un ciclo.
+    const r = await clasificarPosteo(row.caption, {
+      platformLabel: platform.label,
+      autor: row.account,
+      obtenerImagen: () => postImages.imageForModel({ plataforma: platformId, id: row.id }),
+      presupuestoFoto,
+    });
 
     if (row.title != null) {
       // Ya clasificado, solo le falta el tema: se completa ESO. Título,
@@ -2423,6 +2489,7 @@ async function backfillSinCandado(platformId, max) {
       const nota = r.relevant ? r.motivo : `no relevante según el modelo: ${r.motivo}`;
       matchedReason = matchedReason ? `${matchedReason} · ${nota}` : nota;
     }
+    if (r.conFoto) matchedReason = `${matchedReason} · con foto`;
     if (!r.relevant && !sinMotivo) {
       console.warn(
         `[monitor] backfill: el modelo considera NO relevante el posteo ${row.id} de @${row.account || '?'} (${r.motivo || 'sin motivo'}); queda guardado para revisión.`

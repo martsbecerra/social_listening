@@ -132,7 +132,8 @@ describe('clasificarPosteo: una sola llamada, con schema', { concurrency: false 
     // las difíciles (noviembre 2026).
     assert.equal(req.maxTokens, 2000);
     assert.equal(req.schema.additionalProperties, false);
-    assert.deepEqual(req.schema.required, ['relevant', 'title', 'sentiment', 'tema', 'motivo']);
+    assert.deepEqual(req.schema.required, ['relevant', 'title', 'sentiment', 'tema', 'motivo', 'necesitaImagen']);
+    assert.equal(req.images, undefined, 'sin foto: el pedido no lleva imágenes');
     assert.match(req.system, /motivo: una frase corta/);
     assert.deepEqual(req.schema.properties.sentiment.enum, ['positivo', 'neutral', 'negativo']);
     assert.deepEqual(req.schema.properties.tema.enum, categoriasConfig.listCategorias());
