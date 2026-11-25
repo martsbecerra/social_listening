@@ -96,7 +96,7 @@ const { CATEGORIAS: TEMAS_POSTEO, CATEGORIA_FALLBACK } = require('./src/categori
 const authRoutes = require('./src/auth/authRoutes');
 const { purgeExpiredSessions } = require('./src/auth/session');
 const { createAuthGate } = require('./src/auth/gate');
-const { securityHeaders, errorHandler, installProcessHandlers, trustProxySetting } = require('./src/httpSecurity');
+const { securityHeaders, errorHandler, installProcessHandlers, trustProxySetting, noStoreApi } = require('./src/httpSecurity');
 const rateLimits = require('./src/rateLimits');
 const { rutaAsync } = require('./src/asyncRoute');
 const healthRoutes = require('./src/healthRoutes');
@@ -119,6 +119,11 @@ if (trustProxy) app.set('trust proxy', trustProxy);
 // gate, así también los llevan los 401 y las redirecciones al login. Ver
 // src/httpSecurity.js.
 app.use(securityHeaders());
+
+// Cache-Control: no-store en todo /api (también en los 401, 403 y 429). Las
+// fotos, las comunas y el resumen público ponen su propia caché y la pisan.
+// Ver noStoreApi en src/httpSecurity.js.
+app.use(noStoreApi);
 
 // GET /health: el chequeo de Railway. Público, sin datos ({ status, db,
 // uptime }), 503 si la base no responde. Antes del límite de pedidos y del

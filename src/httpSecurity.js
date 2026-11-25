@@ -13,6 +13,8 @@
 //     terminaba en los dos casos; lo que cambia es que queda el log.
 //   - trustProxySetting() (rama rate-limit-y-salud): el `trust proxy` de
 //     Express detrás de Railway, 1 y nunca true (los límites por IP).
+//   - noStoreApi: Cache-Control: no-store en todo /api, salvo las rutas que
+//     ponen su propia caché (fotos, comunas, el resumen público).
 // Sin dependencias de la base: los tests lo cargan solo.
 // ==========================================================================
 
@@ -98,6 +100,21 @@ function trustProxySetting(env = process.env) {
   return false;
 }
 
+/**
+ * Cache-Control: no-store en todo /api (rama rate-limit-y-salud): las
+ * respuestas traen datos de la sesión (posteos, análisis, reclamos, CSV) y
+ * no tienen que quedar en la caché del navegador ni de un proxy. Va antes
+ * del gate, así también lo llevan los 401, 403 y 429. Una ruta que pone su
+ * propia caché la pisa: las dos de fotos (private, un año, immutable: el
+ * feed no las vuelve a pedir), /api/geo/comunas (private, un día: es un
+ * archivo fijo) y GET /api/public/resumen (public, 60 s, sin datos de
+ * nadie). Sin mayúsculas: /API/... llega a las mismas rutas.
+ */
+function noStoreApi(req, res, next) {
+  if (/^\/api(\/|$)/i.test(req.path)) res.setHeader('Cache-Control', 'no-store');
+  next();
+}
+
 function httpStatusOf(err) {
   const status = Number(err && (err.status || err.statusCode));
   return Number.isInteger(status) && status >= 400 && status < 600 ? status : 500;
@@ -144,5 +161,6 @@ module.exports = {
   cspDirectives,
   isHttpsBaseUrl,
   trustProxySetting,
+  noStoreApi,
   MAP_TILE_HOSTS,
 };
