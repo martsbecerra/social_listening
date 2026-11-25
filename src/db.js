@@ -3945,6 +3945,54 @@ function addCuentaExcluida({ plataforma, cuenta, motivo, creadoPor = null, now =
   }
 }
 
+// --------------------------------------------------------------------
+// Reclasificación de una corrida (scripts/reclasificar-corrida.js): las
+// publicaciones que una corrida guardó sin clasificar (el clasificador
+// falló: la clave vencida del 25/11/2026 dejó así las 1.183 de la #61).
+// --------------------------------------------------------------------
+const listSinClasificarDeCorridaStmt = db.prepare(`
+  SELECT id, account, url, caption, sentiment, matched_reason AS matchedReason, posted_at AS postedAt,
+         image_source_url AS imageSourceUrl, image_saved_at AS imageSavedAt
+  FROM detected_posts
+  WHERE plataforma = ? AND ignored = 0 AND title IS NULL
+    AND detected_at >= ? AND detected_at <= ?
+    AND matched_reason LIKE '% — sin clasificar%'
+  ORDER BY detected_at, id
+`);
+const deleteDetectedPostStmt = db.prepare('DELETE FROM detected_posts WHERE id = ? AND plataforma = ?');
+
+/**
+ * Las publicaciones que guardó sin clasificar la corrida que fue de desdeIso
+ * a hastaIso (no ignoradas, con la marca "— sin clasificar" en el motivo).
+ */
+function listSinClasificarDeCorrida({ plataforma, desdeIso, hastaIso }) {
+  requirePlataforma(plataforma, 'listSinClasificarDeCorrida');
+  return listSinClasificarDeCorridaStmt.all(plataforma, desdeIso, hastaIso);
+}
+
+/**
+ * Saca de detected_posts una publicación guardada y la anota en search_seen
+ * con `outcome` (descartado | excluido), como si el ciclo la hubiera
+ * descartado: no vuelve a entrar como nueva y Estadísticas la sigue contando
+ * como detectada. En una transacción.
+ * @returns {{ borrada: boolean, fotoLibre: string|null }} fotoLibre: el id,
+ *   si ningún análisis usa su foto (quien llama borra los archivos).
+ */
+function descartarPosteoGuardado({ id, plataforma, url = null, term = null, outcome, motivo = null, llmUsd = null, runId = null, postedAt = null }) {
+  requirePlataforma(plataforma, 'descartarPosteoGuardado');
+  db.exec('BEGIN');
+  try {
+    const borrada = deleteDetectedPostStmt.run(String(id), plataforma).changes > 0;
+    if (borrada) markSearchSeen({ postId: id, plataforma, url, term, outcome, postedAt, motivo, llmUsd, runId });
+    const fotoLibre = borrada && countOtrosAnalisisDePostIdStmt.get(plataforma, String(id), -1).n === 0 ? String(id) : null;
+    db.exec('COMMIT');
+    return { borrada, fotoLibre };
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+}
+
 /** Saca una cuenta de la lista. No des-ignora nada. @returns {boolean} si estaba. */
 function removeCuentaExcluida(plataforma, cuenta) {
   requirePlataforma(plataforma, 'removeCuentaExcluida');
@@ -3991,6 +4039,8 @@ module.exports = {
   addCuentaExcluida,
   removeCuentaExcluida,
   sembrarCuentasExcluidas,
+  listSinClasificarDeCorrida,
+  descartarPosteoGuardado,
   startAnalisis,
   saveAnalisisPost,
   finishAnalisis,
