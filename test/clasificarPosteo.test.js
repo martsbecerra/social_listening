@@ -111,7 +111,7 @@ beforeEach(() => {
 });
 
 describe('clasificarPosteo: una sola llamada, con schema', { concurrency: false }, () => {
-  test('pide structured output (schema estricto, nombre, pocos tokens) y devuelve lo que decidió el modelo', async () => {
+  test('pide structured output (schema estricto, nombre, tope de 2000 tokens) y devuelve lo que decidió el modelo', async () => {
     const r = await classifier.clasificarPosteo('Jorge Macri inauguró una escuela en Villa Lugano', {
       platformLabel: 'Instagram',
       pista: { termino: 'jorge macri', cuenta: 'cuenta' },
@@ -121,7 +121,9 @@ describe('clasificarPosteo: una sola llamada, con schema', { concurrency: false 
     assert.equal(llamadas.length, 1);
     const req = ultima();
     assert.equal(req.schemaName, 'clasificacion_posteo');
-    assert.equal(req.maxTokens, 300);
+    // El razonamiento del modelo cuenta dentro del tope: con 300 se cortaban
+    // las difíciles (noviembre 2026).
+    assert.equal(req.maxTokens, 2000);
     assert.equal(req.schema.additionalProperties, false);
     assert.deepEqual(req.schema.required, ['relevant', 'title', 'sentiment', 'tema', 'motivo']);
     assert.match(req.system, /motivo: una frase corta/);
@@ -230,6 +232,25 @@ describe('clasificarPosteo: una sola llamada, con schema', { concurrency: false 
       assert.deepEqual(await classifier.clasificarPosteo('Jorge Macri inauguró una escuela'), sinClasificar);
       assert.match(errores[1], /respuesta inválida del modelo/);
     } finally {
+      console.error = originalError;
+    }
+  });
+
+  test('una respuesta cortada en el tope (aunque ahora sea de 2000) sigue quedando sin clasificar', async () => {
+    const original = llm.requestStructuredAnalysis;
+    const errores = [];
+    const originalError = console.error;
+    console.error = (msg) => errores.push(String(msg));
+    llm.requestStructuredAnalysis = async (req) => {
+      throw require('../src/llm/errors').salidaCortadaError(req.maxTokens);
+    };
+    try {
+      const r = await classifier.clasificarPosteo('Jorge Macri inauguró una escuela');
+      assert.equal(r.unclassified, true);
+      assert.equal(r.relevant, true);
+      assert.match(errores[0], /2000/);
+    } finally {
+      llm.requestStructuredAnalysis = original;
       console.error = originalError;
     }
   });

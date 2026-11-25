@@ -67,9 +67,14 @@ const TEMAS_PARA_PROMPT = TEMAS.map((nombre) => {
 }).join('\n');
 const DEFAULT_PLATFORM_LABEL = 'Instagram';
 const MAX_CAPTION_CHARS = 2000;
-// Un título de hasta 10 palabras, el sentimiento, el tema, un motivo de hasta
-// 12 y el JSON: sobra con esto.
-const MAX_TOKENS = 300;
+// El JSON (un título de hasta 10 palabras, el sentimiento, el tema y un motivo
+// de hasta 12) son unos 100 tokens, pero el modelo razona antes de contestar
+// y ese razonamiento cuenta dentro del tope. Con 300, las publicaciones
+// difíciles (justo las que más razona) se cortaban y quedaban sin clasificar:
+// 13 de 142 guardadas en las corridas #59 y #60 (noviembre 2026). Es un
+// techo, no un gasto: se paga lo que el modelo usa. No se le pide menos
+// razonamiento (decisión del dueño, 25/11/2026).
+const MAX_TOKENS = 2000;
 // Una clasificación tarda segundos; si en un minuto no llegó, el proveedor
 // está trabado. El provider aborta la request y reintenta una vez (ver
 // src/llm/openrouterProvider.js); si tampoco, el posteo queda sin
