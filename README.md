@@ -172,6 +172,7 @@ social_listening_app/
 │   ├── import-reclamos.js       # Importador genérico de Excel/CSV (solo CLI).
 │   ├── migrate-categorias.js    # Migra categorías viejas al esquema de dos niveles.
 │   ├── costo-apify.js           # Gasto en Apify por ventana, fase y actor (npm run costo); --conciliar y --asentar.
+│   ├── reclasificar-corrida.js  # Clasifica de nuevo lo que una corrida guardó sin clasificar (sin --si solo informa).
 │   ├── gastos.js                # Gasto por corrida, fase y término de búsqueda (npm run gastos).
 │   ├── cargar-fotos.js          # Carga única de las fotos de los posteos ya guardados (sin --si solo informa).
 │   ├── geo-reprocesar.js        # Fase H: ubicación de los reclamos sin punto, una vez y sobre una copia (--costo, --simulado, --si, --aplicar).
@@ -2744,6 +2745,24 @@ Rama `clasificacion-foto-y-exclusiones`. Tests: `clasificarConFoto`,
   Quién la agregó queda en la base y en el log, nunca en la respuesta.
   Estadísticas no las cuenta como detectadas y `npm run gastos` las muestra
   en su propia línea. Todavía sin pantalla.
+- **Reclasificar una corrida que quedó sin clasificar.** El 25/11/2026 la
+  clave de OpenRouter venció y la corrida #61 guardó sus 1.183 publicaciones
+  "sin clasificar". El backfill las completaría pero no saca las no
+  relevantes; `scripts/reclasificar-corrida.js` hace lo que habría hecho el
+  ciclo:
+
+  ```
+  node scripts/reclasificar-corrida.js --corrida 61          # solo informa: cuántas, por término, costo estimado
+  node scripts/reclasificar-corrida.js --corrida 61 --si     # clasifica (gasta en el modelo)
+  ```
+
+  Las relevantes se completan; las no relevantes salen de la tabla (y sus
+  fotos) y quedan como descartadas en `search_seen`; las de una cuenta
+  excluida salen sin pasar por el modelo; las que tienen el tono puesto a
+  mano no se borran y se informan. Con `--si` exige la app apagada y la
+  clave andando, hace antes un backup verificado (`data/backups/`), corre 4
+  a la vez y frena antes de pasar `--tope` (US$ 16) o con 3 fallas seguidas
+  del modelo. Si se corta, se vuelve a correr y sigue con lo que falta.
 
 ---
 

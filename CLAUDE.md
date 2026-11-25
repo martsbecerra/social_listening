@@ -778,6 +778,23 @@ Rama `clasificacion-foto-y-exclusiones`. Tests: `clasificarConFoto`,
   gastos` las muestra en su propia línea. Sin pantalla todavía: la propuesta
   ("Excluir cuenta…" en el pop-up y un recuadro de cuentas excluidas en el
   panel) quedó escrita en el PR de la rama.
+- **Reclasificar una corrida** (`scripts/reclasificar-corrida.js --corrida N
+  [--si] [--tope 16] [--concurrencia 4] [--fotos N]`): para lo que una
+  corrida guardó "sin clasificar" porque el clasificador falló (la clave
+  vencida del 25/11/2026 dejó así las 1.183 de la #61; el backfill no sirve
+  para esto: no saca las no relevantes). Hace con cada una lo del ciclo
+  (`evaluateRelevance`): relevante, se completa; no relevante, sale de
+  `detected_posts` (y sus fotos si nadie más las usa) y queda `descartado`
+  en `search_seen` (`db.descartarPosteoGuardado`); de cuenta excluida, sale
+  como `excluido` sin modelo; con el tono a mano (una sin clasificar con
+  `sentiment` lo eligió una persona), no se borra y se informa; si el modelo
+  falla, queda igual, y con 3 fallas seguidas frena. Sin `--si` solo informa
+  (solo lectura, sin cargar `src/db.js`). Con `--si` exige la app apagada
+  (su `/health` en `[::1]` o `127.0.0.1`, por la forma de la respuesta), que
+  la clave ande (lectura gratis de OpenRouter) y hace un backup nuevo y
+  verificado en `data/backups/`; frena antes de pasar el tope. Repetible.
+  Lo corre el dueño, o un agente con su OK al costo. Test:
+  `test/reclasificarCorrida.test.js`.
 
 ## Estadísticas (`src/stats.js`)
 
