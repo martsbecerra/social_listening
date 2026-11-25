@@ -856,7 +856,7 @@ async function evaluateRelevance(post, keywords, { platform, onUsage } = {}) {
 
   if (post.sourceType === 'keyword') {
     const term = post.sourceQuery || literalMatch;
-    const { title, sentiment, tema, unclassified } = await clasificarPosteo(post.caption, { platformLabel, pista: { busqueda: term }, onUsage });
+    const { title, sentiment, tema, unclassified } = await clasificarPosteo(post.caption, { platformLabel, pista: { busqueda: term }, autor: post.account, onUsage });
     let base = 'Búsqueda por palabra clave';
     if (term) {
       base = String(term).startsWith('#')
@@ -879,7 +879,9 @@ async function evaluateRelevance(post, keywords, { platform, onUsage } = {}) {
     hashtag: post.sourceType === 'hashtag',
     busqueda: post.sourceType === 'search' ? post.sourceQuery || null : null,
   };
-  const result = await clasificarPosteo(post.caption, { platformLabel, pista, onUsage });
+  // El autor va siempre (línea AUTOR): una cuenta de otro país es una señal
+  // de afuera para el modelo, como @populares_sevilla.
+  const result = await clasificarPosteo(post.caption, { platformLabel, pista, autor: post.account, onUsage });
 
   // Motivo base, con los textos de siempre según origen y coincidencia.
   const origen =
@@ -2322,8 +2324,9 @@ async function backfillSinCandado(platformId, max) {
     if (i > 0 && i % 50 === 0) console.log(`[monitor] backfill (${platformId}): ${i} de ${pending.length}`);
 
     // Sin pista: el origen ya quedó en matched_reason. El modelo también
-    // devuelve relevant, pero desde acá no se borra nada ya guardado.
-    const r = await clasificarPosteo(row.caption, { platformLabel: platform.label });
+    // devuelve relevant, pero desde acá no se borra nada ya guardado. El
+    // autor sí va (línea AUTOR), como en el ciclo.
+    const r = await clasificarPosteo(row.caption, { platformLabel: platform.label, autor: row.account });
 
     if (row.title != null) {
       // Ya clasificado, solo le falta el tema: se completa ESO. Título,

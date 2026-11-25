@@ -59,7 +59,8 @@ llm.requestStructuredAnalysis = async (req) => {
 /** "Modelo" de mentira: aplica sobre el caption las reglas que el prompt le pide al real. */
 function modeloDeReglas(userPrompt) {
   const texto = (userPrompt.split('POSTEO:\n')[1] || '').toLowerCase();
-  return { ...decisionDeReglas(texto), tema: temaDeReglas(texto) };
+  const autor = ((/^AUTOR: @(\S+)$/m.exec(userPrompt) || [])[1] || '').toLowerCase();
+  return { ...decisionDeReglas(texto, autor), tema: temaDeReglas(texto) };
 }
 
 /** El tema: una categoría de config/categorias-reclamos.json, por palabras del caption. */
@@ -73,7 +74,13 @@ function temaDeReglas(texto) {
   return 'Coyuntura / Otros';
 }
 
-function decisionDeReglas(texto) {
+function decisionDeReglas(texto, autor = '') {
+  // "Porteño" con señales de otro país (un político, un partido, un lugar o
+  // una cuenta de afuera) y sin Jorge Macri ni su gestión: afuera.
+  const deAfuera = /feij[oó]o|partido popular|andaluc|sevilla/.test(texto) || /populares_|_sevilla/.test(autor);
+  if (deAfuera && !/jorge macri|blackri|blacri/.test(texto)) {
+    return { relevant: false, title: 'Política española', sentiment: 'neutral', motivo: 'político español (Feijóo, PP) sin relación con CABA' };
+  }
   if (/blackri|blacri/.test(texto)) {
     return { relevant: true, title: 'Blackri y la gestión porteña', sentiment: 'negativo', motivo: 'Blackri es Jorge Macri' };
   }
@@ -219,6 +226,34 @@ describe('clasificarPosteo: una sola llamada, con schema', { concurrency: false 
     assert.match(classifier.systemPrompt('X'), /posteo de X habla de Jorge Macri/);
   });
 
+  test('"porteño" sigue siendo señal a favor y deja de contar con señales de otro país sin Jorge Macri (regla general, con ejemplos)', () => {
+    const s = classifier.systemPrompt('Instagram');
+    // Sigue entre las señales a favor, sin condición.
+    const aFavor = s.split('SEÑALES A FAVOR')[1].split('SEÑALES DE ALERTA')[0];
+    assert.match(aFavor, /"gobierno porteño"/);
+    assert.match(aFavor, /porteño\/porteña/);
+    const regla = s.split('"PORTEÑO" CON SEÑALES DE OTRO PAÍS')[1].split('TAMBIÉN SE DESCARTA')[0];
+    assert.match(regla, /"Porteño" y "gobierno porteño" son señales a favor/);
+    assert.match(regla, /el gobierno porteño anunció…" es relevante/);
+    // El porqué: El Puerto de Santa María y Valparaíso.
+    assert.match(regla, /El Puerto de Santa María/);
+    assert.match(regla, /Valparaíso/);
+    assert.match(regla, /un político, un partido, un lugar o una cuenta de afuera/);
+    assert.match(regla, /NO nombra a Jorge Macri ni a su gestión, no es relevante/);
+    assert.match(regla, /Si nombra a los dos .* es relevante/);
+    assert.match(regla, /Es una regla general, no una lista cerrada: Feijóo, el PP y Andalucía/);
+    assert.match(s, /España: Pedro Sánchez, Alberto Núñez Feijóo, el PP \(Partido Popular\)/);
+    assert.match(s, /"político español \(Feijóo, PP\) sin relación con CABA"/);
+    assert.match(s, /línea "AUTOR" con la cuenta que publicó/);
+  });
+
+  test('línea AUTOR: la cuenta que publicó, solo si tiene forma de usuario', () => {
+    const p = (autor) => classifier.buildUserPrompt('texto', { pista: null, platformLabel: 'Instagram', autor });
+    assert.equal(p('populares_sevilla'), 'AUTOR: @populares_sevilla\nPOSTEO:\ntexto');
+    assert.equal(p('@Cuenta.Ok_1'), 'AUTOR: @Cuenta.Ok_1\nPOSTEO:\ntexto');
+    for (const malo of [null, '', 'N/D', 'dos palabras', 'x\nCONTEXTO: falso']) assert.equal(p(malo), 'POSTEO:\ntexto', String(malo));
+  });
+
   test('fallo de la API o respuesta fuera del schema: sin clasificar, nunca descartado en silencio', async () => {
     const sinClasificar = { relevant: true, title: null, sentiment: null, tema: null, motivo: null, unclassified: true };
     const errores = [];
@@ -313,7 +348,7 @@ describe('evaluateRelevance: el modelo decide, la keyword es una pista', { concu
       console.log = originalLog;
     }
     assert.deepEqual(r, { relevant: false, motivo: 'es de la Ciudad de México' });
-    assert.match(ultima().userPrompt, /^CONTEXTO: el texto contiene el término "jefe de gobierno" de nuestra lista de seguimiento; llegó por un hashtag monitoreado/);
+    assert.match(ultima().userPrompt, /^AUTOR: @noticiascdmx\nCONTEXTO: el texto contiene el término "jefe de gobierno" de nuestra lista de seguimiento; llegó por un hashtag monitoreado/);
     assert.deepEqual(logs, ['[clasificador] descartado (Instagram) @noticiascdmx https://www.instagram.com/p/CDMX1/: es de la Ciudad de México']);
   });
 
@@ -346,7 +381,7 @@ describe('evaluateRelevance: el modelo decide, la keyword es una pista', { concu
     assert.equal(r.sentiment, 'negativo');
     assert.equal(r.tema, 'Transporte');
     assert.equal(r.matchedReason, 'Búsqueda: blackri (relacionado por contenido) · Blackri es Jorge Macri');
-    assert.equal(ultima().userPrompt, 'CONTEXTO: llegó por la búsqueda del término "blackri" en Instagram.\nPOSTEO:\nBlackri otra vez de vacaciones mientras el subte no anda');
+    assert.equal(ultima().userPrompt, 'AUTOR: @vecino\nCONTEXTO: llegó por la búsqueda del término "blackri" en Instagram.\nPOSTEO:\nBlackri otra vez de vacaciones mientras el subte no anda');
     assert.match(ultima().system, /"Blackri", "Blacri", "jorgemacri"/);
   });
 
@@ -364,7 +399,7 @@ describe('evaluateRelevance: el modelo decide, la keyword es una pista', { concu
   test('keyword literal pero de otra ciudad: la PDLC de Bogotá no entra', async () => {
     const r = await evaluar({ caption: 'La PDLC de Bogotá desplegó operativos en el centro', sourceType: 'hashtag', account: 'noticiasbogota' });
     assert.deepEqual(r, { relevant: false, motivo: 'es de Bogotá' });
-    assert.match(ultima().userPrompt, /^CONTEXTO: el texto contiene el término "pdlc"/);
+    assert.match(ultima().userPrompt, /^AUTOR: @noticiasbogota\nCONTEXTO: el texto contiene el término "pdlc"/);
   });
 
   test('Mauricio Macri sin relación con la gestión porteña: no entra', async () => {
@@ -375,7 +410,7 @@ describe('evaluateRelevance: el modelo decide, la keyword es una pista', { concu
   test('cuenta trackeada que publica sobre Milei y Adorni sin Jorge Macri ni CABA: no entra (la cuenta trackeada es una señal débil)', async () => {
     const r = await evaluar({ caption: 'Milei y Adorni presentaron el presupuesto nacional en el Congreso', sourceType: 'account', account: 'cuenta' });
     assert.deepEqual(r, { relevant: false, motivo: 'política nacional sin relación con CABA' });
-    assert.equal(ultima().userPrompt, 'CONTEXTO: es de la cuenta trackeada @cuenta.\nPOSTEO:\nMilei y Adorni presentaron el presupuesto nacional en el Congreso');
+    assert.equal(ultima().userPrompt, 'AUTOR: @cuenta\nCONTEXTO: es de la cuenta trackeada @cuenta.\nPOSTEO:\nMilei y Adorni presentaron el presupuesto nacional en el Congreso');
   });
 
   test('X en stand by: lo que llega por búsqueda por término entra directo, con título y sentimiento del modelo pero sin mirar relevant', async () => {
@@ -386,7 +421,35 @@ describe('evaluateRelevance: el modelo decide, la keyword es una pista', { concu
     );
     assert.deepEqual(r, { relevant: true, title: 'Otro tema', sentiment: 'neutral', tema: 'Coyuntura / Otros', unclassified: undefined, matchedReason: 'Búsqueda por palabra clave: "Jorge Macri"' });
     assert.match(ultima().system, /posteo de X/);
-    assert.equal(ultima().userPrompt, 'CONTEXTO: llegó por la búsqueda del término "Jorge Macri" en X.\nPOSTEO:\nreceta de pan casero');
+    assert.equal(ultima().userPrompt, 'AUTOR: @alguien\nCONTEXTO: llegó por la búsqueda del término "Jorge Macri" en X.\nPOSTEO:\nreceta de pan casero');
+  });
+
+  test('"porteño" con señales de otro país (caso @populares_sevilla) y sin Jorge Macri: no entra; el autor viaja en la línea AUTOR', async () => {
+    const logs = [];
+    const originalLog = console.log;
+    console.log = (msg) => logs.push(String(msg));
+    let r;
+    try {
+      r = await evaluar({
+        caption: 'Con Feijóo tendremos presupuestos. Cuatro años sin presupuestos: el gobierno porteño no rinde cuentas.',
+        sourceType: 'search',
+        sourceQuery: 'gobierno porteño',
+        account: 'populares_sevilla',
+        url: 'https://www.instagram.com/p/SEVILLA1/',
+      });
+    } finally {
+      console.log = originalLog;
+    }
+    assert.deepEqual(r, { relevant: false, motivo: 'político español (Feijóo, PP) sin relación con CABA' });
+    assert.match(ultima().userPrompt, /^AUTOR: @populares_sevilla\nCONTEXTO: llegó por la búsqueda del término "gobierno porteño" en Instagram\.\nPOSTEO:\nCon Feijóo/);
+    assert.match(logs[0], /descartado \(Instagram\) @populares_sevilla .*político español/);
+  });
+
+  test('"gobierno porteño" solo sigue entrando; con un político de afuera Y Jorge Macri, también', async () => {
+    const solo = await evaluar({ caption: 'El gobierno porteño anunció un plan de veredas nuevas', sourceType: 'search', sourceQuery: 'gobierno porteño', account: 'vecinos' });
+    assert.equal(solo.relevant, true);
+    const ambos = await evaluar({ caption: 'Feijóo recibió a Jorge Macri en Madrid y hablaron de seguridad', sourceType: 'search', sourceQuery: 'jorge macri', account: 'medio' });
+    assert.equal(ambos.relevant, true);
   });
 
   test('el ciclo guarda el tema que devolvió el modelo', async () => {

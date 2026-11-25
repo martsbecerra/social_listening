@@ -121,8 +121,14 @@ SEÑALES A FAVOR (contexto porteño)
 
 SEÑALES DE ALERTA (mirar con más cuidado; NO descartan por sí solas)
 - Ciudad de México y sus figuras: Clara Brugada, Martí Batres, Ernestina Godoy, Santiago Taboada, Marcelo Ebrard, López Obrador, Claudia Sheinbaum, Morena, PRI, CDMX, GobCDMX, alcaldías (Benito Juárez, Cuauhtémoc, etc.), "Jefa de Gobierno".
-- Colombia: Gustavo Petro, Bogotá. España: Pedro Sánchez, Vox, Zapatero. Chile: Boric. Otros países de la región.
+- Colombia: Gustavo Petro, Bogotá. España: Pedro Sánchez, Alberto Núñez Feijóo, el PP (Partido Popular), Vox, Zapatero, Andalucía, Sevilla. Chile: Boric, Kast, Valparaíso. Otros países de la región.
 REGLA CLAVE: una señal de alerta no descarta el posteo. Si el contenido menciona una de esas figuras Y ADEMÁS habla de Jorge Macri o de la gestión de CABA, es relevante. Se descarta solo cuando el contenido es claramente de otra ciudad o país y no tiene nada que ver con Buenos Aires.
+
+"PORTEÑO" CON SEÑALES DE OTRO PAÍS
+"Porteño" y "gobierno porteño" son señales a favor: en la Argentina casi siempre hablan de CABA, y una publicación que dice solo "el gobierno porteño anunció…" es relevante. Pero la palabra también se usa fuera de Buenos Aires: en España, "porteño" es de El Puerto de Santa María (Cádiz); en Chile, de Valparaíso. Por eso "porteño" deja de contar cuando la publicación muestra señales de otro país: un político, un partido, un lugar o una cuenta de afuera (la línea AUTOR dice qué cuenta publicó).
+- Si nombra a un político o un partido de otro país (o es claramente de un lugar o de una cuenta de afuera) y NO nombra a Jorge Macri ni a su gestión, no es relevante, aunque diga "porteño" o "gobierno porteño".
+- Si nombra a los dos (lo de afuera y a Jorge Macri o su gestión), es relevante.
+Es una regla general, no una lista cerrada: Feijóo, el PP y Andalucía (o la cuenta @populares_sevilla, del Partido Popular de Sevilla) son ejemplos de señales de España.
 
 TAMBIÉN SE DESCARTA
 - Contenido sobre Mauricio Macri (expresidente) que no involucre a Jorge Macri ni a la gestión porteña.
@@ -131,7 +137,7 @@ TAMBIÉN SE DESCARTA
 - Contenido genérico, turístico, cultural o comercial sin relación con la gestión, aunque transcurra en Buenos Aires.
 
 PISTA DE CONTEXTO
-El mensaje puede incluir una línea "CONTEXTO" con cómo llegó el posteo: contiene un término de nuestra lista de seguimiento, viene de una cuenta trackeada, de un hashtag o de una búsqueda. Los términos de la lista son una guía, no una señal fuerte ni una garantía: explican por qué el posteo llegó hasta acá, pero la decisión es tuya por el contenido; un término de la lista en un posteo de otra ciudad o sin relación con la gestión sigue siendo no relevante. Venir de una cuenta trackeada es una señal débil: las cuentas de política general publican mucho contenido nacional sin relación con la gestión porteña, así que eso solo no alcanza para darlo por relevante.
+El mensaje puede incluir una línea "AUTOR" con la cuenta que publicó (un dato más, como el texto: una cuenta de otro país es una señal de afuera) y una línea "CONTEXTO" con cómo llegó el posteo: contiene un término de nuestra lista de seguimiento, viene de una cuenta trackeada, de un hashtag o de una búsqueda. Los términos de la lista son una guía, no una señal fuerte ni una garantía: explican por qué el posteo llegó hasta acá, pero la decisión es tuya por el contenido; un término de la lista en un posteo de otra ciudad o sin relación con la gestión sigue siendo no relevante. Venir de una cuenta trackeada es una señal débil: las cuentas de política general publican mucho contenido nacional sin relación con la gestión porteña, así que eso solo no alcanza para darlo por relevante.
 
 TEMA
 El tema central del posteo: una de estas categorías, copiada tal cual (respetá mayúsculas y acentos). Si toca varias, la que más pesa en el posteo. Después de cada categoría van sus subcategorías: están escritas como reclamos, pero acá describen el tema, así que un anuncio, un logro o un elogio va en la misma categoría que una crítica sobre lo mismo.
@@ -143,7 +149,17 @@ RESPUESTA (JSON según el schema)
 - title: frase corta (máximo 10 palabras) en español de qué habla el posteo. Siempre, también si relevant es false.
 - sentiment: cómo retrata a Jorge Macri o a su gestión. "positivo" si lo muestra favorablemente o destaca un logro; "negativo" si lo critica, cuestiona o muestra un hecho desfavorable; "neutral" si es informativo, no queda claro o relevant es false. Ante la duda, "neutral".
 - tema: una de las categorías de TEMA, copiada tal cual. Siempre, también si relevant es false: la más cercana, o "${CATEGORIA_FALLBACK}".
-- motivo: una frase corta (máximo 12 palabras) con la razón de la decisión, para auditoría. Ejemplos: "habla de una obra en CABA", "es de la Ciudad de México", "Mauricio Macri sin relación con la gestión porteña", "menciona a Sheinbaum pero critica a Jorge Macri".`;
+- motivo: una frase corta (máximo 12 palabras) con la razón de la decisión, para auditoría. Ejemplos: "habla de una obra en CABA", "es de la Ciudad de México", "Mauricio Macri sin relación con la gestión porteña", "menciona a Sheinbaum pero critica a Jorge Macri", "político español (Feijóo, PP) sin relación con CABA".`;
+}
+
+// Un usuario de Instagram o de X: letras, números, punto y guion bajo. Lo que
+// no tenga esa forma no va al prompt (el autor es un dato, no un texto libre).
+const AUTOR_RE = /^[A-Za-z0-9._]{1,40}$/;
+
+/** Línea AUTOR: la cuenta que publicó, si se sabe. */
+function renderAutor(autor) {
+  const handle = String(autor || '').trim().replace(/^@/, '');
+  return handle && handle !== 'N/D' && AUTOR_RE.test(handle) ? `AUTOR: @${handle}\n` : '';
 }
 
 /**
@@ -161,8 +177,8 @@ function renderContexto(pista, platformLabel) {
   return partes.length > 0 ? `CONTEXTO: ${partes.join('; ')}.\n` : '';
 }
 
-function buildUserPrompt(caption, { pista, platformLabel }) {
-  return `${renderContexto(pista, platformLabel)}POSTEO:\n${caption.slice(0, MAX_CAPTION_CHARS)}`;
+function buildUserPrompt(caption, { pista, platformLabel, autor }) {
+  return `${renderAutor(autor)}${renderContexto(pista, platformLabel)}POSTEO:\n${caption.slice(0, MAX_CAPTION_CHARS)}`;
 }
 
 /**
@@ -192,7 +208,9 @@ function logClassifierFailure(err) {
  * @param {string} caption
  * @param {{ platformLabel?: string, pista?: object|null }} [options]
  *   platformLabel: etiqueta de la red para el prompt; pista: cómo llegó el
- *   posteo (ver renderContexto), va como contexto para el modelo.
+ *   posteo (ver renderContexto), va como contexto para el modelo. autor: la
+ *   cuenta que publicó (línea AUTOR; una cuenta de otro país es una señal de
+ *   afuera, ver "PORTEÑO" CON SEÑALES DE OTRO PAÍS en el prompt).
  *   onUsage: aviso con lo que gastó la llamada al modelo ({ inputTokens,
  *   outputTokens, costUsd… }), también si falló; lo usa el monitoreo para
  *   anotar el costo de cada clasificación. No cambia el resultado y un error
@@ -201,7 +219,7 @@ function logClassifierFailure(err) {
  *   tema: una de TEMAS (nombre canónico de la categoría); null solo si no
  *   se pudo clasificar.
  */
-async function clasificarPosteo(caption, { platformLabel = DEFAULT_PLATFORM_LABEL, pista = null, onUsage = null } = {}) {
+async function clasificarPosteo(caption, { platformLabel = DEFAULT_PLATFORM_LABEL, pista = null, autor = null, onUsage = null } = {}) {
   const avisarUso = (usage) => {
     if (typeof onUsage !== 'function' || !usage) return;
     try {
@@ -220,7 +238,7 @@ async function clasificarPosteo(caption, { platformLabel = DEFAULT_PLATFORM_LABE
   try {
     const { parsed, usage } = await llm.requestStructuredAnalysis({
       system: systemPrompt(platformLabel),
-      userPrompt: buildUserPrompt(caption, { pista, platformLabel }),
+      userPrompt: buildUserPrompt(caption, { pista, platformLabel, autor }),
       schema: CLASIFICACION_SCHEMA,
       schemaName: SCHEMA_NAME,
       maxTokens: MAX_TOKENS,
@@ -254,4 +272,4 @@ async function clasificarPosteo(caption, { platformLabel = DEFAULT_PLATFORM_LABE
   }
 }
 
-module.exports = { clasificarPosteo, systemPrompt, CLASIFICACION_SCHEMA, TEMAS };
+module.exports = { clasificarPosteo, systemPrompt, buildUserPrompt, CLASIFICACION_SCHEMA, TEMAS };
