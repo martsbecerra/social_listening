@@ -310,6 +310,26 @@ describe('scripts/gastos.js', { concurrency: false }, () => {
     assert.match(textoViejo, /macri\s+1\s+4\s+1\s+1\s+0\s+1\s+0\s+0\.017\s+-/);
     assert.match(textoViejo, /Base anterior a noviembre 2026/);
     for (const line of gastos.render(rv)) if (!line.startsWith('Base:')) assert.ok(line.length <= gastos.ANCHO_MAX, line);
+    assert.doesNotMatch(textoViejo, /Excluidas/, 'sin excluidas, sin línea');
+  });
+
+  test('las de cuentas excluidas (outcome excluido) van aparte de "sin evaluar", con su línea', () => {
+    const conPath = path.join(tmp, 'excluidas.db');
+    const con = new DatabaseSync(conPath);
+    con.exec(`
+      CREATE TABLE monitoring_runs (id INTEGER PRIMARY KEY, started_at TEXT, finished_at TEXT, "trigger" TEXT, plataforma TEXT, new_posts INTEGER, quota_exceeded INTEGER);
+      CREATE TABLE apify_calls (id INTEGER PRIMARY KEY, at TEXT, run_id INTEGER, phase TEXT, plataforma TEXT, target TEXT, items INTEGER, ok INTEGER, error TEXT, usd REAL, actor TEXT, query_type TEXT, usd_real REAL, apify_run_id TEXT);
+      CREATE TABLE search_seen (post_id TEXT, plataforma TEXT, url TEXT, term TEXT, outcome TEXT, first_seen_at TEXT, posted_at TEXT, motivo TEXT, llm_usd REAL, run_id INTEGER, terminos TEXT);
+      INSERT INTO monitoring_runs VALUES (1, '2026-09-25T23:00:00.000Z', '2026-09-25T23:10:00.000Z', 'cron', 'instagram', 0, 0);
+      INSERT INTO search_seen VALUES ('a', 'instagram', NULL, 'gobierno porteño', 'excluido', '2026-09-25T23:02:00.000Z', NULL, 'Cuenta excluida: x', NULL, 1, NULL);
+      INSERT INTO search_seen VALUES ('b', 'instagram', NULL, 'gobierno porteño', 'sin_caption', '2026-09-25T23:02:00.000Z', NULL, NULL, NULL, 1, NULL);
+    `);
+    con.close();
+    const r = gastos.buildReport({ dbPath: conPath, desdeIso: DESDE, now: NOW });
+    assert.deepEqual([r.rendimiento.total.nuevos, r.rendimiento.total.sinEvaluar, r.rendimiento.total.excluidos], [2, 1, 1]);
+    const texto = gastos.render(r).join('\n');
+    assert.match(texto, /Excluidas \(cuentas de la lista, sin pasar por el modelo\): 1/);
+    for (const line of gastos.render(r)) if (!line.startsWith('Base:')) assert.ok(line.length <= gastos.ANCHO_MAX, line);
   });
 
   test('como proceso aparte: imprime las cuatro tablas, --ayuda muestra el uso y un --desde inválido sale con 1', () => {

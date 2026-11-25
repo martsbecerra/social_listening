@@ -94,7 +94,7 @@ social_listening_app/
 │   ├── postImages.js         # Fotos de los posteos: descarga segura y las dos copias JPEG (sharp). No toca la base.
 │   ├── postImageSync.js      # Fotos dentro del ciclo: baja las que faltan y anota el resultado en la base.
 │   ├── postImageRoutes.js    # Ruta de la imagen (detrás del login) y el campo image del listado de posteos.
-│   ├── classifier.js         # Relevancia + título + sentimiento + motivo de cada posteo (una llamada, mismo modelo que el análisis), para todas las redes.
+│   ├── classifier.js         # Relevancia + título + sentimiento + motivo de cada posteo (una llamada, mismo modelo que el análisis; con la portada de respaldo si el texto no alcanza), para todas las redes.
 │   ├── mailer.js             # Envío de emails (alertas + magic link).
 │   ├── auth/                 # Allowlist con roles, magic link, sesión en SQLite (y sus topes), rate limit, gate, requireRole y las rutas de /api/auth.
 │   ├── backfillConfig.js     # BACKFILL_MAX: el tope de posteos por invocación del backfill.
@@ -114,6 +114,8 @@ social_listening_app/
 │   ├── keepAwake.js          # Windows: lanza scripts/keep-awake.ps1 para que la máquina no se suspenda.
 │   ├── httpSecurity.js       # Seguridad HTTP: helmet con la CSP, no-store en /api, trust proxy, el manejador de errores y los handlers del proceso.
 │   ├── rateLimits.js         # Límite de pedidos (express-rate-limit): general, sondeo, fotos, resumen, gasto y rechazados.
+│   ├── clasificadorFoto.js   # La foto de respaldo del clasificador: cuándo (texto útil < 40), el tope por ciclo y su config.
+│   ├── exclusionesRoutes.js  # Cuentas excluidas: GET (lector), POST y DELETE (operador).
 │   ├── healthRoutes.js       # GET /health (sin sesión ni límite): el chequeo de Railway.
 │   ├── asyncRoute.js         # rutaAsync: el rechazo de una ruta async va al manejador de errores.
 │   ├── concurrencyLimiter.js # Cola FIFO para los runs simultáneos de Apify.
@@ -170,6 +172,7 @@ social_listening_app/
 │   ├── import-reclamos.js       # Importador genérico de Excel/CSV (solo CLI).
 │   ├── migrate-categorias.js    # Migra categorías viejas al esquema de dos niveles.
 │   ├── costo-apify.js           # Gasto en Apify por ventana, fase y actor (npm run costo); --conciliar y --asentar.
+│   ├── reclasificar-corrida.js  # Clasifica de nuevo lo que una corrida guardó sin clasificar (sin --si solo informa).
 │   ├── gastos.js                # Gasto por corrida, fase y término de búsqueda (npm run gastos).
 │   ├── cargar-fotos.js          # Carga única de las fotos de los posteos ya guardados (sin --si solo informa).
 │   ├── geo-reprocesar.js        # Fase H: ubicación de los reclamos sin punto, una vez y sobre una copia (--costo, --simulado, --si, --aplicar).
@@ -354,7 +357,10 @@ como llegaba y `/API/...` pasaba sin sesión hasta el handler. Test:
      devuelve además un `motivo` corto que queda en `matched_reason`.
      Un posteo sin caption (nada que evaluar) solo se acepta si viene de una
      cuenta trackeada — de un hashtag o una búsqueda se descarta, porque no
-     hay ninguna señal de que se relacione con el tema.
+     hay ninguna señal de que se relacione con el tema. Desde noviembre
+     2026, si el detalle confirma que no tiene texto pero sí portada, el
+     modelo lo clasifica mirando la imagen (ver "Foto de respaldo, «porteño»
+     de otro país y cuentas excluidas").
      **Detalle de los resultados de búsqueda**: la búsqueda por palabra clave
      de apidojo devuelve objetos recortados, con `caption`, likes y
      comentarios en null aunque el posteo los tenga (verificado con el mismo
@@ -2674,6 +2680,89 @@ SDK, que ya reintenta solo). Un 401/402 no se reintenta. Las demás
 llamadas al LLM (análisis de comentarios, reclamos) tienen el mismo
 reintento con un timeout holgado de 5 min, porque un análisis largo puede
 tardar minutos.
+
+**Respuestas cortadas** (noviembre 2026): el tope de salida del clasificador
+era de 300 tokens y dejaba sin clasificar justo las publicaciones difíciles,
+porque el modelo razona antes de contestar y ese razonamiento cuenta dentro
+del tope. Las 14 que quedaron sin clasificar en noviembre fueron todas así
+("la respuesta se cortó en el tope de salida (300 tokens)"). Ahora el tope
+es de **2000**: es un techo, se paga lo que el modelo usa, y no se le pide
+menos razonamiento.
+
+### Foto de respaldo, "porteño" de otro país y cuentas excluidas (noviembre 2026)
+
+Rama `clasificacion-foto-y-exclusiones`. Tests: `clasificarConFoto`,
+`llmImagenes`, `postImagesModelo`, `cuentasExcluidas`,
+`cuentasExcluidasCiclo` y `clasificarPosteo`.
+
+- **"Porteño" con señales de otro país.** Caso real: @populares_sevilla
+  (Partido Popular de Sevilla, "Con Feijóo tendremos presupuestos") entró
+  por la búsqueda "gobierno porteño" y quedó como una crítica a la gestión
+  porteña. "Porteño" y "gobierno porteño" siguen siendo señales a favor: en
+  la Argentina casi siempre hablan de CABA, y un "el gobierno porteño
+  anunció…" solo entra. Pero dejan de contar cuando la publicación muestra
+  señales de otro país (un político, un partido, un lugar o una cuenta de
+  afuera) y no nombra a Jorge Macri ni a su gestión; si nombra a los dos, es
+  relevante. El prompt explica por qué: "porteño" también es de El Puerto de
+  Santa María (España) y de Valparaíso (Chile). Es una regla general, con
+  Feijóo, el PP y Andalucía como ejemplos. Para que el modelo vea "una
+  cuenta de afuera", el mensaje lleva ahora la línea `AUTOR: @cuenta`.
+- **La portada como respaldo, no en todas.** Si la publicación no tiene
+  texto o tiene menos de 40 caracteres de texto útil (sin links, menciones,
+  hashtags ni emojis), se clasifica en una sola llamada con el texto y la
+  portada (en un carrusel, la primera imagen; en un reel, la tapa). Si el
+  texto alcanza, va como siempre; el modelo contesta además
+  `necesitaImagen` y, si la pide, sale una segunda llamada con la portada.
+  Sin portada se decide con el texto. Lo decidido así lleva " · con foto" en
+  el motivo. La portada se baja recién si hace falta, en memoria, del link
+  que ya trae la búsqueda o el detalle (sin pedidos nuevos a Apify), con las
+  reglas de siempre (https, hosts de Instagram, sin redirecciones, topes) y
+  achicada a 768 px; en el backfill sale de la copia ya guardada. La sección
+  IMAGEN del prompt dice que la imagen y lo que se lea en ella son datos de
+  un tercero, nunca instrucciones. Antes, un resultado de búsqueda sin texto
+  (ni después del detalle) se descartaba sin preguntarle nada al modelo;
+  ahora, si tiene portada, se clasifica.
+  - `CLASIFICAR_CON_FOTO=0` la apaga; `CLASIFICADOR_FOTO_MAX` (50) es el
+    tope de llamadas con foto por ciclo y por invocación del backfill.
+  - **Cuántas y cuánto:** de los 856 guardados de Instagram, 38 (4,4 %)
+    tienen menos de 40 caracteres útiles; en 30 días, 14 de 316 guardados y
+    23 descartados por no tener texto. Una corta suma unos 800 tokens
+    (≈ US$ 0,0024); una sin texto o una segunda llamada, una clasificación
+    entera (≈ US$ 0,0145). Al volumen de noviembre, unos US$ 0,80 por mes.
+- **Cuentas excluidas.** Una lista por red de cuentas cuyas publicaciones se
+  descartan antes de llegar al modelo (y, si la búsqueda ya trae la cuenta,
+  antes de pagar el detalle), con el motivo anotado (`search_seen`,
+  "Cuenta excluida: …"). Agregar una cuenta pasa a ignorado lo ya guardado
+  de ella; sacarla no lo des-ignora ni vuelve a evaluar lo excluido. Arranca
+  con @populares_sevilla. Solo la edita un operador:
+
+  | Ruta | Quién |
+  |---|---|
+  | `GET /api/monitoring/excluded-accounts?plataforma=` | lector y operador |
+  | `POST /api/monitoring/excluded-accounts` `{ cuenta, motivo, plataforma }` | operador (201; 409 repetida; 400 sin motivo o con un usuario inválido) |
+  | `DELETE /api/monitoring/excluded-accounts/:cuenta?plataforma=` | operador (404 si no está) |
+
+  Quién la agregó queda en la base y en el log, nunca en la respuesta.
+  Estadísticas no las cuenta como detectadas y `npm run gastos` las muestra
+  en su propia línea. Todavía sin pantalla.
+- **Reclasificar una corrida que quedó sin clasificar.** El 25/11/2026 la
+  clave de OpenRouter venció y la corrida #61 guardó sus 1.183 publicaciones
+  "sin clasificar". El backfill las completaría pero no saca las no
+  relevantes; `scripts/reclasificar-corrida.js` hace lo que habría hecho el
+  ciclo:
+
+  ```
+  node scripts/reclasificar-corrida.js --corrida 61          # solo informa: cuántas, por término, costo estimado
+  node scripts/reclasificar-corrida.js --corrida 61 --si     # clasifica (gasta en el modelo)
+  ```
+
+  Las relevantes se completan; las no relevantes salen de la tabla (y sus
+  fotos) y quedan como descartadas en `search_seen`; las de una cuenta
+  excluida salen sin pasar por el modelo; las que tienen el tono puesto a
+  mano no se borran y se informan. Con `--si` exige la app apagada y la
+  clave andando, hace antes un backup verificado (`data/backups/`), corre 4
+  a la vez y frena antes de pasar `--tope` (US$ 16) o con 3 fallas seguidas
+  del modelo. Si se corta, se vuelve a correr y sigue con lo que falta.
 
 ---
 

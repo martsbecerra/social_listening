@@ -758,6 +758,38 @@ const purgeSearchSeenStmt = db.prepare('DELETE FROM search_seen WHERE first_seen
 // Lo que decidió el clasificador en una corrida (para la línea de costo del ciclo).
 const sumSearchSeenByRunStmt = db.prepare('SELECT COUNT(*) AS n, SUM(llm_usd) AS usd FROM search_seen WHERE run_id = ?');
 
+// Cuentas excluidas (noviembre 2026, rama clasificacion-foto-y-exclusiones):
+// sus publicaciones se descartan antes de llegar al modelo (y, si la
+// búsqueda ya trae la cuenta, antes del detalle), con el motivo anotado en
+// search_seen (outcome 'excluido'). Por plataforma; `cuenta` en minúsculas y
+// sin @. `creado_por` es el correo de quien la agregó (un operador): nunca
+// sale por la API. Agregar una pasa a ignorado lo ya guardado de esa cuenta;
+// sacarla no lo des-ignora ni vuelve a evaluar lo excluido (decisión del
+// dueño). Ver src/exclusionesRoutes.js y monitor.js.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS cuentas_excluidas (
+    plataforma TEXT NOT NULL,
+    cuenta TEXT NOT NULL,
+    motivo TEXT NOT NULL,
+    creado_por TEXT,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (plataforma, cuenta)
+  )
+`);
+const listCuentasExcluidasStmt = db.prepare(
+  'SELECT cuenta, motivo, created_at AS createdAt FROM cuentas_excluidas WHERE plataforma = ? ORDER BY cuenta'
+);
+const insertCuentaExcluidaStmt = db.prepare(`
+  INSERT INTO cuentas_excluidas (plataforma, cuenta, motivo, creado_por, created_at)
+  VALUES (@plataforma, @cuenta, @motivo, @creadoPor, @createdAt)
+  ON CONFLICT(plataforma, cuenta) DO NOTHING
+`);
+const deleteCuentaExcluidaStmt = db.prepare('DELETE FROM cuentas_excluidas WHERE plataforma = ? AND cuenta = ?');
+// lower(account): las cuentas se guardan como vienen del scraper.
+const ignorePostsDeCuentaStmt = db.prepare(
+  'UPDATE detected_posts SET ignored = 1, ignored_at = ? WHERE plataforma = ? AND lower(account) = ? AND ignored = 0'
+);
+
 // Gasto en Apify (ver src/apifyCost.js): una fila por llamada a runActorSync
 // (src/apify.js) y una por ciclo de monitoreo (src/scheduler.js). Apify
 // cobra por item devuelto, así que `items` cuenta TODO lo que vino en el
@@ -3866,8 +3898,149 @@ function ping() {
   return db.prepare('SELECT 1 AS uno').get().uno === 1;
 }
 
+// --------------------------------------------------------------------
+// Cuentas excluidas (tabla cuentas_excluidas, arriba). Todas por plataforma,
+// sin default.
+// --------------------------------------------------------------------
+
+/** Una cuenta como se guarda: sin espacios ni @ adelante, en minúsculas. */
+function normalizarCuentaExcluida(cuenta) {
+  return String(cuenta || '').trim().replace(/^@+/, '').toLowerCase();
+}
+
+/** Las cuentas excluidas de una plataforma, por nombre (sin quién las cargó). */
+function listCuentasExcluidas(plataforma) {
+  requirePlataforma(plataforma, 'listCuentasExcluidas');
+  return listCuentasExcluidasStmt.all(plataforma);
+}
+
+/** cuenta → motivo, para el ciclo: una lectura por plataforma y ciclo. */
+function mapCuentasExcluidas(plataforma) {
+  return new Map(listCuentasExcluidas(plataforma).map((r) => [r.cuenta, r.motivo]));
+}
+
+/**
+ * Agrega una cuenta y pasa a ignorado lo ya guardado de ella, en una
+ * transacción. Tira con code CUENTA_EXCLUIDA_REPETIDA si ya estaba.
+ * @returns {{ cuenta: string, motivo: string, createdAt: string, ignorados: number }}
+ */
+function addCuentaExcluida({ plataforma, cuenta, motivo, creadoPor = null, now = new Date() }) {
+  requirePlataforma(plataforma, 'addCuentaExcluida');
+  const c = normalizarCuentaExcluida(cuenta);
+  const createdAt = new Date(now).toISOString();
+  db.exec('BEGIN');
+  try {
+    const r = insertCuentaExcluidaStmt.run({ plataforma, cuenta: c, motivo: String(motivo), creadoPor, createdAt });
+    if (r.changes === 0) {
+      const e = new Error(`La cuenta @${c} ya está excluida en ${plataforma}`);
+      e.code = 'CUENTA_EXCLUIDA_REPETIDA';
+      throw e;
+    }
+    const ignorados = ignorePostsDeCuentaStmt.run(createdAt, plataforma, c).changes;
+    db.exec('COMMIT');
+    return { cuenta: c, motivo: String(motivo), createdAt, ignorados };
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+}
+
+// --------------------------------------------------------------------
+// Reclasificación de una corrida (scripts/reclasificar-corrida.js): las
+// publicaciones que una corrida guardó sin clasificar (el clasificador
+// falló: la clave vencida del 25/11/2026 dejó así las 1.183 de la #61).
+// --------------------------------------------------------------------
+const listSinClasificarDeCorridaStmt = db.prepare(`
+  SELECT id, account, url, caption, sentiment, matched_reason AS matchedReason, posted_at AS postedAt,
+         image_source_url AS imageSourceUrl, image_saved_at AS imageSavedAt
+  FROM detected_posts
+  WHERE plataforma = ? AND ignored = 0 AND title IS NULL
+    AND detected_at >= ? AND detected_at <= ?
+    AND matched_reason LIKE '% — sin clasificar%'
+  ORDER BY detected_at, id
+`);
+const deleteDetectedPostStmt = db.prepare('DELETE FROM detected_posts WHERE id = ? AND plataforma = ?');
+
+/**
+ * Las publicaciones que guardó sin clasificar la corrida que fue de desdeIso
+ * a hastaIso (no ignoradas, con la marca "— sin clasificar" en el motivo).
+ */
+function listSinClasificarDeCorrida({ plataforma, desdeIso, hastaIso }) {
+  requirePlataforma(plataforma, 'listSinClasificarDeCorrida');
+  return listSinClasificarDeCorridaStmt.all(plataforma, desdeIso, hastaIso);
+}
+
+/**
+ * Saca de detected_posts una publicación guardada y la anota en search_seen
+ * con `outcome` (descartado | excluido), como si el ciclo la hubiera
+ * descartado: no vuelve a entrar como nueva y Estadísticas la sigue contando
+ * como detectada. En una transacción.
+ * @returns {{ borrada: boolean, fotoLibre: string|null }} fotoLibre: el id,
+ *   si ningún análisis usa su foto (quien llama borra los archivos).
+ */
+function descartarPosteoGuardado({ id, plataforma, url = null, term = null, outcome, motivo = null, llmUsd = null, runId = null, postedAt = null }) {
+  requirePlataforma(plataforma, 'descartarPosteoGuardado');
+  db.exec('BEGIN');
+  try {
+    const borrada = deleteDetectedPostStmt.run(String(id), plataforma).changes > 0;
+    if (borrada) markSearchSeen({ postId: id, plataforma, url, term, outcome, postedAt, motivo, llmUsd, runId });
+    const fotoLibre = borrada && countOtrosAnalisisDePostIdStmt.get(plataforma, String(id), -1).n === 0 ? String(id) : null;
+    db.exec('COMMIT');
+    return { borrada, fotoLibre };
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+}
+
+/** Saca una cuenta de la lista. No des-ignora nada. @returns {boolean} si estaba. */
+function removeCuentaExcluida(plataforma, cuenta) {
+  requirePlataforma(plataforma, 'removeCuentaExcluida');
+  return deleteCuentaExcluidaStmt.run(plataforma, normalizarCuentaExcluida(cuenta)).changes > 0;
+}
+
+// La lista arranca con @populares_sevilla (Partido Popular de Sevilla): entró
+// por la búsqueda "gobierno porteño" con política española. Una sola vez
+// (marca en refresh_state): si después alguien la saca, no vuelve.
+const SEMILLA_EXCLUIDAS_KEY = 'cuentas_excluidas_semilla';
+const SEMILLA_EXCLUIDAS = [
+  {
+    plataforma: 'instagram',
+    cuenta: 'populares_sevilla',
+    motivo: 'Partido Popular de Sevilla: política española; entró por la búsqueda «gobierno porteño».',
+  },
+];
+/** @returns {number} cuántas cuentas sembró (0 si ya se había hecho). */
+function sembrarCuentasExcluidas({ now = new Date() } = {}) {
+  if (getRefreshStateStmt.get(SEMILLA_EXCLUIDAS_KEY)) return 0;
+  const createdAt = new Date(now).toISOString();
+  let sembradas = 0;
+  db.exec('BEGIN');
+  try {
+    for (const s of SEMILLA_EXCLUIDAS) {
+      sembradas += insertCuentaExcluidaStmt.run({ ...s, creadoPor: null, createdAt }).changes;
+      ignorePostsDeCuentaStmt.run(createdAt, s.plataforma, s.cuenta);
+    }
+    setRefreshStateStmt.run({ key: SEMILLA_EXCLUIDAS_KEY, value: createdAt });
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+  return sembradas;
+}
+sembrarCuentasExcluidas();
+
 module.exports = {
   ping,
+  normalizarCuentaExcluida,
+  listCuentasExcluidas,
+  mapCuentasExcluidas,
+  addCuentaExcluida,
+  removeCuentaExcluida,
+  sembrarCuentasExcluidas,
+  listSinClasificarDeCorrida,
+  descartarPosteoGuardado,
   startAnalisis,
   saveAnalisisPost,
   finishAnalisis,

@@ -31,6 +31,9 @@ async function requestStructuredAnalysis({
   jsonFallback = false,
   maxTokens,
   timeoutMs,
+  // [{ mediaType, data (base64) }]: van en el mensaje de usuario (ver
+  // ./imagenes.js). Hoy, solo la portada que usa el clasificador de respaldo.
+  images = null,
 }) {
   const provider = providerOverride || getLlmProvider();
   const ctx = { provider, model: modelOverride || getAnalysisModel(provider) };
@@ -45,6 +48,7 @@ async function requestStructuredAnalysis({
       jsonFallback,
       maxTokens,
       timeoutMs,
+      images,
     });
   } catch (err) {
     // Lo gastado en los intentos fallidos (ver ./errors.js), con su costo.

@@ -474,9 +474,90 @@ async function savePostImages(posts, deps = {}) {
   );
 }
 
+// --------------------------------------------------------------------------
+// La portada para el clasificador (noviembre 2026, rama
+// clasificacion-foto-y-exclusiones): cuando el texto no alcanza, el modelo
+// mira también la imagen (ver src/classifier.js). En memoria: no escribe
+// nada (el posteo puede terminar descartado; sus copias las guarda después
+// "Guardando fotos", como siempre). 768 px de lado largo: alcanza para leer
+// la imagen y cuesta unos 800 tokens de entrada.
+// --------------------------------------------------------------------------
+const MODEL_LONG_SIDE = 768;
+const MODEL_QUALITY = 80;
+
+/** Los bytes de una imagen → JPEG de hasta 768 px, con los mismos controles que buildCopies. Tira si no se acepta. */
+async function modelJpeg(buffer) {
+  const format = sniffFormat(buffer);
+  if (!format) throw rejected('formato-no-permitido');
+  const meta = await sharp(buffer, { limitInputPixels: false }).metadata();
+  if (meta.format !== format || !ALLOWED_FORMATS.includes(meta.format)) throw rejected('formato-no-permitido');
+  if (!(meta.width > 0) || !(meta.height > 0)) throw rejected('imagen-ilegible');
+  if (meta.width * meta.height > MAX_INPUT_PIXELS) throw rejected('imagen-demasiado-grande');
+  return sharp(buffer, { limitInputPixels: MAX_INPUT_PIXELS })
+    .rotate()
+    .resize({ width: MODEL_LONG_SIDE, height: MODEL_LONG_SIDE, fit: 'inside', withoutEnlargement: true })
+    .flatten({ background: '#ffffff' })
+    .jpeg({ quality: MODEL_QUALITY, mozjpeg: true })
+    .toBuffer();
+}
+
+/**
+ * La imagen de un posteo lista para el modelo, o null. NUNCA tira.
+ *
+ * Con `id` y la copia grande ya guardada, la lee del disco (el backfill: los
+ * posteos guardados tienen su foto). Si no, la baja de `url` con las mismas
+ * reglas que savePostImage (https, los hosts de la plataforma, sin seguir
+ * redirecciones, tope de tamaño y de tiempo, el formato por sus primeros
+ * bytes) y por el imageLimiter. Sin sharp, null. No depende de POST_IMAGES
+ * (eso es guardar copias): la foto del clasificador la apaga
+ * CLASIFICAR_CON_FOTO.
+ *
+ * @param {{ plataforma: string, id?: string|null, url?: string|null }} post
+ * @param {{ fetchFn?: typeof fetch, mediaDir?: string, timeoutMs?: number, maxBytes?: number }} [deps]
+ * @returns {Promise<{ mediaType: 'image/jpeg', data: string, origen: 'copia'|'link' }|null>} data en base64.
+ */
+async function imageForModel(post, deps = {}) {
+  const { plataforma, id = null, url = null } = post && typeof post === 'object' ? post : {};
+  try {
+    if (!sharp) return null;
+    const mediaDir = deps.mediaDir || MEDIA_DIR;
+    let buffer = null;
+    let origen = null;
+    const local = id != null ? imagePath(plataforma, String(id), 'full', mediaDir) : null;
+    if (local && fs.existsSync(local)) {
+      buffer = await fs.promises.readFile(local);
+      origen = 'copia';
+    } else if (url) {
+      const checked = checkImageUrl(plataforma, url);
+      if (!checked.ok) {
+        console.warn(`[imagenes] (${String(plataforma)}) ${String(id)}: sin portada para el clasificador (${checked.reason}).`);
+        return null;
+      }
+      const downloaded = await imageLimiter.run(
+        () => download(checked.url, { fetchFn: deps.fetchFn || fetch, timeoutMs: deps.timeoutMs || TIMEOUT_MS, maxBytes: deps.maxBytes || MAX_BYTES }),
+        `clasificador ${String(id)}`
+      );
+      if (!downloaded.ok) {
+        console.warn(`[imagenes] (${String(plataforma)}) ${String(id)}: sin portada para el clasificador (${downloaded.reason}, host ${checked.url.hostname}).`);
+        return null;
+      }
+      buffer = downloaded.buffer;
+      origen = 'link';
+    }
+    if (!buffer) return null;
+    const jpeg = await modelJpeg(buffer);
+    return { mediaType: 'image/jpeg', data: jpeg.toString('base64'), origen };
+  } catch (err) {
+    console.warn(`[imagenes] (${String(plataforma)}) ${String(id)}: sin portada para el clasificador (${(err && err.reason) || (err && err.message) || 'error'}).`);
+    return null;
+  }
+}
+
 module.exports = {
   savePostImage,
   savePostImages,
+  imageForModel,
+  MODEL_LONG_SIDE,
   imagePath,
   imagePaths,
   hasLocalCopy,

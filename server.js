@@ -19,8 +19,9 @@ require('dotenv').config();
 // con un mensaje claro en vez de un stack trace. abortarArranque está más
 // abajo (función hoisted). Los topes de la sesión (SESSION_IDLE_MIN,
 // SESSION_MAX_HOURS, src/auth/sessionConfig.js), BACKFILL_MAX
-// (src/backfillConfig.js) y los límites de pedidos (RATE_LIMIT_*,
-// src/rateLimits.js), igual.
+// (src/backfillConfig.js), los límites de pedidos (RATE_LIMIT_*,
+// src/rateLimits.js) y la foto de respaldo del clasificador
+// (CLASIFICAR_CON_FOTO, CLASIFICADOR_FOTO_MAX, src/clasificadorFoto.js), igual.
 const { resolveIgActor } = require('./src/platforms/igActor');
 const { resolveRefreshMode } = require('./src/refreshMode');
 const { resolveReachRule, describeReachRule } = require('./src/reachRule');
@@ -30,6 +31,7 @@ const { resolveDeepConfig, describeDeepConfig } = require('./src/deepRun');
 const { resolveSessionConfig, describeSessionConfig } = require('./src/auth/sessionConfig');
 const { resolveBackfillMax } = require('./src/backfillConfig');
 const { resolveRateLimitConfig, describeRateLimitConfig } = require('./src/rateLimits');
+const { resolveFotoConfig, describeFotoConfig } = require('./src/clasificadorFoto');
 try {
   resolveIgActor();
   resolveRefreshMode();
@@ -40,6 +42,7 @@ try {
   resolveSessionConfig();
   resolveBackfillMax();
   resolveRateLimitConfig();
+  resolveFotoConfig();
 } catch (err) {
   abortarArranque([err.message]);
 }
@@ -56,6 +59,7 @@ const { resolveXMaxItems } = require('./src/x/sample');
 const analysisRoutes = require('./src/analysisRoutes');
 const figurasRoutes = require('./src/figurasRoutes');
 const reclamosRoutes = require('./src/reclamosRoutes');
+const exclusionesRoutes = require('./src/exclusionesRoutes');
 const { checkAnalyzeUrl } = require('./src/platforms/urlPlatform');
 const { fetchXThread, getModel: getXaiModel, getFetchBackend } = require('./src/x/grokFetch');
 const { analyzeXThread } = require('./src/x/analyze');
@@ -580,6 +584,11 @@ app.delete('/api/monitoring/searches/:search', (req, res) => {
   res.json(monitor.removeSearch(req.params.search, monitoringPlataforma(req)));
 });
 
+// Cuentas excluidas: GET la lista; POST y DELETE, solo un operador (regla del
+// gate). Sus publicaciones se descartan antes del modelo. Ver
+// src/exclusionesRoutes.js.
+exclusionesRoutes.register(app);
+
 // Gasto en Apify por ventana (hoy, últimos 7 días, últimos `days` días) y
 // por fase, con el usd en las tres tarifas (free, starter, scale) y la
 // proyección mensual: lo mismo que imprime `npm run costo`, en JSON, para
@@ -717,7 +726,8 @@ const server = app.listen(PORT, () => {
   );
   console.log(`   Sesión (SESSION_IDLE_MIN, SESSION_MAX_HOURS): ${describeSessionConfig(resolveSessionConfig())}`);
   console.log(`   Backfill de la clasificación: hasta BACKFILL_MAX=${resolveBackfillMax()} posteos por invocación, uno a la vez`);
-  console.log(`   Límite de pedidos (RATE_LIMIT_*): ${describeRateLimitConfig(resolveRateLimitConfig())}\n`);
+  console.log(`   Límite de pedidos (RATE_LIMIT_*): ${describeRateLimitConfig(resolveRateLimitConfig())}`);
+  console.log(`   Foto de respaldo del clasificador (CLASIFICAR_CON_FOTO, CLASIFICADOR_FOTO_MAX): ${describeFotoConfig(resolveFotoConfig())}\n`);
   // Windows: que la máquina no se suspenda mientras la app corre (ver
   // src/keepAwake.js). Nunca tira; en otros sistemas no hace nada.
   startKeepAwake();

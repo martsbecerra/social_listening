@@ -16,6 +16,7 @@ const { ANALYSIS_JSON_SCHEMA } = require('../analysisSchema');
 const { addTokenUsage, fromAnthropicUsage } = require('./usage');
 const { getAnalysisModel } = require('./providerConfig');
 const { SALIDA_CORTADA, salidaCortadaError, conGasto } = require('./errors');
+const { contenidoAnthropic } = require('./imagenes');
 
 const client = new Anthropic();
 const STRUCTURED_OUTPUT_MAX_ATTEMPTS = 2;
@@ -40,14 +41,15 @@ function parseTextContent(message) {
   }
 }
 
-async function requestStructuredAnalysis({ system, userPrompt, schema, maxTokens = 8000, timeoutMs }) {
+async function requestStructuredAnalysis({ system, userPrompt, schema, maxTokens = 8000, timeoutMs, images = null }) {
   const model = getAnalysisModel('anthropic');
 
   const requestParams = {
     model,
     max_tokens: maxTokens,
     system,
-    messages: [{ role: 'user', content: userPrompt }],
+    // Con imágenes (./imagenes.js), bloques: las imágenes y después el texto.
+    messages: [{ role: 'user', content: contenidoAnthropic(userPrompt, images) }],
     output_config: {
       format: jsonSchemaOutputFormat(schema || ANALYSIS_JSON_SCHEMA),
     },
