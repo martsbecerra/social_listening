@@ -249,7 +249,7 @@ function columnasDe(db, tabla) {
  * @returns {{ porTermino: Map<string, object>, completo: boolean, total: object }}
  */
 function leerRendimiento(db, desdeIso) {
-  const vacio = () => ({ nuevos: 0, unicos: 0, guardados: 0, descartados: 0, sinEvaluar: 0, usdModelo: 0, conCosto: 0 });
+  const vacio = () => ({ nuevos: 0, unicos: 0, guardados: 0, descartados: 0, sinEvaluar: 0, excluidos: 0, usdModelo: 0, conCosto: 0 });
   const porTermino = new Map();
   const total = vacio();
   let columnas = [];
@@ -268,6 +268,9 @@ function leerRendimiento(db, desdeIso) {
     if (unico) a.unicos += 1;
     if (fila.outcome === 'guardado') a.guardados += 1;
     else if (fila.outcome === 'descartado') a.descartados += 1;
+    // De una cuenta excluida (src/db.js, cuentas_excluidas): no pasó por el
+    // modelo; va aparte de "sin evaluar" (sin texto).
+    else if (fila.outcome === 'excluido') a.excluidos += 1;
     else a.sinEvaluar += 1;
     if (fila.llm_usd != null) {
       a.usdModelo += Number(fila.llm_usd) * parte;
@@ -409,7 +412,7 @@ function buildReport({ dbPath = process.env.MONITORING_DB_PATH || DEFAULT_DB_PAT
     for (const clave of rendimiento.porTermino.keys()) {
       if (!terminos.has(clave)) terminos.set(clave, { termino: clave, clave, ...nuevoAcumulador() });
     }
-    const sinRendimiento = { nuevos: 0, unicos: 0, guardados: 0, descartados: 0, sinEvaluar: 0, usdModelo: 0, conCosto: 0 };
+    const sinRendimiento = { nuevos: 0, unicos: 0, guardados: 0, descartados: 0, sinEvaluar: 0, excluidos: 0, usdModelo: 0, conCosto: 0 };
 
     return {
       dbPath,
@@ -557,6 +560,10 @@ function tablaTerminos(r) {
   out.push(fila(`total (${r.terminos.length})`, r.total.porFase.busqueda || nuevoAcumulador(), r.rendimiento.total));
   out.push('  cons. = consultas · guard. = guardados · desc. = descartados por el modelo');
   out.push('  s/ev. = sin evaluar (sin texto) · Apify y modelo, en US$');
+  // Las de cuentas excluidas cuentan en "nuevos" y van en su propia línea
+  // (sin columna: la tabla ya ocupa 80).
+  const excluidos = (r.rendimiento.total && r.rendimiento.total.excluidos) || 0;
+  if (excluidos > 0) out.push(`  Excluidas (cuentas de la lista, sin pasar por el modelo): ${excluidos}`);
   if (!r.rendimiento.completo) {
     out.push('  Base anterior a noviembre 2026: nuevos, guardados y descartados salen solo');
     out.push('  del primer término de cada posteo, y no hay costo del modelo.');

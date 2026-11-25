@@ -966,6 +966,32 @@ function isNewPost(post, platformId) {
   return !db.findExistingPostId(post.id, post.url) && !db.isSearchSeen(post.id, platformId);
 }
 
+/** La cuenta de un posteo como en cuentas_excluidas (minúsculas, sin @); '' si no se sabe. */
+function cuentaNormalizada(account) {
+  const c = db.normalizarCuentaExcluida(account);
+  return c === 'n/d' ? '' : c;
+}
+
+/**
+ * Las cuentas excluidas de la plataforma (cuenta → motivo), leídas una vez
+ * por ciclo. Nunca tira: sin poder leer la lista, el ciclo sigue sin excluir
+ * (con aviso), como antes de que existiera.
+ */
+function cuentasExcluidasDe(platformId) {
+  try {
+    return db.mapCuentasExcluidas(platformId);
+  } catch (err) {
+    console.error(`[monitor] (${platformId}) no se pudo leer la lista de cuentas excluidas; el ciclo sigue sin excluir:`, err.message);
+    return new Map();
+  }
+}
+
+/** El motivo si el posteo es de una cuenta excluida; null si no (o si la cuenta no se sabe). */
+function motivoDeExclusion(post, excluidas) {
+  const cuenta = cuentaNormalizada(post && post.account);
+  return cuenta && excluidas.has(cuenta) ? excluidas.get(cuenta) : null;
+}
+
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
 /**
@@ -2115,6 +2141,26 @@ async function runMonitoringCycle({ plataformas, trigger, pasada = null } = {}) 
     let relevantNew = 0;
     let discardedNew = 0;
 
+    // Cuentas excluidas (tabla cuentas_excluidas): sus publicaciones nuevas
+    // se descartan sin pasar por el modelo, con el motivo en search_seen. Si
+    // la búsqueda ya trae la cuenta, antes del detalle (no se paga); si no,
+    // después, cuando el detalle la trae (más abajo).
+    const excluidas = cuentasExcluidasDe(platformId);
+    const excluidasPorCuenta = new Map();
+    const excluir = (post, motivo) => {
+      if (post.sourceType === 'search') markSearchSeen(post, platformId, 'excluido', { motivo: `Cuenta excluida: ${motivo}`, runId: (getContext() || {}).runId ?? null });
+      const cuenta = cuentaNormalizada(post.account);
+      excluidasPorCuenta.set(cuenta, (excluidasPorCuenta.get(cuenta) || 0) + 1);
+    };
+    for (const id of [...newIds]) {
+      const post = seenInThisRun.get(id);
+      const motivo = post && motivoDeExclusion(post, excluidas);
+      if (!motivo) continue;
+      excluir(post, motivo);
+      seenInThisRun.delete(id);
+      newIds.delete(id);
+    }
+
     // Los resultados de búsqueda llegan sin caption: a los nuevos se les pide
     // el detalle (una consulta para todos) antes de evaluar relevancia.
     const enrichment = await enrichSearchResults(platform, platformId, seenInThisRun);
@@ -2159,6 +2205,15 @@ async function runMonitoringCycle({ plataformas, trigger, pasada = null } = {}) 
         continue;
       }
 
+      // Cuenta excluida que recién se conoce con el detalle (la búsqueda no
+      // la traía): afuera sin pasar por el modelo.
+      const motivoExcluida = motivoDeExclusion(post, excluidas);
+      if (motivoExcluida) {
+        excluir(post, motivoExcluida);
+        progress.tick();
+        continue;
+      }
+
       // Lo que costó clasificarlo (estimado por el proveedor), para la fila
       // de search_seen: el rendimiento de cada término se mide con eso.
       let llmUsd = null;
@@ -2184,10 +2239,20 @@ async function runMonitoringCycle({ plataformas, trigger, pasada = null } = {}) 
       if (post.imageUrl) newPostImages.push({ id: post.id, url: post.imageUrl });
     }
     // Resumen de la fase para la pantalla, antes de que arranque la de fotos.
+    const totalExcluidas = [...excluidasPorCuenta.values()].reduce((s, n) => s + n, 0);
     progress.setPhaseSummary('Clasificando relevancia', {
       label: 'Relevancia',
-      detail: `${plural(relevantNew, 'relevante', 'relevantes')}, ${plural(discardedNew, 'descartado', 'descartados')}`,
+      detail:
+        `${plural(relevantNew, 'relevante', 'relevantes')}, ${plural(discardedNew, 'descartado', 'descartados')}` +
+        (totalExcluidas > 0 ? `, ${totalExcluidas} de cuentas excluidas` : ''),
     });
+    if (totalExcluidas > 0) {
+      porPlataforma[platformId].excluidas = totalExcluidas;
+      console.log(
+        `[monitor] ${platformId}: ${plural(totalExcluidas, 'publicación', 'publicaciones')} de cuentas excluidas, ` +
+          `descartadas sin pasar por el modelo (${[...excluidasPorCuenta].map(([c, n]) => `@${c}: ${n}`).join(', ')})`
+      );
+    }
 
     // Foto de los posteos recién guardados (openspec/changes/monitoreo-fotos),
     // con el link que ya vino en esta misma respuesta: no se pide nada más.
