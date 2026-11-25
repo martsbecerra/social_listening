@@ -758,6 +758,38 @@ const purgeSearchSeenStmt = db.prepare('DELETE FROM search_seen WHERE first_seen
 // Lo que decidió el clasificador en una corrida (para la línea de costo del ciclo).
 const sumSearchSeenByRunStmt = db.prepare('SELECT COUNT(*) AS n, SUM(llm_usd) AS usd FROM search_seen WHERE run_id = ?');
 
+// Cuentas excluidas (noviembre 2026, rama clasificacion-foto-y-exclusiones):
+// sus publicaciones se descartan antes de llegar al modelo (y, si la
+// búsqueda ya trae la cuenta, antes del detalle), con el motivo anotado en
+// search_seen (outcome 'excluido'). Por plataforma; `cuenta` en minúsculas y
+// sin @. `creado_por` es el correo de quien la agregó (un operador): nunca
+// sale por la API. Agregar una pasa a ignorado lo ya guardado de esa cuenta;
+// sacarla no lo des-ignora ni vuelve a evaluar lo excluido (decisión del
+// dueño). Ver src/exclusionesRoutes.js y monitor.js.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS cuentas_excluidas (
+    plataforma TEXT NOT NULL,
+    cuenta TEXT NOT NULL,
+    motivo TEXT NOT NULL,
+    creado_por TEXT,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (plataforma, cuenta)
+  )
+`);
+const listCuentasExcluidasStmt = db.prepare(
+  'SELECT cuenta, motivo, created_at AS createdAt FROM cuentas_excluidas WHERE plataforma = ? ORDER BY cuenta'
+);
+const insertCuentaExcluidaStmt = db.prepare(`
+  INSERT INTO cuentas_excluidas (plataforma, cuenta, motivo, creado_por, created_at)
+  VALUES (@plataforma, @cuenta, @motivo, @creadoPor, @createdAt)
+  ON CONFLICT(plataforma, cuenta) DO NOTHING
+`);
+const deleteCuentaExcluidaStmt = db.prepare('DELETE FROM cuentas_excluidas WHERE plataforma = ? AND cuenta = ?');
+// lower(account): las cuentas se guardan como vienen del scraper.
+const ignorePostsDeCuentaStmt = db.prepare(
+  'UPDATE detected_posts SET ignored = 1, ignored_at = ? WHERE plataforma = ? AND lower(account) = ? AND ignored = 0'
+);
+
 // Gasto en Apify (ver src/apifyCost.js): una fila por llamada a runActorSync
 // (src/apify.js) y una por ciclo de monitoreo (src/scheduler.js). Apify
 // cobra por item devuelto, así que `items` cuenta TODO lo que vino en el
@@ -3866,8 +3898,99 @@ function ping() {
   return db.prepare('SELECT 1 AS uno').get().uno === 1;
 }
 
+// --------------------------------------------------------------------
+// Cuentas excluidas (tabla cuentas_excluidas, arriba). Todas por plataforma,
+// sin default.
+// --------------------------------------------------------------------
+
+/** Una cuenta como se guarda: sin espacios ni @ adelante, en minúsculas. */
+function normalizarCuentaExcluida(cuenta) {
+  return String(cuenta || '').trim().replace(/^@+/, '').toLowerCase();
+}
+
+/** Las cuentas excluidas de una plataforma, por nombre (sin quién las cargó). */
+function listCuentasExcluidas(plataforma) {
+  requirePlataforma(plataforma, 'listCuentasExcluidas');
+  return listCuentasExcluidasStmt.all(plataforma);
+}
+
+/** cuenta → motivo, para el ciclo: una lectura por plataforma y ciclo. */
+function mapCuentasExcluidas(plataforma) {
+  return new Map(listCuentasExcluidas(plataforma).map((r) => [r.cuenta, r.motivo]));
+}
+
+/**
+ * Agrega una cuenta y pasa a ignorado lo ya guardado de ella, en una
+ * transacción. Tira con code CUENTA_EXCLUIDA_REPETIDA si ya estaba.
+ * @returns {{ cuenta: string, motivo: string, createdAt: string, ignorados: number }}
+ */
+function addCuentaExcluida({ plataforma, cuenta, motivo, creadoPor = null, now = new Date() }) {
+  requirePlataforma(plataforma, 'addCuentaExcluida');
+  const c = normalizarCuentaExcluida(cuenta);
+  const createdAt = new Date(now).toISOString();
+  db.exec('BEGIN');
+  try {
+    const r = insertCuentaExcluidaStmt.run({ plataforma, cuenta: c, motivo: String(motivo), creadoPor, createdAt });
+    if (r.changes === 0) {
+      const e = new Error(`La cuenta @${c} ya está excluida en ${plataforma}`);
+      e.code = 'CUENTA_EXCLUIDA_REPETIDA';
+      throw e;
+    }
+    const ignorados = ignorePostsDeCuentaStmt.run(createdAt, plataforma, c).changes;
+    db.exec('COMMIT');
+    return { cuenta: c, motivo: String(motivo), createdAt, ignorados };
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+}
+
+/** Saca una cuenta de la lista. No des-ignora nada. @returns {boolean} si estaba. */
+function removeCuentaExcluida(plataforma, cuenta) {
+  requirePlataforma(plataforma, 'removeCuentaExcluida');
+  return deleteCuentaExcluidaStmt.run(plataforma, normalizarCuentaExcluida(cuenta)).changes > 0;
+}
+
+// La lista arranca con @populares_sevilla (Partido Popular de Sevilla): entró
+// por la búsqueda "gobierno porteño" con política española. Una sola vez
+// (marca en refresh_state): si después alguien la saca, no vuelve.
+const SEMILLA_EXCLUIDAS_KEY = 'cuentas_excluidas_semilla';
+const SEMILLA_EXCLUIDAS = [
+  {
+    plataforma: 'instagram',
+    cuenta: 'populares_sevilla',
+    motivo: 'Partido Popular de Sevilla: política española; entró por la búsqueda «gobierno porteño».',
+  },
+];
+/** @returns {number} cuántas cuentas sembró (0 si ya se había hecho). */
+function sembrarCuentasExcluidas({ now = new Date() } = {}) {
+  if (getRefreshStateStmt.get(SEMILLA_EXCLUIDAS_KEY)) return 0;
+  const createdAt = new Date(now).toISOString();
+  let sembradas = 0;
+  db.exec('BEGIN');
+  try {
+    for (const s of SEMILLA_EXCLUIDAS) {
+      sembradas += insertCuentaExcluidaStmt.run({ ...s, creadoPor: null, createdAt }).changes;
+      ignorePostsDeCuentaStmt.run(createdAt, s.plataforma, s.cuenta);
+    }
+    setRefreshStateStmt.run({ key: SEMILLA_EXCLUIDAS_KEY, value: createdAt });
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+  return sembradas;
+}
+sembrarCuentasExcluidas();
+
 module.exports = {
   ping,
+  normalizarCuentaExcluida,
+  listCuentasExcluidas,
+  mapCuentasExcluidas,
+  addCuentaExcluida,
+  removeCuentaExcluida,
+  sembrarCuentasExcluidas,
   startAnalisis,
   saveAnalisisPost,
   finishAnalisis,

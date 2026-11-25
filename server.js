@@ -56,6 +56,7 @@ const { resolveXMaxItems } = require('./src/x/sample');
 const analysisRoutes = require('./src/analysisRoutes');
 const figurasRoutes = require('./src/figurasRoutes');
 const reclamosRoutes = require('./src/reclamosRoutes');
+const exclusionesRoutes = require('./src/exclusionesRoutes');
 const { checkAnalyzeUrl } = require('./src/platforms/urlPlatform');
 const { fetchXThread, getModel: getXaiModel, getFetchBackend } = require('./src/x/grokFetch');
 const { analyzeXThread } = require('./src/x/analyze');
@@ -579,6 +580,11 @@ app.post('/api/monitoring/searches', (req, res) => {
 app.delete('/api/monitoring/searches/:search', (req, res) => {
   res.json(monitor.removeSearch(req.params.search, monitoringPlataforma(req)));
 });
+
+// Cuentas excluidas: GET la lista; POST y DELETE, solo un operador (regla del
+// gate). Sus publicaciones se descartan antes del modelo. Ver
+// src/exclusionesRoutes.js.
+exclusionesRoutes.register(app);
 
 // Gasto en Apify por ventana (hoy, últimos 7 días, últimos `days` días) y
 // por fase, con el usd en las tres tarifas (free, starter, scale) y la
