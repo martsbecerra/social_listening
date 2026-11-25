@@ -21,6 +21,7 @@ const { ANALYSIS_JSON_SCHEMA } = require('../analysisSchema');
 const { addTokenUsage, fromOpenRouterUsage } = require('./usage');
 const { getAnalysisModel } = require('./providerConfig');
 const { salidaCortadaError, conGasto } = require('./errors');
+const { contenidoOpenRouter } = require('./imagenes');
 
 const DEFAULT_BASE_URL = 'https://openrouter.ai/api/v1';
 const STRUCTURED_OUTPUT_MAX_ATTEMPTS = 2;
@@ -160,15 +161,19 @@ async function requestStructuredAnalysis({
   jsonFallback = false,
   maxTokens = 8000,
   timeoutMs,
+  images = null,
 }) {
   const model = (modelOverride || '').trim() || getAnalysisModel('openrouter');
+  // Con imágenes (./imagenes.js), el mensaje de usuario es una lista: el
+  // texto y cada imagen como data URL (nunca un link de afuera).
+  const userContent = contenidoOpenRouter(userPrompt, images);
 
   const schemaBody = {
     model,
     max_tokens: maxTokens,
     messages: [
       { role: 'system', content: system },
-      { role: 'user', content: userPrompt },
+      { role: 'user', content: userContent },
     ],
     response_format: {
       type: 'json_schema',
@@ -185,7 +190,7 @@ async function requestStructuredAnalysis({
     max_tokens: maxTokens,
     messages: [
       { role: 'system', content: system },
-      { role: 'user', content: userPrompt },
+      { role: 'user', content: userContent },
     ],
     response_format: { type: 'json_object' },
   };
