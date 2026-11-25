@@ -26,11 +26,14 @@
 // (cada 1 s); fotos 273 con el feed de 30 días; el login pide el resumen una
 // vez por carga. Ver "Límite de pedidos" en el README.
 //
-// Sondeo, fotos, resumen y gasto se registran con app.get / app.post sobre
+// Sondeo, fotos, resumen y gasto se registran en un express.Router() sobre
 // las MISMAS rutas que sus handlers (registrarLimites): Express las compara
 // igual (sin mayúsculas, con o sin barra final), así que /API/... no los
-// saltea. Toda ruta nueva que gaste va en RUTAS_GASTO (test/limitePedidos
-// .test.js lo controla contra el código).
+// saltea. Un Router y no la app: no son rutas que escriben, y
+// test/requireRole.test.js lee como rutas todos los POST de la app que hay
+// en el código.
+// Toda ruta nueva que gaste va en RUTAS_GASTO (test/limitePedidos.test.js
+// lo controla contra el código).
 //
 // El límite del login (src/auth/rateLimit.js, magic link) es aparte y no
 // cambió. /health no tiene límite (server.js lo registra antes de todo).
@@ -208,15 +211,21 @@ function limites() {
  * es el correo de la sesión) y antes de las rutas.
  */
 function registrarLimites(app, l = limites()) {
+  const express = require('express');
   const aparte = (limite) => (req, res, next) => {
     req.limiteAparte = true;
     return limite(req, res, next);
   };
-  app.get([...RUTAS_SONDEO], aparte(l.sondeo));
-  app.get([...RUTAS_IMAGENES], aparte(l.imagenes));
-  app.get(RUTA_RESUMEN, aparte(l.resumen));
+  // Mismas opciones de comparación que la app (las de Express por defecto).
+  const propios = express.Router();
+  propios.get([...RUTAS_SONDEO], aparte(l.sondeo));
+  propios.get([...RUTAS_IMAGENES], aparte(l.imagenes));
+  propios.get(RUTA_RESUMEN, aparte(l.resumen));
+  const gasto = express.Router();
+  gasto.post([...RUTAS_GASTO], l.gasto);
+  app.use(propios);
   app.use(l.general);
-  app.post([...RUTAS_GASTO], l.gasto);
+  app.use(gasto);
 }
 
 module.exports = {
