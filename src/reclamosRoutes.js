@@ -26,6 +26,7 @@ const { subcategoriasDe } = require('./categoriasConfig');
 const { parseReclamosFilters, isValidReclamosPlataforma } = require('./reclamosQuery');
 const ETIQUETA = require('./geo/etiquetas');
 const { ubicacionEnUnaLinea } = require('./reportBuilder');
+const { rutaAsync } = require('./asyncRoute');
 
 const MAX_TEXTO = 200;
 
@@ -107,7 +108,7 @@ function register(app) {
     });
   });
 
-  app.post('/api/reclamos/:id/corregir', async (req, res) => {
+  app.post('/api/reclamos/:id/corregir', rutaAsync(async (req, res) => {
     const reclamo = db.getReclamo(req.params.id);
     if (!reclamo) return res.status(404).json({ error: 'Ese reclamo no existe.' });
     const texto = textoDe(req.body && req.body.texto);
@@ -129,7 +130,7 @@ function register(app) {
     db.updateReclamoGeo(reclamo.id, r);
     db.marcarReclamoCorregido(reclamo.id, { corregidaPor: req.auth ? req.auth.email : null, texto });
     return res.json({ reclamo: paraNavegador(db.getReclamo(reclamo.id)) });
-  });
+  }));
 
   app.post('/api/reclamos/:id/descartar', (req, res) => {
     const reclamo = db.getReclamo(req.params.id);
@@ -141,7 +142,7 @@ function register(app) {
     return res.json({ reclamo: paraNavegador(db.getReclamo(reclamo.id)) });
   });
 
-  app.get('/api/geo/comunas', async (req, res) => {
+  app.get('/api/geo/comunas', rutaAsync(async (req, res) => {
     try {
       res.set('Cache-Control', 'private, max-age=86400');
       return res.json(await territorios.comunasGeojson());
@@ -149,7 +150,7 @@ function register(app) {
       console.error('[reclamos] comunas:', err.message);
       return res.status(503).json({ error: 'No se pudieron cargar las comunas.' });
     }
-  });
+  }));
 }
 
 module.exports = { register, paraNavegador };

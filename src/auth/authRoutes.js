@@ -17,6 +17,7 @@ const { normalizeEmail, isEmailAllowed } = require('./allowlist');
 const { issueMagicLink, redeemMagicLink } = require('./magicLink');
 const { setSessionCookie, clearSessionCookie, revokeRequestSession, isAuthConfigured } = require('./session');
 const { isMagicLinkRateLimited, isResendBlocked, markMagicLinkSent, RESEND_COOLDOWN_MS } = require('./rateLimit');
+const { rutaAsync } = require('../asyncRoute');
 
 // La respuesta es SIEMPRE esta, pase lo que pase (email no autorizado,
 // cooldown de reenvío, envío OK): no revela qué direcciones existen.
@@ -41,7 +42,7 @@ function logAuth(phase, detail = {}) {
 function register(app, deps = {}) {
   const sendMagicLinkEmail = deps.sendMagicLinkEmail || ((...args) => require('../mailer').sendMagicLinkEmail(...args));
 
-  app.post('/api/auth/magic-link', async (req, res) => {
+  app.post('/api/auth/magic-link', rutaAsync(async (req, res) => {
     const email = normalizeEmail(req.body && req.body.email);
     const ip = req.ip || req.socket.remoteAddress || 'unknown';
     logAuth('pedido de magic link', { email: email || null });
@@ -82,7 +83,7 @@ function register(app, deps = {}) {
     }
 
     return res.json(MAGIC_LINK_GENERIC);
-  });
+  }));
 
   app.post('/api/auth/verify', (req, res) => {
     const token = (req.body && typeof req.body.token === 'string' && req.body.token) || '';
