@@ -3858,7 +3858,16 @@ function sumApifyUsdForAnalisis(id) {
   return { usd: Number(row.usd) || 0, calls: Number(row.calls) || 0 };
 }
 
+/**
+ * ¿La base responde? Un SELECT 1, para GET /health (src/healthRoutes.js).
+ * Tira si la base no se puede leer.
+ */
+function ping() {
+  return db.prepare('SELECT 1 AS uno').get().uno === 1;
+}
+
 module.exports = {
+  ping,
   startAnalisis,
   saveAnalisisPost,
   finishAnalisis,

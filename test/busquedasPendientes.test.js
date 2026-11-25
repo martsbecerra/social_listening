@@ -518,7 +518,7 @@ describe('adapter apidojo: scrapeSearch por el flujo asincrónico y recoverSearc
       assert.equal(r.runStatus, 'SUCCEEDED');
       assert.deepEqual(r.posts.map((p) => p.id), ['2', '3'], 'desde las 00:00 UTC del día de la ventana; sin fecha, afuera');
       assert.ok(r.posts.every((p) => p.sourceType === 'search' && p.sourceQuery === 'macri'));
-      assert.deepEqual(pedidos, ['/actor-runs/run-ok?token=***', '/datasets/ds-ok/items?token=***']);
+      assert.deepEqual(pedidos, ['/actor-runs/run-ok', '/datasets/ds-ok/items']);
     } finally {
       global.fetch = originalFetch;
     }

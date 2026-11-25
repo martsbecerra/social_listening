@@ -168,8 +168,8 @@ describe('corridas del actor que la app no registró', { concurrency: false }, (
       assert.equal(runs.length, 301);
       assert.deepEqual(runs[0], { id: 'r0', status: 'SUCCEEDED', startedAt: '2026-11-18T00:00:00.000Z', finishedAt: null, usdReal: 0.015 });
       assert.deepEqual(urls, [
-        '/acts/apidojo~instagram-scraper-api/runs?token=***&desc=true&limit=250&offset=0',
-        '/acts/apidojo~instagram-scraper-api/runs?token=***&desc=true&limit=250&offset=250',
+        '/acts/apidojo~instagram-scraper-api/runs?desc=true&limit=250&offset=0',
+        '/acts/apidojo~instagram-scraper-api/runs?desc=true&limit=250&offset=250',
       ]);
       assert.equal(db.listApifyRunIdsSince('2020-01-01T00:00:00.000Z').size, antes, 'no registra ninguna llamada');
     } finally {

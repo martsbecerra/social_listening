@@ -47,6 +47,7 @@ const { CACHE_CONTROL } = require('./postImageRoutes');
 const { buildAnalysisView, columnasDeVista } = require('./analysisMetrics');
 const { buildInforme, buildComentariosCsv, buildReclamosCsvDeBase } = require('./reportBuilder');
 const { aplicarCambio, traducirListaVieja } = require('./analysisTemas');
+const { rutaAsync } = require('./asyncRoute');
 
 const PLATAFORMAS = new Set(['instagram', 'x']);
 const MAX_TEMAS = 8;
@@ -164,6 +165,9 @@ function enviarCsv(res, nombre, csv) {
 }
 
 function register(app) {
+  // POST /api/analyze y su confirmación gastan: van al límite de gasto
+  // (RUTAS_GASTO en src/rateLimits.js); el progreso, al de sondeo, y la
+  // foto, al de fotos.
   app.post('/api/analyze', (req, res) => {
     const { url } = req.body || {};
     const guard = checkAnalyzeUrl(url, 'instagram');
@@ -313,7 +317,7 @@ function register(app) {
   // "Eliminar análisis" de la galería: la fila, los reclamos de la
   // publicación si era su último análisis y la foto si no la usa nadie más
   // (db.deleteAnalisis). Lo gastado queda en los gastos. Uno en curso, 409.
-  app.delete('/api/analisis/:id', async (req, res) => {
+  app.delete('/api/analisis/:id', rutaAsync(async (req, res) => {
     const plataforma = plataformaDe(req, res);
     if (!plataforma) return undefined;
     const id = idDe(req);
@@ -338,7 +342,7 @@ function register(app) {
     }
     console.log(`[analisis] #${id} (${plataforma}) eliminado · ${borrado.reclamos} reclamos · foto ${foto ? 'borrada' : 'queda'}`);
     return res.json({ id, reclamos: borrado.reclamos, foto });
-  });
+  }));
 
   app.get('/api/analisis/:id/comentarios.csv', (req, res) => {
     const plataforma = plataformaDe(req, res);

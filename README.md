@@ -112,7 +112,10 @@ social_listening_app/
 │   ├── publicResumen.js      # GET /api/public/resumen (sin sesión): solo cantidades y temas, para el login.
 │   ├── stopwords.js          # Palabras vacías que no cuentan en la nube de Estadísticas.
 │   ├── keepAwake.js          # Windows: lanza scripts/keep-awake.ps1 para que la máquina no se suspenda.
-│   ├── httpSecurity.js       # Seguridad HTTP: helmet con la CSP, el manejador de errores y los handlers del proceso.
+│   ├── httpSecurity.js       # Seguridad HTTP: helmet con la CSP, no-store en /api, trust proxy, el manejador de errores y los handlers del proceso.
+│   ├── rateLimits.js         # Límite de pedidos (express-rate-limit): general, sondeo, fotos, resumen, gasto y rechazados.
+│   ├── healthRoutes.js       # GET /health (sin sesión ni límite): el chequeo de Railway.
+│   ├── asyncRoute.js         # rutaAsync: el rechazo de una ruta async va al manejador de errores.
 │   ├── concurrencyLimiter.js # Cola FIFO para los runs simultáneos de Apify.
 │   ├── usageContext.js       # En qué ciclo y fase estamos (AsyncLocalStorage), para medir Apify.
 │   ├── apifyCost.js          # Tarifas de los dos actores, registro de cada llamada a Apify (estimado y real) y reporte de gasto.
@@ -191,7 +194,8 @@ social_listening_app/
   (`includeNestedComments`, flujo asincrónico, hasta 30 minutos). También
   expone `runActorSync` para que el adapter de Instagram
   (`src/platforms/instagram.js`) lo reuse, y marca los errores de clave,
-  rate limit y cuota con `code` (ver `src/platforms/errors.js`).
+  rate limit y cuota con `code` (ver `src/platforms/errors.js`). La clave
+  va en el encabezado `Authorization: Bearer`, nunca en la dirección.
 - **`src/analysisJob.js`**: el análisis de publicación de Instagram. Abre su
   fila en la tabla `analisis`, trae primero la publicación y, con el número
   de comentarios que informa Instagram, decide: si son más de 1.000, espera
@@ -2372,7 +2376,8 @@ es `test/securityHeaders.test.js`.
   1 (`installProcessHandlers`): lo levanta Railway o
   `scripts/iniciar-con-reinicio.bat`. Node 22 ya terminaba en los dos
   casos; lo nuevo es el log. Express 4 no le pasa al manejador los rechazos
-  de una ruta `async`: esos van por `unhandledRejection`.
+  de una ruta `async`: desde la rama `rate-limit-y-salud` toda ruta async va
+  envuelta en `rutaAsync`, que se los pasa (ver más abajo).
 - **Mensajes.** Ningún mensaje al navegador nombra una variable del `.env`
   ni el `.env`: dicen "Falta configuración del servidor" o qué servicio
   rechazó la clave. El nombre de la variable queda en el log.
@@ -2464,6 +2469,87 @@ y `test/session.test.js`.
 - **Al desplegar:** las sesiones de antes (cookie firmada) dejan de valer y
   todos vuelven a entrar con un link; la allowlist arranca con todos como
   `lector` hasta que se les ponga `;operador`.
+
+### Límite de pedidos, /health y la clave de Apify (noviembre 2026)
+
+Rama `rate-limit-y-salud` (OWASP ASVS V2.4, V13.3 y V16). Tests:
+`test/limitePedidos.test.js`, `test/health.test.js`,
+`test/apifyClave.test.js`, `test/rutasAsync.test.js` y
+`test/noStore.test.js`.
+
+- **Límite de pedidos** (`src/rateLimits.js`, express-rate-limit, con el
+  almacén en memoria: la app es un solo proceso y un reinicio vuelve los
+  contadores a cero). Con sesión se cuenta por correo, porque todo el
+  equipo sale por la misma IP de la oficina; sin sesión, por IP. Al
+  pasarse: 429 `{ error: 'Demasiados pedidos. Esperá unos minutos.' }`
+  con `Retry-After`.
+
+  | Límite | Rutas | Clave | Por defecto | Variable |
+  |---|---|---|---|---|
+  | General | todo `/api`, salvo sondeo, fotos y resumen | correo | 600 cada 15 min | `RATE_LIMIT_API_MAX` |
+  | Sondeo | `GET /api/monitoring/status`, `/api/monitoring/progress` y `/api/analyze/progress` | correo | 4000 cada 15 min | `RATE_LIMIT_SONDEO_MAX` |
+  | Fotos | `GET /api/monitoring/posts/:id/image` y `/api/analisis/:id/image` | correo | 2000 cada 15 min | `RATE_LIMIT_IMAGENES_MAX` |
+  | Resumen público | `GET /api/public/resumen` | IP | 200 cada 15 min | `RATE_LIMIT_RESUMEN_MAX` |
+  | Gasto | `POST /api/monitoring/run-now`, `/api/monitoring/backfill-classification`, `/api/x/analyze`, `/api/analyze` y `/api/analyze/:id/confirmar` (también cuentan en el general) | correo | 20 por hora | `RATE_LIMIT_GASTO_MAX` |
+  | Rechazados | las respuestas 401 y 403 de `/api`, antes del gate | IP | 300 cada 15 min | `RATE_LIMIT_RECHAZOS_MAX` |
+  | Login | `POST /api/auth/magic-link` (`src/auth/rateLimit.js`, sin cambios) | correo / IP | 5 / 10 cada 15 min, y un link cada 2 min | — |
+  | `/health` | — | — | sin límite | — |
+
+  Los números salen de una medición del 20/11/2026: un servidor de prueba
+  con una copia de la base y Apify simulado, y cinco pestañas abiertas 15
+  minutos en Chrome sin ventana, sin frenar las de fondo (el peor caso).
+  Una pestaña hizo como mucho 34 pedidos generales (el inicio, que se
+  actualiza cada minuto; Instagram recorriendo las cuatro solapas, 9), 559
+  de sondeo con "Actualizar ahora" en curso (el progreso, cada 1,5 s), 819
+  con un análisis en curso (cada 1 s) y 273 fotos con el feed de 30 días.
+  El login pide el resumen una vez por carga, y el navegador lo guarda
+  60 s. El margen es para tres pestañas y, en el resumen, para 20 personas
+  detrás de la misma IP.
+
+  - **Rechazados** cuenta solo los 401 y 403 (lo demás se descuenta al
+    terminar). Pasado el número, un pedido sin sesión válida recibe 429 y
+    uno con sesión pasa igual: una ráfaga desde la IP de la oficina no deja
+    afuera a quien ya entró. Solo mira `/api`: la pantalla de login sigue
+    cargando y su pedido del link dice "Demasiados intentos".
+  - Sondeo, fotos, resumen y gasto se registran en un `express.Router()`
+    sobre las mismas rutas que sus handlers, así que `/API/...` en
+    mayúsculas o con barra final no los saltea.
+  - **Detrás de Railway**, `trust proxy` es 1 (un salto) con
+    `APP_BASE_URL` https o `TRUST_PROXY=1` (`trustProxySetting` de
+    `src/httpSecurity.js`), nunca `true`: la IP es la que agrega el proxy,
+    la del cliente, y un `X-Forwarded-For` escrito a mano no cambia la
+    clave.
+  - Los números se validan al arrancar (enteros mayores que 0, sin
+    separador de miles) y una línea del arranque los muestra.
+  - **Pantalla:** las acciones ya mostraban el `error` del servidor. Ahora
+    también la carga de la tabla del Monitoreo y el progreso del análisis,
+    que antes decían "Reiniciá el servidor" y "Sin respuesta del servidor".
+- **Cuerpo de hasta 100 kb** (`express.json({ limit: '100kb' })`, el
+  default de Express, ahora escrito). El más grande que manda la app es la
+  lista de temas de un análisis anterior a la fase F, unos 9 KB como mucho;
+  uno más grande es un 413 "Pedido inválido.".
+- **`GET /health`** (`src/healthRoutes.js`): el chequeo de Railway (en el
+  servicio, *healthcheck path* `/health`). Público y sin datos: 200
+  `{ status: 'ok', db: 'ok', uptime }` si un `SELECT 1` a la base anda y
+  503 `{ status: 'error', db: 'error', uptime }` si no. Va antes del límite
+  de pedidos y del gate.
+- **La clave de Apify va en el encabezado** `Authorization: Bearer`, nunca
+  en la dirección (`?token=`): una dirección queda en logs, en mensajes de
+  error y en el historial de un proxy. Un texto de error que trajera la
+  clave la muestra tapada. Verificado con una lectura real y gratuita de un
+  run que ya existía: con el encabezado devolvió el run; sin él, 403. El
+  `?token=` del link del mail de login es otra cosa y no cambió.
+- **Rutas async** (`src/asyncRoute.js`): toda ruta async va envuelta en
+  `rutaAsync(async (req, res) => …)`, que manda un rechazo a `next(err)`:
+  responde `errorHandler` con 500 "Error interno." y la app sigue. Antes,
+  un rechazo terminaba en `unhandledRejection` y el proceso se cerraba.
+- **`Cache-Control: no-store`** en todo `/api` (`noStoreApi`), también en
+  los 401, 403 y 429 y en los CSV. Las fotos (un año, immutable),
+  `/api/geo/comunas` (un día) y el resumen público (60 s) conservan su
+  propia caché.
+- **Reglas para lo que venga:** toda ruta nueva que gaste va en
+  `RUTAS_GASTO` de `src/rateLimits.js`, y toda ruta async usa `rutaAsync`.
+  Los tests lo controlan contra el código.
 
 ---
 

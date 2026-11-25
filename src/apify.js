@@ -398,8 +398,7 @@ function describeError(err) {
 
 /** Una sola llamada HTTP al endpoint sincrónico, sin cola ni reintento. Devuelve los items. */
 async function runActorSyncOnce(input, actorId) {
-  const token = encodeURIComponent(process.env.APIFY_API_TOKEN);
-  return apifyRequest(`${APIFY_BASE}/acts/${actorId}/run-sync-get-dataset-items?token=${token}`, { method: 'POST', body: input });
+  return apifyRequest(`${APIFY_BASE}/acts/${actorId}/run-sync-get-dataset-items`, { method: 'POST', body: input });
 }
 
 const unwrapRun = (body) => (body && typeof body === 'object' && !Array.isArray(body) && body.data ? body.data : body);
@@ -434,10 +433,9 @@ function pendingRunError(run, maxWaitMs, cause) {
  * @returns {Promise<Array>}
  */
 async function fetchDatasetItems(datasetId, { retries = DATASET_RETRIES } = {}) {
-  const token = encodeURIComponent(process.env.APIFY_API_TOKEN);
   for (let attempt = 0; ; attempt += 1) {
     try {
-      const items = await apifyRequest(`${APIFY_BASE}/datasets/${encodeURIComponent(datasetId)}/items?token=${token}`, { timeoutMs: REAL_COST_REQUEST_TIMEOUT_MS });
+      const items = await apifyRequest(`${APIFY_BASE}/datasets/${encodeURIComponent(datasetId)}/items`, { timeoutMs: REAL_COST_REQUEST_TIMEOUT_MS });
       return Array.isArray(items) ? items : [];
     } catch (err) {
       if (!isTransientReadError(err) || attempt >= retries) throw err;
@@ -460,15 +458,14 @@ async function fetchDatasetItems(datasetId, { retries = DATASET_RETRIES } = {}) 
  * @returns {Promise<{ items: Array, run: { id: string, datasetId: string|null } }>}
  */
 async function runActorRealCostOnce(input, actorId, { maxWaitMs = REQUEST_TIMEOUT_MS, runTimeoutSecs = null, onRunStarted = null } = {}) {
-  const token = encodeURIComponent(process.env.APIFY_API_TOKEN);
   const deadline = Date.now() + maxWaitMs;
   const secs = Math.floor(Number(runTimeoutSecs));
-  const timeoutParam = Number.isFinite(secs) && secs > 0 ? `&timeout=${secs}` : '';
+  const timeoutParam = Number.isFinite(secs) && secs > 0 ? `?timeout=${secs}` : '';
 
   // Sin waitForFinish: el POST vuelve enseguida con el id. No se reintenta
   // (un segundo POST sería otro run pago).
   let run = unwrapRun(
-    await apifyRequest(`${APIFY_BASE}/acts/${actorId}/runs?token=${token}${timeoutParam}`, { timeoutMs: REAL_COST_REQUEST_TIMEOUT_MS, method: 'POST', body: input })
+    await apifyRequest(`${APIFY_BASE}/acts/${actorId}/runs${timeoutParam}`, { timeoutMs: REAL_COST_REQUEST_TIMEOUT_MS, method: 'POST', body: input })
   );
   if (!run || !run.id) {
     const e = new Error('Apify no devolvió el run al arrancar el actor.');
@@ -491,7 +488,7 @@ async function runActorRealCostOnce(input, actorId, { maxWaitMs = REQUEST_TIMEOU
     const waitSecs = Math.max(1, Math.min(REAL_COST_WAIT_SECS, Math.floor(remaining / 1000)));
     try {
       const next = unwrapRun(
-        await apifyRequest(`${APIFY_BASE}/actor-runs/${run.id}?token=${token}&waitForFinish=${waitSecs}`, { timeoutMs: (waitSecs + 30) * 1000 })
+        await apifyRequest(`${APIFY_BASE}/actor-runs/${run.id}?waitForFinish=${waitSecs}`, { timeoutMs: (waitSecs + 30) * 1000 })
       );
       if (next && next.id) run = next;
       retries = 0;
@@ -547,8 +544,7 @@ async function runActorRealCostOnce(input, actorId, { maxWaitMs = REQUEST_TIMEOU
  *   startedAt: string|null, finishedAt: string|null, usdReal: number|null, chargedEventCounts: object|null }>}
  */
 async function fetchRun(runId) {
-  const token = encodeURIComponent(process.env.APIFY_API_TOKEN);
-  const run = unwrapRun(await apifyRequest(`${APIFY_BASE}/actor-runs/${encodeURIComponent(runId)}?token=${token}`, { timeoutMs: 30000 })) || {};
+  const run = unwrapRun(await apifyRequest(`${APIFY_BASE}/actor-runs/${encodeURIComponent(runId)}`, { timeoutMs: 30000 })) || {};
   const usd = Number(run.usageTotalUsd);
   return {
     id: run.id || runId,
@@ -569,10 +565,9 @@ async function fetchRun(runId) {
  * @returns {Promise<{ id: string, status: string|null, startedAt: string|null, finishedAt: string|null, usdReal: number|null }[]>}
  */
 async function listActorRuns(actorId, { sinceMs = 0, max = 2000 } = {}) {
-  const token = encodeURIComponent(process.env.APIFY_API_TOKEN);
   const out = [];
   for (let offset = 0; offset < max; offset += 250) {
-    const body = unwrapRun(await apifyRequest(`${APIFY_BASE}/acts/${actorId}/runs?token=${token}&desc=true&limit=250&offset=${offset}`, { timeoutMs: 30000 }));
+    const body = unwrapRun(await apifyRequest(`${APIFY_BASE}/acts/${actorId}/runs?desc=true&limit=250&offset=${offset}`, { timeoutMs: 30000 }));
     const items = (body && Array.isArray(body.items) && body.items) || [];
     for (const run of items) {
       if (sinceMs && Date.parse(run.startedAt) < sinceMs) return out;
@@ -601,9 +596,36 @@ async function fetchRunCost(runId) {
   return { id, status, usdReal, chargedEventCounts, finishedAt };
 }
 
+/** La clave de Apify (APIFY_API_TOKEN), sin espacios alrededor; '' si no hay. */
+function apifyToken() {
+  return String(process.env.APIFY_API_TOKEN || '').trim();
+}
+
+/**
+ * Los encabezados de una request a Apify: la clave va en Authorization:
+ * Bearer, NUNCA en la dirección (?token=): una dirección termina en logs,
+ * en mensajes de error y en el historial de un proxy (rama
+ * rate-limit-y-salud, OWASP ASVS V13.3). Test: test/apifyClave.test.js.
+ */
+function apifyHeaders(body) {
+  const headers = {};
+  const token = apifyToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  return headers;
+}
+
+/** Un texto para un log o un error, con la clave tapada si apareciera. */
+function sinClave(texto) {
+  const token = apifyToken();
+  const s = String(texto ?? '');
+  return token ? s.split(token).join('***') : s;
+}
+
 /**
  * Una request a la API de Apify con timeout, errores de red y de status
- * tipificados (ver abajo). Devuelve el JSON de la respuesta tal cual.
+ * tipificados (ver abajo). Devuelve el JSON de la respuesta tal cual. La
+ * clave va en el encabezado (apifyHeaders), nunca en `url`.
  * @param {string} url
  * @param {{ method?: string, body?: object, timeoutMs?: number }} [options]
  */
@@ -617,7 +639,7 @@ async function apifyRequest(url, { method = 'GET', body, timeoutMs = REQUEST_TIM
   try {
     resp = await fetch(url, {
       method,
-      headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
+      headers: apifyHeaders(body),
       body: body !== undefined ? JSON.stringify(body) : undefined,
       signal: controller.signal,
     });
@@ -629,7 +651,7 @@ async function apifyRequest(url, { method = 'GET', body, timeoutMs = REQUEST_TIM
       e.requestTimeout = true;
       throw e;
     }
-    const e = new Error(`Error de red al llamar a Apify: ${err.message}`);
+    const e = new Error(`Error de red al llamar a Apify: ${sinClave(err.message)}`);
     e.userMessage = 'No se pudo conectar con el servicio de extracción. Revisá tu conexión a internet e intentá de nuevo.';
     e.network = true;
     throw e;
@@ -638,7 +660,7 @@ async function apifyRequest(url, { method = 'GET', body, timeoutMs = REQUEST_TIM
   }
 
   if (!resp.ok) {
-    const text = await resp.text().catch(() => '');
+    const text = sinClave(await resp.text().catch(() => ''));
     const e = new Error(`Apify respondió ${resp.status}: ${text}`);
     e.status = resp.status;
     // `code` tipificado (ver src/platforms/errors.js): el monitoreo distingue

@@ -53,7 +53,8 @@ saber antes de tocar algo.
   `includeNestedComments` (`COMMENTS_ACTOR`): apidojo no devuelve
   comentarios y el oficial no trae las respuestas. No migrarlos. Ver
   "Análisis de publicación de Instagram".
-- Todas las llamadas pasan por `runActorSync` (`src/apify.js`): cola global
+- Todas las llamadas pasan por `runActorSync` (`src/apify.js`), con la
+  clave en `Authorization: Bearer` y nunca en la dirección: cola global
   de `APIFY_MAX_CONCURRENT` runs, un reintento del 402
   `concurrent-runs-limit-exceeded`, y registro de cada llamada en
   `apify_calls`. El actor apidojo va por el flujo asincrónico (arrancar el
@@ -823,7 +824,9 @@ Desde noviembre 2026 (rama `hardening-http`; README, "Seguridad HTTP"), en
   interno.' }` (`'Pedido inválido.'` en un 4xx de Express), nunca un
   stack; al log, el error completo. `installProcessHandlers()`:
   `unhandledRejection` y `uncaughtException` se loguean y `exit(1)`.
-  Express 4 no pasa al manejador los rechazos de una ruta `async`.
+  Express 4 no pasa al manejador los rechazos de una ruta `async`: por eso
+  toda ruta async va con `rutaAsync` (ver "Límite de pedidos, /health y
+  rutas async").
 - En producción, `NODE_ENV=production` (`.env.example`). `npm run audit`
   (`npm audit --omit=dev`) tiene que dar 0 vulnerabilidades.
 - **Los assets de terceros van en `public/vendor`, nunca desde un CDN**
@@ -878,7 +881,9 @@ revocable"). Tests: `test/requireRole.test.js`, `test/session.test.js` y
   texto fijo en `app.<método>('…'`, o el test falla). Si fuera un GET (no
   debería), lleva `requireRole('operador')` explícito. Del lado del
   navegador, el control que la dispara lleva la clase `solo-operador` (o
-  `solo-operador-ctl` si se deshabilita en vez de ocultarse).
+  `solo-operador-ctl` si se deshabilita en vez de ocultarse). Si gasta
+  (Apify o el modelo), además va en `RUTAS_GASTO` (ver "Límite de pedidos,
+  /health y rutas async").
 - **La sesión** (`src/auth/session.js`, tabla `sessions` en `db.js`): la
   cookie `sl_session` lleva solo un id al azar de 32 bytes; la base guarda
   su SHA-256 (`id_hash`), el correo, `created_at`, `last_seen_at` (ms) y
@@ -923,6 +928,66 @@ revocable"). Tests: `test/requireRole.test.js`, `test/session.test.js` y
   `express.urlencoded`.
 - **Backfill**: `BACKFILL_MAX` (200) posteos por invocación, uno a la vez
   (409 con otro en curso; `src/backfillConfig.js`, `monitor.backfillClassification`).
+
+## Límite de pedidos, /health y rutas async
+
+Desde noviembre 2026 (rama `rate-limit-y-salud`; README, "Límite de
+pedidos, /health y la clave de Apify"). Tests: `test/limitePedidos.test.js`,
+`test/health.test.js`, `test/apifyClave.test.js`, `test/rutasAsync.test.js`
+y `test/noStore.test.js`.
+
+- **Límite de pedidos** (`src/rateLimits.js`, express-rate-limit 8.7.3, en
+  memoria): con sesión la clave es el correo (todo el equipo sale por la
+  misma IP de la oficina); sin sesión, la IP. 429 `{ error: 'Demasiados
+  pedidos. Esperá unos minutos.' }` con `Retry-After`. General (todo
+  `/api` salvo sondeo, fotos y resumen) 600, sondeo (status y los dos
+  progresos) 4000 y fotos 2000 cada 15 min por correo; resumen público 200
+  cada 15 min por IP; gasto (`RUTAS_GASTO`: run-now, backfill, x/analyze,
+  analyze y su confirmación; también cuentan en el general) 20 por hora
+  por correo; rechazados (solo los 401 y 403 de `/api`, ANTES del gate) 300
+  cada 15 min por IP, y con una sesión válida no frena. `RATE_LIMIT_*` en
+  el `.env`, validados al arrancar como `IG_ACTOR`. Números de la medición
+  del 20/11/2026 (una pestaña 15 minutos: general 34 como mucho, sondeo
+  559 con una corrida y 819 con un análisis en curso, 273 fotos), con
+  margen para 3 pestañas. El límite del login (`src/auth/rateLimit.js`) es
+  aparte; `/health`, sin límite.
+- Orden en `server.js` (lo controla el test): headers, `noStoreApi`,
+  `/health`, rechazados, `express.json({ limit: '100kb' })`, gate,
+  `registrarLimites(app)` (sondeo, fotos y resumen en un Router marcados
+  para que el general no los cuente; el general; el de gasto en otro
+  Router), estáticos, rutas. Los límites por ruta van en un
+  `express.Router()` sobre las mismas rutas que sus handlers (sin
+  mayúsculas ni barra final que los salteen) y no con `app.post`:
+  `test/requireRole.test.js` lee todo `app.post(` del código como ruta, y
+  también los comentarios (no escribir `app.post('…'` en un comentario).
+- **Regla: toda ruta nueva que gaste va en `RUTAS_GASTO`** (con el camino
+  escrito igual que su handler; el test exige que exista `app.post('<ruta>'`
+  en el código). Una de sondeo nueva (consultada sola cada pocos segundos),
+  en `RUTAS_SONDEO`; si no, cuenta en el general.
+- **`trust proxy`** sale de `trustProxySetting` (`src/httpSecurity.js`): 1
+  con `APP_BASE_URL` https o `TRUST_PROXY=1`, nunca `true` (con true, el
+  cliente elige su IP con `X-Forwarded-For` y saltea los límites por IP).
+- **`GET /health`** (`src/healthRoutes.js`): el chequeo de Railway. Público
+  y sin datos: 200 `{ status, db, uptime }` si `db.ping()` (un `SELECT 1`)
+  anda, 503 si no. Va antes del límite y del gate. Un campo nuevo acá no
+  puede ser un dato de la app.
+- **Regla: toda ruta async usa `rutaAsync`** (`src/asyncRoute.js`):
+  `app.<método>(<ruta>, rutaAsync(async (req, res) => { … }))`. Manda el
+  rechazo a `next(err)` y responde `errorHandler` con 500; sin envoltorio,
+  un rechazo cerraba el proceso. `test/rutasAsync.test.js` recorre
+  `server.js` y `src/` y cuenta las envueltas (hoy 9).
+- **La clave de Apify va en `Authorization: Bearer`** (`apifyRequest`,
+  `apifyHeaders`), nunca en la dirección: ninguna URL de Apify lleva
+  `?token=` (el test lo controla en `src/` y `scripts/`). Un texto de error
+  que trajera la clave sale tapado (`sinClave`). El `?token=` del link del
+  mail de login (`src/mailer.js`) es otra cosa.
+- **`Cache-Control: no-store`** en todo `/api` (`noStoreApi`, antes del
+  gate). Las rutas con caché propia la pisan: las dos de fotos (un año,
+  immutable: el feed), `/api/geo/comunas` (un día) y el resumen público
+  (60 s). Una ruta nueva con datos no pone caché.
+- **Pantalla:** con un 429, la carga de la tabla del Monitoreo y el
+  progreso del análisis muestran el texto del servidor (el análisis sigue
+  reintentando cada 3 s); las acciones ya lo hacían con su `error`.
 
 ## Diseño v4
 

@@ -103,7 +103,7 @@ describe('IG_ACTOR=apify: el proveedor oficial detrás de la fachada', { concurr
           : [{ id: '1', shortCode: 'a', ownerUsername: 'trackeada', caption: 'obras', likesCount: 3, commentsCount: 1, timestamp: '2026-09-17T10:00:00.000Z', type: 'Image' }, { error: 'no_items' }]
       );
       const posts = await instagram.scrapeAccount('trackeada', { resultsLimit: 15, lookback: '1 day' });
-      assert.match(calls[0].url, /\/acts\/apify~instagram-scraper\/run-sync-get-dataset-items\?token=/);
+      assert.match(calls[0].url, /\/acts\/apify~instagram-scraper\/run-sync-get-dataset-items$/);
       assert.deepEqual(calls[0].body, {
         directUrls: ['https://www.instagram.com/trackeada/'],
         resultsType: 'posts',

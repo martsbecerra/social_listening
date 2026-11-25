@@ -18,8 +18,9 @@ require('dotenv').config();
 // tiran al cargar si el valor no es válido, y el arranque tiene que abortar
 // con un mensaje claro en vez de un stack trace. abortarArranque está más
 // abajo (función hoisted). Los topes de la sesión (SESSION_IDLE_MIN,
-// SESSION_MAX_HOURS, src/auth/sessionConfig.js) y BACKFILL_MAX
-// (src/backfillConfig.js), igual.
+// SESSION_MAX_HOURS, src/auth/sessionConfig.js), BACKFILL_MAX
+// (src/backfillConfig.js) y los límites de pedidos (RATE_LIMIT_*,
+// src/rateLimits.js), igual.
 const { resolveIgActor } = require('./src/platforms/igActor');
 const { resolveRefreshMode } = require('./src/refreshMode');
 const { resolveReachRule, describeReachRule } = require('./src/reachRule');
@@ -28,6 +29,7 @@ const { resolveTopeConfig, describeTopeConfig } = require('./src/busquedaTope');
 const { resolveDeepConfig, describeDeepConfig } = require('./src/deepRun');
 const { resolveSessionConfig, describeSessionConfig } = require('./src/auth/sessionConfig');
 const { resolveBackfillMax } = require('./src/backfillConfig');
+const { resolveRateLimitConfig, describeRateLimitConfig } = require('./src/rateLimits');
 try {
   resolveIgActor();
   resolveRefreshMode();
@@ -37,6 +39,7 @@ try {
   resolveReachRule();
   resolveSessionConfig();
   resolveBackfillMax();
+  resolveRateLimitConfig();
 } catch (err) {
   abortarArranque([err.message]);
 }
@@ -93,7 +96,10 @@ const { CATEGORIAS: TEMAS_POSTEO, CATEGORIA_FALLBACK } = require('./src/categori
 const authRoutes = require('./src/auth/authRoutes');
 const { purgeExpiredSessions } = require('./src/auth/session');
 const { createAuthGate } = require('./src/auth/gate');
-const { securityHeaders, errorHandler, installProcessHandlers } = require('./src/httpSecurity');
+const { securityHeaders, errorHandler, installProcessHandlers, trustProxySetting, noStoreApi } = require('./src/httpSecurity');
+const rateLimits = require('./src/rateLimits');
+const { rutaAsync } = require('./src/asyncRoute');
+const healthRoutes = require('./src/healthRoutes');
 
 // Una promesa rechazada o una excepción sin manejar: log y exit(1), y quien
 // supervisa el proceso (Railway, scripts/iniciar-con-reinicio.bat) lo
@@ -104,26 +110,45 @@ const app = express();
 // Sin el encabezado "X-Powered-By: Express": no anunciar qué corre atrás.
 app.disable('x-powered-by');
 
-if (
-  process.env.TRUST_PROXY === '1' ||
-  process.env.TRUST_PROXY === 'true' ||
-  (process.env.APP_BASE_URL || '').startsWith('https://')
-) {
-  app.set('trust proxy', 1);
-}
+// Detrás de un proxy (Railway): un salto, así req.ip es la del cliente y no
+// la del proxy (los límites por IP dependen de eso). Ver trustProxySetting.
+const trustProxy = trustProxySetting();
+if (trustProxy) app.set('trust proxy', trustProxy);
 
 // Headers de seguridad (helmet, CSP, HSTS con https): lo primero, antes del
 // gate, así también los llevan los 401 y las redirecciones al login. Ver
 // src/httpSecurity.js.
 app.use(securityHeaders());
 
+// Cache-Control: no-store en todo /api (también en los 401, 403 y 429). Las
+// fotos, las comunas y el resumen público ponen su propia caché y la pisan.
+// Ver noStoreApi en src/httpSecurity.js.
+app.use(noStoreApi);
+
+// GET /health: el chequeo de Railway. Público, sin datos ({ status, db,
+// uptime }), 503 si la base no responde. Antes del límite de pedidos y del
+// gate: sin sesión y sin límite. Ver src/healthRoutes.js.
+healthRoutes.register(app);
+
+// Límite de pedidos rechazados (401 y 403 de /api), por IP y ANTES del gate:
+// una ráfaga de pedidos sin sesión tiene tope. Con una sesión válida no
+// frena. Va antes de leer el cuerpo. Ver src/rateLimits.js.
+app.use(rateLimits.limites().rechazados);
+
 // La app solo recibe JSON: sin express.urlencoded, un formulario de otro
 // sitio no puede mandarle nada que llegue al cuerpo de una ruta (y el login,
-// public/js/loginVerify.js, manda el token en JSON).
-app.use(express.json());
+// public/js/loginVerify.js, manda el token en JSON). Hasta 100 kb (el
+// default de Express, escrito): el cuerpo más grande que manda la app es la
+// lista de temas de un análisis anterior a la fase F, como mucho 8 temas de
+// 120 + 1000 caracteres (unos 9 KB); todos los demás, menos de 1 KB. Uno más
+// grande es un 413 con "Pedido inválido." (errorHandler).
+app.use(express.json({ limit: '100kb' }));
 
 // El gate va ANTES de los estáticos: si no, dashboard.html se sirve sin cookie.
 app.use(createAuthGate());
+// Los límites de /api: después del gate (la clave es el correo de la
+// sesión), antes de los estáticos y las rutas. Ver src/rateLimits.js.
+rateLimits.registrarLimites(app);
 app.use(express.static(path.join(__dirname, 'public')));
 
 // --------------------------------------------------------------------------
@@ -196,7 +221,7 @@ function logXTask(phase, detail = {}) {
   console.log(`[analyze-x] ${phase}${payload}`);
 }
 
-app.post('/api/x/analyze', async (req, res) => {
+app.post('/api/x/analyze', rutaAsync(async (req, res) => {
   const { url } = req.body || {};
   const startedAt = Date.now();
 
@@ -283,7 +308,7 @@ app.post('/api/x/analyze', async (req, res) => {
       error: err.userMessage || 'Ocurrió un error al procesar la publicación. Intentá de nuevo en unos minutos.',
     });
   }
-});
+}));
 
 // --------------------------------------------------------------------------
 // Monitoreo automático: config, tabla de posteos detectados, disparo manual.
@@ -516,25 +541,25 @@ app.patch('/api/monitoring/posts/:id', (req, res) => {
   res.json({ ok: true });
 });
 
-app.post('/api/monitoring/accounts', async (req, res) => {
+app.post('/api/monitoring/accounts', rutaAsync(async (req, res) => {
   try {
     res.json(await monitor.addAccount(req.body && req.body.account, monitoringPlataforma(req)));
   } catch (err) {
     res.status(400).json({ error: err.userMessage || err.message });
   }
-});
+}));
 
 app.delete('/api/monitoring/accounts/:account', (req, res) => {
   res.json(monitor.removeAccount(req.params.account, monitoringPlataforma(req)));
 });
 
-app.post('/api/monitoring/keywords', async (req, res) => {
+app.post('/api/monitoring/keywords', rutaAsync(async (req, res) => {
   try {
     res.json(await monitor.addKeyword(req.body && req.body.keyword, monitoringPlataforma(req)));
   } catch (err) {
     res.status(400).json({ error: err.userMessage || err.message });
   }
-});
+}));
 
 app.delete('/api/monitoring/keywords/:keyword', (req, res) => {
   res.json(monitor.removeKeyword(req.params.keyword, monitoringPlataforma(req)));
@@ -566,7 +591,9 @@ app.get('/api/monitoring/costs', (req, res) => {
 
 // Dispara un ciclo de monitoreo a mano, sin esperar los 4hs del cron
 // (útil para probar o para una demo). plataforma=x corre solo X; instagram solo IG.
-app.post('/api/monitoring/run-now', async (req, res) => {
+// Gasta: va al límite de gasto (RUTAS_GASTO en src/rateLimits.js), como el
+// backfill de abajo y /api/x/analyze.
+app.post('/api/monitoring/run-now', rutaAsync(async (req, res) => {
   try {
     const result = await runCycle({ plataforma: monitoringPlataforma(req) });
     res.json(result);
@@ -577,7 +604,7 @@ app.post('/api/monitoring/run-now', async (req, res) => {
     console.error('Error en /api/monitoring/run-now:', err);
     res.status(502).json({ error: err.userMessage || 'Falló el ciclo de monitoreo. Revisá la consola del servidor.' });
   }
-});
+}));
 
 // Genera título + sentimiento + tema para posteos guardados que todavía no lo
 // tienen (posteos de antes de esta funcionalidad, o que fallaron al
@@ -586,7 +613,7 @@ app.post('/api/monitoring/run-now', async (req, res) => {
 // muchos pendientes tarda (el avance sale por consola cada 50). Hasta
 // BACKFILL_MAX posteos por invocación (src/backfillConfig.js) y una sola a la
 // vez: con otra en curso, 409.
-app.post('/api/monitoring/backfill-classification', async (req, res) => {
+app.post('/api/monitoring/backfill-classification', rutaAsync(async (req, res) => {
   try {
     const result = await monitor.backfillClassification(monitoringPlataforma(req));
     res.json(result);
@@ -597,7 +624,7 @@ app.post('/api/monitoring/backfill-classification', async (req, res) => {
     console.error('Error en /api/monitoring/backfill-classification:', err);
     res.status(502).json({ error: err.userMessage || 'Falló la clasificación. Revisá la consola del servidor.' });
   }
-});
+}));
 
 // --------------------------------------------------------------------------
 // Mapa de reclamos: filtros combinables + edición de estado.
@@ -619,8 +646,10 @@ app.patch('/api/reclamos/:id', (req, res) => {
 // Manejador de errores: DESPUÉS de todas las rutas. Al cliente, solo
 // { error: 'Error interno.' } (o 'Pedido inválido.' en un 4xx de Express,
 // como un JSON mal formado), nunca un stack; el error completo, al log. Ojo:
-// Express 4 no le pasa los rechazos de una ruta async; esos terminan en
-// unhandledRejection (installProcessHandlers, arriba). Ver src/httpSecurity.js.
+// Express 4 no le pasa los rechazos de una ruta async: por eso TODA ruta
+// async va envuelta en rutaAsync (src/asyncRoute.js), que los manda acá con
+// next(err). Sin envoltorio terminarían en unhandledRejection y el proceso
+// se cerraría (installProcessHandlers, arriba). Ver src/httpSecurity.js.
 app.use(errorHandler);
 
 // --------------------------------------------------------------------------
@@ -687,7 +716,8 @@ const server = app.listen(PORT, () => {
     `   Login: APP_BASE_URL=${process.env.APP_BASE_URL || '(falta)'} | SMTP=${process.env.SMTP_HOST || '(falta SMTP_HOST)'}`
   );
   console.log(`   Sesión (SESSION_IDLE_MIN, SESSION_MAX_HOURS): ${describeSessionConfig(resolveSessionConfig())}`);
-  console.log(`   Backfill de la clasificación: hasta BACKFILL_MAX=${resolveBackfillMax()} posteos por invocación, uno a la vez\n`);
+  console.log(`   Backfill de la clasificación: hasta BACKFILL_MAX=${resolveBackfillMax()} posteos por invocación, uno a la vez`);
+  console.log(`   Límite de pedidos (RATE_LIMIT_*): ${describeRateLimitConfig(resolveRateLimitConfig())}\n`);
   // Windows: que la máquina no se suspenda mientras la app corre (ver
   // src/keepAwake.js). Nunca tira; en otros sistemas no hace nada.
   startKeepAwake();

@@ -283,7 +283,7 @@ describe('proveedor apidojo del adapter de Instagram', { concurrency: false }, (
       const calls = stubFetch(() => [rawPost({ id: 1, hoursAgo: 1 }), rawPost({ id: 2, hoursAgo: 72 }), { noResults: true }]);
       const posts = await instagram.scrapeAccount('cuenta_prueba', { resultsLimit: 10, lookback: '1 day' });
       assert.equal(calls.length, 1);
-      assert.match(calls[0].url, /\/acts\/apidojo~instagram-scraper-api\/run-sync-get-dataset-items\?token=token-de-test$/);
+      assert.match(calls[0].url, /\/acts\/apidojo~instagram-scraper-api\/run-sync-get-dataset-items$/);
       assert.deepEqual(calls[0].body, {
         startUrls: ['https://www.instagram.com/cuenta_prueba/'],
         maxItems: 10,

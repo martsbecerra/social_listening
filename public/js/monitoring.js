@@ -1758,6 +1758,15 @@ function ensureMonitoringTable(posts) {
 async function loadPosts() {
   try {
     const resp = await fetch(withPlataforma(`/api/monitoring/posts?page=1&pageSize=${FETCH_ALL_PAGE_SIZE}`));
+    if (resp.status === 429) {
+      // El límite de pedidos (src/rateLimits.js): el texto es el del
+      // servidor ("Demasiados pedidos. Esperá unos minutos."), no el de un
+      // servidor caído.
+      const body = await resp.json().catch(() => null);
+      const err = new Error('HTTP 429');
+      err.userText = (body && body.error) || 'Demasiados pedidos. Esperá unos minutos.';
+      throw err;
+    }
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data = await resp.json();
     monitoringLoadErrorEl.classList.add('hidden');
@@ -1768,7 +1777,8 @@ async function loadPosts() {
     renderHighlightCards(posts);
     return posts;
   } catch (err) {
-    monitoringLoadErrorEl.textContent = 'No se pudo cargar la tabla. Reiniciá el servidor (para que tome el código nuevo) y recargá la página.';
+    monitoringLoadErrorEl.textContent =
+      err.userText || 'No se pudo cargar la tabla. Reiniciá el servidor (para que tome el código nuevo) y recargá la página.';
     monitoringLoadErrorEl.classList.remove('hidden');
     console.error('Error cargando posteos detectados:', err);
     return null;
